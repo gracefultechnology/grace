@@ -1282,7 +1282,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const person = { id: "private-qa-account", email: "reader@example.test" };
   const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
-  const mail = { externalId: "inbox-1", from: "Robin", subject: "Your receipt", receivedAt: time, isUnread: true, metadata: { historyId: "8" } };
+  const mail = { externalId: "inbox-1", labels: ["INBOX"], from: "Robin", subject: "Your receipt", receivedAt: time, isUnread: true, metadata: { historyId: "8" } };
   const grant = "58b549ef-4b49-4210-a3d1-ec31369a9f06";
   const filesOwner = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(["grace/files/owner", person.id, "grace-org"])))),
     (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -1328,10 +1328,13 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let signedIn = false;
   let connectorConfigured = false;
   let inboxRequests = 0;
+  let mismatchSentQuery = true;
+  const sentReceipt = { ...mail, externalId: "sent-2", labels: ["SENT"], subject: "Sent receipt" };
   let replyFromOwner = false;
   let unconfirmed: string | undefined;
   const fetch = window.fetch.bind(window);
   let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
+  const pagedVisit = { ...events[0], externalId: "paged-visit", title: "Lab visit" };
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
   const reminderEvent = { ...events[0], externalId: "reminder-only", title: "Eye exam", description: "Bring the referral." };
   let series = { ...occurrence, externalId: "visit-series", etag: '"series-one"', seriesId: null };
@@ -1390,13 +1393,20 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         const folder = api.searchParams.get("folder");
         const search = api.searchParams.get("q") ?? "";
         inboxRequests++;
+        if (folder === "sent" && search === "receipt" && mismatchSentQuery) {
+          mismatchSentQuery = false;
+          return reply({ accountId: person.id, folder, q: "another search", messages: [mail], nextPageToken: null });
+        }
         const messages = folder === "inbox" && !trashed ? [mail] : folder === "sent"
-          ? [{ ...mail, externalId: "sent-1", subject: "Lunch invitation" }, { ...mail, externalId: "sent-2", subject: "Sent receipt" }]
+          ? [{ ...mail, externalId: "sent-1", labels: ["SENT"], subject: "Lunch invitation" }, sentReceipt]
           : folder === "drafts" ? [{ ...mail, subject: "Weekend plan", externalId: "draft-1" }] : [];
         return reply({ accountId: person.id, folder, q: search.trim(), messages: messages.filter((row) => row.subject.toLowerCase().includes(search.toLowerCase())),
           counts: { inboxUnread: trashed ? 0 : 1, drafts: 3 }, nextPageToken: null });
       }
       case "/api/v1/eliza/google/gmail/read":
+        if (api.searchParams.get("messageId") === sentReceipt.externalId) return reply({
+          accountId: person.id, message: sentReceipt, historyId: "8", attachments: [], bodyTextAvailable: true, bodyText: "Your sent message.",
+        });
         expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant });
         return reply({
           accountId: replyFromOwner ? person.id : "different-owner", message: mail, historyId: "8", attachments: [attachment, archive, pdf, ...photoParts.map(({ part }) => part)], bodyTextAvailable: true,
@@ -1485,12 +1495,19 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         }
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId });
       }
-      case "/api/v1/eliza/google/calendar/feed":
+      case "/api/v1/eliza/google/calendar/feed": {
         expect(api.searchParams.get("grantId")).toBe(grant);
+        const from = api.searchParams.get("timeMin") ?? "";
+        const until = api.searchParams.get("timeMax") ?? "";
+        const inWindow = (row: typeof pagedVisit) => row.startAt < until && row.endAt > from;
+        const cursor = JSON.stringify([from, until]);
+        const next = api.searchParams.get("pageToken");
+        if (next !== null && next !== cursor) return reply({ error: "Invalid page token for this interval" }, 400);
         return reply({
-          accountId: person.id, nextPageToken: null,
-          events: [...events, later].filter((row) => row.startAt < (api.searchParams.get("timeMax") ?? "") && row.endAt > (api.searchParams.get("timeMin") ?? "")),
+          accountId: person.id, nextPageToken: next === null && inWindow(pagedVisit) ? cursor : null,
+          events: (next === null ? [...events, later] : [pagedVisit]).filter(inWindow),
         });
+      }
       default: return fetch(input, options);
     }
   });
@@ -1526,8 +1543,16 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await act(() => folders.getByRole("button", { name: "Sent", exact: true }).click());
     await expect.element(page.getByRole("button", { name: /Lunch invitation/ })).toBeVisible();
     await act(() => userEvent.fill(page.getByRole("searchbox", { name: "Search email" }), "receipt"));
+    const searchFailure = page.getByRole("alert");
+    await expect.element(searchFailure).toBeVisible();
+    expect(page.getByRole("button", { name: /Your receipt/ }).query()).toBeNull();
+    await act(() => searchFailure.getByRole("button", { name: "Try again" }).click());
     await expect.element(page.getByRole("button", { name: /Sent receipt/ })).toBeVisible();
     expect(page.getByRole("button", { name: /Lunch invitation/ }).query()).toBeNull();
+    await tap(/Sent receipt/);
+    await expect.element(page.getByText("Your sent message.")).toBeVisible();
+    expect(page.getByRole("button", { name: "Move to Trash" }).query()).toBeNull();
+    await tap("Back to Sent");
     await act(() => folders.getByRole("button", { name: "Drafts 3" }).click());
     await expect.element(page.getByRole("button", { name: /Weekend plan/ })).toBeVisible();
     await act(() => folders.getByRole("button", { name: "Inbox 1" }).click());
@@ -1604,8 +1629,10 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     expect(trashRequests).toBe(0);
     await tap("Move to Trash");
     await expect.element(page.getByText("Moved to Trash.")).toBeVisible();
+    await expect.element(folders.getByRole("button", { name: "Inbox", exact: true })).toBeVisible();
     await tap("Undo");
     await expect.element(page.getByText("Message restored.")).toBeVisible();
+    await expect.element(folders.getByRole("button", { name: "Inbox 1", exact: true })).toBeVisible();
     await tap("New email");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "To", exact: true }), "robin@example.test"));
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Subject", exact: true }), "Hello"));
@@ -1634,6 +1661,8 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     }))).toBeUndefined();
     expect(changed).toEqual([]);
     await tap("Back to calendar");
+    await tap("Load more");
+    await expect.element(page.getByRole("button", { name: /Lab visit/ })).toBeVisible();
     await act(() => page.getByRole("radio", { name: "Month", exact: true }).click());
     await tap("Next month");
     await expect.element(page.getByRole("button", { name: /Dentist/ })).not.toBeInTheDocument();
@@ -1749,7 +1778,8 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
 }, 120_000);
 
 it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
-  const clock = Layer.effectDiscard(TestClock.setTime(new Date(2026, 10, 20, 12).getTime())).pipe(Layer.provideMerge(TestClock.layer()));
+  const daylight = new Date(2026, 10, 20, 12);
+  const clock = Layer.effectDiscard(TestClock.setTime(daylight.getTime())).pipe(Layer.provideMerge(TestClock.layer()));
   const audio = { step: 0, min: 0, max: 15, muted: false };
   let brightness = 20;
   let denyBrightness = false;
@@ -1767,7 +1797,7 @@ it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and s
   }).pipe(Layer.provideMerge(clock)));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   await mount(runtime);
-  const shown = effectiveBrightness(defaults, new Date().getHours());
+  const shown = effectiveBrightness(defaults, daylight.getHours());
   await expect.poll(() => readback.at(-1)).toEqual({ brightness: shown, muted: false, step: 9 });
   await tap("Volume");
   await tap("Mute");

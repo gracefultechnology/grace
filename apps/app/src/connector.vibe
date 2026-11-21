@@ -1,4 +1,4 @@
-// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/email.md, "A scam warning needs current evidence and holds that message's links"
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/email.md, "A scam warning needs current evidence and holds that message's links"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"
 import { Digest } from "effect/crypto"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import type { OtherReport, Provider, SheetReport, Use } from "../gen/app__accounts.effect.vibe"
@@ -535,45 +535,35 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
 
   function mail(account: AccountRef): MailConnection {
     const at = routes[account.provider].mail
-    const asked = effect (path: string, params: Record<string, string>) => try get(`${at}${path}`, { ...params, grantId: try grantOf(account) })
+    const asked = effect (path: string, params: Record<string, string>, grantId?: string) => try get(`${at}${path}`, { ...params, grantId: grantId ?? (try grantOf(account)) })
     const posted = effect (path: string, body: object) => try post(`${at}${path}`, { ...body, grantId: try grantOf(account) })
     const removed = effect (path: string) =>
       HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(`${link.url}${path}`), { grantId: try grantOf(account) })
     const requestOf = (purpose: string) => requestIdOf(`${account.provider}:${account.address}:${purpose}`)
 
-    effect function read(ref: string) {
-      return try fetched(asked("/read", { messageId: ref }), ReadResponse)
+    effect function read(ref: string, grantId?: string) {
+      return try fetched(asked("/read", { messageId: ref }, grantId), ReadResponse)
     }
 
-    function draftPage(grantId: string, pageToken?: string) {
-      return fetched(get(`${at}/inbox-v1/drafts`, pageToken === undefined ? { grantId } : { grantId, pageToken }), DraftList)
-    }
-
-    effect function draftOf(ref: string, grantId: string, pageToken?: string): string!ConnectorFailure {
-      const page = try draftPage(grantId, pageToken)
-      const found = page.drafts.find((d) => d.messageId === ref)
-      if (found !== undefined) return found.draftId
-      if (page.nextPageToken === null) throw new ProviderRefused({ status: 404 })
-      return try draftOf(ref, grantId, page.nextPageToken)
+    function drafts(grantId: string) {
+      const cursors = new Set<string>()
+      return Stream.paginate(undefined, effect (pageToken: string | undefined) => {
+        const page = try fetched(asked("/inbox-v1/drafts", pageToken === undefined ? {} : { pageToken }, grantId), DraftList)
+        if (page.nextPageToken !== null) {
+          if (cursors.has(page.nextPageToken)) throw new ProviderRefused({ status: 502 })
+          cursors.add(page.nextPageToken)
+        }
+        return [page.drafts, Option.fromNullishOr(page.nextPageToken)] as const
+      })
     }
 
     effect function draftCount() {
       const grantId = try grantOf(account)
-      const drafts = new Set<string>()
-      const cursors = new Set<string>()
-      let pageToken: string | undefined
-      while (true) {
-        const page = draftPage(grantId, pageToken) catch effect (e) => match (e) {
-          when ProviderRefused: undefined;
-          default: throw e;
-        }
-        if (page === undefined) return undefined
-        for (const draft of page.drafts) drafts.add(draft.draftId)
-        if (page.nextPageToken === null) return (try grantOf(account)) === grantId ? drafts.size : undefined
-        if (cursors.has(page.nextPageToken)) return undefined
-        pageToken = page.nextPageToken
-        cursors.add(pageToken)
+      const ids = Stream.runFold(drafts(grantId), () => new Set<string>(), (seen, d) => seen.add(d.draftId)) catch effect (e) => match (e) {
+        when ProviderRefused: undefined;
+        default: throw e;
       }
+      return ids !== undefined && (try grantOf(account)) === grantId ? ids.size : undefined
     }
 
     effect function contacts(query: string) {
@@ -641,9 +631,13 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       },
       draftCount,
       draft: effect (ref, version) => {
-        const draftId = try draftOf(ref, try grantOf(account))
-        const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId, content: "1" }), DraftRead)
-        const opened = d.attachmentCount === 0 ? undefined : try read(messageId)
+        const grantId = try grantOf(account)
+        const found = try Stream.runHead(Stream.filter(drafts(grantId), (d) => d.messageId === ref))
+        if (Option.isNone(found)) throw new ProviderRefused({ status: 404 })
+        const { draftId } = found.value
+        const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId, content: "1" }, grantId), DraftRead)
+        const opened = d.attachmentCount === 0 ? undefined : try read(messageId, grantId)
+        if ((try grantOf(account)) !== grantId) throw new ProviderRefused({ status: 409 })
         const files = opened === undefined ? [] : manifest(account, messageId, opened.message, opened.attachments)
         const content = { to: d.to.join(", "), cc: [...d.cc], bcc: [...d.bcc], subject: d.subject, body: d.bodyText }
         const verified = id === draftId && messageId === ref && d.plainText && !d.threaded && files !== undefined && files.length === d.attachmentCount
