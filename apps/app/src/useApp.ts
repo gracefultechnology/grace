@@ -10,6 +10,7 @@ import { useMachine as useCalendarMachine } from "../gen/app__calendarView.react
 import type { Event as MailEvent } from "../gen/app__email.effect.vibe";
 import type { SavedFile } from "../gen/app__files.effect.vibe";
 import { Library } from "./files.vibe";
+import { GuidedRecovery } from "./guidedRecovery.vibe";
 
 import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
 import type { Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
@@ -88,15 +89,21 @@ export function useWorkspace() {
   const { state: workspace, can, send } = useWorkspaceMachine(runtime);
   const offer = (event: Event) => can(event, "Person") ? () => void send(event, "Person") : undefined;
   const current = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get()));
+  const interact = async (event: Event, by: WorkspaceActor = "Person") => {
+    if (event.type === "openGrace") await runtime.runPromise(Effect.flatMap(Effect.service(GuidedRecovery), (r) => r.beforeOpen()));
+    const result = await send(event, by);
+    if (event.type === "abandonTask") await runtime.runPromise(Effect.flatMap(Effect.service(GuidedRecovery), (r) => r.keepProgress()));
+    return result;
+  };
   const help = async (need: Help) => {
     for (const event of [{ type: "openGrace" }, compact] as const)
-      if (enabled(current(), event, "Person")) await send(event, "Person");
+      if (enabled(current(), event, "Person")) await interact(event);
     await runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.help(need)));
   };
   return {
     workspace,
     can: (event: Event) => can(event, "Person"),
-    send: (event: Event, by: WorkspaceActor = "Person") => send(event, by),
+    send: interact,
     guide: <Target extends string>(idOf: (target: string) => Target | undefined) =>
       guideOn(workspace, idOf, workspace && offer({ type: "interact", input: { tag: "DismissGuidance", revision: workspace.assistant.guidance.revision } })),
     askGrace: (need: Help) => can({ type: "openGrace" }, "Person") || can(compact, "Person") || can(hostTurn, "Host") ? () => void help(need) : undefined,

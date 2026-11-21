@@ -1,7 +1,7 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
-import { Effect, Latch, Layer, ManagedRuntime, Schema } from "effect";
+import { Effect, Latch, Layer, ManagedRuntime, Option, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
@@ -2693,6 +2693,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const firstOwner = { id: "managed-plan-owner", email: "managed-a@grace.test" };
   const secondOwner = { id: "managed-plan-owner-b", email: "managed-b@grace.test" };
   let person = firstOwner;
+  let organization = "a";
   let browserCookieOwner: typeof firstOwner | undefined;
   let ownerProbes = 0;
   let sessionGeneration = 1;
@@ -2728,7 +2729,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
         if (!signedIn) return respond({}, 401);
         if (browserCookieOwner) ownerProbes++;
         const current = browserCookieOwner ?? person;
-        const owner = (current.id === firstOwner.id ? "a" : "b").repeat(64);
+        const owner = (current.id === firstOwner.id ? organization : "b").repeat(64);
         const result = { accountId: current.id, owner, session: owner.slice(0, 62) + sessionGeneration.toString(16).padStart(2, "0") };
         const wait = nextScope;
         nextScope = undefined;
@@ -2784,9 +2785,15 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     }
     return { result: { accepted: true } };
   });
-  const runtime = ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret }));
-  const host = document.body.appendChild(document.createElement("div"));
-  const root = createRoot(host);
+  const startRuntime = () => ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret }));
+  let runtime = startRuntime();
+  let view = tabletView(runtime);
+  const restart = async () => {
+    await view.dispose();
+    runtime = startRuntime();
+    view = tabletView(runtime);
+    await view.render();
+  };
   const button = (name: string | RegExp) => page.getByRole("button", { name, exact: true });
   const { routeTo, tap } = routedControls(native);
   const send = async (message: string) => {
@@ -2806,7 +2813,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const receipts = () => runtime.runPromise(Effect.flatMap(Workspaces, (desk) => Effect.map(desk.get(), (w) => w.plan.receipts.map(({ evidence }) => evidence))));
 
   try {
-    await act(() => Promise.resolve(root.render(<App runtime={runtime} />)));
+    await view.render();
     await tap(button(/^Email/));
     await tap(button(/Main St Clinic/));
     await routeTo(page.getByText(/appointment with Dr\. Patel/));
@@ -2841,6 +2848,35 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Check email"));
     const mailReceipt = "Open message: " + selected.subject;
     await expect.poll(receipts).toEqual([mailReceipt]);
+
+    organization = "c";
+    await act(async () => { document.dispatchEvent(new Event("visibilitychange")); });
+    await expect.poll(receipts).toEqual([]);
+    expect(page.getByRole("region", { name: "Task plan" }).query()).toBeNull();
+    organization = "a";
+    person = secondOwner;
+    await restart();
+    await refresh();
+    await tap(button("Ask Grace"));
+    expect(await receipts()).toEqual([]);
+    expect(page.getByRole("region", { name: "Task plan" }).query()).toBeNull();
+    expect(button("Resume Grace").query()).toBeNull();
+    expect(await check()).toBe(false);
+
+    person = firstOwner;
+    await restart();
+    await refresh();
+    await tap(button("Ask Grace"));
+    const recoveredPlan = page.getByRole("region", { name: "Task plan" });
+    await routeTo(recoveredPlan.getByText("Paused", { exact: true }));
+    expect(await receipts()).toEqual([mailReceipt]);
+    expect(await check()).toBe(false);
+    await tap(button(/^Email/));
+    await tap(button(/Riverview Clinic/));
+    await routeTo(page.getByText("Riverview Clinic message body"));
+    await tap(button("Resume Grace"));
+    expect(await check()).toBe(false);
+    expect(await receipts()).toEqual([mailReceipt]);
 
     connected = false;
     await refresh();
@@ -2956,14 +2992,13 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Check page"));
     await expect.poll(receipts).toEqual(["Open page: " + browserUrl]);
   } finally {
-    await act(() => Promise.resolve(root.unmount()));
-    await runtime.dispose();
+    await view.dispose();
     provider.mockRestore();
     localStorage.clear();
   }
 });
 
-it('Save a separately approved email appointment in the reviewed plan (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
+it.each(["acknowledged", "lost"] as const)('Save a separately approved email appointment in the reviewed plan with its response %s (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (responseState) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const gmail = "owner@grace.test";
@@ -3005,7 +3040,23 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
   const native = fakePlugin(() => ({ documentId: "example-main", frameScope: "main", result: {
     snapshotId: "example-snapshot", url: "https://example.org/", complete: true, readyState: "complete", blockers: [], elements: [],
   } }));
-  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  const request = window.fetch.bind(window);
+  let creates = 0;
+  const provider = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+    const address = new URL(input instanceof Request ? input.url : input, window.location.href);
+    const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+    const creating = address.origin === new URL(cloud).origin && address.pathname.endsWith("/events") && method === "POST";
+    if (creating) creates++;
+    const response = await request(input, init);
+    if (creating && response.ok && responseState === "lost") throw new TypeError("Calendar response lost");
+    return response;
+  });
+  let view = await cloudReadPlan(native, cloud, secret);
+  const { routeTo, tap } = view;
+  const restart = async () => {
+    await view.dispose();
+    view = await cloudReadPlan(native, cloud, secret);
+  };
   const button = (name: string | RegExp) => page.getByRole("button", { name });
   const say = async (text: string) => {
     const field = page.getByRole("textbox", { name: "Message to Grace" });
@@ -3046,6 +3097,16 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
     await routeTo(plan.getByText(/^Ask me to prepare the appointment/));
     const previous = await calendars();
     expect(previous.map(({ address }) => address)).toEqual([gmail, other]);
+    await restart();
+    await tap(button("Ask Grace"));
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    await tap(button("Home"));
+    await tap(button(/^Email/));
+    await tap(button(/Riverview Eye Clinic/));
+    await routeTo(page.getByText(selectedBody, { exact: true }));
+    await tap(button("Resume Grace"));
+    await tap(button("Check original email"));
+    await routeTo(plan.getByText(/^Ask me to prepare the appointment/));
     await say(prepare);
     const yes = button(approve);
     await routeTo(yes);
@@ -3055,17 +3116,46 @@ it('Save a separately approved email appointment in the reviewed plan (spec/app/
     await expect.poll(calendars, { timeout: 10000 }).toEqual(previous.map((box) => box.address === gmail
       ? { ...box, calendar: [...box.calendar, { title, startAt: when.toISOString(), location: place }] }
       : box));
-    await tap(button("Home"));
-    await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true }));
+    expect(creates).toBe(1);
+    const savedAttempt = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({
+      value: Schema.fromJsonString(Schema.Struct({ checkpoint: Schema.Struct({
+        save: Schema.Struct({ tag: Schema.Literal("GuidedSaveReconcile"), occurrence: Schema.String }),
+      }) })),
+    })));
+    await expect.poll(() => Object.keys(localStorage).filter((key) => key.startsWith("grace/guided-task-")).some((key) => {
+      const record = savedAttempt(localStorage.getItem(key));
+      return Option.isSome(record) && Boolean(record.value.value.checkpoint.save.occurrence) === (responseState === "acknowledged");
+    })).toBe(true);
+    await restart();
+    await tap(button("Ask Grace"));
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    if (responseState === "lost") {
+      await routeTo(plan.getByText(/^The save was interrupted/));
+      expect(button("Resume Grace").query()).toBeNull();
+      expect(button("Check saved appointment").query()).toBeNull();
+      await tap(button("Open Calendar"));
+      await routeTo(page.getByText(title, { exact: true }).first());
+      expect(receipt.query()).toBeNull();
+      await tap(button("End this task"));
+      await restart();
+      await tap(button("Ask Grace"));
+      expect(plan.query()).toBeNull();
+      expect(creates).toBe(1);
+      return;
+    }
+    await tap(button("Open Calendar"));
+    await tap(page.getByText(title, { exact: true }).first());
     await tap(button("Resume Grace"));
     await tap(button("Check saved appointment"));
     await routeTo(plan.getByText("Planned checks complete", { exact: true }));
     await routeTo(receipt);
+    expect((await calendars()).flatMap((box) => box.calendar).filter((entry) => entry.title === title)).toHaveLength(1);
     await tap(button("Expand"));
     await routeTo(plan.getByText("Open page: https://example.org/", { exact: true }));
     await routeTo(plan.getByText(`Open message: ${subject}`, { exact: true }));
   } finally {
-    await dispose();
+    await view.dispose();
+    provider.mockRestore();
     localStorage.clear();
   }
 });

@@ -1,0 +1,329 @@
+// spec/app/workspace.md, "An authenticated restart restores the reviewed plan paused at its next outcome"
+import { Machine as Setup } from "../gen/app__setup.effect.vibe"
+import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
+import {
+  Machine as Workspaces, guidedCheckpoint, guidedDetails, parseEvent, privateSurfaceActive,
+  validGuidedCheckpoint, type GuidedCheckpoint, type GuidedStep, type Workspace
+} from "../gen/app__workspace.effect.vibe"
+import type { GuidedRecordName, GuidedTaskRecords } from "./preferencesPlugin.ts"
+import { accountPlugin } from "./accountPlugin.ts"
+import { browserSessionScope } from "./graceAccount.vibe"
+import { guidedAuthority, guidedOwner } from "./managedReads.vibe"
+import { withhold } from "./private.ts"
+import { webView } from "./surfacePlugin.ts"
+
+const Scope = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
+const NativeStatus = Schema.Union([Schema.Struct({ kind: Schema.Literal("signedIn"), voiceDisclosureScope: Scope }),
+  Schema.Struct({ kind: Schema.Literal("signedOut") })])
+const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const RecordValue = Schema.Struct({ revision: Revision, value: Schema.optional(Schema.NullOr(Schema.String)) })
+schema Written { revision: Revision }
+const Envelope = Schema.fromJsonString(Schema.Struct({ version: Schema.Literal(1), scope: Scope, checkpoint: Schema.Unknown }))
+const needsMailOrCalendar = (steps: readonly GuidedStep[]) => steps.some((step) => {
+  const { surface } = guidedDetails(step)
+  return surface === "Email" || surface === "Calendar"
+})
+
+function safeCheckpoint(checkpoint: GuidedCheckpoint) {
+  if (!Number.isSafeInteger(checkpoint.workVersion + 2) || !validGuidedCheckpoint(checkpoint)) return false
+  const { request, receipts, correction } = checkpoint
+  const publicText = (text: string) => text.length <= 32768 && withhold({ text, passwords: [] }) === text
+  if (!publicText(request.goal) || !request.steps.every((step) => publicText(guidedDetails(step).subject)) ||
+      !receipts.every((receipt) => publicText(receipt.evidence))) return false
+  if (correction.tag === "NoGuidedCheckpointCorrection") return true
+  if (!publicText(correction.label) || !URL.canParse(correction.url)) return false
+  const address = new URL(correction.url)
+  return address.protocol === "https:" && !address.username && !address.password && !address.search && !address.hash
+}
+
+const webKey = (name: GuidedRecordName) => "grace/" + name
+const nameFor = (scope: string): GuidedRecordName => `guided-task-${scope}`
+const webRecords: GuidedTaskRecords = {
+  read: async ({ name }) => {
+    const value = webView.window.localStorage.getItem(webKey(name))
+    return value === null ? { revision: 0 } : JSON.parse(value)
+  },
+  write: async ({ name, revision, value }) => {
+    const write = async () => {
+      const key = webKey(name)
+      const stored = webView.window.localStorage.getItem(key)
+      const prior = stored === null ? 0 : Schema.decodeUnknownSync(RecordValue)(JSON.parse(stored)).revision
+      if (prior !== revision) throw new Error("The guided task changed")
+      webView.window.localStorage.setItem(key, JSON.stringify({ revision: revision + 1, value }))
+      return { revision: revision + 1 }
+    }
+    const locks = webView.window.navigator.locks
+    if (locks === undefined) throw new Error("Browser checkpoint locking is unavailable")
+    return locks.request(webKey(name), write)
+  },
+}
+
+type ScopeSet = { device?: string; connected?: string; localCalendar?: string; session?: string }
+type BoundTask = { task: string; scope: string; revision: number; saved: string | null }
+export service GuidedRecovery {
+  canAccess(state: Workspace): boolean!!
+  begin(revision: number): boolean!!
+  flushSave(task: string, version: number): boolean!!
+  keepProgress(): void!!
+  beforeOpen(): void!!
+}
+
+export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefined) => Layer.effect(GuidedRecovery, effect {
+  const workspace = try Workspaces
+  const setup = try Setup
+  const accounts = try Accounts
+  const writer = try Semaphore.make(1)
+  const backend = native ? port : port ?? webRecords
+  let binding: BoundTask | undefined
+  let latest: ScopeSet | undefined
+  let hosted: { accountId: string; owner: string; session: string } | undefined
+  const checked = new Set<string>()
+
+  effect function digest(value: string) {
+    const bytes = try tryPromise(() => webView.window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))
+    return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")
+  }
+
+  effect function actualScopes(fresh: boolean) {
+    const state = try setup.get()
+    const account = state.graceAccount
+    const owners = guidedAuthority(state, webView.window.location.hash)
+    let identity: string | undefined
+    let session: string | undefined
+    if (native) {
+      const bridge = accountPlugin
+      if (!bridge || (account.tag !== "GraceDeviceSignedIn" && account.tag !== "GraceDeviceSignedOut")) return undefined
+      const raw = try timeout(tryPromise(() => bridge.status()), "2 seconds")
+      const status = try Schema.decodeUnknownEffect(NativeStatus)(raw)
+      if (status.kind === "signedIn" && account.tag === "GraceDeviceSignedIn") identity = "native/" + status.voiceDisclosureScope
+      else if (status.kind === "signedOut" && account.tag === "GraceDeviceSignedOut") identity = "local/native"
+      else return undefined
+    } else if (account.tag === "GraceSignedIn") {
+      const scope = fresh || hosted?.accountId !== account.accountId ? try browserSessionScope() : hosted
+      if (scope === undefined || scope.accountId !== account.accountId) return undefined
+      hosted = scope
+      identity = "web/" + scope.owner
+      session = scope.session
+    } else {
+      hosted = undefined
+      if (account.tag === "GraceSignedOut") {
+        if (fresh && (try browserSessionScope()) !== undefined) return undefined
+        identity = "local/web"
+      } else if (account.tag !== "AccountUnavailable") return undefined
+    }
+
+    const localSources = (try accounts.get()).accounts.filter((source) =>
+      source.id !== 0 && (source.use.mail || source.use.calendar) && source.address.trim() !== ""
+    ).map((source) => JSON.stringify([source.id, source.provider, source.address.trim().toLowerCase()])).sort()
+    const local = (owners.connected === "tablet" && localSources.length > 0) ? localSources : undefined
+    const connected = owners.connected === undefined ? undefined : owners.connected === "tablet" ? local : owners.connected
+    if (identity === undefined && (local === undefined || owners.connected !== "tablet")) return undefined
+    const device = identity === undefined ? undefined : try digest(JSON.stringify([identity, "browser"]))
+    const source = connected === undefined ? undefined : try digest(JSON.stringify([identity ?? "local/web", connected]))
+    const localCalendar = identity !== undefined && owners.connected === "tablet" && local === undefined
+      ? try digest(JSON.stringify([identity, "tablet-calendar"])) : undefined
+    const current = try setup.get()
+    if (JSON.stringify([current.graceAccount, current.googleLink]) !== JSON.stringify([account, state.googleLink])) return undefined
+    return { device, connected: source, localCalendar, session }
+  }
+
+  function scopeFor(scopes: ScopeSet | undefined, steps: readonly GuidedStep[]) {
+    if (!needsMailOrCalendar(steps)) return scopes?.device
+    return scopes?.connected ?? (steps.every((step) => step.tag !== "ReadMail" && step.tag !== "SaveMailAppointment") ? scopes?.localCalendar : undefined)
+  }
+
+  effect function owns(owner: string, steps: readonly GuidedStep[]) {
+    return owner !== "" && owner === guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), steps)
+  }
+
+  effect function read(scope: string) {
+    if (!backend) return { revision: 0 }
+    return try Schema.decodeUnknownEffect(RecordValue)(try timeout(tryPromise(() => backend.read({ name: nameFor(scope) })), "2 seconds"))
+  }
+
+  effect function save(current: BoundTask, checkpoint: GuidedCheckpoint | null): boolean!! {
+    if (!backend || current.revision < 0 || !Number.isSafeInteger(current.revision + 1)) return false
+    const value = checkpoint === null ? "" : JSON.stringify({ version: 1, scope: current.scope, checkpoint })
+    if (value === (current.saved ?? "")) return true
+    const revision = current.revision
+    const receipt = effect {
+      const raw = try timeout(tryPromise(() => backend.write({ name: nameFor(current.scope), revision, value })), "4 seconds")
+      return try Schema.decodeUnknownEffect(Written)(raw)
+    } catch () => undefined
+    if (receipt?.revision !== revision + 1) {
+      const observed = read(current.scope) catch () => undefined
+      if (observed === undefined || observed.revision !== revision + 1 || observed.value !== value) return false
+    }
+    current.revision = revision + 1
+    current.saved = value
+    return true
+  }
+
+  effect function checkpointOf(scope: string, value: string | null | undefined) {
+    if (!value) return undefined
+    const envelope = Schema.decodeUnknownEffect(Envelope)(value) catch () => undefined
+    if (envelope?.scope !== scope) return undefined
+    const event = parseEvent({ type: "restoreGuided", recovery: { owner: "", checkpoint: envelope.checkpoint } })
+    if (event?.type !== "restoreGuided" || !safeCheckpoint(event.recovery.checkpoint)) return undefined
+    return event.recovery.checkpoint
+  }
+
+  effect function restore(scope: string, scopes: ScopeSet) {
+    if (checked.has(scope) || !backend) return
+    const saved = read(scope) catch () => undefined
+    if (saved === undefined) return
+    const value = saved.value ?? ""
+    const checkpoint = try checkpointOf(scope, value)
+    if (checkpoint === undefined) { checked.add(scope); return }
+    const request = checkpoint.request
+    if (scopeFor(scopes, request.steps) !== scope || !(try owns(request.owner, request.steps))) return
+    const currentScopes = actualScopes(true) catch () => undefined
+    if (currentScopes === undefined || scopeFor(currentScopes, request.steps) !== scope ||
+        (scopes.session !== undefined && currentScopes.session !== scopes.session)) return
+    const state = try workspace.get()
+    if (state.assistant.taskId !== "" || privateSurfaceActive(state) || !(try owns(request.owner, request.steps))) return
+    const sent = workspace.send({ type: "restoreGuided", recovery: { owner: request.owner, checkpoint } }, "Store") catch () => undefined
+    if (sent !== undefined) {
+      checked.add(scope)
+      binding = { task: request.task, scope, revision: saved.revision, saved: value }
+    }
+  }
+
+  effect function syncTask(fresh = false) {
+    const needsFresh = fresh && (native || binding !== undefined || (try setup.get()).graceAccount.tag === "GraceSignedIn")
+    const scopes = actualScopes(needsFresh) catch () => undefined
+    const state = try workspace.get()
+    if (scopes === undefined) return
+    const before = latest
+    latest = scopes
+    const current = binding
+    if (current !== undefined) {
+      const { assistant, plan } = state
+      const sameTask = current.task === assistant.taskId && plan.steps.length > 0
+      const stillOwns = sameTask && scopeFor(scopes, plan.steps) === current.scope && (try owns(plan.owner, plan.steps))
+      if (stillOwns) {
+        const checkpoint = guidedCheckpoint(state)
+        if (safeCheckpoint(checkpoint)) try save(current, checkpoint)
+        else try save(current, null)
+        return
+      }
+      if (sameTask && (plan.owner === "tablet" || scopeFor(scopes, plan.steps) !== undefined && (try owns(plan.owner, plan.steps)))) {
+        const dropped = workspace.send({ type: "discardGuidedRecovery", fence: { task: current.task, version: assistant.workVersion } }, "Host") catch () => undefined
+        if (dropped === undefined) return
+      } else if (sameTask) return
+      else if ([scopes.device, scopes.connected, scopes.localCalendar].includes(current.scope)) try save(current, null)
+      binding = undefined
+      if (sameTask) checked.delete(current.scope)
+      return
+    }
+    if (state.plan.steps.length > 0 && state.assistant.taskId !== "") {
+      const scope = scopeFor(scopes, state.plan.steps)
+      if (scope === undefined || scopeFor(before, state.plan.steps) !== scope ||
+          !(try owns(state.plan.owner, state.plan.steps))) return
+      const saved = read(scope) catch () => undefined
+      const after = try workspace.get()
+      if (after.assistant.taskId !== state.assistant.taskId || after.plan.owner !== state.plan.owner ||
+          !(try owns(after.plan.owner, after.plan.steps))) return
+      const existing = try checkpointOf(scope, saved?.value)
+      if (existing !== undefined && existing.request.task !== after.assistant.taskId) return
+      checked.add(scope)
+      const held = { task: after.assistant.taskId, scope, revision: saved?.revision ?? -1, saved: saved?.value ?? null }
+      binding = held
+      const checkpoint = guidedCheckpoint(after)
+      if (safeCheckpoint(checkpoint)) try save(held, checkpoint)
+      return
+    }
+    if (state.assistant.taskId !== "" || state.assistant.presentation !== "Closed" ||
+        state.device.readiness !== "Ready" || privateSurfaceActive(state)) return
+    if (scopes.device !== undefined) try restore(scopes.device, scopes)
+    const connected = scopes.connected ?? scopes.localCalendar
+    if (binding === undefined && connected !== undefined) try restore(connected, scopes)
+  }
+
+  const nativeAccount = native && accountPlugin !== undefined ? accountPlugin : undefined
+  const sessions = nativeAccount === undefined
+    ? Stream.fromEventListener(webView.document, "visibilitychange")
+    : Stream.callback<void>((queue) => acquireRelease(
+        promise(() => nativeAccount.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })),
+        (handle) => promise(() => handle.remove())
+      ))
+  const taskChanges = Stream.changes(Stream.map(workspace.changes, (state) => JSON.stringify([
+    state.device.readiness, state.assistant.activity, state.assistant.presentation,
+    privateSurfaceActive(state), guidedCheckpoint(state)
+  ])))
+  const changes = Stream.mergeAll([
+    Stream.as(taskChanges, false), Stream.as(setup.changes, true),
+    Stream.as(accounts.changes, false), Stream.as(sessions, true)
+  ], { concurrency: "unbounded" })
+  try fork.scoped Stream.runForEach(changes, (fresh) => writer.withPermit(syncTask(fresh)))
+
+  return {
+    canAccess: effect (state) => {
+      const { plan, assistant } = state
+      if (privateSurfaceActive(state) || !(try owns(plan.owner, plan.steps))) return false
+      const account = (try setup.get()).graceAccount.tag
+      const held = binding
+      if (held === undefined && account !== "GraceSignedIn") return !native || accountPlugin === undefined || account === "GraceDeviceSignedOut"
+      if (held !== undefined && held.task !== assistant.taskId) return false
+      const scopes = actualScopes(true) catch () => undefined
+      const scope = scopeFor(scopes, plan.steps)
+      if (scope !== undefined && held !== undefined && scope !== held.scope) try writer.withPermit(syncTask())
+      const now = try workspace.get()
+      return scope !== undefined && (held === undefined || binding === held && scope === held.scope) &&
+        now.assistant.taskId === assistant.taskId && now.assistant.workVersion === assistant.workVersion &&
+        !privateSurfaceActive(now) && (try owns(plan.owner, plan.steps))
+    },
+    keepProgress: () => writer.withPermit(syncTask()),
+    beforeOpen: () => writer.withPermit(syncTask(true)),
+    flushSave: (task, version) => writer.withPermit(effect {
+      const current = binding
+      if (!backend || current === undefined || current.task !== task) return false
+      const scopes = actualScopes(true) catch () => undefined
+      const state = try workspace.get()
+      const { assistant, plan } = state
+      if (scopeFor(scopes, plan.steps) !== current.scope || assistant.taskId !== task ||
+          assistant.workVersion !== version || !(try owns(plan.owner, plan.steps))) return false
+      const checkpoint = guidedCheckpoint(state)
+      if (checkpoint.save.tag !== "GuidedSaveReconcile" || !safeCheckpoint(checkpoint) ||
+          !(try save(current, checkpoint))) return false
+      const stored = read(current.scope) catch () => undefined
+      if (stored === undefined || stored.revision !== current.revision || stored.value !== current.saved) return false
+      const afterScopes = actualScopes(true) catch () => undefined
+      const after = try workspace.get()
+      return after.assistant.taskId === task && after.assistant.workVersion === version &&
+        scopeFor(afterScopes, after.plan.steps) === current.scope && afterScopes?.session === scopes?.session &&
+        (try owns(after.plan.owner, after.plan.steps)) &&
+        JSON.stringify(guidedCheckpoint(after)) === JSON.stringify(checkpoint)
+    }),
+    begin: effect (reviewRevision) => {
+      const state = try workspace.get()
+      const request = state.review.request
+      if (state.review.revision !== reviewRevision || privateSurfaceActive(state) || !(try owns(request.owner, request.steps))) return false
+      const scopes = actualScopes(true) catch () => undefined
+      const scope = scopeFor(scopes, request.steps)
+      const account = (try setup.get()).graceAccount.tag
+      if (scope === undefined && (account === "GraceDeviceSignedIn" || account === "GraceSignedIn")) return false
+      return try writer.withPermit(effect {
+        const saved = scope === undefined ? undefined : (read(scope) catch () => undefined)
+        const after = try workspace.get()
+        if (after.review.revision !== reviewRevision || privateSurfaceActive(after) || !(try owns(request.owner, request.steps))) return false
+        if (scope !== undefined) {
+          const check = actualScopes(true) catch () => undefined
+          if (scopeFor(check, request.steps) !== scope || check?.session !== scopes?.session) return false
+        }
+        const existing = scope === undefined ? undefined : try checkpointOf(scope, saved?.value)
+        if (existing !== undefined && (binding === undefined || binding.task !== existing.request.task || binding.revision !== saved?.revision)) return false
+        const sent = workspace.send({ type: "startReadReview", reviewRevision }, "Person") catch () => undefined
+        if (sent === undefined) return false
+        if (scope !== undefined) {
+          checked.add(scope)
+          const held = { task: request.task, scope, revision: saved?.revision ?? -1, saved: saved?.value ?? null }
+          binding = held
+          const checkpoint = guidedCheckpoint(sent.state)
+          if (safeCheckpoint(checkpoint)) try save(held, checkpoint)
+        }
+        return true
+      })
+    }
+  }
+})

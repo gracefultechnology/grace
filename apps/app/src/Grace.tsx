@@ -5,7 +5,7 @@ import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceH
 import { Effect, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
-import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, nextOutcome, type GuidedStep } from "../gen/app__workspace.ts";
+import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, nextOutcome, priorGuidedMail, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import { OverPage } from "./PageLayer.tsx";
@@ -110,9 +110,17 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const pausable = hasPlan && ownsPlan && assistant.activity !== "Paused" && can(stop);
   const stepKind = currentStep?.tag ?? "SurfaceOutcome";
   const details = currentStep && guidedDetails(currentStep);
-  const label = stepKind === "SaveMailAppointment" && !plan.savedOccurrence ? "" : checkLabels[stepKind];
-  const canCheck = ownsPlan && label && (details?.surface !== "Browser" || workspace?.device.observationAllowed) &&
-    details?.surface === workspace?.device.surface &&
+  const recoveredSave = stepKind === "SaveMailAppointment" && plan.saveRecovery.tag === "GuidedSaveReconcile" ? plan.saveRecovery : undefined;
+  const reopenMail = stepKind === "SaveMailAppointment" && !recoveredSave && !plan.mail.ref && priorGuidedMail(plan).digest !== "";
+  const checkSurface = reopenMail ? "Email" : details?.surface;
+  const label = reopenMail ? "Check original email" : stepKind === "SaveMailAppointment" && !plan.savedOccurrence && !recoveredSave?.occurrence ? "" : checkLabels[stepKind];
+  const calendar = { type: "visit", destination: "Calendar" } as const;
+  const recoveryInstruction = recoveredSave ? recoveredSave.occurrence
+    ? "Open the saved appointment in Calendar to check it."
+    : "The save was interrupted. Check your calendar before asking to save this appointment again."
+    : reopenMail ? "Reopen the original email and check it before reviewing the appointment." : undefined;
+  const canCheck = ownsPlan && label && (checkSurface !== "Browser" || workspace?.device.observationAllowed) &&
+    checkSurface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
     conversation.turn === "Ready" && !conversation.question;
   const observation = workspace && {
@@ -131,7 +139,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
       current === attempt ? (accepted === true ? undefined : { key: scopeKey, phase: accepted === "PrivateForm" ? "privateForm" : "retry" }) : current);
     void checkGuidedRead().then(report, () => report(false));
   };
-  const checkRecovery = checking?.phase === "privateForm" ? privateFormRecovery : stepKind === "ReachNamedPage"
+  const checkRecovery = checking?.phase === "privateForm" ? privateFormRecovery : reopenMail ? "Open the same email you checked for this task and try again." : stepKind === "ReachNamedPage"
     ? `I couldn’t verify “${details?.subject}” on this page. Check the page again or try another link.`
     : checkRetries[stepKind] ?? pageRetry;
   const feedback = guideKey && linkFeedback?.key === guideKey ? linkFeedback : undefined;
@@ -223,12 +231,16 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                     {keyedSteps(plan.steps).map(({ step, key }, index) => {
                       const displayed = index === next && currentStep ? currentStep : step;
                       return <li key={key} aria-current={index === next ? "step" : undefined}>
-                        {index < next ? plan.receipts[index]?.evidence : displayed.tag === "ReachNamedPage" ? `Find and check “${displayed.subject}”.` : guidedDetails(displayed).outcome}
+                        {index < next ? plan.receipts[index]?.evidence : index === next && recoveryInstruction ? recoveryInstruction : displayed.tag === "ReachNamedPage" ? `Find and check “${displayed.subject}”.` : guidedDetails(displayed).outcome}
                       </li>;
                     })}
                   </ol>
                 </>
-              ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
+              ) : <p aria-current={currentStep ? "step" : undefined}>{recoveryInstruction ?? (stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence)}</p>}
+              {recoveredSave && <AnswerChips>
+                {device.surface !== "Calendar" && can(calendar) && <AnswerChip onClick={() => void send(calendar)}>Open Calendar</AnswerChip>}
+                {can(abandon) && <AnswerChip onClick={() => void send(abandon)}>End this task</AnswerChip>}
+              </AnswerChips>}
             </section>
           )}
           {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
