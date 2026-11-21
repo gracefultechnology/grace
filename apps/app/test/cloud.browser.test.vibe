@@ -1,14 +1,15 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"
 import { assert, it } from "@effect/vitest"
 import { inject } from "vitest"
+import { webView } from "../src/surfacePlugin.ts"
 import { approveSave, beginEdit, create, edit, initial as noEntry } from "../gen/app__calendar.effect.vibe"
 import { initial as noView } from "../gen/app__calendarView.effect.vibe"
-import { Connector, connector, SignInPage } from "../src/connector.vibe"
+import { Connector, browserCalendarLocks, connector, SignInPage } from "../src/connector.vibe"
 import { client, parts, reply, signIn, turns, type Visit, visiting } from "./cloud.vibe"
 
 const cloud = inject("cloud")
 const site = inject("site")
-const connectorAt = (key: string, visits: readonly Visit[] = []) => Layer.provide(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits)))
+const connectorAt = (key: string, visits: readonly Visit[] = []) => Layer.provide(connector({ url: cloud, key }, browserCalendarLocks(webView.window.navigator)), Layer.effect(SignInPage, visiting(visits)))
 
 it.live("Talk or type without losing the conversation, from the app's own page: the fake and the site answer across origins", () => effect {
   provide client {

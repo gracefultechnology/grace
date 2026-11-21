@@ -154,6 +154,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
       startAt, endAt: startAt + hour, timezone: gmailView.timezone, allDay: false, seriesId: "", recurrence: "Once" as const, reminderEnabled: true, leadTime: day, important: false,
     },
   };
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "createResponse"), client));
   await agree({ tag: "AddAsk", target: 1, review: { entry, calendarGeneration: gmailView.generation, displayTimezone: gmailView.timezone } },
     async () => {
       await expect.element(row("Doctor’s appointment", "Not added yet · Grace is asking you")).toBeVisible();
@@ -165,6 +166,8 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
       await click("Next week");
       await act(() => userEvent.click(page.getByRole("button", { name: tile(eyeDay) })));
     });
+  await expect.element(page.getByText("This wasn’t saved. Press Save to try again.")).toBeVisible();
+  await click("Save");
   await expect.poll(async () => (await company(secret)).map((e) => e.title), atCloud).toEqual(["Eye check with Dr. Patel", "Joan’s birthday", "Doctor’s appointment"]);
   await expect.element(page.getByText("From the clinic’s email · Visit form attached")).toBeVisible();
   await click("Back to Calendar");
