@@ -193,15 +193,18 @@ jobs:
               ($out.menuRetries // []) as $retries |
               ($out.hops // []) as $hops |
               ($out.nameCorrection // null) as $approval |
+              ([$out.start] + $hops) as $documents |
               (($menus | length) + ($retries | length) + ($hops | length) + (if $approval then 1 else 0 end)) == 8 and
               ($menus | length) == ($menus | unique_by([.documentId, .snapshotId]) | length) and
               all($menus[]; (.documentId | type == "string" and length > 0) and
-                (.snapshotId | type == "string" and length > 0) and .disclosed == true and .after > .before) and
+                (.snapshotId | type == "string" and length > 0) and .disclosed == true and .before == 0 and
+                (.after | type == "number" and . > 0 and . == floor) and
+                (. as $menu | any($documents[]; .documentId == $menu.documentId and .url == $menu.url))) and
               ($retries | length) == ($retries | unique_by([.documentId, .instruction]) | length) and
               all($retries[]; (.instruction | type == "string" and length > 0) and
                 (.documentId as $doc | any($menus[]; .documentId == $doc))) and
               ($hops | length) == ($hops | unique_by(.documentId) | length) and
-              all($hops[]; (.documentId | type == "string" and length > 0) and .documentId != $out.start.documentId and
+              all($hops[]; .checked == false and (.documentId | type == "string" and length > 0) and .documentId != $out.start.documentId and
                 (.url | type == "string" and length > 0)) and
               ($approval == null or (($approval.leaf | type == "string" and length > 0) and
                 ($approval.instruction | type == "string" and length > 0) and
@@ -237,7 +240,7 @@ jobs:
             (.[] | "| \(.taskId) | \(.cohort) | \(.officialScore) | \(.noActionScore) | \(.hostedGuidance) | \(.checkedPlan) |")
           ' "$WEBARENA_RESULTS/scorecard.json" >> "$GITHUB_STEP_SUMMARY"
           jq -e '
-            all(.[]; (.failed | not) and (.completed or (.cohort == "exploratory" and
+            all(.[]; (.failed | not) and (.completed == (.miss == null)) and (.completed or (.cohort == "exploratory" and
               (.miss == "missing-reviewed-step" or .miss == "target-absent-from-open-menu" or .miss == "repeated-address" or
                 (.miss == "rejected-scoped-leaf" and .rejectedLeaf) or
                 (.miss == "action-budget-exhausted" and .exhaustedBudget)))) and
@@ -581,7 +584,7 @@ jobs:
             assert.equal(positive.grade.taskId, taskId);
             assert.equal(positive.grade.predicateSource, "task");
             assert.ok(positive.grade.taskRevision);
-            assert.match(positive.answer, /^Statement amount due: .+\. Due date: .+\.$/u);
+            assert.match(positive.answer, /^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u);
             for (const [receipt, failed] of [
               [positive, []], [read("no-action.json"), ["logged_in", "answer"]], [read("wrong-answer.json"), ["answer"]],
             ]) {
@@ -634,7 +637,7 @@ jobs:
         if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
-          -t "Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
+          -t "Gmail signup to Calendar|Follow one reviewed plan across apps|An authenticated restart restores the reviewed plan paused at its next outcome|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
       - if: ${{ matrix.lane == 'product' && !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue --summarize
       - if: ${{ matrix.lane != 'product' && !cancelled() && steps.setup.outcome == 'success' }}

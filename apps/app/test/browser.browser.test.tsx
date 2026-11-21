@@ -7,6 +7,7 @@ import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
 import { guidedDetails, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
+import { privateFormRecovery } from "../src/nativePage.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, script, signIn } from "./cloud.vibe";
 import { decisionCloud } from "./browser-decisions.fixture.vibe";
@@ -216,18 +217,12 @@ const BrowserControl = Schema.Struct({
 });
 it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
-  const receiptFailure = (failure: unknown) => {
-    const detail = failure instanceof Error ? failure.message : String(failure);
-    const firstLine = detail.split(/[\r\n]/u, 1)[0] ?? "";
-    return firstLine
-      .replace(new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "gu"), "")
-      .replace(/[\p{Cc}\p{Cf}]/gu, "")
-      .replace(/\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)[^\s"'<>]+/giu, "[redacted URL]")
-      .replace(/\b(?:bearer|basic)\s+[^\s,;]+/giu, "[redacted authorization]")
-      .replace(/\b(?:password|passwd|secret|token|cookie|authorization|api[-_ ]?key)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu, "[redacted credential]")
-      .replace(/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}(?::[^\s,;]+)?/giu, "[redacted identity]")
-      .replace(/\b(?:sk-|github_pat_|gh[pousr]_|xox[baprs]-)[\w.-]+|\b[\w+=/-]{24,}(?:\.[\w+=/-]{8,})*/gu, "[redacted token]")
-      .trim().slice(0, 240) || "Benchmark step failed";
+  const publicFailure = (failure: unknown, stage: "Browser setup" | "Browser journey" | "Benchmark grading or cleanup") => {
+    if (failure instanceof Error && (failure.name === "TimeoutError" ||
+        failure.message.startsWith("expect.poll() function didn't resolve in time") ||
+        failure.message.startsWith("expect.poll() assertion didn't resolve in time"))) return new Error(`${stage} timed out`);
+    if (failure instanceof Error && failure.name === "AssertionError") return new Error(`${stage} assertion failed`);
+    return new Error(`${stage} failed`);
   };
   await transport({ kind: "begin", taskId });
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
@@ -245,8 +240,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         native.started(actual.url);
         native.finished(actual.url);
       } catch (error) {
-        outcome.browserBoundaryFailure = { operation: "createSurface", url: request.url, detail: receiptFailure(error) };
-        throw error;
+        const failure = publicFailure(error, "Browser setup");
+        outcome.browserBoundaryFailure = { operation: "createSurface", detail: failure.message };
+        throw failure;
       }
     },
     presentSurface(request) {
@@ -318,7 +314,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const disclosures: { url: string; documentId: string; snapshotId: string; instruction: string; label: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
     outcome.disclosures = disclosures;
     const browserObservationTimeoutMs = 15_000;
-    const hops: { url: string; documentId: string; checked: boolean; checkResultWaitMs: number }[] = [];
+    const hops: { url: string; documentId: string; checked: boolean; checkResultWaitMs: number; reason?: string | null }[] = [];
     outcome.hops = hops;
     const menuRetries: { documentId: string; instruction: string }[] = [];
     outcome.menuRetries = menuRetries;
@@ -456,9 +452,11 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       const checkReturnedAt = performance.now();
       await expect.element(finished.or(continuing).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
       const checked = finished.query() !== null;
-      hops.push({ url: landed.url, documentId: landed.documentId, checked, checkResultWaitMs: Math.round(performance.now() - checkReturnedAt) });
+      const reason = continuing.query()?.textContent;
+      hops.push({ url: landed.url, documentId: landed.documentId, checked, checkResultWaitMs: Math.round(performance.now() - checkReturnedAt), reason });
       if (checked) break;
       expect(named).toBeDefined();
+      expect([`I couldn’t verify “${named?.subject}” on this page. Check the page again or try another link.`, privateFormRecovery]).toContain(reason);
       expect(workspace().plan.receipts).toHaveLength(0);
       previous = landed;
     }
@@ -466,10 +464,13 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     await expect.element(finished).toBeVisible();
     outcome.graceTerminal = plan.element().textContent;
   } catch (error) {
-    outcome.failure = receiptFailure(error);
-    if (!gradeWholeCohort) throw error;
+    const failure = publicFailure(error, "Browser journey");
+    outcome.failure = failure.message;
+    if (!gradeWholeCohort) throw failure;
   } finally {
-    await transport({ kind: "receipt", outcome });
+    await transport({ kind: "receipt", outcome }).catch((error: unknown) => {
+      throw publicFailure(error, "Benchmark grading or cleanup");
+    });
   }
 }, 240_000);
 
@@ -536,7 +537,7 @@ it.for(inject("billworldStatements"))('Read the $label BillWorld statement (spec
   await userEvent.click(check);
   await expect.element(complete).toBeVisible();
   await userEvent.click(ui.getByRole("button", { name: "Expand", exact: true }));
-  const answer = ui.getByRole("region", { name: "Grace" }).getByText(/^Statement amount due:/);
+  const answer = ui.getByRole("region", { name: "Task plan" }).getByText(/^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u);
   await expect.element(answer).toBeVisible();
   const grade = await transport({ kind: "answer", text: answer.element().textContent ?? "" });
   if (billerId === undefined) {

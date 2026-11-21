@@ -15,7 +15,7 @@ export function GraceAccountSettings() {
   const snapshot = setup?.graceAccount;
   const link = setup?.googleLink;
   const [pending, startTransition] = useTransition();
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<Operation["kind"]>();
   const [returnFailed, setReturnFailed] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("authError") === "google_failed") return "Google sign-in didn’t finish.";
@@ -32,15 +32,16 @@ export function GraceAccountSettings() {
   const [expectedEmail, setExpectedEmail] = useState("");
   const googleAddressId = useId();
   const run = (operation: Operation, onSuccess?: () => void) => startTransition(async () => {
-    setFailed(false);
+    setFailed(undefined);
     setReturnFailed("");
     const result = await runtime.runPromiseExit(Effect.flatMap(AccountActions, (actions) => actions.run(operation)));
     if (Exit.isSuccess(result) && result.value) {
       setConfirmingSignOut(false);
       onSuccess?.();
     }
-    else setFailed(true);
+    else setFailed(operation.kind);
   });
+  const tabletRequested = setup !== undefined && showsTabletSignIn(setup.tabletSignIn);
   const signedIn = snapshot?.tag === "GraceSignedIn";
   const canRetry = snapshot !== undefined && mayCheckAccountAgain(snapshot);
   const active = signedIn && (snapshot.plan === "PlanActive" || snapshot.plan === "PlanActiveManaged");
@@ -48,7 +49,7 @@ export function GraceAccountSettings() {
     <section data-sensitive="true" aria-busy={pending || undefined} className="flex flex-col items-start gap-5">
       <PageHeading>Grace account</PageHeading>
       {returnFailed && <RetryNotice role="alert">{returnFailed}</RetryNotice>}
-      {failed && <RetryNotice role="alert">Grace couldn’t finish that request. Try again.</RetryNotice>}
+      {failed && (failed !== "authorizeDevice" || tabletRequested) && <RetryNotice role="alert">Grace couldn’t finish that request. Try again.</RetryNotice>}
       {snapshot === undefined || snapshot.tag === "CheckingAccount" ? <PageText role="status">Checking your account…</PageText> : null}
       {snapshot?.tag === "GraceSignedOut" && (provider === undefined ? (
         <div className="flex flex-wrap gap-3">
@@ -67,12 +68,12 @@ export function GraceAccountSettings() {
           <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "signIn", method: "browser" })}>Other sign-in options</Button>
         </div>
       )}
-      {setup && showsTabletSignIn(setup.tabletSignIn) && (
+      {tabletRequested && (
         <>
           <PageText>Sign in on your tablet{signedIn && snapshot.email ? ` as ${snapshot.email}` : ""}?</PageText>
           <div className="flex flex-wrap gap-3">
             {signedIn && <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "authorizeDevice", expectedAccountId: snapshot.accountId })}>Sign in on tablet</Button>}
-            <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "cancelDevice" })}>Cancel tablet sign-in</Button>
+            <Button variant="capsule" size="pill" onClick={() => run({ kind: "cancelDevice" })}>Cancel tablet sign-in</Button>
           </div>
         </>
       )}
