@@ -794,23 +794,18 @@ exchange supplies browser approval to the native recovery operation.
 The recovery key and passwords stay in the native vault and its protected
 screens.
 
-The approval page is this application's own: it reads the native request's
-one action and the browser's signed-in account, and offers Approve only when
-the request is valid for the registered page and a signed-in account is
-shown that has not been reported changed or in need of a fresh sign-in.
-Nothing is approved on a page that is not the registered one, after Cancel,
-for an account other than the one shown, or without a recent sign-in; the
-rules below check exactly this.
+The rules below take the page registration, the freshness of the sign-in and
+the match to the shown account as inputs. All three must hold to offer
+Approve. Counting the action as approved also requires the person's explicit
+confirmation.
 
-The rest is the page's and the Grace service's own exchange, and no rule
-here checks it: that Approve sends the action with the shown account's
-identity in one request; that the service refuses it when the browser
-account is no longer that one or the sign-in is not recent, and the page
-then asks her to sign in and choose again; that the page returns to the
-tablet only to the registered callback, with the native request's own state
-and one code; that the request it reads carries neither the recovery key nor
-any password; and that the code is used once and only by the native request
-that asked for it.
+The browser checks that the native request belongs to its registered page,
+shows the action and account, and closes the approval on Cancel. The service
+checks the current account and sign-in freshness when it receives the action
+and shown account together. The browser accepts only the registered callback
+with the request's own state and exactly one code. The request carries
+neither the recovery key nor a password. The service and tablet bind the
+code to the original native request and enforce its single use.
 
 ```quint
 pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
