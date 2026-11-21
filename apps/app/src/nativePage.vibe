@@ -83,7 +83,7 @@ export function guidedPageState(observation: LinkObservation | undefined, url: s
 export error PageFailed { cause: unknown }
 
 export data PageEvent {
-  Changed { id: PageId; url: Url | undefined; loading: boolean; result: Load; back: boolean; forward: boolean }
+  Changed { id: PageId; url: Url | undefined; loading: boolean; result: Load; secure: boolean; back: boolean; forward: boolean }
   Crashed { id: PageId }
   Started { id: PageId; url: Url | undefined }
   Asked { id: PageId; key: RequestKey; ask: Ask; topFrame: boolean; said: string }
@@ -178,10 +178,16 @@ effect function reported(heard: Heard) {
 function surfaceEvents(plugin: SurfacePlugin) {
   const heard = Stream.callback<Heard>((queue) => acquireRelease(
     Effect.orDie(tryPromise(() => Promise.all([
-      plugin.addListener("navigationChanged", hear(queue, NavigationChanged, (e) => e.exists === false ? undefined : PageEvent.Changed({
-        id: e.id, url: e.currentUrl ?? undefined, back: e.canGoBack === true, forward: e.canGoForward === true, loading: e.progress !== undefined && e.progress < 100,
-        result: e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded"
-      }))),
+      plugin.addListener("navigationChanged", hear(queue, NavigationChanged, (e) => {
+        if (e.exists === false) return undefined
+        const url = e.currentUrl || undefined
+        const result = e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded"
+        return PageEvent.Changed({
+          id: e.id, url, back: e.canGoBack === true, forward: e.canGoForward === true, result,
+          loading: result === "Loaded" && e.progress !== undefined && e.progress < 100,
+          secure: e.exists === true && e.progress === 100 && e.pageError === null && e.securityBlocked === false && URL.parse(url ?? "")?.protocol === "https:"
+        })
+      })),
       plugin.addListener("surfaceCrashed", hear(queue, SurfaceCrashed, (e) => PageEvent.Crashed({ id: e.id }))),
       plugin.addListener("pageStarted", hear(queue, PageStarted, (e) => PageEvent.Started({ id: e.id, url: e.url }))),
       plugin.addListener("dialogRequested", hear(queue, DialogRequested, (e) =>

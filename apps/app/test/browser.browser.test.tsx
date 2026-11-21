@@ -148,6 +148,24 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   await userEvent.click(page.getByRole("dialog", { name: "More tabs" }).getByRole("button", { name: `Close ${host}` }));
   await expect.poll(() => ({ tabs: workspace().browser.tabs.length, top: onTop(frames().find((frame) => !frame.hidden) ?? null) })).toEqual({ tabs: 2, top: true });
 
+  const id = workspace().browser.selected;
+  const readable = new URL("./site/index.html", import.meta.url).href;
+  await visit(readable, id);
+  const instruction = shown(id)?.contentDocument?.querySelector<HTMLAnchorElement>('a[href="instruction.html"]');
+  if (!instruction) throw new Error("The local website did not offer its instruction page");
+  instruction.click();
+  await expect.element(address).toHaveValue(instruction.href);
+  await expect.poll(() => tab(id)?.load).toBe("Loaded");
+
+  const unavailable = new URL(site);
+  unavailable.protocol = "https:";
+  await address.fill(unavailable.href);
+  await enter();
+  await expect.poll(() => {
+    const active = tab(id);
+    return shown(id)?.src === unavailable.href && active?.load !== "Loading" && active?.secure === false;
+  }).toBe(true);
+
   await userEvent.click(page.getByRole("button", { name: "Close browser" }));
   await expect.poll(frames).toEqual([]);
 });

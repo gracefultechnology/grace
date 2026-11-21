@@ -396,7 +396,7 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
   expect(native.unanswered()).toBe(1);
   // spec/app/browser.md, "Load results must match the tab and request that produced them": the site's certificate is refused this time.
-  await native.report("tab-1", "https://example.com/", 100, { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
+  await native.report("tab-1", "https://example.com/", 43, { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
   await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
   expect(tab(1).load).not.toBe("SecurityBlocked");
   await native.route();
