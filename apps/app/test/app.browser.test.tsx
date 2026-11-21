@@ -7,8 +7,6 @@ import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
-import { passwordsHelpText } from "../gen/app.ts";
-import { Machine as PasswordViews } from "../gen/app.effect.vibe";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
@@ -114,6 +112,13 @@ const rectOf = (element: Element, control = false): Rect => {
 /** Drawn over the page: Grace hides a control until the host routes its rect. */
 const shown = (locator: Locator) => locator.query()?.checkVisibility({ visibilityProperty: true }) ?? false;
 
+actOnScreen();
+
+const foregroundVault = {
+  available: true, locked: false, unlockRemainingMs: null, unlockSeconds: 0, biometric: false, custody: "device-unlocked",
+  autofill: { supported: true, selected: "this-app" },
+} satisfies Awaited<ReturnType<PasswordVault["status"]>>;
+
 async function visitExampleSite(native: ReturnType<typeof fakePlugin>) {
   await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
   await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
@@ -136,6 +141,12 @@ async function cloudReadPlan(native: ReturnType<typeof fakePlugin>, cloud: strin
   return { ...routedControls(native), dispose: view.dispose };
 }
 
+const askForPasswords = async () => {
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), "show my password"));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+};
+
 async function pressBack() {
   const event = new Event("hardware-back", { cancelable: true });
   await act(() => { window.dispatchEvent(event); return Promise.resolve(); });
@@ -147,8 +158,6 @@ async function backToHomeThenLeaveToAndroid() {
   await expect.element(page.getByRole("button", { name: "Internet" })).toBeVisible();
   expect(await pressBack()).toBe(false);
 }
-
-actOnScreen();
 
 it("Use the website under Grace's controls", async () => {
   const native = fakePlugin();
@@ -511,22 +520,6 @@ it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday
   expect(await pressBack()).toBe(false);
 });
 
-function vaultStatus(locked: boolean): ReturnType<PasswordVault["status"]> {
-  return Promise.resolve({
-    available: true, locked, unlockRemainingMs: locked ? 0 : 60_000, unlockSeconds: 60, biometric: false,
-    autofill: { supported: true, selected: "this-app" },
-  });
-}
-
-async function askToShowPassword() {
-  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-  await act(() => userEvent.type(page.getByRole("textbox", { name: "Message to Grace" }), "show my password"));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
-  const unlock = page.getByRole("button", { name: "Unlock Passwords" });
-  await expect.element(unlock).toBeEnabled();
-  return unlock;
-}
-
 async function revealAndEditPassword(isShown: () => boolean) {
   expect(isShown()).toBe(false);
   await act(() => userEvent.click(page.getByRole("button", { name: "Show password" })));
@@ -536,7 +529,7 @@ async function revealAndEditPassword(isShown: () => boolean) {
 }
 
 it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
-  let locked = true;
+  let lockRequests = 0;
   let edited = false;
   let shown = false;
   let copied = false;
@@ -544,14 +537,13 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   let recoveryOpened = false;
   let ownerAvailable = true;
   let ownerChanged: (() => void) | undefined;
+  const unlock = vi.fn(() => Promise.reject(new Error("The foreground vault must open directly")));
   const vault: PasswordVault = {
-    status: () => vaultStatus(locked),
-    lock: () => { locked = true; return Promise.resolve(); },
-    unlock: () => {
-      if (!ownerAvailable) return Promise.reject(new PasswordsClientError("not-admitted", "The account changed"));
-      locked = false;
-      return Promise.resolve({ unlockRemainingMs: 60_000 });
-    },
+    status: () => Promise.resolve(ownerAvailable
+      ? foregroundVault
+      : { ...foregroundVault, available: false, locked: true, reason: "unsupported" }),
+    lock: () => { lockRequests += 1; return Promise.resolve(); },
+    unlock,
     list: () => Promise.resolve([
       { id: "first-login", revision: edited ? 5 : 4, updatedAt: 1, label: "Utility account", username: edited ? "New account" : "Pat", bindings: [] },
       ...(phoneRevision === undefined ? [] : [{ id: "phone", revision: phoneRevision, updatedAt: 2, label: "Phone account", username: phoneRevision === 1 ? "Original" : "Updated on Android", bindings: [] }]),
@@ -592,16 +584,12 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
     openBackupRecovery: () => { recoveryOpened = true; return Promise.resolve({ status: "opened" }); },
   }));
   await mount(runtime);
-  const unlock = await askToShowPassword();
-  const guide = () => runtime.runSync(Effect.flatMap(Effect.service(PasswordViews), (machine) => machine.get())).guide;
-  expect(guide()).toBe("ShowPasswordGuide");
+  await askForPasswords();
+  const guide = page.getByText("Choose a sign-in first.");
+  await expect.element(guide).toBeVisible();
   await act(() => { ownerChanged?.(); return Promise.resolve(); });
-  await expect.poll(guide).toBe("NoPasswordGuide");
-  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
-  await act(() => userEvent.click(page.getByRole("button", { name: "Backup and recovery" })));
-  await expect.poll(() => recoveryOpened).toBe(true);
-  expect(locked).toBe(true);
-  await act(() => userEvent.click(unlock));
+  await expect.element(guide).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
   const search = page.getByRole("searchbox", { name: "Find a saved password" });
   const login = page.getByRole("button", { name: /Utility account/ });
   await act(() => search.fill("missing"));
@@ -635,14 +623,14 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.element(phone).not.toBeInTheDocument();
   await expect.element(page.getByText("Password deleted.")).toBeVisible();
   await act(() => userEvent.click(login));
-  await act(() => { ownerChanged?.(); return Promise.resolve(); });
-  await expect.element(unlock).toBeEnabled();
-  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
-  await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
-  await expect.poll(() => locked).toBe(true);
-  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByText("New account", { exact: true })).toBeVisible();
   ownerAvailable = false;
-  recoveryOpened = false;
+  await act(() => { ownerChanged?.(); return Promise.resolve(); });
+  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  const locksBeforeClose = lockRequests;
+  await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
+  await expect.poll(() => lockRequests).toBeGreaterThan(locksBeforeClose);
   const nextPage = page.getByRole("button", { name: "More apps" });
   await act(() => userEvent.click(nextPage));
   const passwordsCard = page.getByRole("button", { name: "Passwords", exact: true });
@@ -652,26 +640,41 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.element(passwordsCard).not.toBeInTheDocument();
   await act(() => userEvent.click(nextPage));
   await act(() => userEvent.click(passwordsCard));
-  await act(() => userEvent.click(unlock));
-  await expect.element(unlock).not.toBeInTheDocument();
-  await expect.element(page.getByText("New account", { exact: true })).not.toBeInTheDocument();
-  await act(() => userEvent.click(page.getByRole("button", { name: "Backup and recovery" })));
+  const backup = page.getByRole("button", { name: "Backup and recovery" });
+  await expect.element(backup).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: "Add password" })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
+  await act(() => userEvent.click(backup));
   await expect.poll(() => recoveryOpened).toBe(true);
-  expect(locked).toBe(true);
+  expect(unlock).not.toHaveBeenCalled();
 });
 
-async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter: (field: Locator, text: string) => PromiseLike<void>) {
+const fillField = (field: Locator, text: string): PromiseLike<void> => act(() => field.fill(text));
+
+async function askForPrivateSignIn(native: ReturnType<typeof fakePlugin>, request: string, enter = fillField) {
+  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
+  const message = page.getByRole("textbox", { name: "Message to Grace" });
+  await expect.poll(async () => { await native.route(); return message.query() !== null; }).toBe(true);
+  await enter(message, request);
+  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+}
+
+async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fillField) {
   const runtime = ManagedRuntime.make(application(native.plugin));
   const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
   await mount(runtime);
-  await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
+  await askForPrivateSignIn(native, "use a saved password", enter);
+  await expect.element(page.getByText("Open a secure website first.")).toBeVisible();
+  expect(native.calls("createSurface")).toEqual([]);
   await enter(page.getByRole("textbox", { name: "Address" }), "https://utility.example/normal");
   await act(() => userEvent.keyboard("{Enter}"));
   await expect.poll(() => native.calls("createSurface").length).toBe(1);
   await native.route();
   await native.started("tab-1");
   await native.report("tab-1", "https://utility.example/normal", 100);
-  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  await expect.element(page.getByRole("button", { name: "Private sign-in", exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByText("Ask Grace to use a saved password.")).toBeVisible();
+  await askForPrivateSignIn(native, "fill my password", enter);
   await expect.poll(() => native.calls("createSurface")[1]).toMatchObject({
     url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
@@ -703,11 +706,7 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter: (fi
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
   await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
-  const message = page.getByRole("textbox", { name: "Message to Grace" });
-  await expect.poll(async () => { await native.route(); return message.query() !== null; }).toBe(true);
-  await enter(message, "sign me in to pay my bill");
-  await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
+  await askForPrivateSignIn(native, "sign me in to pay my bill", enter);
   await expect.poll(() => native.calls("createSurface").at(-1)).toMatchObject({
     id: "tab-3", url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
@@ -717,10 +716,10 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter: (fi
 
 it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
   const native = fakePlugin(undefined, true);
-  const browserState = await signInPrivately(native, (field, text) => act(() => field.fill(text)));
+  const browserState = await signInPrivately(native);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
-  await act(() => userEvent.click(page.getByRole("button", { name: "Private sign-in", exact: true })));
+  await askForPrivateSignIn(native, "use a saved password");
   const unavailable = page.getByRole("status").filter({ hasText: "Android System WebView" });
   await expect.element(unavailable).toBeVisible();
   await expect.element(unavailable.getByRole("heading")).toHaveTextContent("Private sign-in couldn’t open");
@@ -904,7 +903,7 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
   }
 });
 
-it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card inputs out of chat", "Open Passwords and read fixed instructions"] as const)(
+it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card inputs out of chat", "Open Passwords by voice"] as const)(
   '%s via metered speech (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async (journey) => {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
@@ -1229,18 +1228,7 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
     expect(turns).toEqual([]);
     expect(phrases).toEqual([]);
     await expect.element(page.getByRole("textbox", { name: "Message to Grace" })).not.toBeInTheDocument();
-    await press(page.getByText("How to use saved passwords", { exact: true }));
-    await press(page.getByRole("button", { name: "Read instructions aloud" }));
-    const helpNotice = page.getByRole("dialog", { name: "Read Passwords instructions aloud" });
-    await expect.element(helpNotice).toBeVisible();
     const inputCount = audio.mock.calls.length;
-    await press(helpNotice.getByRole("button", { name: "Cancel" }));
-    expect(calls).toHaveLength(speechSession.length);
-    await press(page.getByRole("button", { name: "Read instructions aloud" }));
-    await press(helpNotice.getByRole("button", { name: "Read aloud", exact: true }));
-    await expect.poll(() => phrases).toEqual([passwordsHelpText("NoPasswordGuide")]);
-    await expect.poll(() => calls).toHaveLength(speechSession.length * 2);
-    expect(audio).toHaveBeenCalledTimes(inputCount);
     await press(page.getByRole("button", { name: "Close Passwords" }));
     await act(() => choosePage("PasswordsCard").then(() => undefined));
     accountId = undefined;
@@ -1249,13 +1237,13 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
     await press(talkControl);
     await expect.element(page.getByText("Cloud speech is unavailable. You can type a Passwords command.")).toBeVisible();
     expect(audio).toHaveBeenCalledTimes(inputCount);
-    expect(calls).toHaveLength(speechSession.length * 2);
+    expect(calls).toHaveLength(speechSession.length);
     expect(turns).toEqual([]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();
     for (const person of [firstAccount, secondAccount]) {
-      for (const suffix of ["", "/command", "/instructions"]) localStorage.removeItem("grace/voice-disclosure/web/" + person + suffix);
+      for (const suffix of ["", "/command"]) localStorage.removeItem("grace/voice-disclosure/web/" + person + suffix);
     }
     await Promise.all(microphones.map((microphone) => microphone.close()));
     host.remove();
@@ -1838,13 +1826,20 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
 });
 
 it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story: Manage my saved passwords privately")', async () => {
-  let locked = true;
+  let lockRequests = 0;
+  let needsMigration = true;
   let saved = { id: "first-login", revision: 4, updatedAt: 1, label: "Utility account", username: "Pat", bindings: [] };
   let shown = false;
   const vault: PasswordVault = {
-    status: () => vaultStatus(locked),
-    lock: () => { locked = true; return Promise.resolve(); },
-    unlock: () => { locked = false; return Promise.resolve({ unlockRemainingMs: 60_000 }); },
+    status: () => Promise.resolve(needsMigration
+      ? { ...foregroundVault, locked: true, reason: "legacy-authorization-required" }
+      : foregroundVault),
+    lock: () => { lockRequests += 1; return Promise.resolve(); },
+    unlock: async () => {
+      if (!needsMigration) throw new Error("The existing sign-in was already migrated");
+      needsMigration = false;
+      return { unlockRemainingMs: null };
+    },
     list: () => Promise.resolve([saved]),
     openEditor: (input) => {
       expect(input).toEqual({ entryId: "first-login", expectedRevision: 4 });
@@ -1863,16 +1858,19 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
   };
   const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, vault }));
   await mount(runtime);
-  const unlock = await askToShowPassword();
-  await expect.element(page.getByRole("list", { name: "Saved sign-ins" })).not.toBeInTheDocument();
-  await act(() => userEvent.click(unlock));
+  await askForPasswords();
+  const migrate = page.getByRole("button", { name: "Open saved passwords" });
+  await expect.element(migrate).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: /Utility account/ })).not.toBeInTheDocument();
+  await act(() => userEvent.click(migrate));
   await act(() => userEvent.click(page.getByRole("button", { name: /Utility account/ })));
   await revealAndEditPassword(() => shown);
   saved = { ...saved, username: "Updated on this tablet", revision: 6 };
   await act(() => userEvent.click(page.getByRole("button", { name: "Copy password" })));
   await expect.element(page.getByText("Updated on this tablet", { exact: true })).toBeVisible();
+  const locksBeforeClose = lockRequests;
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
-  await expect.poll(() => locked).toBe(true);
+  await expect.poll(() => lockRequests).toBeGreaterThan(locksBeforeClose);
   await expect.element(page.getByText("Updated on this tablet", { exact: true })).not.toBeInTheDocument();
   const filesPage = page.getByRole("button", { name: "Page 2", exact: true });
   await expect.element(filesPage).toBeVisible();
@@ -1893,13 +1891,13 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
   await expect.element(filesPage).toHaveAttribute("aria-current", "true");
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
-  await expect.element(unlock).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));
   const draft = page.getByRole("textbox", { name: "Message to Grace" });
   await act(() => userEvent.type(draft, "Open passwords"));
   await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
-  await expect.element(unlock).toBeEnabled();
+  await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
 });
 
 it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
