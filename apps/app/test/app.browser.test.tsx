@@ -1640,6 +1640,11 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap(/Hearing check/);
     await expect.element(page.getByRole("heading", { name: "Hearing check" })).toBeVisible();
     await tap("Back to calendar");
+    await tap("New appointment");
+    const proposedDay = new Date(nextMonth);
+    proposedDay.setHours(10, 0, 0, 0);
+    await expect.element(page.getByLabelText("Start", { exact: true })).toHaveValue(new Date(proposedDay.getTime() - proposedDay.getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+    await tap("Cancel");
     await tap("Today");
     await act(() => page.getByRole("radio", { name: "Week", exact: true }).click());
     await tap(/Dentist/);

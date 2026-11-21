@@ -7,7 +7,7 @@ import type { Recurrence } from "../gen/app__calendar.ts";
 import { mayChangeManaged, mayReadManaged, maySendManagedMail } from "../gen/app__setup.ts";
 import { keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
 import { calendarGrid } from "./Calendar.tsx";
-import { dayOf, midnight } from "./calendarWindow.vibe";
+import { dayOf, instant, midnight } from "./calendarWindow.vibe";
 import type { Navigation } from "../gen/app__calendarView.ts";
 import { webOrigin } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
@@ -100,8 +100,9 @@ function dateInput(time: Date) {
   return new Date(time.getTime() - time.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-function AppointmentEditor({ event, seriesFor, proposal, remove, write, pending, close }: {
+function AppointmentEditor({ event, selectedDay, seriesFor, proposal, remove, write, pending, close }: {
   event?: EventRow;
+  selectedDay: number;
   seriesFor?: string;
   proposal?: { title: string; start: string; location: string; repeat: Recurrence };
   remove?: boolean;
@@ -109,14 +110,17 @@ function AppointmentEditor({ event, seriesFor, proposal, remove, write, pending,
   pending: boolean;
   close: () => void;
 }) {
-  const [draft, setDraft] = useState<AppointmentDraft>(() => ({
-    title: proposal?.title ?? event?.title ?? "",
-    start: proposal?.start ?? (event?.isAllDay ? event.startAt : dateInput(event ? new Date(event.startAt) : new Date())),
-    end: proposal
-      ? dateInput(new Date(new Date(proposal.start).getTime() + (event ? Date.parse(event.endAt) - Date.parse(event.startAt) : 3600000)))
-      : event?.isAllDay ? event.endAt : dateInput(event ? new Date(event.endAt) : new Date(Date.now() + 3600000)),
-    location: proposal?.location ?? event?.location ?? "",
-  }));
+  const [draft, setDraft] = useState<AppointmentDraft>(() => {
+    const fresh = Math.max(Date.now(), instant(selectedDay, 10 * 60));
+    return {
+      title: proposal?.title ?? event?.title ?? "",
+      start: proposal?.start ?? (event?.isAllDay ? event.startAt : dateInput(new Date(event?.startAt ?? fresh))),
+      end: proposal
+        ? dateInput(new Date(new Date(proposal.start).getTime() + (event ? Date.parse(event.endAt) - Date.parse(event.startAt) : 3600000)))
+        : event?.isAllDay ? event.endAt : dateInput(new Date(event?.endAt ?? fresh + 3600000)),
+      location: proposal?.location ?? event?.location ?? "",
+    };
+  });
   const [review, setReview] = useState<"save" | "delete" | undefined>(remove ? "delete" : undefined);
   const [repeat, setRepeat] = useState<Recurrence>(proposal?.repeat ?? "Once");
   const [timeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -430,13 +434,13 @@ export function ManagedRead({ view }: { view: ReadView }) {
       const series = suggestion.kind === "removeAppointment" && suggestion.series ? suggestion.id : undefined;
       const target = series ? snapshot.series : suggestion.id ? snapshot.selected : undefined;
       return <section data-sensitive="true">
-        <AppointmentEditor key={staged.number} event={target} seriesFor={series} remove={suggestion.kind === "removeAppointment"}
+        <AppointmentEditor key={staged.number} selectedDay={snapshot.window.selectedDay} event={target} seriesFor={series} remove={suggestion.kind === "removeAppointment"}
           proposal={suggestion.kind === "appointment" ? suggestion : undefined} write={write} pending={pending} close={() => run({ kind: "dismissProposal" })} />
       </section>;
     }
   }
   if (canSchedule && exact) return <section data-sensitive="true">
-    <AppointmentEditor event={exact.event} seriesFor={exact.seriesFor} write={write} pending={pending} close={() => setEditor(undefined)} />
+    <AppointmentEditor selectedDay={snapshot.window.selectedDay} event={exact.event} seriesFor={exact.seriesFor} write={write} pending={pending} close={() => setEditor(undefined)} />
   </section>;
   const event = snapshot.selected;
   return event ? (
