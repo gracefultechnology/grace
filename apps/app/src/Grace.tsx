@@ -39,7 +39,7 @@ const checks: Record<GuidedStep["tag"], { label: string; item: string; missing: 
   ReachNamedPage: { label: "Check page", item: "page", missing: "" },
   ReadStatement: { label: "Read statement", item: "page", missing: "I couldn’t find one amount due and one due date on this page." },
   ReadCalendar: { label: "Check appointment", item: "appointment", missing: "I couldn’t read an open appointment. Open the one you want me to check." },
-  SaveMailAppointment: { label: "Check saved appointment", item: "appointment", missing: "I couldn’t find that saved appointment in your calendar." },
+  SaveMailAppointment: { label: "Check saved appointment", item: "appointment", missing: "I couldn’t verify the saved appointment. Open it on your calendar and try again." },
   SurfaceOutcome: { label: "", item: "item", missing: "I couldn’t confirm this step yet." },
 };
 

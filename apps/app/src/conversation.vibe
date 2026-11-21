@@ -455,6 +455,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const savedCheckpoint = current.plan.saveRecovery
       if (read === "SaveMailAppointment" && savedCheckpoint.tag === "GuidedSaveReconcile") {
         const { occurrence, owner, calendar, mailDigest } = savedCheckpoint
+        if (detailsDigest !== savedCheckpoint.detailsDigest) return "NotFound"
         const accepted = workspace.send({ type: "reconcileGuidedSave", recoveryCheck: {
           report, saved: { occurrence, owner, calendar, mailDigest, detailsDigest }
         } }, "Host") catch () => undefined
