@@ -1,5 +1,5 @@
 // spec/app/workspace.md, "An authenticated restart restores the reviewed plan paused at its next outcome"
-import { Machine as Setup } from "../gen/app__setup.effect.vibe"
+import { Machine as Setup, type GraceAccount } from "../gen/app__setup.effect.vibe"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
 import {
   Machine as Workspaces, Rejected, canAbandonTask, canStartReadReview, startReadReview, guidedCheckpoint, guidedDetails, parseEvent, privateSurfaceActive,
@@ -143,6 +143,16 @@ function scopeFor(scopes: ScopeSet | undefined, steps: readonly GuidedStep[]) {
   return scopes?.connected ?? (steps.every((step) => step.tag !== "ReadMail" && step.tag !== "SaveMailAppointment") ? scopes?.localCalendar : undefined)
 }
 
+effect function nativeRecoveryIdentity(account: GraceAccount["tag"]) {
+  const bridge = accountPlugin
+  if (!bridge || (account !== "GraceDeviceSignedIn" && account !== "GraceDeviceSignedOut")) return undefined
+  const raw = try timeout(tryPromise(() => bridge.status()), "2 seconds")
+  const status = try Schema.decodeUnknownEffect(NativeStatus)(raw)
+  if (status.kind === "signedIn" && account === "GraceDeviceSignedIn") return "native/" + status.voiceDisclosureScope
+  if (status.kind === "signedOut" && account === "GraceDeviceSignedOut") return "local/native"
+  return undefined
+}
+
 function sessionChanges(native: boolean) {
   const nativeAccount = native && accountPlugin !== undefined ? accountPlugin : undefined
   return nativeAccount === undefined
@@ -181,13 +191,8 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
     let identity: string | undefined
     let session: string | undefined
     if (native) {
-      const bridge = accountPlugin
-      if (!bridge || (account.tag !== "GraceDeviceSignedIn" && account.tag !== "GraceDeviceSignedOut")) return undefined
-      const raw = try timeout(tryPromise(() => bridge.status()), "2 seconds")
-      const status = try Schema.decodeUnknownEffect(NativeStatus)(raw)
-      if (status.kind === "signedIn" && account.tag === "GraceDeviceSignedIn") identity = "native/" + status.voiceDisclosureScope
-      else if (status.kind === "signedOut" && account.tag === "GraceDeviceSignedOut") identity = "local/native"
-      else return undefined
+      identity = try nativeRecoveryIdentity(account.tag)
+      if (identity === undefined) return undefined
     } else if (account.tag === "GraceSignedIn") {
       const scope = fresh || hosted?.accountId !== account.accountId ? try browserSessionScope() : hosted
       if (scope === undefined || scope.accountId !== account.accountId) return undefined
