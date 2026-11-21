@@ -27,11 +27,16 @@ export function webPage() {
       const address = URL.parse(loadedDocument?.URL ?? "")
       const url = address?.protocol === "https:" || address?.protocol === "http:" ? Url.make(address.href) : undefined
       const navigation = frame.navigation
-      if (url !== undefined && navigation !== "Requested" && frame.history[frame.at] !== url) {
+      const left = frame.history[frame.at]
+      const followed = url !== undefined && navigation !== "Requested" && left !== url
+      if (followed && navigation === "Leaving") Queue.offerUnsafe(events, PageEvent.Changed({
+        id, url: Url.make(left), loading: false, result: "Loaded", secure: false, back: frame.at > 0, forward: frame.at + 1 < frame.history.length
+      }))
+      if (followed) {
         frame.history = [...frame.history.slice(0, frame.at + 1), url]
         frame.at = frame.history.length - 1
       } else if (url !== undefined) frame.history[frame.at] = url
-      if (navigation === "Idle") Queue.offerUnsafe(events, PageEvent.Started({ id, url }))
+      if (navigation === "Idle" || (followed && navigation === "Leaving")) Queue.offerUnsafe(events, PageEvent.Started({ id, url }))
       frame.navigation = "Idle"
       loadedDocument?.defaultView?.addEventListener("pagehide", () => {
         if (frame.navigation !== "Idle" || frames.get(id) !== frame) return
