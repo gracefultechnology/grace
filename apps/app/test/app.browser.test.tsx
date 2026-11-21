@@ -2118,13 +2118,13 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let reviseDuringRead = false;
   let replaceDocumentDuringRead = false;
   let addChallengeDuringRead = false;
-  let challengeShown = false;
+  let challengeShown: false | "code" | "captcha" = false;
   let signInWidget: "hidden" | "idle" | "active" | "accountOnly" = "hidden";
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: currentPage.id, frameScope: "main", result: {
         snapshotId: currentPage.id, domRevision, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
-        complete: true, readyState: "complete", blockers: [],
+        complete: true, readyState: "complete", blockers: challengeShown === "captcha" ? [{ kind: "captcha", covers: "partial" }] : [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
           ...(signInWidget === "hidden" ? [] : [
@@ -2136,7 +2136,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
             { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
           ]),
           { id: "search", tag: "input", type: "text", role: "combobox", fieldName: "q", label: "Search", href: null, inViewport: true },
-          ...(challengeShown ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code", href: null, inViewport: true }] : []),
+          ...(challengeShown === "code" ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code", href: null, inViewport: true }] : []),
           { id: "about", tag: "a", label: "About us", href: "https://example.org/about", inViewport: true },
           { id: "clipped-help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true,
             bounds: { x: 100, y: -2, width: 100, height: 32 } },
@@ -2148,7 +2148,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     return { result: { accepted: true } };
   }, false, () => {
     if (reviseDuringRead) domRevision++;
-    if (addChallengeDuringRead) challengeShown = true;
+    if (addChallengeDuringRead) challengeShown = "code";
     if (replaceDocumentDuringRead) {
       currentPage = { ...currentPage, id: currentPage.id + "-new-document" };
       replaceDocumentDuringRead = false;
@@ -2246,10 +2246,12 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
     expect(guideCalls).toBe(0);
     guideOwner = "guide-owner";
-    challengeShown = true;
-    await tap(showLink);
-    await routeTo(page.getByText(/Finish the form yourself in this tab/));
-    expect(guideCalls).toBe(0);
+    for (const challenge of ["captcha", "code"] as const) {
+      challengeShown = challenge;
+      await tap(showLink);
+      await routeTo(page.getByText(/Finish the form yourself in this tab/));
+      expect(guideCalls).toBe(0);
+    }
     challengeShown = false;
     signInWidget = "active";
     await tap(showLink);
@@ -2566,11 +2568,16 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await routeTo(page.getByRole("status", { name: "Link unavailable" }).getByText("The page or task changed. Ask me again on the page you want."));
     expect(ownerProbes).toBeGreaterThan(0);
     expect(hostedChoices).toBe(0);
+    await tap(button("Check page"));
+    await routeTo(page.getByRole("status", { name: "Page check result" }));
+    expect(page.getByText("Open page: https://example.org/").query()).toBeNull();
 
     browserCookieOwner = undefined;
     await tap(guide);
     await routeTo(page.getByRole("status", { name: "Link guide result" }));
     expect(hostedChoices).toBe(1);
+    await tap(button("Check page"));
+    await routeTo(page.getByText("Open page: https://example.org/", { exact: true }));
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();

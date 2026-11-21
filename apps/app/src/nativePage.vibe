@@ -51,6 +51,7 @@ function idleAccountForm(elements: readonly PageElement[], index: number): boole
 export function guidedPageState(observation: LinkObservation | undefined, url: string, linksOnly = false): "Ordinary" | "PublicLinks" | "PrivateForm" | "Unavailable" {
   if (observation === undefined || observation.result.readyState !== "complete" || observation.result.url !== url) return "Unavailable"
   const { blockers, elements } = observation.result
+  if (blockers.some((blocker) => blocker.kind === "captcha")) return "PrivateForm"
   if (blockers.some((blocker) => blocker.covers !== "partial")) return "Unavailable"
   const fields = elements.map(pageField)
   if (ordinaryGuidedPage(true, true, false, fields)) return "Ordinary"
