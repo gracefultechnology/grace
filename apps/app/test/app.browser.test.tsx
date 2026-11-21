@@ -2430,8 +2430,13 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   });
   const browserHome = "https://example.org/";
   let browserUrl = browserHome;
+  let switchOwnerDuringPageRead = false;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
+      if (switchOwnerDuringPageRead) {
+        browserCookieOwner = firstOwner;
+        switchOwnerDuringPageRead = false;
+      }
       const documentId = browserUrl === browserHome ? "owner-guide-home" : "owner-guide-help";
       return { documentId, frameScope: "main", result: {
         snapshotId: documentId, domRevision: 1, url: browserUrl, title: "Example",
@@ -2582,6 +2587,11 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await native.report("tab-1", browserUrl, 100);
     await native.route();
     await tap(button("Resume Grace"));
+    switchOwnerDuringPageRead = true;
+    expect(await check()).toBe(false);
+    expect(switchOwnerDuringPageRead).toBe(false);
+    expect(await receipts()).toEqual([]);
+    browserCookieOwner = undefined;
     await tap(button("Check page"));
     await expect.poll(receipts).toEqual(["Open page: " + browserUrl]);
   } finally {
