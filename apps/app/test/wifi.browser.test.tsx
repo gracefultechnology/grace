@@ -41,7 +41,8 @@ function android() {
   return { tablet, plugin };
 }
 
-describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed")', () => {
+describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () => {
+  // spec/app/network.md, "Story: See why no networks are listed"
   actOnScreen();
   it("joins open and password networks", async () => {
     const { tablet, plugin } = android();
