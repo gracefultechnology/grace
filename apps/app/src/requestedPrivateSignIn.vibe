@@ -4,10 +4,29 @@ import { directSignInRequest } from "../gen/app__browserControls.effect.vibe"
 import { type Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { type NativePage } from "./nativePage.vibe"
 
-export function privateSignInRequest(w: Workspace) {
+function privateSignInRequest(w: Workspace) {
   const parsed = URL.parse(tabUrl(activeTab(w.browser)))
   if (w.device.surface !== "Browser" || parsed === null || parsed.protocol !== "https:" || parsed.username !== "" || parsed.password !== "") return undefined
   return { tag: "RequestPrivateSignIn" as const, id: w.browser.selected, revision: w.browser.revision, origin: parsed.origin }
+}
+
+const asking = /^(?:(?:please|can you|could you|would you|will you|help me|i need to|i want to)\s+)*/i
+const signingIn = /^(?:(?:sign|log)(?:\s+me)?\s*(?:in(?:to)?|on(?:to)?)|(?:use|fill(?: in)?)\s+(?:my|a|the)\s+(?:saved\s+)?(?:password|login|sign-in))(?=\s|$)/i
+const currentSite = /^(?:here|(?:this|the (?:open|current|selected)) (?:website|site|page|tab)|my account)$/i
+
+export function offeredPrivateSignIn(w: Workspace, words: string) {
+  const request = privateSignInRequest(w)
+  if (!request) return undefined
+  const phrase = words.trim().replace(/[.!?]+$/, "").replace(/,?\s+please$/i, "").replace(asking, "")
+  const action = signingIn.exec(phrase)
+  if (!action) return undefined
+  const rest = phrase.slice(action[0].length).trim()
+  if (rest === "") return /(?:into|onto)$/i.test(action[0]) ? undefined : request
+  const target = rest.replace(/^(?:to|at|on|for|into|onto)\s+/i, "")
+  if (currentSite.test(target)) return request
+  if (!/^(?:https:\/\/)?[^\s/?#@\\]+\/?$/i.test(target)) return undefined
+  const url = URL.parse(/^https:\/\//i.test(target) ? target : "https://" + target)
+  return url?.origin === request.origin ? request : undefined
 }
 
 export effect function requestedPrivateSignIn(words: string, tab: number, revision: number, workspace: Workspaces.Shape, native: NativePage.Shape): boolean!! {
