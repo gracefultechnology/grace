@@ -1158,7 +1158,7 @@ pure def beginGuided(w: Workspace, request: GuidedRequest, by: WorkspaceActor): 
 
 ### An authenticated restart restores the reviewed plan paused at its next outcome
 
-For a plan bound to a verified owner, Start records the first checkpoint before guidance begins. If the device cannot store it, the reviewed plan stays available for the person to retry. When the person ends a saved task under that owner, Grace clears its checkpoint before closing the task. If the device cannot confirm this, the task stays open and the person can try again.
+For a plan bound to a verified owner, Start records the first checkpoint before guidance begins. If the device cannot store it, the reviewed plan stays available for the person to retry. If a delayed write arrives before the retry, Grace can use it only when the full checkpoint matches that same review and owner. When the person ends a saved task under that owner, Grace clears its checkpoint before closing the task. If the device cannot confirm the checkpoint or matching Calendar draft was cleared, the task stays open and the person can try again. An earlier delayed write cannot reopen a task after End succeeds.
 
 A durable checkpoint keeps the reviewed owner, task and goal, the ordered
 outcomes and the ordered prefix of confirmed receipts. Receipt identifiers
