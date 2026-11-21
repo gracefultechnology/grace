@@ -2458,17 +2458,13 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
       actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target: requested }, "ReadMail"] }],
     }),
   }]), client));
+  const guideOwner = { id: "guide-owner", email: "owner@grace.test" };
+  const grant = "58b549ef-4b49-4210-a3d1-ec31369a9f06";
   const subject = "Service desk follow-up appointment";
-  const incoming = await fetch(new URL("/fake/gmail/incoming", cloud), {
-    method: "POST",
-    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ to: "owner@grace.test", from: "Harbor Clinic", fromEmail: "desk@harbor.test", subject, body: "Your Thursday appointment is at noon." }),
-  });
-  expect(incoming.ok).toBe(true);
-  const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
-  const account = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector");
+  const body = "Your Thursday appointment is at noon.";
+  const selected = { externalId: "service-desk-appointment", from: "Harbor Clinic", subject,
+    receivedAt: new Date().toISOString(), isUnread: true, metadata: { historyId: "1" } };
   localStorage.clear();
-  localStorage.setItem("accounts", JSON.stringify(account));
 
   const home = "https://example.org/";
   const destination = home + "service-desk";
@@ -2505,14 +2501,28 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
   const accountNetwork = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
     const request = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (request.origin !== window.location.origin) return browserFetch(input, init);
+    const respond = (body: unknown) => Promise.resolve(Response.json(body));
     switch (request.pathname) {
       case "/api/product/files/scope":
         if (replacement === "observed") {
           documentId = "replacement-directory";
           replacement = "replaced";
         }
-        return Promise.resolve(Response.json({ accountId: "guide-owner", owner: "1".repeat(64), session }));
-      case "/api/auth/session": return Promise.resolve(Response.json({ account: { id: "guide-owner", email: "owner@grace.test" } }));
+        return respond({ accountId: guideOwner.id, owner: "1".repeat(64), session });
+      case "/api/auth/session": return respond({ account: guideOwner });
+      case "/api/v1/eliza/google/status": return respond({
+        accountId: guideOwner.id, provider: "google", side: "owner", mode: "cloud_managed",
+        configured: true, connected: true, identity: { email: guideOwner.email }, connectionId: grant,
+        grantedCapabilities: ["google.gmail.triage"],
+      });
+      case "/api/v1/eliza/google/gmail/triage":
+        expect(request.searchParams.get("grantId")).toBe(grant);
+        return respond({ accountId: guideOwner.id, messages: [selected], nextPageToken: null });
+      case "/api/v1/eliza/google/gmail/read":
+        expect(request.searchParams.get("grantId")).toBe(grant);
+        expect(request.searchParams.get("messageId")).toBe(selected.externalId);
+        return respond({ accountId: guideOwner.id, message: selected, historyId: "1", attachments: [],
+          bodyText: body, bodyTextAvailable: true });
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
       case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
@@ -2532,6 +2542,7 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
   const pageReceipt = plan.getByText(/^Open page:/);
   const pending = (label: string) => plan.getByText(`Find and check “${label}”.`, { exact: true });
   try {
+    await routeTo(page.getByText(subject, { exact: true }));
     await tap(button("Internet"));
     await visitExampleSite(native);
     await tap(button("Ask Grace"));
@@ -2604,7 +2615,7 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
     await tap(button("Home"));
     await tap(button(/^Email/));
     await tap(button(/Harbor Clinic/));
-    await routeTo(page.getByText("Your Thursday appointment is at noon."));
+    await routeTo(page.getByText(body, { exact: true }));
     await tap(resume);
     await tap(button("Check email"));
     await routeTo(plan.getByText("Read checks complete"));
