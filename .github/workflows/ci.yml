@@ -187,6 +187,25 @@ jobs:
           pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' |
             tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
           jq -es --argjson tasks "$tasks" --argjson required "$required" '
+            def verified_action_budget:
+              .outcome as $out |
+              ($out.disclosures // []) as $menus |
+              ($out.menuRetries // []) as $retries |
+              ($out.hops // []) as $hops |
+              ($out.nameCorrection // null) as $approval |
+              (($menus | length) + ($retries | length) + ($hops | length) + (if $approval then 1 else 0 end)) == 8 and
+              ($menus | length) == ($menus | unique_by([.documentId, .snapshotId]) | length) and
+              all($menus[]; (.documentId | type == "string" and length > 0) and
+                (.snapshotId | type == "string" and length > 0) and .disclosed == true and .after > .before) and
+              ($retries | length) == ($retries | unique_by([.documentId, .instruction]) | length) and
+              all($retries[]; (.instruction | type == "string" and length > 0) and
+                (.documentId as $doc | any($menus[]; .documentId == $doc))) and
+              ($hops | length) == ($hops | unique_by(.documentId) | length) and
+              all($hops[]; (.documentId | type == "string" and length > 0) and .documentId != $out.start.documentId and
+                (.url | type == "string" and length > 0)) and
+              ($approval == null or (($approval.leaf | type == "string" and length > 0) and
+                ($approval.instruction | type == "string" and length > 0) and
+                ($approval.documentId as $doc | any($menus[]; .documentId == $doc))));
             sort_by(.taskId | tonumber) |
             select(map(.taskId | tonumber) == $tasks) |
             map({taskId, cohort: (if (.taskId | tonumber) as $id | $required | index($id) then "required" else "exploratory" end),
@@ -204,6 +223,7 @@ jobs:
                 ($offer.branchMatches == false or $offer.leafMatches == false) and
                 $offer.offeredControl == ("Use “" + $offer.leaf + "” for this step")
                 else false end),
+              exhaustedBudget: (.outcome.miss == "action-budget-exhausted" and verified_action_budget),
               officialScore: .webArena.officialScore, noActionScore: .webArena.noActionScore,
               hostedGuidance: (.webArena.qualifiedHostedGuidance == true),
               checkedPlan: (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
@@ -219,7 +239,8 @@ jobs:
           jq -e '
             all(.[]; (.failed | not) and (.completed or (.cohort == "exploratory" and
               (.miss == "missing-reviewed-step" or .miss == "target-absent-from-open-menu" or .miss == "repeated-address" or
-                (.miss == "rejected-scoped-leaf" and .rejectedLeaf)))) and
+                (.miss == "rejected-scoped-leaf" and .rejectedLeaf) or
+                (.miss == "action-budget-exhausted" and .exhaustedBudget)))) and
               .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1)) and
             all(.[] | select(.cohort == "required"); .officialScore == 1 and .hostedGuidance and .checkedPlan)
           ' "$WEBARENA_RESULTS/scorecard.json"
