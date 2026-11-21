@@ -141,8 +141,15 @@ effect function session(transport: Transport) {
   })))
 }
 
-export effect function browserFilesAccess() {
-  return try decode(try accepted(webTransport, "/api/product/files/scope", "GET"), Schema.Struct({ owner: filesScope, session: filesScope }))
+export effect function browserSessionScope() {
+  const path = "/api/product/files/scope"
+  let response = try timeout(webTransport.request(path, "GET"), "10 seconds")
+  if (response.status === 401) {
+    if ((try session(webTransport)).account === null) return undefined
+    response = try accepted(webTransport, path, "GET")
+  }
+  if (!response.ok) throw new AccountRequestFailed()
+  return try decode(response, Schema.Struct({ accountId: Schema.NonEmptyString, owner: filesScope, session: filesScope }))
 }
 
 const BrowserGuideLease = Schema.Struct({ id: Schema.NullOr(Schema.NonEmptyString) })
@@ -152,10 +159,6 @@ export effect function nativeBrowserGuideLease() {
   if (bridge === undefined) return undefined
   const response = try tryPromise(() => bridge.browserGuideLease())
   return (try Schema.decodeUnknownEffect(BrowserGuideLease)(response)).id ?? undefined
-}
-
-export effect function browserAccountId() {
-  return (try session(webTransport)).account?.id
 }
 
 effect function readAccount(transport: Transport): GraceAccount!unknown {
