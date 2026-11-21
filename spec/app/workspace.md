@@ -1633,7 +1633,7 @@ pure val guidedMailSample: GuidedMail = { ...noGuidedMail, account: 1, owner: "t
 pure val mailCheckValues = Set(
   { report: sampleReport, mail: guidedMailSample },
   { report: { ...sampleReport, version: 5, deviceVersion: 9, browserRevision: 5, step: ReadMail,
-      sourceKey: "selected-mail", evidence: "Open message: Clinic appointment" }, mail: guidedMailSample },
+    sourceKey: "selected-mail", evidence: "Open message: Clinic appointment" }, mail: guidedMailSample },
   { report: { owner: "tablet", task: "recovered", version: 7, deviceVersion: 2, browserRevision: 0,
     step: ReadMail, sourceKey: "prior-mail", evidence: "The appointment is Thursday." }, mail: guidedMailSample },
   { report: { owner: "tablet", task: "recovered", version: 6, deviceVersion: 2, browserRevision: 0,
