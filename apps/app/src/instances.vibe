@@ -15,8 +15,10 @@ export schema HeldFile {
   readonly savedAt: number; readonly pages: number
 }
 schema HeldReply { readonly address: string; readonly subject: string; readonly verified: boolean }
+schema ReviewedRead { readonly generation: number; readonly version: string; readonly evidence: string }
+type ObservedRead = { kind: "opened" | "refreshed"; receipt: ReadReceipt }
 const heldContent = MailContent
-export schema Held { readonly content: heldContent; readonly assets?: readonly HeldFile[]; readonly reply?: HeldReply }
+export schema Held { readonly content: heldContent; readonly assets?: readonly HeldFile[]; readonly reply?: HeldReply; readonly read?: ReviewedRead }
 
 export type MailRuntime = ManagedRuntime.ManagedRuntime<MailMachine, NotAnAccount>
 export type CalendarRuntime = ManagedRuntime.ManagedRuntime<CalendarMachine, NotAnAccount>
@@ -46,7 +48,7 @@ export service Instances {
   readonly calendarRuntime: (key: number) => CalendarRuntime
   readonly content: (id: number, ref: string) => MailContent | undefined
   readonly held: (id: number, ref: string) => Held | undefined
-  readonly remember: (id: number, held: Held) => void
+  readonly remember: (id: number, held: Held, observed?: ObservedRead) => void
   readonly file: (id: number, asset: SavedFile) => Attached | undefined
   readonly hold: (id: number, asset: SavedFile, file: Attached) => void
 }
@@ -78,6 +80,18 @@ effect function calendarWithMailSource(text: string, account: number) {
     return { ...value, sourceAccount }
   }))
   return changed ? JSON.stringify(parsed) : text
+}
+
+function reviewedRead(known: Held | undefined, content: MailContent, observed: ObservedRead | undefined) {
+  const prior = known?.content
+  const sameHeader = prior && prior.from === content.from && prior.fromAddress === content.fromAddress &&
+    prior.subject === content.subject && prior.receivedAt === content.receivedAt
+  if (!observed) return sameHeader && prior.version === content.version && (!content.body || prior.body === content.body) ? known.read : undefined
+  const { generation, succeeded, suspicion } = observed.receipt
+  if (!succeeded) return undefined
+  if (observed.kind === "opened") return { generation, version: content.version, evidence: suspicion }
+  return sameHeader && prior.body === content.body && known.read?.generation === generation &&
+    known.read.evidence === suspicion ? known.read : undefined
 }
 
 export const instances = Layer.effect(Instances, effect {
@@ -205,12 +219,13 @@ export const instances = Layer.effect(Instances, effect {
     calendarRuntime: (key) => cached(calendarRuntimes, key, () => ManagedRuntime.make(Layer.effect(CalendarMachine, calendar(key)))),
     content: (id, ref) => contents.get(contentKey(id, ref))?.content,
     held: (id, ref) => contents.get(contentKey(id, ref)),
-    remember: (id, held) => {
+    remember: (id, held, observed) => {
       const known = contents.get(contentKey(id, held.content.ref))
       contents.set(contentKey(id, held.content.ref), {
-        content: known === undefined ? held.content : { ...held.content, body: held.content.body || known.content.body, replied: held.content.replied || known.content.replied },
+        content: known === undefined ? held.content : { ...held.content, body: observed ? held.content.body : held.content.body || known.content.body, replied: held.content.replied || known.content.replied },
         assets: held.assets ?? known?.assets,
-        reply: held.reply ?? known?.reply
+        reply: held.reply ?? known?.reply,
+        read: reviewedRead(known, held.content, observed)
       })
     },
     file: (id, asset) => files.get(contentKey(id, asset.sourceRef)),
@@ -284,7 +299,7 @@ export const reading = Layer.effectDiscard(effect {
       };
       when "OpenMessage": effect {
         const opened = try mail.read(m.requestedRef, m.generation)
-        shelf.remember(id, { content: opened.content, assets: opened.receipt.succeeded ? opened.receipt.assets : undefined })
+        shelf.remember(id, { content: opened.content, assets: opened.receipt.succeeded ? opened.receipt.assets : undefined }, { kind: "opened", receipt: opened.receipt })
         const missing = opened.receipt.assets.filter((file) => file.kind === "Photo" && shelf.file(id, file) === undefined)
         try Effect.forEach(missing, effect (file) => {
           const got = mail.attachment(file, opened.content.version) catch () => undefined
