@@ -839,21 +839,11 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
     return;
   }
   if ("approve" in step) {
-    const screen = "/data/local/tmp/grace-approve.xml";
-    const until = Date.now() + 180_000;
-    let seen: unknown = "nothing";
-    while (Date.now() < until) {
-      const dumped = await shell(serial, `uiautomator dump ${screen} >/dev/null && cat ${screen}; rm -f ${screen}`, 75).catch((error: unknown) => error);
-      const nodes = typeof dumped === "string" ? deviceNodes(dumped).filter((node) => ["com.android.settings", "com.android.systemui"].includes(node.packageName) && node.clickable && node.enabled) : [];
-      const button = nodes.find((node) => node.label === step.approve);
-      if (button) {
-        await shell(serial, `input tap ${button.x} ${button.y}`);
-        return;
-      }
-      seen = typeof dumped === "string" ? nodes.map((node) => node.label || node.description) : dumped;
-      await delay(1000);
-    }
-    throw new Error(`Android showed no ${step.approve} button on ${serial}; last seen ${seen instanceof Error ? seen.message : JSON.stringify(seen)}`);
+    const screen = { serial, file: `/data/local/tmp/grace-approve-${randomUUID()}.xml`, signal: AbortSignal.timeout(200_000) };
+    const button = await waitForUi(screen, (nodes) => nodes.find((node) => ["com.android.settings", "com.android.systemui"].includes(node.packageName) &&
+      node.clickable && node.enabled && node.label === step.approve), `a ${step.approve} button`);
+    await shell(serial, `input tap ${button.x} ${button.y}`);
+    return;
   }
   if ("notification" in step) {
     await shell(serial, "am start -W -a android.settings.SETTINGS", 120);
@@ -1066,6 +1056,39 @@ function fullscreenTip(nodes: DeviceNode[]) {
   return buttons.length === 1 ? buttons[0] : undefined;
 }
 
+type DeviceScreen = { serial: typeof EmulatorSerial.Type; file: string; signal: AbortSignal };
+
+async function deviceScreen({ serial, file, signal }: DeviceScreen) {
+  signal.throwIfAborted();
+  const redact = String.raw`s/(<node[^>]*[[:space:]]text=")[^"]*("[^>]*[[:space:]](class="android.widget.EditText"|password="true")[^>]*>)/\1\2/g; s/(<node[^>]*[[:space:]](class="android.widget.EditText"|password="true")[^>]*[[:space:]]text=")[^"]*("[^>]*>)/\1\3/g`;
+  const xml = await shell(serial, `umask 077; trap 'rm -f ${file}' EXIT; trap 'exit 1' HUP INT TERM; rm -f ${file} && uiautomator dump ${file} >/dev/null && sed -E '${redact}' ${file}`, 75);
+  return deviceNodes(xml);
+}
+
+async function waitForUi<Found>(screen: DeviceScreen, select: (nodes: DeviceNode[]) => Found | undefined, label: string) {
+  const until = Date.now() + 180_000;
+  let seen: string[] = [];
+  while (Date.now() < until) {
+    screen.signal.throwIfAborted();
+    const nodes = await deviceScreen(screen).catch(() => []);
+    screen.signal.throwIfAborted();
+    const fullscreen = fullscreenTip(nodes);
+    const androidWait = nodes.find((node) => node.id === "aerr_wait" && node.label === "Wait" &&
+      (node.packageName === "android" || node.packageName === "com.android.systemui"));
+    const systemAction = fullscreen ?? androidWait;
+    if (systemAction) {
+      await shell(screen.serial, `input tap ${systemAction.x} ${systemAction.y}`);
+      process.stdout.write(fullscreen ? "Acknowledged Android’s first-use fullscreen tutorial.\n" : "Android requested more time.\n");
+    } else {
+      const found = select(nodes);
+      if (found !== undefined) return found;
+      seen = nodes.filter((node) => node.clickable).map((node) => node.label || node.description);
+    }
+    await delay(1000);
+  }
+  throw new Error(`Android did not show ${label}; last seen ${JSON.stringify(seen)}`);
+}
+
 async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: string, abi: Abi, signal: AbortSignal) {
   const installedApk = async (packageName = identity.appId) => {
     const packages = (await shell(serial, `cmd package list packages -f ${packageName}`)).trim();
@@ -1094,34 +1117,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   const cleanup: Array<() => void | Promise<unknown>> = [];
   let buildFailure: Error | undefined;
   const screenFile = `/data/local/tmp/grace-billworld-ui-${randomUUID()}.xml`;
-  const screen = async () => {
-    signal.throwIfAborted();
-    const redact = String.raw`s/(<node[^>]*[[:space:]]text=")[^"]*("[^>]*[[:space:]](class="android.widget.EditText"|password="true")[^>]*>)/\1\2/g; s/(<node[^>]*[[:space:]](class="android.widget.EditText"|password="true")[^>]*[[:space:]]text=")[^"]*("[^>]*>)/\1\3/g`;
-    const xml = await shell(serial, `umask 077; trap 'rm -f ${screenFile}' EXIT; trap 'exit 1' HUP INT TERM; rm -f ${screenFile} && uiautomator dump ${screenFile} >/dev/null && sed -E '${redact}' ${screenFile}`, 75);
-    return deviceNodes(xml);
-  };
-  const waitForUi = async <Found>(select: (nodes: DeviceNode[]) => Found | undefined, label: string) => {
-    const until = Date.now() + 180_000;
-    while (Date.now() < until) {
-      signal.throwIfAborted();
-      const nodes = await screen().catch(() => []);
-      signal.throwIfAborted();
-      const fullscreen = fullscreenTip(nodes);
-      const androidWait = nodes.find((node) => node.id === "aerr_wait" && node.label === "Wait" &&
-        (node.packageName === "android" || node.packageName === "com.android.systemui"));
-      const systemAction = fullscreen ?? androidWait;
-      if (systemAction) {
-        await shell(serial, `input tap ${systemAction.x} ${systemAction.y}`);
-        process.stdout.write(fullscreen ? "Acknowledged Android’s first-use fullscreen tutorial.\n" : "Android requested more time during the fixture.\n");
-      } else {
-        const found = select(nodes);
-        if (found !== undefined) return found;
-      }
-      await delay(1000);
-    }
-    throw new Error(`Android did not show ${label}`);
-  };
-  const waitForNode = (matches: (node: DeviceNode) => boolean, label: string) => waitForUi((nodes) => nodes.find(matches), label);
+  const waitForNode = (matches: (node: DeviceNode) => boolean, label: string) => waitForUi({ serial, file: screenFile, signal }, (nodes) => nodes.find(matches), label);
   const tapNode = ({ x, y }: DeviceNode) => shell(serial, `input tap ${x} ${y}`);
   const tap = async (matches: (node: DeviceNode) => boolean, label: string) => tapNode(await waitForNode(matches, label));
   let episode: typeof Episode.Type | undefined;

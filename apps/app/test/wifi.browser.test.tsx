@@ -15,7 +15,7 @@ const nearby = (ssid: string, rssi: number, security: NonNullable<WiFiNetwork["s
   ({ ssid, bssid, rssi, frequency: 2412, capabilities: "", secured: security !== "open" && security !== "owe", security });
 
 function android() {
-  const tablet = { location: "prompt" as "prompt" | "granted" | "denied", ssid: null as string | null, joins: [] as ConnectOptions[], panels: 0, delayed: false, validated: true, visible: true, currentPoint: undefined as WiFiNetwork | undefined };
+  const tablet = { location: "prompt" as "prompt" | "granted" | "denied", ssid: null as string | null, joins: [] as ConnectOptions[], panels: 0, delayed: false, validated: true, visible: true, scan: undefined as WiFiNetwork[] | undefined, currentPoint: undefined as WiFiNetwork | undefined };
   const plugin: WiFiPlugin = {
     checkPermissions: () => Promise.resolve({ location: tablet.location }),
     requestPermissions: () => { tablet.location = "granted"; return Promise.resolve({ location: "granted" }); },
@@ -24,7 +24,7 @@ function android() {
     getWifiState: () => Promise.resolve({ enabled: true, connected: tablet.ssid !== null, rssi: null }),
     getConnectedNetwork: () => Promise.resolve({ network: tablet.ssid === null ? null : tablet.currentPoint ?? nearby(tablet.ssid, -50, tablet.ssid === "Riverside Library Guest" ? "open" : "wpa2") }),
     listAvailableNetworks: () => tablet.location === "granted"
-      ? Promise.resolve({ networks: tablet.visible ? [nearby("NETGEAR-4F2", -54, "wpa2"), nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap")] : [] })
+      ? Promise.resolve({ networks: tablet.visible ? tablet.scan ?? [nearby("NETGEAR-4F2", -54, "wpa2"), nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap")] : [] })
       : Promise.reject(Object.assign(new Error("location"), { code: "LOCATION_PERMISSION_REQUIRED" })),
     connectToNetwork: () => Promise.resolve({ success: false }),
     disconnectFromNetwork: () => Promise.resolve({ success: true }),
@@ -109,7 +109,15 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
     await expect.element(button("Look again")).toBeVisible();
     await expect.element(page.getByRole("alert")).toBeVisible();
     tablet.currentPoint = nearby("NETGEAR-4F2", -40, "wpa2", "02:00:00:00:00:00");
+    tablet.scan = [tablet.currentPoint];
+    tablet.visible = true;
     await changed();
+    await expect.element(button("Look again")).not.toBeInTheDocument();
+    tablet.visible = false;
+    await changed();
+    await expect.element(button("Look again")).toBeVisible();
+    await expect.element(page.getByRole("alert")).toBeVisible();
+    tablet.scan = undefined;
     tablet.currentPoint = undefined;
     await changed();
     await expect.element(button("Try again")).not.toBeInTheDocument();
