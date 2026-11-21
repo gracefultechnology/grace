@@ -1070,7 +1070,9 @@ when content is unchanged. None substitutes for another.
 
 Startup hydrates this mailbox's durable state before dispatching `restartMailbox`;
 `initial` is only for a mailbox with no history. Restart preserves account binding,
-retired versions, drafts and issued operation IDs. It invalidates read callbacks
+retired versions, drafts and issued operation IDs. An older saved mailbox without a
+draft count starts with the initial count until the provider reports one. An
+already stored count survives restart. Restart invalidates read callbacks
 and approvals and reconciles any in-flight send as unknown. Pending draft writes
 retain their request serial for store reconciliation; restart does not pretend
 they succeeded or clear their tombstones.
