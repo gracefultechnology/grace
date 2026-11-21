@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "pnpm -w all //#gen @repo/design-system#build && pnpm --dir ../../vendor/eliza run gen --owner cloud && vite build",
+    "build": "pnpm -w all //#gen @repo/design-system#build && vite build",
     "typecheck": "vibelang --noEmit -p .",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
