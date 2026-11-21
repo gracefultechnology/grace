@@ -17,6 +17,7 @@ import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
 import { Conversation } from "../src/conversation.vibe";
+import { GuidedRecovery } from "../src/guidedRecovery.vibe";
 import { FileCatalog, FileLease, FileStorage } from "../src/files.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { ManagedReads } from "../src/managedReads.vibe";
@@ -2156,6 +2157,90 @@ it("Talk or type without losing the conversation", async () => {
   expect(await Effect.runPromise(Effect.provide(turns(cloud, secret), client))).toEqual(
     ["Hello Grace.", "Make the text bigger.", "A bit bigger", "Say nothing."].map((said) => ({ said, outcome: "completed" })),
   );
+});
+
+it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart restores the reviewed plan paused at its next outcome")', async () => {
+  localStorage.clear();
+  const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
+  const accounts = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector");
+  localStorage.setItem("accounts", JSON.stringify(accounts));
+  const get = localStorage.getItem.bind(localStorage);
+  const set = localStorage.setItem.bind(localStorage);
+  const sessionGet = sessionStorage.getItem.bind(sessionStorage);
+  const sessionSet = sessionStorage.setItem.bind(sessionStorage);
+  let readable = false;
+  let writable = true;
+  let lost = false;
+  const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+    if (key.startsWith("grace/guided-task-") && !readable) throw new Error("The store is unavailable");
+    return (this === localStorage ? get : sessionGet)(key);
+  });
+  const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+    if (key.startsWith("grace/guided-task-") && !writable) throw new Error("The store is unavailable");
+    (this === localStorage ? set : sessionSet)(key, value);
+    if (key.startsWith("grace/guided-task-") && lost) {
+      lost = false;
+      readable = false;
+      throw new Error("The write response was lost");
+    }
+  });
+  let runtime = ManagedRuntime.make(application(undefined));
+  let view = tabletView(runtime);
+  const sync = () => runtime.runPromise(Effect.flatMap(GuidedRecovery, (recovery) => recovery.keepProgress()));
+  const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  try {
+    await view.render();
+    const workspace = await runtime.runPromise(Workspaces);
+    await act(() => runtime.runPromise(workspace.send({ type: "restoreGuided", recovery: {
+      owner: "tablet",
+      checkpoint: {
+        request: { owner: "tablet", task: "receipt-retry", goal: "Save my appointment", steps: [{ tag: "ReadMail" }, { tag: "SaveMailAppointment" }] },
+        receipts: [{ sourceKey: "prior-mail", evidence: "The appointment is Thursday." }], workVersion: 4,
+        correction: { tag: "NoGuidedCheckpointCorrection" },
+        save: { tag: "GuidedSaveReconcile", occurrence: "", owner: "mail", calendar: "primary", mailDigest: "prior-mail" },
+      },
+    } }, "Store")));
+    await tap("Ask Grace");
+    await sync();
+    await sync();
+    expect(Object.keys(localStorage).some((key) => key.startsWith("grace/guided-task-"))).toBe(false);
+
+    readable = true;
+    lost = true;
+    await sync();
+    const key = Object.keys(localStorage).find((entry) => entry.startsWith("grace/guided-task-"));
+    expect(key).toBeDefined();
+    if (key === undefined) throw new Error("The reviewed task was never saved");
+    const persisted = () => Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({
+      revision: Schema.Int, value: Schema.String,
+    })))(get(key));
+    const first = persisted();
+    expect(first.value).toContain("receipt-retry");
+    await act(() => runtime.runPromise(workspace.send({ type: "stop" }, "Person")));
+    readable = true;
+    await sync();
+    expect(persisted().revision).toBeGreaterThan(first.revision);
+    if ((await runtime.runPromise(workspace.get())).assistant.presentation === "Closed") await tap("Ask Grace");
+    writable = false;
+    await tap("End this task");
+    await sync();
+    await expect.element(page.getByRole("button", { name: "End this task", exact: true })).toBeVisible();
+    expect(persisted().value).not.toBe("");
+    writable = true;
+    await tap("End this task");
+    await expect.poll(() => persisted().value).toBe("");
+    await view.dispose();
+    runtime = ManagedRuntime.make(application(undefined));
+    view = tabletView(runtime);
+    await view.render();
+    await tap("Ask Grace");
+    expect(page.getByRole("button", { name: "Resume Grace" }).query()).toBeNull();
+  } finally {
+    await view.dispose();
+    read.mockRestore();
+    write.mockRestore();
+    localStorage.clear();
+  }
 });
 
 it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {

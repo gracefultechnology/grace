@@ -2,8 +2,8 @@
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
 import {
-  Machine as Workspaces, canStartReadReview, startReadReview, guidedCheckpoint, guidedDetails, parseEvent, privateSurfaceActive,
-  validGuidedCheckpoint, type GuidedCheckpoint, type GuidedStep, type Workspace
+  Machine as Workspaces, Rejected, canAbandonTask, canStartReadReview, startReadReview, guidedCheckpoint, guidedDetails, parseEvent, privateSurfaceActive,
+  validGuidedCheckpoint, type GuidedCheckpoint, type GuidedFence, type GuidedStep, type Workspace, type WorkspaceResult
 } from "../gen/app__workspace.effect.vibe"
 import type { GuidedRecordName, GuidedTaskRecords } from "./preferencesPlugin.ts"
 import { accountPlugin } from "./accountPlugin.ts"
@@ -59,11 +59,93 @@ const webRecords: GuidedTaskRecords = {
 }
 
 type ScopeSet = { device?: string; connected?: string; localCalendar?: string; session?: string }
-type BoundTask = { task: string; scope: string; revision: number; saved: string | null }
+type BoundTask = { task: string; scope: string; revision: number; saved: string | null; awaiting?: string }
+error CheckpointUnavailable {}
+effect function checkpointOf(scope: string, value: string | null | undefined) {
+  if (!value) return undefined
+  const envelope = Schema.decodeUnknownEffect(Envelope)(value) catch () => undefined
+  if (envelope?.scope !== scope) return undefined
+  const event = parseEvent({ type: "restoreGuided", recovery: { owner: "", checkpoint: envelope.checkpoint } })
+  if (event?.type !== "restoreGuided" || !safeCheckpoint(event.recovery.checkpoint)) return undefined
+  return event.recovery.checkpoint
+}
+
+function taskRecords(backend: GuidedTaskRecords | undefined) {
+  effect function read(scope: string) {
+    if (!backend) return { revision: 0 }
+    return try Schema.decodeUnknownEffect(RecordValue)(try timeout(tryPromise(() => backend.read({ name: nameFor(scope) })), "2 seconds"))
+  }
+
+  effect function save(current: BoundTask, checkpoint: GuidedCheckpoint | null): boolean!! {
+    if (!backend) return false
+    if (current.awaiting !== undefined) {
+      const observed = read(current.scope) catch () => undefined
+      if (observed === undefined) return false
+      if (observed.revision === current.revision + 1 && observed.value === current.awaiting) {
+        current.revision = observed.revision
+        current.saved = current.awaiting
+      } else if (observed.revision !== current.revision || (observed.value ?? "") !== (current.saved ?? "")) return false
+      delete current.awaiting
+    }
+    if (!Number.isSafeInteger(current.revision + 1)) return false
+    const value = checkpoint === null ? "" : JSON.stringify({ version: 1, scope: current.scope, checkpoint })
+    if (value === (current.saved ?? "")) return true
+    const revision = current.revision
+    const receipt = effect {
+      const raw = try timeout(tryPromise(() => backend.write({ name: nameFor(current.scope), revision, value })), "4 seconds")
+      return try Schema.decodeUnknownEffect(Written)(raw)
+    } catch () => undefined
+    if (receipt?.revision !== revision + 1) {
+      const observed = read(current.scope) catch () => undefined
+      if (observed === undefined || observed.revision !== revision + 1 || observed.value !== value) {
+        current.awaiting = value
+        return false
+      }
+    }
+    current.revision = revision + 1
+    current.saved = value
+    return true
+  }
+
+  effect function clear(current: BoundTask) {
+    if (try save(current, null)) return true
+    const observed = read(current.scope) catch () => undefined
+    if (observed === undefined) return false
+    if (!observed.value) return true
+    if (observed.revision <= current.revision) return false
+    const existing = try checkpointOf(current.scope, observed.value)
+    if (existing === undefined || existing.request.task === current.task) return false
+    return true
+  }
+
+  return { read, save, clear }
+}
+
+effect function digest(value: string) {
+  const bytes = try tryPromise(() => webView.window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))
+  return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")
+}
+
+function scopeFor(scopes: ScopeSet | undefined, steps: readonly GuidedStep[]) {
+  if (!needsMailOrCalendar(steps)) return scopes?.device
+  return scopes?.connected ?? (steps.every((step) => step.tag !== "ReadMail" && step.tag !== "SaveMailAppointment") ? scopes?.localCalendar : undefined)
+}
+
+function sessionChanges(native: boolean) {
+  const nativeAccount = native && accountPlugin !== undefined ? accountPlugin : undefined
+  return nativeAccount === undefined
+    ? Stream.fromEventListener(webView.document, "visibilitychange")
+    : Stream.callback<void>((queue) => acquireRelease(
+        promise(() => nativeAccount.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })),
+        (handle) => promise(() => handle.remove())
+      ))
+}
+
 export service GuidedRecovery {
   canAccess(state: Workspace): boolean!!
   begin(revision: number): boolean!!
   flushSave(task: string, version: number): boolean!!
+  abandon(fence: GuidedFence): WorkspaceResult!(Rejected | CheckpointUnavailable)
   keepProgress(): void!!
   beforeOpen(): void!!
 }
@@ -74,15 +156,11 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
   const accounts = try Accounts
   const writer = try Semaphore.make(1)
   const backend = native ? port : port ?? webRecords
+  const { read, save, clear } = taskRecords(backend)
   let binding: BoundTask | undefined
   let latest: ScopeSet | undefined
   let hosted: { accountId: string; owner: string; session: string } | undefined
   const checked = new Set<string>()
-
-  effect function digest(value: string) {
-    const bytes = try tryPromise(() => webView.window.crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))
-    return Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("")
-  }
 
   effect function actualScopes(fresh: boolean) {
     const state = try setup.get()
@@ -127,45 +205,8 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
     return { device, connected: source, localCalendar, session }
   }
 
-  function scopeFor(scopes: ScopeSet | undefined, steps: readonly GuidedStep[]) {
-    if (!needsMailOrCalendar(steps)) return scopes?.device
-    return scopes?.connected ?? (steps.every((step) => step.tag !== "ReadMail" && step.tag !== "SaveMailAppointment") ? scopes?.localCalendar : undefined)
-  }
-
   effect function owns(owner: string, steps: readonly GuidedStep[]) {
     return owner !== "" && owner === guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), steps)
-  }
-
-  effect function read(scope: string) {
-    if (!backend) return { revision: 0 }
-    return try Schema.decodeUnknownEffect(RecordValue)(try timeout(tryPromise(() => backend.read({ name: nameFor(scope) })), "2 seconds"))
-  }
-
-  effect function save(current: BoundTask, checkpoint: GuidedCheckpoint | null): boolean!! {
-    if (!backend || current.revision < 0 || !Number.isSafeInteger(current.revision + 1)) return false
-    const value = checkpoint === null ? "" : JSON.stringify({ version: 1, scope: current.scope, checkpoint })
-    if (value === (current.saved ?? "")) return true
-    const revision = current.revision
-    const receipt = effect {
-      const raw = try timeout(tryPromise(() => backend.write({ name: nameFor(current.scope), revision, value })), "4 seconds")
-      return try Schema.decodeUnknownEffect(Written)(raw)
-    } catch () => undefined
-    if (receipt?.revision !== revision + 1) {
-      const observed = read(current.scope) catch () => undefined
-      if (observed === undefined || observed.revision !== revision + 1 || observed.value !== value) return false
-    }
-    current.revision = revision + 1
-    current.saved = value
-    return true
-  }
-
-  effect function checkpointOf(scope: string, value: string | null | undefined) {
-    if (!value) return undefined
-    const envelope = Schema.decodeUnknownEffect(Envelope)(value) catch () => undefined
-    if (envelope?.scope !== scope) return undefined
-    const event = parseEvent({ type: "restoreGuided", recovery: { owner: "", checkpoint: envelope.checkpoint } })
-    if (event?.type !== "restoreGuided" || !safeCheckpoint(event.recovery.checkpoint)) return undefined
-    return event.recovery.checkpoint
   }
 
   effect function restore(scope: string, scopes: ScopeSet) {
@@ -211,7 +252,10 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
         const dropped = workspace.send({ type: "discardGuidedRecovery", fence: { task: current.task, version: assistant.workVersion } }, "Host") catch () => undefined
         if (dropped === undefined) return
       } else if (sameTask) return
-      else if ([scopes.device, scopes.connected, scopes.localCalendar].includes(current.scope)) try save(current, null)
+      else if ([scopes.device, scopes.connected, scopes.localCalendar].includes(current.scope)) {
+        if (!(try clear(current))) return
+        checked.delete(current.scope)
+      }
       binding = undefined
       if (sameTask) checked.delete(current.scope)
       return
@@ -221,13 +265,16 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
       if (scope === undefined || scopeFor(before, state.plan.steps) !== scope ||
           !(try owns(state.plan.owner, state.plan.steps))) return
       const saved = read(scope) catch () => undefined
+      if (!backend || saved === undefined) return
+      const confirmed = actualScopes(true) catch () => undefined
+      if (scopeFor(confirmed, state.plan.steps) !== scope || confirmed?.session !== scopes.session) return
       const after = try workspace.get()
       if (after.assistant.taskId !== state.assistant.taskId || after.plan.owner !== state.plan.owner ||
           !(try owns(after.plan.owner, after.plan.steps))) return
       const existing = try checkpointOf(scope, saved?.value)
       if (existing !== undefined && existing.request.task !== after.assistant.taskId) return
       checked.add(scope)
-      const held = { task: after.assistant.taskId, scope, revision: saved?.revision ?? -1, saved: saved?.value ?? null }
+      const held = { task: after.assistant.taskId, scope, revision: saved.revision, saved: saved.value ?? null }
       binding = held
       const checkpoint = guidedCheckpoint(after)
       if (safeCheckpoint(checkpoint)) try save(held, checkpoint)
@@ -240,20 +287,13 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
     if (binding === undefined && connected !== undefined) try restore(connected, scopes)
   }
 
-  const nativeAccount = native && accountPlugin !== undefined ? accountPlugin : undefined
-  const sessions = nativeAccount === undefined
-    ? Stream.fromEventListener(webView.document, "visibilitychange")
-    : Stream.callback<void>((queue) => acquireRelease(
-        promise(() => nativeAccount.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })),
-        (handle) => promise(() => handle.remove())
-      ))
   const taskChanges = Stream.changes(Stream.map(workspace.changes, (state) => JSON.stringify([
     state.device.readiness, state.assistant.activity, state.assistant.presentation,
     privateSurfaceActive(state), guidedCheckpoint(state)
   ])))
   const changes = Stream.mergeAll([
     Stream.as(taskChanges, false), Stream.as(setup.changes, true),
-    Stream.as(accounts.changes, false), Stream.as(sessions, true)
+    Stream.as(accounts.changes, false), Stream.as(sessionChanges(native), true)
   ], { concurrency: "unbounded" })
   try fork.scoped Stream.runForEach(changes, (fresh) => writer.withPermit(syncTask(fresh)))
 
@@ -273,6 +313,28 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
         now.assistant.taskId === assistant.taskId && now.assistant.workVersion === assistant.workVersion &&
         !privateSurfaceActive(now) && (try owns(plan.owner, plan.steps))
     },
+    abandon: (fence) => writer.withPermit(effect {
+      const event = { type: "abandonTask" } as const
+      const state = try workspace.get()
+      if (state.assistant.taskId !== fence.task || state.assistant.workVersion !== fence.version || !canAbandonTask(state, "Person"))
+        throw new Rejected({ event, state, by: "Person" })
+      const current = binding
+      if (current?.task === fence.task) {
+        const scopes = actualScopes(true) catch () => undefined
+        if (scopes === undefined) throw new CheckpointUnavailable()
+        if ([scopes.device, scopes.connected, scopes.localCalendar].includes(current.scope) && !(try clear(current)))
+          throw new CheckpointUnavailable()
+      }
+      const after = try workspace.get()
+      if (after.assistant.taskId !== fence.task || after.assistant.workVersion !== fence.version)
+        throw new Rejected({ event, state: after, by: "Person" })
+      const result = try workspace.send(event, "Person")
+      if (current?.task === fence.task) {
+        checked.delete(current.scope)
+        binding = undefined
+      }
+      return result
+    }),
     keepProgress: () => writer.withPermit(syncTask()),
     beforeOpen: () => writer.withPermit(syncTask(true)),
     flushSave: (task, version) => writer.withPermit(effect {

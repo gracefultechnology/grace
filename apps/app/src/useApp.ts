@@ -91,9 +91,11 @@ export function useWorkspace() {
   const current = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get()));
   const interact = async (event: Event, by: WorkspaceActor = "Person") => {
     if (event.type === "openGrace") await runtime.runPromise(Effect.flatMap(Effect.service(GuidedRecovery), (r) => r.beforeOpen()));
-    const result = await send(event, by);
-    if (event.type === "abandonTask") await runtime.runPromise(Effect.flatMap(Effect.service(GuidedRecovery), (r) => r.keepProgress()));
-    return result;
+    if (event.type === "abandonTask" && by === "Person" && workspace !== undefined) {
+      const fence = { task: workspace.assistant.taskId, version: workspace.assistant.workVersion };
+      return runtime.runPromiseExit(Effect.flatMap(Effect.service(GuidedRecovery), (r) => r.abandon(fence)));
+    }
+    return send(event, by);
   };
   const help = async (need: Help) => {
     for (const event of [{ type: "openGrace" }, compact] as const)
