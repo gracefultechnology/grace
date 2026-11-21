@@ -699,7 +699,7 @@ pure def canDismissPopover(w: Workspace, by: WorkspaceActor): bool = by == Perso
 pure def dismissPopover(w: Workspace, by: WorkspaceActor): Workspace =
   interrupted(S::dismissPopover(w.device), w.browser, w)
 pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace): bool =
-  (via == "setAvailability" or via == "visit" or
+  (via == "setAvailability" or via == "visit" or via == "openReleasedEmailLink" or
    via == "returnToApplication" or via == "closeBrowser" or via == "closeGrace" or via == "stop" or
    (via == "changePage" and after.browser.revision != before.browser.revision) or
    via == "chooseHomePage" or via == "chooseSettingsPage" or via == "togglePopover" or via == "dismissPopover")
@@ -1687,7 +1687,7 @@ pure def stepCommitmentSwitchRetainsRecords(before: Workspace, via: str, after: 
 pure def stepDepartureKeepsCommitmentAttempt(before: Workspace, via: str, after: Workspace): bool =
   (via == "changePage" implies after.commitment.attempt == before.commitment.attempt and
     after.commitment.durable == before.commitment.durable) and
-  ((via == "changeLifecycle" or via == "setAvailability" or via == "visit" or
+  ((via == "changeLifecycle" or via == "setAvailability" or via == "visit" or via == "openReleasedEmailLink" or
     via == "returnToApplication" or via == "closeBrowser" or via == "closeGrace" or via == "stop" or
     (via == "changePage" and before.browser.revision != after.browser.revision) or
     via == "unexpectedPage" or via == "purgePrivate" or via == "abandonTask" or
