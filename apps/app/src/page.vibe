@@ -333,7 +333,7 @@ effect function makePageHost(openEmail: (() => Promise<void>) | undefined) {
   const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Woken()))
   let presented: PageId | null | undefined = null
   const protectBrowser = browserProtection()
-  const openMailbox = openEmail ?? (privateViewPlugin && (() => privateViewPlugin.openEmail()))
+  const openMailbox = openEmail ?? privateViewPlugin?.openEmail.bind(privateViewPlugin)
   const paused = new Set<PageId>()
   const ended: AndroidOutcome = "AndroidEnded"
 

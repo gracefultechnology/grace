@@ -1854,10 +1854,10 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
       ? { ...foregroundVault, locked: true, reason: "legacy-authorization-required" }
       : foregroundVault),
     lock: () => { lockRequests += 1; return Promise.resolve(); },
-    unlock: async () => {
-      if (!needsMigration) throw new Error("The existing sign-in was already migrated");
+    unlock: () => {
+      if (!needsMigration) return Promise.reject(new Error("The existing sign-in was already migrated"));
       needsMigration = false;
-      return { unlockRemainingMs: null };
+      return Promise.resolve({ unlockRemainingMs: null });
     },
     list: () => Promise.resolve([saved]),
     openEditor: (input) => {

@@ -188,6 +188,10 @@ Guidance never chooses or reveals an entry, copies a
 password, opens a private page or presses a website button. An explicit
 sign-in command has a separate [browser admission rule](./browserControls.md).
 
+During a voice conversation, a recognized password request goes
+directly from the final human utterance to password guidance. The request
+stays out of the conversation history and the reasoning agent.
+
 On the Passwords Home card the person may type a local command or explicitly
 start Cloud speech under their signed-in Grace account. The person sees the
 disclosure before first use. Cloud speech receives the microphone audio for a

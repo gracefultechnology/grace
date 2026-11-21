@@ -677,6 +677,7 @@ async function devTools(url: string, signal: AbortSignal, cloudProfile: CloudPro
           return { status, google: config.status === 200 ? config.data?.google?.nativeSignIn : undefined };
         })()`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
+        if (/eliza_mobile_/.test(JSON.stringify(result.value))) throw new Error("A sign-in result carries an Eliza Cloud key");
         const report = Schema.decodeUnknownOption(SignInReport, { onExcessProperty: "error" })(result.value);
         if (report._tag === "None") throw new Error("The native account status or public sign-in configuration was unavailable or returned unexpected fields");
         const { status, google } = report.value;
