@@ -1,4 +1,5 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import type { OtherReport, Provider, SheetReport, Use } from "../gen/app__accounts.effect.vibe"
 import { approveDelete, approveSave, beginEdit, confirmDelete, create, edit, initial as noEntry, requestDelete, save, validDetails, validIdentity, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calendarView.effect.vibe"
@@ -223,21 +224,16 @@ function refreshed(known: Calendar | undefined, view: CalendarView, e: ProviderE
 
 const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(known, "CalendarUser"), "CalendarUser"), true, "CalendarStore")
 
-function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[]): Published[] {
+function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[], bindings: ReadonlyMap<string, Calendar>, waiting: ReadonlySet<Calendar>): Published[] {
   const own = view.entries.filter((c) => c.identity.owner === view.owner && c.identity.calendarId === view.calendarId)
   const listed = (c: Calendar) => events.some((e) => e.externalId === c.identity.occurrenceId)
-  const unlisted = own.filter((c) => c.phase === "Saved" && c.identity.kind === "Appointment" && c.committed.seriesId === "" && !listed(c))
-  const writing = own.filter((c) => c.phase === "Editing" && !c.hasSaved && c.approvedRevision === c.revision)
-  const taken = new Set<Calendar>()
-  const kept = new Set<Calendar>()
+  const kept = new Set(waiting)
   const changed = events.flatMap((e) => {
     const known = own.find((c) => c.identity.occurrenceId === e.externalId)
     const timezone = e.timezone ?? view.timezone
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
-    const copies = (d: EntryDetails) => d.title.trim() === e.title.trim() && d.startAt === startAt && d.endAt === endAt && d.allDay === e.isAllDay
-    if (known === undefined && writing.some((c) => copies(c.draft))) return []
-    const created = known !== undefined ? undefined : unlisted.find((c) => !taken.has(c) && copies(c.committed))
-    if (created !== undefined) taken.add(created)
+    const created = known === undefined ? bindings.get(e.externalId) : undefined
+    if (created?.phase === "Editing") return []
     const entry = details(e, startAt, endAt, timezone, (known ?? created)?.committed)
     const incoming = validDetails(entry) ? refreshed(known, view, e, entry, created) : undefined
     if (incoming === undefined && created !== undefined) kept.add(created)
@@ -283,7 +279,7 @@ effect function connectorTransport(link: CloudLink) {
   const http = try HttpClient.HttpClient
 
   effect function reconnects(sent: HttpClientRequest.HttpClientRequest, response: HttpClientResponse.HttpClientResponse) {
-    if (!sent.url.includes("/inbox-v1/")) return true
+    if (!sent.url.includes("/inbox-v1/") && sent.headers["idempotency-key"] === undefined) return true
     const body = response.json catch effect () => null
     return Option.getOrUndefined(Schema.decodeUnknownOption(Refusal)(body))?.code === "reauth_required"
   }
@@ -309,8 +305,137 @@ effect function connectorTransport(link: CloudLink) {
   return { call, fetched, get, post }
 }
 
+const legacyCalendarDraft = /^(?:tablet-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|grace-[0-9a-z]+--?[0-9a-z]+)$/
+
+data CreateBinding {
+  Unknown
+  Pending
+  Received { providerId: string }
+}
+
+effect function calendarCreates(service: string) {
+  const journal = try KeyValueStore.KeyValueStore
+  const digest = try Digest.Digest
+  const hash = (text: string) => Effect.map(digest.digest(Digest.sha256, new TextEncoder().encode(text)),
+    (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(""))
+  return (account: AccountRef, send: (body: object, key: string) => ProviderEvent!ConnectorFailure) => effect (entry: Calendar, grantId: string, approve: boolean) => {
+    const { owner, calendarId, occurrenceId } = entry.identity
+    if (owner !== account.address || entry.identity.kind !== "Appointment" || (entry.phase !== "Saved" && (entry.phase !== "Editing" || entry.revision !== entry.approvedRevision))) return CreateBinding.Unknown()
+    const key = try hash(JSON.stringify([service, account.provider, grantId, account.address, owner, calendarId, occurrenceId, entry.revision]))
+    const at = "calendar-create:" + key
+    if (!approve && (journal.get(at) catch effect () => { throw new Unreachable() }) === undefined) return CreateBinding.Unknown()
+    const record = effect {
+      const intent = journal.get(at) catch effect () => { throw new Unreachable() }
+      if (intent === undefined && !approve) return CreateBinding.Unknown()
+      const fields = event({ ...entry, hasSaved: false })
+      if (fields === undefined) return CreateBinding.Unknown()
+      const body = { ...fields, calendarId, grantId }
+      const { participant, seriesId, recurrence, reminderEnabled, leadTime, important } = entry.draft
+      const fingerprint = try hash(JSON.stringify([body, entry.identity.sourceAccount, entry.identity.sourceRef, participant, seriesId, recurrence, reminderEnabled, leadTime, important]))
+      if (intent !== undefined && intent !== fingerprint) return CreateBinding.Unknown()
+      const received = journal.get(at + ":receipt") catch effect () => { throw new Unreachable() }
+      if (received !== undefined) return CreateBinding.Received({ providerId: received })
+      if (intent !== undefined && account.provider !== "Gmail") return CreateBinding.Pending()
+      if (intent === undefined) journal.set(at, fingerprint) catch effect () => { throw new Unreachable() }
+      const saved = send(body, key) catch effect (cause) => {
+        if (cause instanceof NeedsSignIn || (cause instanceof ProviderRefused && [400, 403, 404, 405, 415, 422].includes(cause.status)))
+          journal.remove(at) catch effect () => { throw new Unreachable() }
+        throw cause
+      }
+      if (saved.calendarId !== calendarId) throw new ProviderRefused({ status: 409 })
+      journal.set(at + ":receipt", saved.externalId) catch effect () => { throw new Unreachable() }
+      return CreateBinding.Received({ providerId: saved.externalId })
+    }
+    const result = tryPromise((signal) => navigator.locks.request(at, { signal }, () => Effect.runPromise(Effect.result(record), { signal }))) catch effect () => { throw new Unreachable() }
+    return try Effect.fromResult(result)
+  }
+}
+
+function connectedCalendar(link: CloudLink, account: AccountRef, zones: ReadonlySet<string>,
+  bind: Effect.Success<ReturnType<typeof calendarCreates>>, transport: Effect.Success<ReturnType<typeof connectorTransport>>,
+  grantOf: (account: AccountRef) => string!ConnectorFailure): CalendarConnection {
+  const { call, fetched, get } = transport
+  const at = routes[account.provider].calendar
+  const url = (path: string) => `${link.url}${at}${path}`
+  const createBinding = bind(account, effect (body, key) => {
+    const request = HttpClientRequest.setHeader(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url("/events")), body), "Idempotency-Key", key)
+    return (try fetched(Effect.succeed(request), Stored)).event
+  })
+  const removal = effect (id: string, calendarId: string) =>
+    HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
+
+
+  effect function stored(entry: Calendar) {
+    const { calendarId, occurrenceId: id } = entry.identity
+    const grantId = try grantOf(account)
+    if (!entry.hasSaved) {
+      const bound = try createBinding(entry, grantId, true)
+      if (bound._tag !== "Received") throw new ProviderRefused({ status: 409 })
+      return bound.providerId
+    }
+    const fields = event(entry)
+    if (fields === undefined) throw new ProviderRefused({ status: 422 })
+    const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), { ...fields, calendarId, grantId })
+    const { event: saved } = try fetched(Effect.succeed(request), Stored)
+    if (saved.calendarId !== calendarId || saved.externalId !== id) throw new ProviderRefused({ status: 409 })
+    return id
+  }
+
+  effect function readEvents(view: CalendarView, from: number, until: number, grantId: string) {
+    const params = { calendarId: view.calendarId, timeZone: view.timezone, timeMin: iso(from), timeMax: iso(until), grantId }
+    if (view.owner !== account.address) throw new ProviderRefused({ status: 409 })
+    return (try fetched(get(`${at}/feed`, params), Feed)).events.filter((e) => e.calendarId === view.calendarId)
+  }
+
+  return {
+    feed: (view) => Stream.unwrap(effect {
+      const grantId = try grantOf(account)
+      const feed = try readEvents(view, view.window.fromTime, view.window.untilTime, grantId)
+      const bindings = new Map<string, Calendar>()
+      const waiting = new Set<Calendar>()
+      for (const c of view.entries) {
+        if (c.identity.calendarId !== view.calendarId || (c.phase !== "Saved" && (c.phase !== "Editing" || c.hasSaved)) || feed.some((e) => e.externalId === c.identity.occurrenceId)) continue
+        const bound = try createBinding(c, grantId, false)
+        if (bound._tag === "Received") {
+          bindings.set(bound.providerId, c)
+          if (!feed.some((e) => e.externalId === bound.providerId)) waiting.add(c)
+        } else if (bound._tag === "Pending" || (c.phase === "Saved" && legacyCalendarDraft.test(c.identity.occurrenceId))) waiting.add(c)
+      }
+      return Stream.fromIterable(published(zones, view, feed, bindings, waiting))
+    }),
+    verifySaved: effect (view, occurrence, expected) => {
+      const feed = try readEvents(view, expected.startAt, expected.endAt, try grantOf(account))
+      const saved = feed.find((row) => row.externalId === occurrence)
+      if (saved === undefined) return false
+      const timezone = saved.timezone ?? view.timezone
+      const { startAt, endAt, verified } = schedule(zones, saved, timezone)
+      return verified && sameDetails(details(saved, startAt, endAt, timezone, expected), expected)
+    },
+    write: effect (entry) => {
+      const revision = entry.revision
+      return Effect.map(stored(entry), (saved): StoreReceipt => ({
+        revision, succeeded: true, published: [],
+        ...entry.hasSaved ? {} : { providerId: saved }
+      })) catch effect (e) => match (e) {
+        when NeedsSignIn: throw e;
+        default: { revision, succeeded: false, published: [] };
+      }
+    },
+    remove: effect ({ calendarId, occurrenceId: id }, scope) => {
+      if (scope === "EntireSeries") return { succeeded: false, evidence: "series-unsupported" }
+      return Effect.as(call(removal(id, calendarId)), { succeeded: true, evidence: `deleted:${id}` }) catch effect (e) => match (e) {
+        when NeedsSignIn: throw e;
+        when ProviderRefused: { succeeded: false, evidence: `refused:${e.status}` };
+        when Unreachable: { succeeded: false, evidence: "" };
+      }
+    }
+  }
+}
+
 export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
-  const { call, fetched, get, post } = try connectorTransport(link)
+  const bind = try calendarCreates(link.url)
+  const transport = try connectorTransport(link)
+  const { call, fetched, get, post } = transport
   const page = try SignInPage
   const shown = try SubscriptionRef.make<ShownPage | undefined>(undefined)
   const showing = (url: string, inSheet: boolean) => SubscriptionRef.set(shown, { url, host: URL.parse(url)?.host ?? "", inSheet })
@@ -500,63 +625,6 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
     }
   }
 
-  function calendar(account: AccountRef): CalendarConnection {
-    const at = routes[account.provider].calendar
-    const url = (path: string) => `${link.url}${at}${path}`
-    const removal = effect (id: string, calendarId: string) =>
-      HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
-
-    effect function stored(entry: Calendar) {
-      const { calendarId, occurrenceId: id } = entry.identity
-      const fields = event(entry)
-      if (fields === undefined) throw new ProviderRefused({ status: 422 })
-      const body = { ...fields, calendarId, grantId: try grantOf(account) }
-      const request = entry.hasSaved
-        ? HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), body)
-        : HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url("/events")), body)
-      const { event: saved } = try fetched(Effect.succeed(request), Stored)
-      if (saved.calendarId !== calendarId || (entry.hasSaved && saved.externalId !== id)) throw new ProviderRefused({ status: 409 })
-      return saved
-    }
-
-    effect function readEvents(view: CalendarView, from: number, until: number) {
-      const params = { calendarId: view.calendarId, timeZone: view.timezone, timeMin: iso(from), timeMax: iso(until), grantId: try grantOf(account) }
-      return (try fetched(get(`${at}/feed`, params), Feed)).events
-    }
-
-    return {
-      feed: (view) => Stream.unwrap(effect {
-        const feed = try readEvents(view, view.window.fromTime, view.window.untilTime)
-        return Stream.fromIterable(published(zones, view, feed))
-      }),
-      verifySaved: effect (view, occurrence, expected) => {
-        const feed = try readEvents(view, expected.startAt, expected.endAt)
-        const saved = feed.find((row) => row.externalId === occurrence)
-        if (saved === undefined) return false
-        const timezone = saved.timezone ?? view.timezone
-        const { startAt, endAt, verified } = schedule(zones, saved, timezone)
-        return verified && sameDetails(details(saved, startAt, endAt, timezone, expected), expected)
-      },
-      write: effect (entry) => {
-        const revision = entry.revision
-        return Effect.map(stored(entry), (saved): StoreReceipt => ({
-          revision, succeeded: true, published: [],
-          ...entry.hasSaved ? {} : { providerId: saved.externalId }
-        })) catch effect (e) => match (e) {
-          when NeedsSignIn: throw e;
-          default: { revision, succeeded: false, published: [] };
-        }
-      },
-      remove: effect ({ calendarId, occurrenceId: id }, scope) => {
-        if (scope === "EntireSeries") return { succeeded: false, evidence: "series-unsupported" }
-        return Effect.as(call(removal(id, calendarId)), { succeeded: true, evidence: `deleted:${id}` }) catch effect (e) => match (e) {
-          when NeedsSignIn: throw e;
-          when ProviderRefused: { succeeded: false, evidence: `refused:${e.status}` };
-          when Unreachable: { succeeded: false, evidence: "" };
-        }
-      }
-    }
-  }
 
   return {
     signIn: effect (request) => {
@@ -567,6 +635,6 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
     connectServers: (form) => check(form.attempt, { address: form.address, password: Redacted.value(form.password), incoming: form.incoming, outgoing: form.outgoing }),
     shown: SubscriptionRef.changes(shown),
     mail,
-    calendar
+    calendar: (account) => connectedCalendar(link, account, zones, bind, transport, grantOf)
   }
-}).pipe(Layer.provide(FetchHttpClient.layer))
+}).pipe(Layer.provide(Layer.merge(FetchHttpClient.layer, Digest.layerWebCrypto)))

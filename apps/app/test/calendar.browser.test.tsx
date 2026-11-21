@@ -135,7 +135,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   const headers = { authorization: `Bearer ${secret}`, "content-type": "application/json" };
   const removed = await fetch(`${events}/${encodeURIComponent(original.identity.occurrenceId)}`, { method: "DELETE", headers });
   expect(removed.ok).toBe(true);
-  const created = await fetch(events, { method: "POST", headers, body: JSON.stringify({
+  const created = await fetch(events, { method: "POST", headers: { ...headers, "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({
     title: entry.details.title, location: "West clinic", startAt: new Date(startAt).toISOString(),
     endAt: new Date(startAt + hour).toISOString(), timeZone: gmailView.timezone,
   }) });
