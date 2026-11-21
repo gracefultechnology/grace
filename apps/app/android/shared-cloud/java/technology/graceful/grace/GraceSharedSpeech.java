@@ -2,6 +2,7 @@ package technology.graceful.grace;
 
 import ai.eliza.auth.cloud.CloudSignInFlow;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
+import ai.eliza.plugins.passwords.PasswordSurfaces;
 import android.content.Context;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
@@ -53,7 +54,7 @@ final class GraceSharedSpeech {
  }
 
  private boolean current(CloudDeviceAccount.Session owner, long generation) throws Exception {
-  return owner != null && owner.equals(GracePasswordsOwner.stableSession(context)) && generation == GracePasswordsOwner.generation();
+  return !PasswordSurfaces.visible() && owner != null && owner.equals(GracePasswordsOwner.stableSession(context)) && generation == GracePasswordsOwner.generation();
  }
 
  void start(PluginCall call) {

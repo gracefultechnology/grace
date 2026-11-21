@@ -34,18 +34,19 @@ public final class GracePasswordCustodyInstrumentedTest {
   var credential = new JSONObject(identity.toString()).put("expiresAt", System.currentTimeMillis() + TimeUnit.HOURS.toMillis(1));
   assertEquals(1, GraceAccount.projection(GracePasswordsOwner.stableSession(context)).length());
   sessions.write("credential", credential.put("token", freshToken()).toString());
-  var status = GraceAccount.projection(GracePasswordsOwner.stableSession(context));
+  var originalSession = GracePasswordsOwner.stableSession(context);
+  var status = GraceAccount.projection(originalSession);
   String scope = status.getString("voiceDisclosureScope");
   assertEquals("signedIn", status.getString("kind"));
   assertEquals(2, status.length());
   assertTrue(scope.matches("[0-9a-f]{64}"));
-  GracePasswordsOwner.confirmVerifiedAccount(context);
+  GracePasswordsOwner.confirmVerifiedAccount(context, null);
   assertFalse(GracePasswordsOwner.admitted(context));
   completeVerifiedSignIn(context);
   assertTrue(GracePasswordsOwner.admitted(context));
 
   sessions.write("credential", credential.put("token", freshToken()).toString());
-  GracePasswordsOwner.confirmVerifiedAccount(context);
+  GracePasswordsOwner.confirmVerifiedAccount(context, originalSession);
   assertFalse(GracePasswordsOwner.admitted(context));
 
   completeVerifiedSignIn(context);
@@ -53,7 +54,7 @@ public final class GracePasswordCustodyInstrumentedTest {
   assertEquals(scope, GraceAccount.projection(GracePasswordsOwner.stableSession(context)).getString("voiceDisclosureScope"));
 
   owners.write("password-owner", identity.toString());
-  GracePasswordsOwner.confirmVerifiedAccount(context);
+  GracePasswordsOwner.confirmVerifiedAccount(context, originalSession);
   assertFalse(GracePasswordsOwner.admitted(context));
 
   completeVerifiedSignIn(context);
@@ -61,7 +62,7 @@ public final class GracePasswordCustodyInstrumentedTest {
   owners.write("password-owner", identity.put("issuer", "https://other.example").toString());
   completeVerifiedSignIn(context);
   assertFalse(GracePasswordsOwner.admitted(context));
-  owners.write("password-owner", identity.put("issuer", GraceAccount.CLOUD_ORIGIN).toString());
+  owners.write("password-owner", identity.put("issuer", BuildConfig.CLOUD_API_ORIGIN).toString());
   sessions.write("credential", credential.put("organizationId", UUID.randomUUID().toString()).toString());
   completeVerifiedSignIn(context);
   assertFalse(GracePasswordsOwner.admitted(context));
@@ -71,7 +72,7 @@ public final class GracePasswordCustodyInstrumentedTest {
  private static void completeVerifiedSignIn(Context context) throws Exception {
   try {
    GracePasswordsOwner.enteringAccountChange(context);
-   GracePasswordsOwner.confirmVerifiedAccount(context);
+   GracePasswordsOwner.confirmVerifiedAccount(context, GraceAccount.session(context));
   } finally {
    GracePasswordsOwner.leavingAccountChange();
   }
