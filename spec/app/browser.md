@@ -297,8 +297,8 @@ then starts a fresh load at its retained address and clears the padlock.
 Its history, forward entries and address edit survive.
 
 ```quint
-pure def canRestartVisit(t: Tab): bool = tabUrl(t) != "" and t.load != Blank and t.load != Loading
-pure def canPageMoved(b: Browser, url: str): bool = canNavigate(b, url) or canRestartVisit(activeTab(b))
+pure def restartableVisit(t: Tab): bool = tabUrl(t) != "" and t.load != Blank and t.load != Loading
+pure def canPageMoved(b: Browser, url: str): bool = canNavigate(b, url) or restartableVisit(activeTab(b))
 pure def pageMoved(b: Browser, url: str): Browser = if (url == "") reload(b) else {
   ...navigate(b, url),
   editingAddress: b.editingAddress, addressDraft: b.addressDraft, emptyAddressNotice: b.emptyAddressNotice
@@ -328,7 +328,7 @@ its history and load outcome until a new load can be correlated.
 
 ```quint
 pure def canTabMoved(b: Browser, id: int, url: str): bool =
-  hasTab(b, id) and (canNavigate(b, url) or canRestartVisit(tabById(b, id))) and
+  hasTab(b, id) and (canNavigate(b, url) or restartableVisit(tabById(b, id))) and
   (id == b.selected or tabById(b, id).load != Loading)
 pure def tabMoved(b: Browser, id: int, url: str): Browser =
   if (id == b.selected) pageMoved(b, url) else {
