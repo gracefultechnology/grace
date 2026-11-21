@@ -37,7 +37,7 @@ from evaluation_harness.helper_functions import PseudoPage
 with NamedTemporaryFile("w", suffix=".json") as config:
     json.dump(json.loads(sys.argv[2]), config)
     config.flush()
-    print(URLEvaluator()([], Path(config.name), PseudoPage(None, sys.argv[3]), None))
+    print(json.dumps([URLEvaluator()([], Path(config.name), PseudoPage(None, url), None) for url in sys.argv[3:]]))
 `;
 
 export function webArena({ checkout, python }: { checkout: string; python: string }) {
@@ -68,15 +68,17 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
       const { destination } = outcome;
       const initial = outcome.start;
       let officialScore: number | null = null;
+      let noActionScore: number | null = null;
       let groundedNavigation = false;
       if (initial) {
         if (new URL(initial.url).href !== start.href || destination && new URL(destination.url).origin !== origin)
           throw new Error("The observed Chromium URL left the pinned Shopping fixture");
-        const { stdout } = await execute(python, ["-IB", "-c", officialUrlEvaluator, root, fixture, destination?.url ?? initial.url], {
+        const { stdout } = await execute(python, ["-IB", "-c", officialUrlEvaluator, root, fixture, destination?.url ?? initial.url, initial.url], {
           env, cwd: root, timeout: 30_000,
-        });
-        officialScore = Number(stdout.trim());
-        if (![0, 1].includes(officialScore) || !stdout.trim()) throw new Error("The WebArena URL evaluator returned an invalid score");
+        }).catch(() => { throw new Error("The pinned WebArena URL evaluator could not run"); });
+        [officialScore, noActionScore] = Schema.decodeUnknownSync(
+          Schema.Tuple([Schema.Literals([0, 1]), Schema.Literals([0, 1])]),
+        )(JSON.parse(stdout));
         if (destination) {
           const next = new URL(destination.url);
           next.hash = "";
@@ -84,8 +86,8 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
         }
       }
       return {
-        evaluatorRevision: revision, catalogSha256, officialScore, groundedNavigation,
-        qualifiedHostedGuidance: officialScore === 1 && groundedNavigation && evidence.guided &&
+        evaluatorRevision: revision, catalogSha256, officialScore, noActionScore, groundedNavigation,
+        qualifiedHostedGuidance: officialScore === 1 && noActionScore === 0 && groundedNavigation && evidence.guided &&
           (!task.require_login || evidence.authenticatedFixture),
       };
     };
