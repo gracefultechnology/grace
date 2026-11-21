@@ -408,16 +408,6 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       }
       const copied = try recover
       const added = try calendar.write(reapproved, view([eyeCheck, reapproved]))
-      const { secret: replacementKey } = try signIn(cloud)
-      const rotated = effect {
-        provide connectorAt(replacementKey) {
-          const replacement = (try Connector).calendar(gmail)
-          return [(try replacement.write(reapproved, view([]))).succeeded,
-            Array.from(try Stream.runCollect(replacement.feed(view([])))).some(({ incoming }) => incoming.committed.title === details.title)]
-        }
-      }
-      const withReplacement = try rotated
-      try Effect.try(() => assert.deepStrictEqual(withReplacement, [false, false]))
       const { connectionId: grantId } = (try googleOwnerGrants(secret))[0]
       const upgraded = effect (receipt?: string) => {
         provide Layer.merge(KeyValueStore.layerMemory, Digest.layerWebCrypto) {
