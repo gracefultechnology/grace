@@ -2223,8 +2223,8 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
     if ((await runtime.runPromise(workspace.get())).assistant.presentation === "Closed") await tap("Ask Grace");
     writable = false;
     await tap("End this task");
-    await sync();
-    await expect.element(page.getByRole("button", { name: "End this task", exact: true })).toBeVisible();
+    await expect.element(page.getByRole("status", { name: "End task result" })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "End this task", exact: true })).toBeEnabled();
     expect(persisted().value).not.toBe("");
     writable = true;
     await tap("End this task");
