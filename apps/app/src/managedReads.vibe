@@ -105,8 +105,9 @@ export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" 
 )
 
 export function usesManagedSurfaces(setup: Pick<SetupState, "graceAccount" | "googleLink"> | undefined, hash: string): boolean {
-  return viewOf(hash) !== undefined || setup !== undefined &&
-    (mayReadManaged(setup.graceAccount, setup.googleLink, "ManagedEmail") || mayReadManaged(setup.graceAccount, setup.googleLink, "ManagedCalendar"))
+  const account = setup?.graceAccount
+  return viewOf(hash) !== undefined || account?.tag === "GraceDeviceSignedIn" ||
+    account?.tag === "GraceSignedIn" && setup?.googleLink.tag !== "GoogleLinkUnknown"
 }
 
 export type GuidedAuthority = { device: string; connected: string | undefined }
