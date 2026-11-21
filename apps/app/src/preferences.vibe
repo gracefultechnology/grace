@@ -1,4 +1,4 @@
-// spec/app/workspace.md, "Preference changes invalidate wake timers and use the same durable settings"; spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it"
+// spec/app/workspace.md, "Preference changes invalidate wake timers and use the same durable settings"; spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence"; spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it"
 import { initial, machine, Machine as Workspaces, canSavePreferences } from "../gen/app__workspace.effect.vibe"
 import { type DisplayPreferences, effectiveBrightness, restart, validSettings } from "../gen/app__preferences.effect.vibe"
 import type { PreferenceDevice, PreferenceRecords } from "./preferencesPlugin.ts"
@@ -38,10 +38,11 @@ export const persistPreferences = (port: PreferenceRecords | undefined) => Layer
   if (!port) return
   const workspace = try Workspaces
   const choices = Stream.changes(Stream.map(workspace.changes, ({ preferences }) => preferences))
-  try fork.scoped Stream.runForEach(choices, effect () => {
+  const requests = Stream.merge(Stream.map(choices, () => false), Stream.map(Stream.tick("1 minute"), () => true))
+  try fork.scoped Stream.runForEach(requests, effect (retrying) => {
     const current = try workspace.get()
     const { saving, session, snapshot } = current.preferences
-    if (saving !== "Saving" && (saving !== "SaveFailed" || session !== snapshot) && canSavePreferences(current, "Host")) try retryPreferences()
+    if (saving !== "Saving" && (retrying || saving !== "SaveFailed" || session !== snapshot) && canSavePreferences(current, "Host")) try retryPreferences()
     const { preferences } = try workspace.get()
     if (preferences.saving !== "Saving") return
     const succeeded = effect {
