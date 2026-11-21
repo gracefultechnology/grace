@@ -74,6 +74,12 @@ effect function closeUndo(box: MailMachine.Shape, record: MessageRecord) {
   box.send({ type: "closeUndoToast", target: { ref: record.identity.ref, revision: record.undoRevision } }, "MailHost") catch () => undefined
 }
 
+function draftsMayHaveChanged(before: Mailbox, after: Mailbox) {
+  const listed = before.readKind === "Search" && before.readStatus === "Reading" && after.readStatus === "ReadIdle"
+  const stored = (before.draftStorage === "DraftSaving" && after.draftStorage === "DraftSaved") || (before.draftStorage === "DraftDeleting" && after.draftStorage === "DraftUnstored")
+  return listed || stored
+}
+
 effect function countDrafts(mail: MailConnection, box: MailMachine.Shape, generation: number) {
   const total = mail.draftCount() catch () => undefined
   if (total !== undefined) box.send({ type: "countDrafts", generation, total }, "MailConnector") catch () => undefined
@@ -223,9 +229,7 @@ export const mailing = Layer.effect(Mail, effect {
     const opened = after.view === "Message" && (before.view !== "Message" || before.messageRef !== after.messageRef || before.generation !== after.generation)
     if (opened && answerable(after) && headerFor(board, shelf.held(account.id, after.messageRef), account.id, after) === undefined) try fork.in(scope) prepareReply(account.id, mail, box, after)
     if (opened && after.folder === "DraftsFolder") try fork.in(scope) reopen(mail, box, after)
-    const listed = before.readKind === "Search" && before.readStatus === "Reading" && after.readStatus === "ReadIdle"
-    const stored = (before.draftStorage === "DraftSaving" && after.draftStorage === "DraftSaved") || (before.draftStorage === "DraftDeleting" && after.draftStorage === "DraftUnstored")
-    if (listed || stored) try fork.in(scope) countDrafts(mail, box, after.generation)
+    if (draftsMayHaveChanged(before, after)) try fork.in(scope) countDrafts(mail, box, after.generation)
     if (board.sharing === account.id && (!after.composeVisible || after.draft.to !== "")) post({ sharing: undefined })
     const changes = settled(before, after)
     for (const { record } of changes.filter((c) => c.record.folder !== "PurgedFolder")) {
