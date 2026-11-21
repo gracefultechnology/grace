@@ -75,6 +75,14 @@
       ],
       "outputs": ["dist/**", "$TURBO_ROOT$/vendor/eliza/packages/cloud/dist/{gen,src}/**"]
     },
+    "@repo/app#build": {
+      "dependsOn": ["gen", "//#gen", "^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,os}/src/**"
+      ],
+      "outputs": ["dist/**"]
+    },
     "@repo/app#typecheck": {
       "dependsOn": [
         "gen",
