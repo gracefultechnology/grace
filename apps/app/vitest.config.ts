@@ -206,12 +206,19 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       ...(storage && { storageState: { cookies: [...storage.cookies], origins: storage.origins.map(({ origin, localStorage }) => ({ origin, localStorage: [...localStorage] })) } }),
     });
     if (!browser) throw new Error("The benchmark needs a Chromium browser context");
-    const website = await browser.newPage();
-    run.site = { page: website, origin, browser, session: await observeFromDocumentStart(website) };
-    await website.route("**/*", (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-    const response = await website.goto(action.url, { waitUntil: "load" });
-    if (!response?.ok()) throw new Error("The benchmark site did not load");
-    return { url: website.url() };
+    try {
+      const website = await browser.newPage();
+      const session = await observeFromDocumentStart(website);
+      await website.route("**/*", (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
+      const response = await website.goto(action.url, { waitUntil: "load" });
+      if (!response?.ok()) throw new Error("The benchmark site did not load");
+      if (activeRuns.get(context.page) !== run || run.site) throw new Error("The benchmark instance changed while opening the site");
+      run.site = { page: website, origin, browser, session };
+      return { url: website.url() };
+    } catch (error) {
+      await browser.close();
+      throw error;
+    }
   }
   if (!existing) throw new Error("The Chromium benchmark site is not open");
   return observeSite(existing, action);
