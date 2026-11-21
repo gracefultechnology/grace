@@ -194,11 +194,13 @@ jobs:
               rejectedLeaf: (if .outcome.miss == "rejected-scoped-leaf" then
                 .outcome.rejectedNameCorrection as $offer |
                 .outcome.disclosures[-1] as $last |
-                ($offer.original | type == "string" and length > 0) and
+                ($offer.original | type == "string" and length > 0) and $offer.original == .outcome.reviewedDestination and
+                ($offer.instruction | type == "string" and length > 0) and
                 ($offer.leaf | type == "string" and length > 0) and
                 ($offer.branch | type == "string" and length > 0) and
                 ($offer.documentId | type == "string" and length > 0) and
                 $offer.documentId == $last.documentId and $offer.branch == $last.label and
+                ($offer.branchMatches | type == "boolean") and ($offer.leafMatches | type == "boolean") and
                 ($offer.branchMatches == false or $offer.leafMatches == false) and
                 $offer.offeredControl == ("Use “" + $offer.leaf + "” for this step")
                 else false end),
