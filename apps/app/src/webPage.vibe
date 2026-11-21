@@ -46,6 +46,7 @@ export function webPage() {
       privateSignIn: false,
       readPrimaryHeading: () => Effect.fail(new PageFailed({ cause: "This browser cannot inspect another website." })),
       hasNavigationMenu: () => Effect.succeed(false),
+      visibleMenuChild: () => Effect.succeed(false),
       observeLinks: () => Effect.fail(new PageFailed({ cause: "This browser cannot inspect another website." })),
       pointAt: () => Effect.fail(new PageFailed({ cause: "This browser cannot annotate another website." })),
       clearGuide: () => sync(() => undefined),

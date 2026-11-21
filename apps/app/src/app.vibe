@@ -6,7 +6,7 @@ import { passwords, type PasswordVault } from "./passwords.vibe"
 import type { Connectivity } from "../gen/app__shell.effect.vibe"
 import { machine as setup } from "../gen/app__setup.effect.vibe"
 import { applyDeviceChoices, persistPreferences, preferenceWorkspace } from "./preferences.vibe"
-import { preferenceDevice, preferenceRecords, type PreferenceDevice, type PreferenceRecords } from "./preferencesPlugin.ts"
+import { guidedTaskRecords, preferenceDevice, preferenceRecords, type GuidedTaskRecords, type PreferenceDevice, type PreferenceRecords } from "./preferencesPlugin.ts"
 import { graceAccount } from "./graceAccount.vibe"
 import { fileLibrary } from "./fileLibrary.vibe"
 import { type FilesPort, filesPlugin } from "./filesPlugin.ts"
@@ -22,6 +22,7 @@ import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { accounts, signIns } from "./accounts.vibe"
 import { calendarFeeds, calendars } from "./calendar.vibe"
 import { agent } from "./actions.vibe"
+import { guidedRecovery } from "./guidedRecovery.vibe"
 import { browserGuide, type GuideDecision } from "./browserGuide.vibe"
 import { browserCalendarLocks, connector, SignInPage } from "./connector.vibe"
 import { type CloudLink, conversation } from "./conversation.vibe"
@@ -107,16 +108,17 @@ const services = (cloud: CloudLink | undefined) => cloud === undefined
 
 type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; display?: PreferenceDevice; reminders?: ReminderPlugin; vault?: PasswordVault; backup?: PasswordBackupPlugin; openPrivateEmail?: () => Promise<void> }
 
-export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin) {
+export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision; guidedTasks?: GuidedTaskRecords } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin) {
   const platform = "native" in host ? host : { native: false }
   const cloud = "url" in host ? host : undefined
   const storage = fileStorage(platform.native, platform.files ?? filesPlugin)
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), tabletStorage))
   const records = platform.native ? platform.preferences ?? preferenceRecords : undefined
   const machines = Layer.provideMerge(library, Layer.mergeAll(storage, preferenceWorkspace(records), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews()))
+  const recoverable = Layer.provideMerge(guidedRecovery(platform.native, host.guidedTasks ?? (platform.native ? guidedTaskRecords : undefined)), machines)
   const guidance = Layer.provideMerge(agent, services(cloud))
   const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup))
-  const noticed = Layer.provideMerge(notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), machines)
+  const noticed = Layer.provideMerge(notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), recoverable)
   const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateEmail), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native), voice), noticed)
   const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary), shell)
   const controlled = Layer.provideMerge(Layer.mergeAll(replyControls(platform.native), conversation(cloud)), managed)

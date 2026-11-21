@@ -24,7 +24,7 @@ does not import React, and a UI package holds no business rules. A shared type l
 |---|---|
 | `pnpm dev` | Studio, and every package's `dev` script beside it |
 | `pnpm quick` | the fast local check: types, tests, ESLint and Stylelint, in every package |
-| `pnpm verify` | what CI runs: build, types, tests, browser tests, every `check`, lint and `pnpm analyze` |
+| `pnpm verify` | what CI runs: build, types, tests, browser tests, every `check`, lint, `pnpm analyze` and `pnpm selftest`, which also installs and checks each example |
 | `pnpm all <task>…` | one or more kinds of task in every package: `pnpm all build typecheck test` |
 | `pnpm test:browser` | the browser tests |
 | `pnpm test:models` | every workspace `check`: the root's, which is its owners' too, and Studio's |
@@ -93,10 +93,20 @@ It preserves the union type when Dafny checks a record literal against a value o
 it is reported, then that object as its last line. Each result has `ok`, `stage` (a stage, or `skipped`), `summary`,
 `detail` and, when it concerns them, `where` and `rules` (each rule as `{ file, key }`); `next` is the line the command
 line ends with. `pnpm selftest` builds scratch projects from this project's spec or from `vibestack/fixtures/`, breaks
-one thing at a time and asserts which stage catches each. It runs as three cached tasks, each keyed by what its tests
+one thing at a time and asserts which stage catches each. It runs as five cached tasks, each keyed by what its tests
 read: `selftest:docs` the documents against every file they can name, `selftest:examples` each standalone example
-against its own files and the tools, and `selftest:tools` everything else, which no example but the order one reaches. The tools share completed tool runs in `.cache/selftest/.spec-cache` between scratch projects and prune entries unused for a week. Tests which observe the tools executing use an empty cache.
-`pnpm selftest` runs all three through Turborepo. What a change to the
+against its own files and the tools, and `selftest:tools:a`, `selftest:tools:b` and `selftest:tools:rest` everything
+else, which no example but the order one reaches. The first two each run one shard of the kinds of mistake, the
+`describe` named `in shard a` or `in shard b` in `vibestack/selftest.ts`; the third skips what the other four name, so
+a new test runs there unless it is written into a shard. Keep the longest tests spread over the three.
+The two suites of the tools, the command line and each kind of mistake, run side by side under one parent, each at most four tests at a time. The order project the
+edits copy and a few long checks of fixtures are shared projects: each starts with the tool runs (`action-*` entries)
+earlier selftests kept in `.cache/selftest/.spec-cache` and leaves its own there; entries unused for a week are pruned.
+A test that observes a tool really running uses a scratch project of its own, which starts empty.
+`pnpm selftest` runs all five through Turborepo, side by side, as `pnpm verify` does. Each of the three
+`selftest:tools` processes bounds its own tests and tools to the machine and checks the order project once for itself,
+so three at once ask about three times what one does: on a machine too small for that,
+`pnpm selftest --concurrency=1` runs one at a time, to the same cached results. What a change to the
 tools owes it, and the sync skill, is in [AGENTS.md, "Definition of done"](AGENTS.md#definition-of-done).
 
 ## Releasing
@@ -310,7 +320,7 @@ configured scopes are in `knip.config.js`, `.madgerc`, `.jscpd.json` and
 
 | When | Runs |
 |---|---|
-| Pull request or push to `develop` or `main` | `pnpm verify --continue`: build, types, tests, browser tests, all checks, ESLint, Stylelint, Knip, Madge and jscpd |
+| Pull request or push to `develop` or `main` | All `pnpm verify` tasks on four runners. The product runner checks the application, documents and examples. Each tool shard has its own runner. The `verify` status requires all four to pass. |
 | Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into `develop` |
 | Changes to Android build inputs on a pull request or push to `develop` or `main` | `.github/workflows/android.yml` builds the APKs for each ABI and stages the x86_64 launcher and browser for Cuttlefish |
 
@@ -320,9 +330,9 @@ exploration is, as an artifact.
 
 Each run installs Dafny from its pinned release, checked against its SHA-256,
 and restores pnpm's store, the spec cache of the root, each workspace package
-and each example, and Quint's evaluator, under a key of the commit.
+and each example, and Quint's evaluator. Each tool runner restores its fixture cache from `.cache/selftest/.spec-cache`. The cache keys include the job, commit and run attempt.
 Turborepo shares task results through the private Cloudflare/R2 cache.
-The task entry point disables Turbo telemetry. `selftest:tools` waits for the root and
+The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it.
 Pull requests read shared results; only branch pushes receive the publishing
 credential, protected by the `turbo-cache-publish` environment's branch
