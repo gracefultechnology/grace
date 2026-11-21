@@ -19,6 +19,23 @@ export function browserAccountResponse(url: URL, accountId?: string) {
   if (url.pathname === "/api/auth/refresh") return new Response(null, { status: 401 });
 }
 
+export function captureSignedOutChat(bodies: string[], observe?: (url: string) => void | Promise<void>) {
+  const fetchNetwork = globalThis.fetch;
+  bodies.length = 0;
+  globalThis.fetch = async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    const account = browserAccountResponse(new URL(url, location.href));
+    if (account) return account;
+    if (url.includes("/chat/completions")) {
+      const body = init?.body ?? (input instanceof Request ? input.clone().body : null);
+      bodies.push(await new Response(body).text());
+    }
+    await observe?.(url);
+    return fetchNetwork(input, init);
+  };
+  return () => { globalThis.fetch = fetchNetwork; };
+}
+
 export function connected(accounts: Accounts, provider: Provider, address: string, name: string) {
   const chosen = chooseProvider(accounts, provider, "AccountPerson");
   return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, name, "AccountConnector");

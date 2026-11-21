@@ -320,9 +320,14 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
       const resolved = [try mail.resolve("susan"), try mail.resolve("Nobody")]
       const saved = try mail.saveDraft(draft)
       const drafts = try listed(gmail, "DraftsFolder")
+      const another = { ...draft, id: "draft-tuesday", content: { ...content, subject: "Tuesday" } }
+      try mail.saveDraft(another)
+      const both = try mail.draftCount()
+      try mail.deleteDraft(another.id)
       const reopened = (try mail.read("draft-sunday", 5)).receipt.assets.map((a) => a.name)
       const restored = try mail.draft("draft-sunday", 2)
       const removed = try mail.deleteDraft("draft-sunday")
+      const empty = try mail.draftCount()
       const sends = [try mail.send("operation-1", reply), try mail.send("operation-1", reply)]
       const sent = try listed(gmail, "SentFolder")
       const answered = (try Stream.runCollect(mail.list(scope(gmail, "InboxFolder"), () => 0))).filter((m) => m.receipt.seed.answered).map((m) => [m.content.ref, m.content.replied, m.content.attachment])
@@ -336,14 +341,14 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
       const carried = (try sentMail(cloud, secret)).filter((m) => m.labels.includes("SENT")).map((m) => [m.subject, m.bcc, m.attachments.map((a) => a.filename)])
       const evidence = (s: { readonly evidence: string }) => s.evidence.startsWith("message:")
       try Effect.try(() => assert.deepStrictEqual({
-        people, resolved, saved, drafts, reopened, removed,
+        people, resolved, saved, drafts, reopened, removed, counts: [both, empty],
         restored: [restored.verified, restored.snapshot.content, restored.snapshot.attachments.map((a) => [a.name, a.sourceRef]), restored.snapshot.version], sends: sends.map((s) => [s.resultStatus, evidence(s)]), same: sends[0].evidence === sends[1].evidence && looked[0].evidence === sends[0].evidence,
         sent, answered, looked: looked.map((s) => s.resultStatus), never: looked[1], offline, later: later.map((s) => s.resultStatus), again: later[1].evidence === later[2].evidence,
         copied: copied.resultStatus, unsendable, carried
       }, {
         people: 6,
         resolved: [{ address: "susan@family.test", verified: true }, { address: "", verified: false }],
-        saved: { draftId: "draft-sunday", persisted: true }, drafts: ["Sunday"], reopened: ["Visit form.pdf"], removed: true,
+        saved: { draftId: "draft-sunday", persisted: true }, drafts: ["Sunday"], reopened: ["Visit form.pdf"], removed: true, counts: [2, 0],
         restored: [true, content, [["Visit form.pdf", "draft-sunday/1"]], 2],
         sends: [["Sent", true], ["Sent", true]], same: true,
         sent: ["Re: Lunch on Sunday?"], answered: [["family", "Yes please.", true]],
