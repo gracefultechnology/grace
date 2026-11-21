@@ -4,6 +4,7 @@ import {
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
+import type { AccountRequest, accountRequests } from "./cloudRequests.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 const filesScope = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
@@ -65,9 +66,8 @@ export type Operation =
   | { kind: "sendCode"; provider: CodeProvider; address: string }
   | { kind: "connectGoogle"; mail: boolean; calendar: boolean; sendMail: boolean; trashMail: boolean; writeCalendar: boolean; expectedEmail: string }
   | { kind: "verifyCode"; provider: CodeProvider; address: string; code: string }
-type RequestPath = "/api/product/files/scope" | `/api/auth/${CodeProvider}/${"send" | "verify"}` | "/api/auth/providers" | "/api/auth/device/authorize" | "/api/auth/session" | "/api/auth/refresh" | "/api/auth/logout" | "/api/v1/billing/subscription" | "/api/v1/billing/checkout" | "/api/v1/billing/portal" | `/api/v1/eliza/google/${"status" | "connect/initiate" | "disconnect"}`
 type Transport = {
-  request(path: RequestPath, method: "GET" | "POST", body?: Record<string, string | boolean>): Response!unknown
+  request<P extends AccountRequest>(path: P, method: typeof accountRequests[P], body?: Record<string, string | boolean>): Response!unknown
   begin(): void!unknown
   openExternal(url: URL): void!unknown
 }
@@ -97,7 +97,7 @@ const webTransport: Transport = {
 
 error AccountRequestFailed
 
-effect function accepted(transport: Transport, path: RequestPath, method: "GET" | "POST", body?: Record<string, string | boolean>) {
+effect function accepted<P extends AccountRequest>(transport: Transport, path: P, method: typeof accountRequests[P], body?: Record<string, string | boolean>) {
   const response = try timeout(transport.request(path, method, body), "10 seconds")
   if (!response.ok) throw new AccountRequestFailed()
   return response
