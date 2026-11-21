@@ -241,7 +241,8 @@ grants Grace that permission, as the person's Allow would; `{ "forget": "<SSID>"
 saved Wi-Fi network (`cmd wifi forget-network`); `{ "approve": "<label>" }` waits up to three
 minutes for a button with that label shown by Android's Settings (`com.android.settings`) or System
 UI (`com.android.systemui`), such as Save in Settings' "Save this network?" dialog, and taps it, as
-the person would; `{ "notification": "<title>" }` opens
+the person would, first acknowledging System UI's first-use "Viewing full screen" notice and
+Android's "Wait" on a slow app, as the BillWorld walk does; `{ "notification": "<title>" }` opens
 Android's settings over Grace, waits up to five minutes for a notification of hers with that title, and
 opens her again; `{ "restart": "force-stop" }` force-stops Grace, opens Home and walks on in her new
 process. A
