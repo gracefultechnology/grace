@@ -253,6 +253,14 @@ pure def lawAHeldTaskDoesNotAdvance(w: WS::Workspace, r: WR::WebsiteRequests, op
     taskMayAdvance(r, WS::canCompleteOrdinary(w, completion, by)) or taskMayAdvance(r, WS::canConfirmGuided(w, report, by)) or
     taskMayAdvance(r, WS::canConfirmGuidedNamedPage(w, pageCheck, by)) or
     taskMayAdvance(r, WS::canConfirmGuidedMail(w, mailCheck, by)))
+pure val wValues = Set(WS::initial, workspaceOf(S::finishStartup(S::initial, true), A::initial, B::initial))
+pure val operationRequestValues = WS::operationRequestValues
+pure val tokensValues = WS::tokensValues
+pure val commitmentTokensValues = WS::commitmentTokensValues
+pure val completionValues = WS::completionValues
+pure val reportValues = WS::reportValues
+pure val pageCheckValues = WS::pageCheckValues
+pure val mailCheckValues = WS::mailCheckValues
 pure def lawAnsweringHerOnlyQuestionLetsTheTaskGoOn(r: WR::WebsiteRequests, id: int, choice: WR::Choice,
   answeredBy: WR::WebsiteActor, workspaceAdmits: bool): bool =
   WR::canAnswer(r, id, choice, answeredBy) and WR::isMessage(WR::presented(r).ask) and
