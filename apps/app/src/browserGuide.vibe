@@ -3,7 +3,7 @@ import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { Machine as Workspaces, mayGuideReadLink, nextOutcome, publicGuidedLink, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { CLEF_DECISION_LIMITS, clefUnavailability, createClefDecisionsClient, decodeClefResult, type ClefDecisionRequest, type ClefDecisionResponse } from "@elizaos/cloud/clef-decisions"
-import { accountFetch, apiOrigin, browserAccountId } from "./graceAccount.vibe"
+import { accountFetch, apiOrigin, browserAccountId, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { supportsPointerHover, webView } from "./surfacePlugin.ts"
 import { guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
@@ -98,8 +98,6 @@ function links(snapshot: LinkObservation, page: URL, target: string, publicOnly:
   })
 }
 
-const decodeGuideLease = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.NullOr(Schema.NonEmptyString) }))
-
 type ChoiceRequest = Extract<ClefDecisionRequest, { kind: "choice" }>
 export type GuideDecision = (request: ChoiceRequest, signal?: AbortSignal) => Promise<ClefDecisionResponse>
 type DecisionSession = {
@@ -113,11 +111,10 @@ effect function decisionSession(native: boolean, fixture?: GuideDecision): (Deci
   if (native) {
     const bridge = accountPlugin
     if (bridge === undefined) return undefined
-    const lease = try tryPromise(async () => decodeGuideLease(await bridge.browserGuideLease()))
-    if (lease.id === null) return undefined
-    const id = lease.id
+    const id = try nativeBrowserGuideLease()
+    if (id === undefined) return undefined
     return {
-      current: async () => decodeGuideLease(await bridge.browserGuideLease()).id === id,
+      current: async () => (await runPromise(nativeBrowserGuideLease())) === id,
       choose: async (request, signal) => {
         signal?.throwIfAborted()
         const reply = await bridge.chooseBrowserLink({ lease: id, goal: request.goal, candidates: request.candidates })

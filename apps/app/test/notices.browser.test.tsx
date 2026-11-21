@@ -74,7 +74,7 @@ describe('spec/app/notices.md, "Story: See one message at a time, in the order t
   });
 });
 
-it('Show an owned due reminder on Home and elsewhere (spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background")', async () => {
+it('Due reminder (spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background")', async () => {
   const id = "owned-calendar-" + "a".repeat(24) + "-" + "b".repeat(48);
   const reminders = [{ id, title: "Library visit", eventAt: Date.now() + 3600000 }];
   const actions: string[] = [];

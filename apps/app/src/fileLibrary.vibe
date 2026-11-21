@@ -2,7 +2,6 @@
 import { type Files, type SavedFile, type FileActor, type Event, captureFile, enabled, fileAt, initial, step } from "../gen/app__files.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- a schema field reads this import as a value; vibelang's ESLint tree shows it as `typeof` (smithersai/vibelang#666)
 import { FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease, FileStorage, filesAccount, accountRefreshes } from "./files.vibe"
 
 const picture = Schema.String.check(Schema.isMaxLength(6_990_560), Schema.isPattern(/^data:(?:image\/(?:jpeg|png|webp)|application\/pdf);base64,[A-Za-z0-9+/]+=*$/))

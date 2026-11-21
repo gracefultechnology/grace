@@ -14,6 +14,7 @@ import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent } from "./agent.vibe"
+import { browserAccountId, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
 import { type Help, helpWith, type Last, looker, render, sendable, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
 import { Instances, tablet } from "./instances.vibe"
@@ -230,7 +231,15 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
 
   effect function browserReadAccount() {
     const { graceAccount } = try setup.get()
-    return JSON.stringify(graceAccount.tag === "GraceSignedIn" ? [graceAccount.tag, graceAccount.accountId] : [graceAccount.tag])
+    if (graceAccount.tag === "GraceDeviceSignedIn") {
+      const lease = nativeBrowserGuideLease() catch () => undefined
+      return lease === undefined ? undefined : JSON.stringify([graceAccount.tag, lease])
+    }
+    if (graceAccount.tag === "GraceSignedIn") {
+      const owner = browserAccountId() catch () => undefined
+      return owner === graceAccount.accountId ? JSON.stringify([graceAccount.tag, owner]) : undefined
+    }
+    return graceAccount.tag
   }
 
   effect function tell(words: string) {
@@ -366,6 +375,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const read = step.tag
       const browserScope = surface === "Browser" ? browserReadScope(current) : undefined
       const account = browserScope === undefined ? undefined : try browserReadAccount()
+      if (browserScope !== undefined && account === undefined) return false
       const context = replyControlContext(current)
       effect function ownsBrowserRead() {
         const w = try workspace.get()

@@ -1477,7 +1477,8 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
 });
 
 
-it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment")', async () => {
+it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
+  // spec/app/email.md, "Story: Read an email and its original attachment"
   const person = { id: "private-qa-account", email: "reader@example.test" };
   const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
@@ -2337,7 +2338,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let reviseDuringRead = false;
   let replaceDocumentDuringRead = false;
   let addChallengeDuringRead = false;
-  let challengeShown = false;
+  let challengeShown: false | "code" | "captcha" = false;
   let signInWidget: "hidden" | "idle" | "active" | "accountOnly" = "hidden";
   const card = { id: "card-statements", frame: await pinnedPage("statements", origin + "/topic.html?history", (html) => html
     .replace("<dt>New Balance</dt><dd>$1,284.56</dd>", '<dt>Current balance</dt><dd>$1,301.12</dd><dt>Last statement balance</dt><dd id="balance">$1,284<sup>56</sup></dd>')
@@ -2361,7 +2362,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       }
       return { documentId: currentPage.id, frameScope: "main", result: {
         snapshotId: currentPage.id, domRevision, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
-        complete: true, readyState: "complete", blockers: [],
+        complete: true, readyState: "complete", blockers: challengeShown === "captcha" ? [{ kind: "captcha", covers: "partial" }] : [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
           ...(signInWidget === "hidden" ? [] : [
@@ -2373,7 +2374,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
             { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
           ]),
           { id: "search", tag: "input", type: "text", role: "combobox", fieldName: "q", label: "Search", href: null, inViewport: true },
-          ...(challengeShown ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code", href: null, inViewport: true }] : []),
+          ...(challengeShown === "code" ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code", href: null, inViewport: true }] : []),
           { id: "about", tag: "a", label: "About us", href: "https://example.org/about", inViewport: true },
           { id: "clipped-help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true,
             bounds: { x: 100, y: -2, width: 100, height: 32 } },
@@ -2386,7 +2387,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   }, false, ({ selector }) => {
     if (pinned) return { ...pinned.frame.read(selector), url: pinned.url };
     if (reviseDuringRead) domRevision++;
-    if (addChallengeDuringRead) challengeShown = true;
+    if (addChallengeDuringRead) challengeShown = "code";
     if (replaceDocumentDuringRead) {
       currentPage = { ...currentPage, id: currentPage.id + "-new-document" };
       replaceDocumentDuringRead = false;
@@ -2512,10 +2513,12 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
     expect(guideCalls).toBe(0);
     guideOwner = "guide-owner";
-    challengeShown = true;
-    await tap(showLink);
-    await routeTo(page.getByText(/Finish the form yourself in this tab/));
-    expect(guideCalls).toBe(0);
+    for (const challenge of ["captcha", "code"] as const) {
+      challengeShown = challenge;
+      await tap(showLink);
+      await routeTo(page.getByText(/Finish the form yourself in this tab/));
+      expect(guideCalls).toBe(0);
+    }
     challengeShown = false;
     signInWidget = "active";
     await tap(showLink);
@@ -2790,14 +2793,21 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       default: return unserved(input, options);
     }
   });
-  const browserUrl = "https://example.org/";
+  const browserHome = "https://example.org/";
+  let browserUrl = browserHome;
+  let switchOwnerDuringPageRead = false;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
-      return { documentId: "owner-guide-page", frameScope: "main", result: {
-        snapshotId: "owner-guide-page", domRevision: 1, url: browserUrl, title: "Example",
+      if (switchOwnerDuringPageRead) {
+        browserCookieOwner = firstOwner;
+        switchOwnerDuringPageRead = false;
+      }
+      const documentId = browserUrl === browserHome ? "owner-guide-home" : "owner-guide-help";
+      return { documentId, frameScope: "main", result: {
+        snapshotId: documentId, domRevision: 1, url: browserUrl, title: "Example",
         text: "Example Help center", complete: true, readyState: "complete", blockers: [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
-        elements: [{ id: "help", tag: "a", label: "Help center", href: browserUrl + "help", inViewport: true,
+        elements: [{ id: "help", tag: "a", label: "Help center", href: browserHome + "help", inViewport: true,
           bounds: { x: 100, y: 80, width: 100, height: 32 } }],
       } };
     }
@@ -2930,11 +2940,25 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await routeTo(page.getByRole("status", { name: "Link unavailable" }).getByText("The page or task changed. Ask me again on the page you want."));
     expect(ownerProbes).toBeGreaterThan(0);
     expect(hostedChoices).toBe(0);
+    await tap(button("Check page"));
+    await routeTo(page.getByRole("status", { name: "Page check result" }));
+    expect(page.getByText("Open page: https://example.org/").query()).toBeNull();
 
     browserCookieOwner = undefined;
     await tap(guide);
     await routeTo(page.getByRole("status", { name: "Link guide result" }));
     expect(hostedChoices).toBe(1);
+    browserUrl = browserHome + "help";
+    await native.report("tab-1", browserUrl, 100);
+    await native.route();
+    await tap(button("Resume Grace"));
+    switchOwnerDuringPageRead = true;
+    expect(await check()).toBe(false);
+    expect(switchOwnerDuringPageRead).toBe(false);
+    expect(await receipts()).toEqual([]);
+    browserCookieOwner = undefined;
+    await tap(button("Check page"));
+    await expect.poll(receipts).toEqual(["Open page: " + browserUrl]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();

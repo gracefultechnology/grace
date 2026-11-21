@@ -1556,6 +1556,22 @@ lemma RestartedAssistantInvariant(a: app__assistant_Assistant)
   app__conversation_initialHolds_ensures();
 }
 
+lemma lawNonRestartKeepsSession_ensures(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
+  ensures (lawNonRestartKeepsSession(w, lifecycle, by_) == true)
+{
+  if alwaysAssistantRules(w) && canChangeLifecycle(w, lifecycle, by_) && !lifecycle.RestartDevice? {
+    var device := changeLifecycle(w, lifecycle, by_).device;
+    assert device.surface == w.device.surface && device.homePage == w.device.homePage;
+    var stopped := interrupted(device, w.browser, w);
+    assert changeLifecycle(w, lifecycle, by_) == pausedLifecycle(device, lifecycle.SleepDevice?, w);
+    var quiet := quietAssistant(w.assistant);
+    assert quiet.taskId == w.assistant.taskId && quiet.goal == w.assistant.goal && quiet.checkpoint == w.assistant.checkpoint;
+    assert quiet.conversation.messages == w.assistant.conversation.messages && quiet.conversation.draft == w.assistant.conversation.draft;
+    assert stopped.assistant.taskId == quiet.taskId && stopped.assistant.conversation == quiet.conversation;
+    assert stopped.assistant.activity == quiet.activity && stopped.assistant.checkpoint == quiet.checkpoint;
+  }
+}
+
 lemma lawRestartKeepsCommitmentRecords_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (lawRestartKeepsCommitmentRecords(w, by_) == true)
 {
