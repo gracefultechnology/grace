@@ -22,7 +22,7 @@ const Sheet = ({ icons }: { icons: Record<string, Icon> }) => (
     {Object.entries(icons).map(([name, Glyph]) => (
       <figure key={name} className="m-0 flex flex-col items-center gap-3 rounded-tile bg-panel px-2 py-5">
         <Glyph aria-hidden width={24} height={24} strokeWidth={2.2} className="size-6" />
-        <figcaption className="text-sm leading-5 break-all text-muted-foreground">{name}</figcaption>
+        <figcaption className="text-detail leading-5 break-all text-muted-foreground">{name}</figcaption>
       </figure>
     ))}
   </div>

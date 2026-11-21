@@ -1,5 +1,5 @@
 [
-  { "call": "GraceGuideSpeech.checkPermissions", "returns": { "microphone": "prompt" } },
+  { "call": "GraceAccount.status", "returns": { "kind": "signedOut" } },
   {
     "call": "GraceAccount.startSpeech",
     "refuses": "Speech is unavailable"

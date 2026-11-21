@@ -5,7 +5,7 @@ export default { title: "Foundations/Tokens", parameters: { layout: "fullscreen"
 
 const Section = ({ children }: { children: ReactNode }) => <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-6 bg-background p-8 font-sans text-foreground">{children}</div>;
 const Name = ({ name, value }: { name: string; value: string }) => (
-  <div className="mt-2 text-sm leading-5">
+  <div className="mt-2 text-detail leading-5">
     <div className="font-bold">{name}</div>
     <div className="break-all text-muted-foreground">{value}</div>
   </div>
@@ -38,7 +38,7 @@ export const Type = () => (
   <div className="flex flex-col gap-5 bg-background p-8 font-sans text-foreground">
     {keys(tokens.text).map(([name, value]) => (
       <div key={name} className="flex items-baseline gap-6">
-        <span className="w-36 flex-none text-sm text-muted-foreground">
+        <span className="w-36 flex-none text-detail text-muted-foreground">
           {name} · {value}
         </span>
         <span className="font-bold" style={{ fontSize: `var(--text-${name}, ${value})` }}>
@@ -102,7 +102,7 @@ export const Gradients = () => (
 
 const Run = ({ name, value, style }: { name: string; value: string; style: CSSProperties }) => (
   <div className="group flex items-center gap-6">
-    <span className="w-56 flex-none text-sm">
+    <span className="w-56 flex-none text-detail">
       <b>{name}</b> <span className="text-muted-foreground">{value}</span>
     </span>
     <div className="relative h-8 flex-1 rounded-full bg-panel">

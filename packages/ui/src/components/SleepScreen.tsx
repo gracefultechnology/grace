@@ -29,7 +29,7 @@ export function SleepScreen({ time, date, next, nextIcon = <Calendar size={28} s
       className={cn("absolute -inset-1 z-40 flex flex-col items-center justify-center bg-gradient-sleep font-sans text-sleep-ink", className)}
       {...props}
     >
-      <div className="text-[9.375rem] leading-none font-light tracking-[-.02em]">{time}</div>
+      <div className="text-clock leading-none font-light tracking-[-.02em]">{time}</div>
       <div className="mt-3.5 text-display-sm leading-[42px] font-medium text-sleep-date">{date}</div>
       {next && (
         <div className="mt-10 flex items-center gap-3.5 rounded-full bg-glass/8 px-[26px] py-4 text-title-sm leading-8 font-medium">

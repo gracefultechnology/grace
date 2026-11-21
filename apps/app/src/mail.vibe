@@ -7,7 +7,7 @@ import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
 import { Library } from "./files.vibe"
-import { type Held, Instances, watchEach } from "./instances.vibe"
+import { type Held, followAccounts, Instances } from "./instances.vibe"
 
 export type Note = { readonly id: number; readonly text: string }
 
@@ -94,6 +94,33 @@ effect function dispatch(account: Account, mail: MailConnection, box: MailMachin
   if (started === undefined) return
   const result = try outcome(box, mail.send(operationId, currentDraft(m)))
   if (result !== undefined) box.send({ type: "sendResult", operationId, ...result, persisted: true }, "MailConnector") catch () => undefined
+}
+
+effect function flush(box: MailMachine.Shape, mail: MailConnection, m: Mailbox) {
+  for (const q of m.outbox) {
+    if (q.status === "Waiting") {
+      const begun = box.send({ type: "dispatchQueued", operationId: q.operationId, reachable: true }, "MailHost") catch () => undefined
+      if (begun === undefined) continue
+      const result = try outcome(box, mail.send(q.operationId, q.snapshot))
+      if (result === undefined) return
+      box.send({ type: "queuedResult", operationId: q.operationId, ...result, persisted: true }, "MailConnector") catch () => undefined
+    }
+    if (q.status === "DispatchUnknown") {
+      const found = try outcome(box, mail.lookup(q.operationId))
+      if (found === undefined) return
+      if (found.resultStatus !== "SendUnknown") box.send({ type: "queuedResult", operationId: q.operationId, ...found, persisted: true }, "MailConnector") catch () => undefined
+    }
+  }
+}
+
+effect function place(box: MailMachine.Shape, content: DraftContent, files: readonly SavedFile[]) {
+  try box.send({ type: "startDraft", reply: false }, "MailUser")
+  try box.send({ type: "editDraft", content }, "MailUser")
+  for (const asset of files) {
+    const now = try box.get()
+    try box.send({ type: "attachAsset", owner: now.owner, asset, draftRevision: now.revision, selected: true }, "MailHost")
+  }
+  return true
 }
 
 effect function reopen(mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
@@ -218,23 +245,6 @@ export const mailing = Layer.effect(Mail, effect {
     if (changes.some((c) => c.change === "PurgeMessage")) try show("Deleted for good")
   }
 
-  effect function flush(box: MailMachine.Shape, mail: MailConnection, m: Mailbox) {
-    for (const q of m.outbox) {
-      if (q.status === "Waiting") {
-        const begun = box.send({ type: "dispatchQueued", operationId: q.operationId, reachable: true }, "MailHost") catch () => undefined
-        if (begun === undefined) continue
-        const result = try outcome(box, mail.send(q.operationId, q.snapshot))
-        if (result === undefined) return
-        box.send({ type: "queuedResult", operationId: q.operationId, ...result, persisted: true }, "MailConnector") catch () => undefined
-      }
-      if (q.status === "DispatchUnknown") {
-        const found = try outcome(box, mail.lookup(q.operationId))
-        if (found === undefined) return
-        if (found.resultStatus !== "SendUnknown") box.send({ type: "queuedResult", operationId: q.operationId, ...found, persisted: true }, "MailConnector") catch () => undefined
-      }
-    }
-  }
-
   effect function store(account: Account, mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
     const answer = effect (persisted: boolean) => box.send({ type: "draftStoreResult", draftId: m.draftId, revision: m.storedRevision, request: m.draftRequest, persisted }, "MailHost") catch () => undefined
     if (m.draftStorage === "DraftSaving") {
@@ -280,7 +290,8 @@ export const mailing = Layer.effect(Mail, effect {
     })
   }
 
-  try fork.in(scope) watchEach(registry.changes, (a) => a.accounts, (id) => shelf.mail(id), watch)
+  const selections = Stream.map(registry.changes, ({ accounts }) => accounts)
+  try fork.in(scope) followAccounts(selections, effect (account) => try watch(account, try shelf.mail(account.id)))
 
   effect function ownedMailbox(id: number) {
     const account = try accountOf(id)
@@ -319,16 +330,6 @@ export const mailing = Layer.effect(Mail, effect {
     }
     const moved = place(chosen, before.draft, before.draftAttachments) catch () => false
     if (!moved) place(drafting, before.draft, before.draftAttachments) catch () => false
-  }
-
-  effect function place(box: MailMachine.Shape, content: DraftContent, files: readonly SavedFile[]) {
-    try box.send({ type: "startDraft", reply: false }, "MailUser")
-    try box.send({ type: "editDraft", content }, "MailUser")
-    for (const asset of files) {
-      const now = try box.get()
-      try box.send({ type: "attachAsset", owner: now.owner, asset, draftRevision: now.revision, selected: true }, "MailHost")
-    }
-    return true
   }
 
   effect function save(id: number, refs: readonly string[]) {

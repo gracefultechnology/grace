@@ -165,7 +165,10 @@ pure def lawPrivateEmailRequiresTheCurrentPersonTab(b: B::Browser, id: int, revi
 
 ### A private sign-in tab keeps its address and page position to itself
 
-While the selected tab is a private sign-in, the person cannot edit its address or navigate it elsewhere, and the browser host cannot report its scroll position or open page panel.
+In a private sign-in tab, the person enters an address or moves through history
+using the private browser controls. The workspace refuses address edits and
+navigation destinations for that tab. The browser host cannot report its
+scroll position or open page panel.
 
 ```quint
 pure def lawPrivateAddressesAndPanelsStayOutOfControls(b: B::Browser, text: str, scroll: int): bool =
