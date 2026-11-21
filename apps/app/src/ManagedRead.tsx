@@ -1,11 +1,14 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
-import { Button, CalendarEventRow, EmptyState, Input, MailAttachment, MailMessageRow, PageHeading, PageText, RetryNotice, SegmentedControl, Textarea } from "@repo/ui";
+import { Button, CalendarEventRow, CalendarMonth, CalendarNav, CalendarWeekStrip, EmptyState, Input, MailAttachment, MailFolderNav, MailMessageRow, PageHeading, PageText, RetryNotice, SearchField, SegmentedControl, Textarea } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
-import { useCallback, useState, useSyncExternalStore, useTransition } from "react";
+import { type ReactNode, useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
 import type { Recurrence } from "../gen/app__calendar.ts";
 import { mayChangeManaged, mayReadManaged, maySendManagedMail } from "../gen/app__setup.ts";
-import { keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
+import { keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
+import { calendarGrid } from "./Calendar.tsx";
+import { dayOf, midnight } from "./calendarWindow.vibe";
+import type { Navigation } from "../gen/app__calendarView.ts";
 import { webOrigin } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
 
@@ -174,6 +177,72 @@ function AppointmentEditor({ event, seriesFor, proposal, remove, write, pending,
   </form>;
 }
 
+const folderNames: Record<ManagedFolder, string> = { inbox: "Inbox", sent: "Sent", drafts: "Drafts", trash: "Trash" };
+
+function FolderList({ mail, choose, open, busy, children }: {
+  mail: Extract<ManagedSnapshot, {kind: "mail"}>;
+  choose: (folder: ManagedFolder, search: string) => void;
+  open: (id: string) => void;
+  busy: boolean;
+  children: ReactNode;
+}) {
+  const [search, setSearch] = useState(mail.search);
+  return <section data-sensitive="true" className="grid gap-4 md:grid-cols-[minmax(10rem,15rem)_1fr]">
+    <MailFolderNav folder={mail.folder} counts={mail.counts && { inbox: mail.counts.inboxUnread, drafts: mail.counts.drafts }}
+      onSelect={(folder) => { if (folder !== "outbox" && folder !== mail.folder) choose(folder, ""); }} />
+    <div className="flex min-w-0 flex-col gap-4" aria-busy={busy || undefined}>
+      <PageHeading>{folderNames[mail.folder]}</PageHeading>
+      {children}
+      <SearchField label="Search email" value={search} maxLength={512} onChange={(event) => {
+        const text = event.target.value;
+        setSearch(text);
+        choose(mail.folder, text);
+      }} />
+      {search === mail.search && (mail.rows.length === 0
+        ? <EmptyState title={search ? "No matching emails." : mail.folder === "inbox" ? "Your inbox is empty." : "No messages in this folder."} />
+        : mail.rows.map((row) => <MailMessageRow key={row.externalId} from={{ name: row.from || "Unknown sender" }} subject={row.subject || "No subject"}
+          time={day(row.receivedAt)} unread={row.isUnread} onOpen={busy ? undefined : () => open(row.externalId)} />))}
+    </div>
+  </section>;
+}
+
+function instantOf(value: string) {
+  return Date.parse(value.length === 10 ? value + "T00:00:00" : value);
+}
+
+function Agenda({ calendar, move, open, busy, children }: {
+  calendar: Extract<ManagedSnapshot, {kind: "calendar"}>;
+  move: (kind: Navigation, day: number) => void;
+  open: (id: string) => void;
+  busy: boolean;
+  children: ReactNode;
+}) {
+  const today = dayOf(Date.now());
+  const selected = calendar.window.selectedDay;
+  const events = calendar.rows.toSorted((a, b) => instantOf(a.startAt) - instantOf(b.startAt));
+  const between = (first: number, until: number) => events.filter((row) => instantOf(row.startAt) < midnight(until) && instantOf(row.endAt) > midnight(first));
+  const grid = calendarGrid(calendar.window, today, (from, until) => between(from, until)[0], (kind, chosen = today) => () => move(kind, chosen));
+  const week = calendar.window.mode === "WeekView";
+  const selectedEvents = between(selected, selected + 1);
+  const upcoming = events.filter((event) => instantOf(event.startAt) >= midnight(selected + 1) && instantOf(event.startAt) < midnight(selected + 15));
+  const rows = (list: readonly EventRow[]) => list.map((event) => <CalendarEventRow key={event.externalId} title={event.title || "Untitled appointment"} dayLabel={day(event.startAt)}
+    startLabel={start(event)} where={event.location || undefined} disabled={busy} onClick={() => open(event.externalId)} />);
+  return <section data-sensitive="true" className="flex flex-col gap-4" aria-busy={busy || undefined}>
+    <div className="flex flex-wrap items-center gap-3">
+      <CalendarNav {...grid.nav} mode={week ? "week" : "month"} />
+      <Button variant="capsule" size="pill" onClick={() => move("Today", today)}>Today</Button>
+    </div>
+    {week ? <CalendarWeekStrip days={grid.week} onSelect={grid.onSelectDay} /> : <CalendarMonth {...grid.month} onSelect={grid.onSelectDay} />}
+    {children}
+    {week && <>
+      <PageHeading>{grid.dayHeading}</PageHeading>
+      {selectedEvents.length ? rows(selectedEvents) : <PageText>No appointments this day.</PageText>}
+      <PageHeading>Upcoming</PageHeading>
+      {upcoming.length ? rows(upcoming) : <EmptyState title="No upcoming appointments." />}
+    </>}
+  </section>;
+}
+
 /** Grace's hosted read view for an Inbox or the primary Google calendar. */
 export function ManagedRead({ view }: { view: ReadView }) {
   const runtime = useRuntime();
@@ -271,7 +340,7 @@ export function ManagedRead({ view }: { view: ReadView }) {
     return <PageText role="status">{view === "Email" ? "Opening your inbox…" : "Opening your calendar…"}</PageText>;
   }
 
-  const back = <Button variant="capsule" size="pill" onClick={() => run({ kind: "back" })}>{view === "Email" ? "Back to Inbox" : "Back to calendar"}</Button>;
+  const back = <Button variant="capsule" size="pill" onClick={() => run({ kind: "back" })}>{snapshot.kind === "mail" ? `Back to ${folderNames[snapshot.folder]}` : "Back to calendar"}</Button>;
   const more = snapshot.next === null ? null :
     <Button variant="capsule" size="pill" loading={pending} onClick={() => run({ kind: "more" })}>Load more</Button>;
   const problem = failed && <RetryNotice role="alert">{failed}</RetryNotice>;
@@ -287,7 +356,7 @@ export function ManagedRead({ view }: { view: ReadView }) {
         {back}
         {showNotice}
         {problem}
-        {canTrash && selected.message.metadata?.historyId && <Button variant="warn" size="pill" loading={pending} onClick={() => {
+        {canTrash && snapshot.folder !== "trash" && selected.message.metadata?.historyId && <Button variant="warn" size="pill" loading={pending} onClick={() => {
           const version = selected.message.metadata?.historyId;
           if (version) write({ kind: "trash", id: selected.message.externalId, version });
         }}>{trash ? "Confirm move to Trash" : "Move to Trash"}</Button>}
@@ -340,22 +409,17 @@ export function ManagedRead({ view }: { view: ReadView }) {
         )}
       </section>
     ) : (
-      <section data-sensitive="true" className="flex flex-col gap-4" aria-busy={pending || undefined}>
-        <PageHeading>Inbox</PageHeading>
+      <FolderList key={JSON.stringify([projection, snapshot.folder])} mail={snapshot} busy={pending}
+        choose={(folder, search) => run({ kind: "mailFolder", accountId, grant, folder, search })} open={(id) => run({ kind: "open", id })}>
         {showNotice}
         {signedIn && account?.googleLink.tag === "GoogleLinkConnected" &&
           maySendManagedMail(signedIn, account.googleLink, snapshot.accountId, account.googleLink.grant) && (
           <MailDraft key={JSON.stringify([snapshot.accountId, account.googleLink.email, account.googleLink.grant, draft?.number])} open={draft !== undefined}
             accountId={snapshot.accountId} email={account.googleLink.email} grant={account.googleLink.grant} />
         )}
-        {snapshot.rows.length === 0 && <EmptyState title="Your inbox is empty." />}
-        {snapshot.rows.map((row) => (
-          <MailMessageRow key={row.externalId} from={{ name: row.from || "Unknown sender" }} subject={row.subject || "No subject"}
-            time={day(row.receivedAt)} unread={row.isUnread} onOpen={pending ? undefined : () => run({ kind: "open", id: row.externalId })} />
-        ))}
         {problem}
         {more}
-      </section>
+      </FolderList>
     );
   }
 
@@ -396,17 +460,11 @@ export function ManagedRead({ view }: { view: ReadView }) {
       {event.description && <PageText className="w-full whitespace-pre-wrap">{event.description}</PageText>}
     </section>
   ) : (
-    <section data-sensitive="true" className="flex flex-col gap-4" aria-busy={pending || undefined}>
-      <PageHeading>Upcoming</PageHeading>
+    <Agenda calendar={snapshot} busy={pending} move={(move, day) => run({ kind: "calendarWindow", accountId, grant, move, day })} open={(id) => run({ kind: "open", id })}>
       {showNotice}
       {canSchedule && <Button variant="prominent" size="pill" onClick={() => setEditor({ key: projection })}>New appointment</Button>}
-      {snapshot.rows.length === 0 && <EmptyState title="No upcoming appointments." />}
-      {snapshot.rows.map((event) => (
-        <CalendarEventRow key={event.externalId} title={event.title || "Untitled appointment"} dayLabel={day(event.startAt)}
-          startLabel={start(event)} where={event.location || undefined} disabled={pending} onClick={() => run({ kind: "open", id: event.externalId })} />
-      ))}
       {problem}
       {more}
-    </section>
+    </Agenda>
   );
 }
