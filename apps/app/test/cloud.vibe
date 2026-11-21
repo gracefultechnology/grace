@@ -88,8 +88,8 @@ type Account = {
   boxes: Box[]
   sessions: Session[]
   outage: boolean
-  mailFault?: "dispatch" | "lookupMissing"
-  calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate"
+  mailFault?: Outage["mailFault"]
+  calendarFault?: Outage["calendarFault"]
   sendLookups: string[]
   script: Scripted[]
   decision?: ScriptedDecision
@@ -154,7 +154,7 @@ schema PageChoice { address: string; choice: "allow" | "cancel" | "unfinished" }
 schema OtherConnect { address: string; password: string; incoming?: string; outgoing?: string }
 schema IncomingMail { to: Mailbox; from: Filled; fromEmail: Mailbox; subject: string; body: string }
 schema Expiry { address: string }
-schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" }
+schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" | "reauthCreate" | "conflictCreate" }
 schema ChatContext { includes: string[]; excludes: string[] }
 schema Scripted { said?: string; context?: ChatContext; answer: string }
 schema ScriptedDecision { goalIncludes: Filled; labels: Filled[] }
@@ -812,6 +812,10 @@ effect function store(site: string) {
     if (fault !== undefined) try change(key, (a) => ({ ...a, calendarFault: undefined }))
     if (fault === "beforeCreate") throw new Unavailable()
     if (fault === "refuseCreate") throw new BadAddress()
+    if (fault === "reauthCreate" || fault === "conflictCreate") {
+      const error = fault === "reauthCreate" ? "google_reauth_required" : "idempotency_conflict"
+      return try HttpServerResponse.json({ error, errorDescription: fault === "reauthCreate" ? "Google reauth required." : "Idempotency conflict.", retryable: false, outcome: "not_accepted" }, { status: 409 })
+    }
     const create = effect {
       const token = (try Ref.get(googleLinks)).get(found.grantId)
       if (token === undefined) return try recordAppointment(key, found, fields)
@@ -1330,7 +1334,7 @@ export effect function expire(cloud: string, key: string, address: string) {
   try post(cloud, "/fake/expire", { address }, key)
 }
 
-export effect function outage(cloud: string, key: string, down: boolean, fault?: "dispatch" | "lookupMissing" | "createResponse" | "beforeCreate" | "refuseCreate") {
+export effect function outage(cloud: string, key: string, down: boolean, fault?: Outage["mailFault"] | Outage["calendarFault"]) {
   try post(cloud, "/fake/outage", fault === "dispatch" || fault === "lookupMissing" ? { down, mailFault: fault } : { down, calendarFault: fault }, key)
 }
 

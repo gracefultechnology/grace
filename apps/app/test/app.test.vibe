@@ -369,6 +369,13 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const identity = { owner: gmail.address, calendarId: "primary", occurrenceId: "clinic-visit", sourceRef: "clinic", sourceAccount: 1, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
       const details = { ...eyeCheck.committed, title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached", startAt: start, endAt: start + hour, reminderEnabled: true, leadTime: day }
       const fresh = approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser")
+      const refusalEntry = approveSave(create(noEntry, { ...identity, occurrenceId: "refused-calendar-visit" }, details, "CalendarUser"), 1, "CalendarUser")
+      try outage(cloud, secret, false, "reauthCreate")
+      const reconnect = calendar.write(refusalEntry, view([])) catch (cause) => cause._tag
+      try Effect.try(() => assert.equal(reconnect, "NeedsSignIn"))
+      try outage(cloud, secret, false, "conflictCreate")
+      const conflict = try calendar.write(refusalEntry, view([]))
+      try Effect.try(() => assert.isFalse(conflict.succeeded))
       const awaiting = save(fresh, 1, true, "CalendarStore")
       try outage(cloud, secret, false, "createResponse")
       const dropped = try calendar.write(fresh, view([eyeCheck]))

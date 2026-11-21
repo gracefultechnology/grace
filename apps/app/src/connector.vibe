@@ -7,7 +7,7 @@ import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calen
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
-import { AttachmentContent, ContactList, DraftList, DraftRead, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
+import { AttachmentContent, ContactList, DraftList, DraftRead, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, ReconnectRefusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
 import type { WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
 import type { CloudLink } from "./conversation.vibe"
 import { google } from "./google.vibe"
@@ -282,7 +282,7 @@ effect function connectorTransport(link: CloudLink) {
   effect function reconnects(sent: HttpClientRequest.HttpClientRequest, response: HttpClientResponse.HttpClientResponse) {
     if (!sent.url.includes("/inbox-v1/") && sent.headers["idempotency-key"] === undefined) return true
     const body = response.json catch effect () => null
-    return Option.getOrUndefined(Schema.decodeUnknownOption(Refusal)(body))?.code === "reauth_required"
+    return Schema.is(ReconnectRefusal)(body)
   }
 
   effect function call(request: HttpClientRequest.HttpClientRequest!ConnectorFailure) {
