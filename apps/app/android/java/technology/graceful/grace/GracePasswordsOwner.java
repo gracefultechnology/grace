@@ -2,7 +2,6 @@ package technology.graceful.grace;
 
 import ai.eliza.plugins.passwords.PasswordVaultAccess;
 import ai.eliza.plugins.securestore.nativeonly.JsonCredentialSlots;
-import ai.eliza.plugins.securestore.nativeonly.PasswordBackupApproval;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import android.content.Context;
 import java.io.File;
@@ -16,8 +15,33 @@ import org.json.JSONObject;
 
 final class GracePasswordsOwner {
  private static final String OWNER = "password-owner";
- private static final String ORIGINAL_ISSUER = "https://api.graceforseniors.com";
  private static volatile boolean changingAccount;
+ private static long generation;
+ private static Enrollment enrollment;
+
+ static final class Enrollment implements AutoCloseable {
+  @Override public void close() {
+   synchronized (GracePasswordsOwner.class) {
+    if (enrollment == this) enrollment = null;
+   }
+  }
+ }
+
+ static Enrollment beginEnrollment(Context context) throws Exception {
+  var lease = new Enrollment();
+  synchronized (GracePasswordsOwner.class) {
+   if (enrollment != null || changingAccount) throw new IllegalStateException("Sign-in is already in progress");
+   enrollment = lease;
+   generation++;
+  }
+  try {
+   PasswordVaultAccess.get(context).lockAndClose();
+   return lease;
+  } catch (Exception unavailable) {
+   lease.close();
+   throw unavailable;
+  }
+ }
 
  private GracePasswordsOwner() {}
 
@@ -35,40 +59,56 @@ final class GracePasswordsOwner {
  }
 
  static synchronized CloudDeviceAccount.Session stableSession(Context context) throws Exception {
-  var account = GraceAccount.account(context);
-  if (changingAccount || account.awaitingAcknowledgment()) throw new IllegalStateException("Account change in progress");
-  return account.session();
+  if (changingAccount) throw new IllegalStateException("Account change in progress");
+  return GraceAccount.session(context);
  }
 
- static boolean accountChanging() { return changingAccount; }
+ static String storageOwner(CloudDeviceAccount.Session session) {
+  if ("standalone-production".equals(BuildConfig.CLOUD_PROFILE)) return session.accountId();
+  return BuildConfig.CLOUD_PROFILE + "\u0000" + session.organizationId() + "\u0000" + session.accountId();
+ }
+
+ private static boolean sameOwner(JSONObject owner, CloudDeviceAccount.Session session) throws Exception {
+  String profile = owner.optString("profile", "standalone-production");
+  String originalIssuer = switch (profile) {
+   case "standalone-production" -> "https://api.graceforseniors.com";
+   case "shared-staging" -> "https://cloud-staging.eliza.app";
+   case "shared-production" -> "https://cloud.eliza.app";
+   default -> "";
+  };
+  return BuildConfig.CLOUD_PROFILE.equals(profile) && BuildConfig.CLOUD_API_ORIGIN.equals(owner.optString("issuer", originalIssuer))
+   && session.accountId().equals(owner.getString("accountId")) && session.organizationId().equals(owner.getString("organizationId"));
+ }
 
  private static String credentialId(CloudDeviceAccount.Session session) throws NoSuchAlgorithmException {
   byte[] fingerprint = MessageDigest.getInstance("SHA-256").digest(session.token().getBytes(StandardCharsets.UTF_8));
   return Base64.getUrlEncoder().withoutPadding().encodeToString(fingerprint);
  }
 
- private static JSONObject ownerRecord(CloudDeviceAccount.Session session) throws Exception {
-  return new JSONObject().put("accountId", session.accountId()).put("organizationId", session.organizationId())
-   .put("credentialId", credentialId(session)).put("issuer", GraceAccount.CLOUD_ORIGIN);
+ private static JSONObject ownerRecord(CloudDeviceAccount.Session current) throws Exception {
+  return new JSONObject().put("profile", BuildConfig.CLOUD_PROFILE).put("issuer", BuildConfig.CLOUD_API_ORIGIN).put("accountId", current.accountId())
+    .put("organizationId", current.organizationId()).put("credentialId", credentialId(current));
  }
 
+ static synchronized long generation() { return generation; }
+
+ static boolean accountChanging() { return changingAccount; }
+
  static synchronized boolean admitted(Context context) {
-  if (changingAccount || !hasNoPriorOwner(context)) return false;
+  if (changingAccount || enrollment != null || !hasNoPriorOwner(context)) return false;
   try {
    var current = stableSession(context);
    String stored = custody(context).read(OWNER);
-   if (stored == null) return current == null && !changingAccount;
+   if (stored == null) return current == null && GraceAccount.deviceOnly(context) && !changingAccount;
    var owner = new JSONObject(stored);
-   return current != null && current.accountId().equals(owner.getString("accountId"))
-    && current.organizationId().equals(owner.getString("organizationId"))
-    && GraceAccount.CLOUD_ORIGIN.equals(owner.optString("issuer", ORIGINAL_ISSUER))
+   return current != null && sameOwner(owner, current)
     && credentialId(current).equals(owner.optString("credentialId")) && !changingAccount;
   } catch (Exception unavailable) {
    return false;
   }
  }
 
- static synchronized void bindVerified(Context context, PasswordBackupApproval approval, boolean linkExisting) throws Exception {
+ static synchronized void bindVerified(Context context, GracePasswordRecovery.Approval approval, boolean linkExisting) throws Exception {
   if (changingAccount || !hasNoPriorOwner(context) || !approval.current()) throw new IllegalStateException("Account verification changed");
   var current = stableSession(context);
   if (current == null || !current.accountId().equals(approval.ownerId())) throw new IllegalStateException("Account verification changed");
@@ -76,9 +116,7 @@ final class GracePasswordsOwner {
   String existing = store.read(OWNER);
   if (existing != null) {
    var owner = new JSONObject(existing);
-   if (!GraceAccount.CLOUD_ORIGIN.equals(owner.optString("issuer", ORIGINAL_ISSUER))
-       || !current.accountId().equals(owner.getString("accountId"))
-       || !current.organizationId().equals(owner.getString("organizationId"))
+   if (!sameOwner(owner, current)
        || (owner.has("scope") && !approval.scope().equals(owner.getString("scope")))) {
     throw new IllegalStateException("This vault belongs to another account");
    }
@@ -90,7 +128,7 @@ final class GracePasswordsOwner {
  }
 
  static void enteringAccountChange(Context context) throws Exception {
-  synchronized (GracePasswordsOwner.class) { changingAccount = true; }
+  synchronized (GracePasswordsOwner.class) { changingAccount = true; generation++; }
   PasswordVaultAccess.get(context).lockAndClose();
  }
 
@@ -98,28 +136,22 @@ final class GracePasswordsOwner {
   changingAccount = false;
  }
 
- static void confirmVerifiedAccount(Context context) {
-  try { bindVerifiedAccount(context); }
+ static void confirmVerifiedAccount(Context context, CloudDeviceAccount.Session verified) {
+  try { bindVerifiedAccount(context, verified); }
   catch (Exception unavailable) { }
  }
 
- private static synchronized void bindVerifiedAccount(Context context) throws Exception {
-  if (!changingAccount || !hasNoPriorOwner(context)) return;
-  var account = GraceAccount.account(context);
-  if (account.awaitingAcknowledgment()) return;
-  var current = account.session();
-  if (current == null) return;
+ private static synchronized void bindVerifiedAccount(Context context, CloudDeviceAccount.Session verified) throws Exception {
+  if (verified == null || !hasNoPriorOwner(context) || !verified.equals(GraceAccount.session(context))) return;
   var store = custody(context);
   String stored = store.read(OWNER);
   if (stored == null) {
-   if (!PasswordVaultAccess.get(context).exists()) store.write(OWNER, ownerRecord(current).toString());
+   if (!PasswordVaultAccess.get(context).exists()) store.write(OWNER, ownerRecord(verified).toString());
    return;
   }
   var owner = new JSONObject(stored);
-  if (GraceAccount.CLOUD_ORIGIN.equals(owner.optString("issuer", ORIGINAL_ISSUER))
-    && current.accountId().equals(owner.getString("accountId"))
-    && current.organizationId().equals(owner.getString("organizationId"))) {
-   store.write(OWNER, owner.put("credentialId", credentialId(current)).put("issuer", GraceAccount.CLOUD_ORIGIN).toString());
+  if (sameOwner(owner, verified)) {
+   store.write(OWNER, owner.put("credentialId", credentialId(verified)).put("issuer", BuildConfig.CLOUD_API_ORIGIN).toString());
   }
  }
 }

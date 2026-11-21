@@ -32,6 +32,8 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [What Grace may do with email and the calendar, each action routed to its guarded event](./agentActions.md)
 - [Saved photos, documents and Email sharing](./files.md)
 - [The vocabulary of a task: its kind, subject and terms](./task.md)
+- [The task kinds: what each needs, its facts and its fill](./taskKinds.md)
+- [A bill as a task kind: its facts and fitting payment](./billKind.md)
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./billpay.md)
 - [Verified preparation to the current payment review](./preparationReview.md)
@@ -176,8 +178,10 @@ pure val latestValues = Set(exampleLogin, { ...exampleLogin, revision: 2 })
 
 ### Grace can describe private sign-in without operating the vault
 
-Grace uses a current typed request or complete human utterance to point to a
-control. Guidance receives no vault state, account data or website form values.
+The regular Ask Grace field and microphone accept requests for password help.
+Grace uses the current typed request or a complete human utterance to point
+to a control. Guidance receives no vault state, account data or website form
+values.
 Typed commands work when Cloud speech is unavailable. Known commands select
 the general Passwords screen or Browser and a cue for the named control.
 Guidance never chooses or reveals an entry, copies a

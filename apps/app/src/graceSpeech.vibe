@@ -4,12 +4,14 @@ import { firstWordLimitMs, sendsHerVoice, voiceDisclosure } from "../gen/app__co
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces, localPasswordCommands, privateSurfaceActive, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
+import { apiOrigin } from "./graceAccount.vibe"
 import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone } from "./graceSpeechPlatform.ts"
 import { Passwords } from "./passwords.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 const route = "/api/v1/voice/speech"
-const apiOrigin = import.meta.env.DEV ? "" : "https://api.graceforseniors.com"
+const shared = import.meta.env.VITE_GRACE_CLOUD_PROFILE === "shared-production" || import.meta.env.VITE_GRACE_CLOUD_PROFILE === "shared-staging"
+const leaseToken = shared ? /^[A-Za-z0-9_-]{43}$/ : /^[a-f0-9]{64}$/
 
 schema Consent { consentNonce: string }
 schema Lease { version: 1; sessionId: string; token: string; expiresAt: string; wsUrl: string }
@@ -76,11 +78,11 @@ effect function checkedLease(native: boolean) {
   const lease = try mint(native)
   const verified = effect {
     const url = try Effect.try(() => new URL(lease.wsUrl))
-    const expected = try Effect.try(() => new URL(import.meta.env.DEV ? "http://localhost:8787" : apiOrigin))
+    const expected = try Effect.try(() => new URL(apiOrigin || "http://localhost:8787"))
     if (url.hostname !== expected.hostname || url.port !== expected.port || url.protocol !== (expected.protocol === "https:" ? "wss:" : "ws:") ||
       url.username || url.password || url.hash || url.pathname !== route + "/ws" ||
       url.searchParams.size !== 1 || url.searchParams.get("sessionId") !== lease.sessionId ||
-      !/^[a-f0-9-]{36}$/i.test(lease.sessionId) || !/^[a-f0-9]{64}$/.test(lease.token) ||
+      !/^[a-f0-9-]{36}$/i.test(lease.sessionId) || !leaseToken.test(lease.token) ||
       !(Date.parse(lease.expiresAt) > (try Clock.currentTimeMillis))) throw new SpeechUnavailable()
     return lease
   }

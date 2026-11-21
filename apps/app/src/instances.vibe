@@ -5,6 +5,7 @@ import { type Event as MailEvent, hasMessage, listingScope, Machine as MailMachi
 import type { ChangeReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
+// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- a schema field reads this import as a value; vibelang's ESLint tree shows it as `typeof` (smithersai/vibelang#666)
 import { type Attached, Connector, type MailConnection, MailContent, NeedsSignIn } from "./connector.vibe"
 
 export error NotAnAccount { id: number }
