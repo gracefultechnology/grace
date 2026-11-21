@@ -2953,7 +2953,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await native.route();
     await tap(button("Resume Grace"));
     switchOwnerDuringPageRead = true;
-    expect(await check()).toBe(false);
+    expect(await check()).toBe("Refused");
     expect(switchOwnerDuringPageRead).toBe(false);
     expect(await receipts()).toEqual([]);
     browserCookieOwner = undefined;
