@@ -509,10 +509,8 @@ effect function makePageHost(openEmail: (() => Promise<void>) | undefined) {
     const unasked = page.asked.length === 0
     const at = page.asked.findLastIndex((a) => a.url === url)
     page.load = page.asked.splice(0, at + 1 || 1).at(-1)?.version ?? page.load
-    if (unasked) {
-      if (!url || page.tab.manualSignIn || url === tabUrl(page.tab)) try moved(workspace, page, tab, "")
-      else if (goesElsewhere(page, url)) try moved(workspace, page, tab, url)
-    }
+    const destination = page.tab.manualSignIn || url === tabUrl(page.tab) ? "" : url ?? ""
+    if (unasked && (destination === "" || goesElsewhere(page, destination))) try moved(workspace, page, tab, destination)
     const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
     if (now !== undefined && now.loadVersion !== page.tab.loadVersion) try step(native, page, now, close)
     try website({ type: "pageStarted", tab }, "WebsiteHost")
