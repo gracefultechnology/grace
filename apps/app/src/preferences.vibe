@@ -92,7 +92,7 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
           ? timeout(tryPromise(() => port.setBrightness({ percent: target.brightness })), "2 seconds") : Effect.void,
         watchVolume && (before.volume.step !== step || before.volume.muted !== target.muted)
           ? timeout(tryPromise(() => port.setVolume({ step, muted: target.muted })), "2 seconds") : Effect.void,
-      ])
+      ], { concurrency: "unbounded" })
       const reported = try deviceSettings(port)
       const matches = (!watchBrightness || reported.brightness.percent === target.brightness) &&
         (!watchVolume || (reported.volume.muted === target.muted && (target.muted || reported.volume.step === step)))
