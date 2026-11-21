@@ -645,14 +645,17 @@ pure def lawLinkRequiresGraceSignIn(link: GoogleLink): bool =
 
 ## Story: Read the Google mail and calendar I connected
 
-> As a person using Grace, I can open my managed Google inbox or upcoming
-> calendar in Grace, including when I start from the tablet and sign in on
-> Grace's web page. I choose the message or appointment I want to open.
+> As a person using Grace, I can search my connected Gmail folders and browse
+> my primary Google calendar by week, month or day. I can start on my tablet,
+> sign in on Grace's web page and choose the message or appointment I want.
 
 ### Managed reads show only the matching signed-in account and the capability it granted
 
-The hosted read views show the Inbox and upcoming primary calendar, with
-read access by default. A message opens into a
+The hosted Gmail view opens in Inbox. The person can choose Sent, Drafts
+or Trash and search within that folder. Inbox unread and Drafts counts come
+from the connected account's provider. The calendar opens on the current
+week. Changing the week, month or selected day shows appointments from the
+chosen dates. Both views start with read access. A message opens into a
 plain-text preview for the chosen reference, never executable HTML.
 A preview carries no authority to inspect attachments, reply or forward.
 The application checks the account bound to each provider result. A
@@ -721,18 +724,23 @@ Set-up's part is who may change anything: only the signed-in web account
 named by the change, through its current grant, and a device session alone
 never. Trash needs mail with Trash enabled, and an appointment change needs
 the calendar with changes enabled, so enabling one never enables the other.
-No rule here checks the rest yet. The managed Google Trash, Undo and
-appointment change run in the shell, which consults only this guard: it
-compares the selected message's version or the selected appointment's
-version with the change before sending it, and the provider's receipt with
-the change before showing success, by hand. They do not go through the
-[Email](./email.md) or [Calendar view](./calendarView.md) machines, whose
-rules hold Undo after confirmation, the read-back, the one-or-all choice
-and the evidence before success for the local mailbox and calendar only.
-Until those machines govern the managed path, the selected version, Undo
-only after the provider's confirmation, the read-back with a new series'
-frequency and time zone, skipped months, the one-or-all choice and the
-evidence before success are promises of this heading that no rule checks.
+Moving a message to Trash or changing an existing appointment requires the
+ID and version that the person reviewed. Grace checks both when it stages
+the proposal and again before sending the change. For a whole-series change,
+Grace checks the series selected for review. A series lookup can open a
+review only while the selection that requested it is still on screen.
+Creating an appointment starts
+with a new item, and Undo refers to the confirmed Trash operation.
+The provider's receipt must name the same account, item and operation before
+Grace shows success. The managed Google Trash, Undo and
+appointment change run in the shell through these checks. They do not go
+through the [Email](./email.md) or [Calendar view](./calendarView.md)
+machines, whose rules hold Undo after confirmation, the read-back, the
+one-or-all choice and the evidence before success for the local mailbox and
+calendar only. Until those machines govern the managed path, Undo only after
+the provider's confirmation, the read-back with a new series' frequency and
+time zone, skipped months and the one-or-all choice are promises of this
+heading that no rule checks.
 
 ```quint
 type ManagedChange = ManagedTrash | ManagedAppointmentChange
@@ -745,6 +753,11 @@ pure def mayChangeManaged(account: GraceAccount, link: GoogleLink, accountId: st
     }
     | _ => false
   }
+pure def isSelectedVersion(selectedId: str, selectedVersion: str, id: str, version: str): bool =
+  id != "" and version != "" and id == selectedId and version == selectedVersion
+pure def lawOnlyTheSelectedVersionIsChanged(selectedId: str, selectedVersion: str, id: str, version: str): bool =
+  (isSelectedVersion(selectedId, selectedVersion, selectedId, selectedVersion) == (selectedId != "" and selectedVersion != "")) and
+  (isSelectedVersion(selectedId, selectedVersion, id, version) implies (id == selectedId and version == selectedVersion))
 pure def grantOf(link: GoogleLink): str = match link {
   | GoogleLinkConnected(g) => g.grant
   | _ => ""

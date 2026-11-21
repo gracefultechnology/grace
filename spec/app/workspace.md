@@ -58,9 +58,16 @@ type GuidedCalendarApproval = {
   title: str, starts: int, ends: int, timezone: str, location: str, notes: str
 }
 type GuidedReceipt = { sourceKey: str, evidence: str }
+type GuidedNameCorrection = {
+  owner: str, task: str, version: int, generation: int, deviceVersion: int, browserRevision: int,
+  stepIndex: int, loadVersion: int, documentId: str, url: str, href: str, original: str, label: str
+}
+type GuidedNameCorrectionState = NoGuidedNameCorrection | PendingGuidedNameCorrection({ value: GuidedNameCorrection })
+type GuidedNameOverride = { stepIndex: int, label: str }
 type GuidedPlan = {
   owner: str, steps: List[GuidedStep], receipts: List[GuidedReceipt], openingBrowser: int, originalAsk: str, linkStep: int, linkUrl: str,
-  mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str
+  mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str,
+  nameCorrection: GuidedNameCorrectionState, nameOverride: GuidedNameOverride
 }
 type GuidedRequest = { owner: str, task: str, goal: str, steps: List[GuidedStep] }
 type GuidedObservation = {
@@ -84,9 +91,11 @@ pure val noGuidedApproval: GuidedCalendarApproval = {
   task: "", account: 0, owner: "", calendar: "", sourceRef: "", provisional: "", proposal: -1,
   title: "", starts: 0, ends: 0, timezone: "", location: "", notes: ""
 }
+pure val noGuidedNameOverride: GuidedNameOverride = { stepIndex: -1, label: "" }
 pure val emptyPlan: GuidedPlan = {
   owner: "", steps: List(), receipts: List(), openingBrowser: 0, originalAsk: "", linkStep: -1, linkUrl: "",
-  mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: ""
+  mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: "",
+  nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride
 }
 pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
@@ -100,7 +109,14 @@ pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
 }
 pure val noGuidedStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "", outcome: "" })
 pure def hasNext(plan: GuidedPlan): bool = plan.receipts.length() < plan.steps.length()
-pure def nextOutcome(plan: GuidedPlan): GuidedStep = plan.steps.nthOr(plan.receipts.length(), noGuidedStep)
+pure def nextOutcome(plan: GuidedPlan): GuidedStep = {
+  val index = plan.receipts.length()
+  val plannedOutcome = plan.steps.nthOr(index, noGuidedStep)
+  if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match plannedOutcome {
+    | ReachNamedPage(_) => ReachNamedPage({ subject: plan.nameOverride.label })
+    | _ => plannedOutcome
+  } else plannedOutcome
+}
 type Workspace = {
   device: S::Shell, browser: B::Browser, assistant: A::Assistant,
   execution: X::Execution, commitment: CM::Commitment, otherCommitments: List[CM::Commitment],
@@ -590,7 +606,8 @@ and guidance revisions. Dismiss and Show use the shared interaction route and
 never execute, pause or complete the task. Native app layout changes retire the
 target through `invalidateGuidance` before the changed controls can be shown.
 Page, keyboard, surface and task changes make old guidance unavailable immediately.
-The UI renders the ring and label only through `guidanceVisible`.
+Publication names the kind of ring, Look, Tap or Done, and the few words of
+its label. The UI renders the ring and label only through `guidanceVisible`.
 
 ```quint
 pure def guidanceIsCurrent(w: Workspace): bool =
@@ -598,12 +615,12 @@ pure def guidanceIsCurrent(w: Workspace): bool =
   w.assistant.guidance.deviceVersion == w.device.contextVersion and
   w.assistant.guidance.browserRevision == w.browser.revision
 pure def guidanceVisible(w: Workspace): bool = guidanceIsCurrent(w) and w.assistant.guidance.shown
-pure def canPublishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, by: WorkspaceActor): bool =
+pure def canPublishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, guidanceKind: A::GuidanceKind, guidanceTitle: str, by: WorkspaceActor): bool =
   by == Host and w.device.readiness == S::Ready and
   guidanceReport.deviceVersion == w.device.contextVersion and guidanceReport.browserRevision == w.browser.revision and
-  A::canPublishGuidance(w.assistant, guidanceReport, C::ConversationRuntime)
-pure def publishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, by: WorkspaceActor): Workspace = {
-  ...w, assistant: A::publishGuidance(w.assistant, guidanceReport, C::ConversationRuntime)
+  A::canPublishGuidanceAs(w.assistant, guidanceReport, guidanceKind, guidanceTitle, C::ConversationRuntime)
+pure def publishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, guidanceKind: A::GuidanceKind, guidanceTitle: str, by: WorkspaceActor): Workspace = {
+  ...w, assistant: A::publishGuidanceAs(w.assistant, guidanceReport, guidanceKind, guidanceTitle, C::ConversationRuntime)
 }
 pure def canInvalidateGuidance(w: Workspace, guidanceRevision: int, by: WorkspaceActor): bool =
   by == Host and A::canInvalidateGuidance(w.assistant, guidanceRevision, C::ConversationRuntime)
@@ -621,6 +638,7 @@ pure def lawGuidanceControlsKeepExecution(w: Workspace, input: I::Interaction, b
 pure def sometimesGuidanceShown(w: Workspace): bool = guidanceVisible(w)
 pure def sometimesGuidanceDismissed(w: Workspace): bool = guidanceIsCurrent(w) and not(w.assistant.guidance.shown)
 pure val guidanceRevisionValues = Set(0, 1, 2)
+pure val guidanceTitleValues = Set("", "Tap Send")
 pure val guidanceReportValues = Set(
   { target: "control", revision: 0, workVersion: 1, conversationVersion: 1, deviceVersion: 6, browserRevision: 2, verified: true },
   { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 6, browserRevision: 2, verified: true },
@@ -1121,7 +1139,7 @@ pure def sometimesOrdinaryGoalCompletes(w: Workspace): bool =
 
 ## Story: Follow one reviewed plan across apps
 
-> As a person asking Grace to read a message, check the details on a website and put the appointment in my calendar, I want to see what remains and keep my place when I change apps.
+> As a person asking Grace to read a message, check the details on a website and put the appointment in my calendar, I want to see what remains and keep my place when I change apps. When a website uses a different name for my next destination, I want to choose whether to use that name and continue the same plan.
 
 ### The person starts a sequence of outcomes without opening a website
 
@@ -1199,9 +1217,10 @@ pure def canSetGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): b
   by == Host and mayGuideReadLink(w) and link.url != "" and link.task == w.assistant.taskId and
   link.version == w.assistant.workVersion and link.generation == w.assistant.conversation.generation and
   link.deviceVersion == w.device.contextVersion and link.browserRevision == w.browser.revision and
-  link.stepIndex == w.plan.receipts.length()
+  link.stepIndex == w.plan.receipts.length() and
+  ((w.plan.nameOverride.stepIndex == link.stepIndex and w.plan.nameOverride.label != "") implies link.url == w.plan.linkUrl)
 pure def setGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): Workspace =
-  { ...w, plan: { ...w.plan, linkStep: link.stepIndex, linkUrl: link.url } }
+  { ...w, plan: { ...w.plan, linkStep: link.stepIndex, linkUrl: link.url, nameCorrection: NoGuidedNameCorrection } }
 pure def followedLink(w: Workspace, loadReport: LoadReport): GuidedPlan =
   if (w.plan.linkStep == w.plan.receipts.length() and w.plan.linkUrl != "" and loadReport.id == w.browser.selected and
       B::tabUrl(B::tabById(w.browser, loadReport.id)) == w.plan.linkUrl)
@@ -1251,12 +1270,77 @@ pure val linkValues = Set({ task: "read", version: 1, generation: 2, deviceVersi
 pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 ```
 
-### Only a current observation of the next outcome advances the plan
+### Only the person can revise the next named page to an observed public link label
 
-The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Two complete main-document observations must identify the same loaded document and URL before a browser receipt can be accepted. A covering blocker, a private field or an unrecognized text input prevents a receipt. For link guidance, a page may have a witnessed idle sign-in form beside public links. Grace can highlight only same-site links that the browser identifies as outside all forms and that carry no query, fragment or connection credentials. Active, filled or edited sign-in fields, a verification challenge, or an unclassified input prevent this exception. The ranking service receives only redacted public link labels. A search field identified as such by the page can remain available for ordinary navigation. When an observed form prevents a check, Grace explains how the person can turn browser reading off, finish the form in the same tab and decide when to allow reading and resume. If the page is still loading or Grace cannot obtain an observation, Grace offers a retry. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing or duplicate result leaves the instruction in place and gives the person a way to retry. The feedback belongs to the current account and step. A named browser step only accepts a dedicated observation of the exact approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. It compares the heading with the reviewed name after normalizing Unicode and spacing. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
+While a named page is the next check, Grace can offer the visible label of a different public link in the current loaded document. The browser adapter witnesses one pointable same-site anchor outside every form. It checks the same document, address, link and label again when the person approves. A private page or a changed account, task, step, permission, browser or conversation makes the offer unavailable. The person can ignore it and keep asking for the original name. Approval replaces only the exact name to check for this step and binds the approved link. A later hint can use that approved link. Binding a different link needs another approval. The original request, plan owner, remaining steps and all receipts stay in place. Approval does not navigate, record a receipt or authorize a write. Grace checks that the active tab has reached the approved address before requesting an observation of the destination. It then verifies the exact approved heading.
 
 ```quint
-type GuidedPageField = PrivatePageField | UnknownPageField | NavigationPageField
+pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrection): bool = {
+  val tab = B::activeTab(w.browser)
+  mayGuideReadLink(w) and not(privateSurfaceActive(w)) and w.device.observationAllowed and
+  isNamedDestination(nextOutcome(w.plan)) and correction.original == guidedDetails(nextOutcome(w.plan)).subject and
+  correction.owner != "" and correction.owner == w.plan.owner and correction.task == w.assistant.taskId and
+  correction.version == w.assistant.workVersion and correction.generation == w.assistant.conversation.generation and
+  correction.deviceVersion == w.device.contextVersion and correction.browserRevision == w.browser.revision and
+  correction.stepIndex == w.plan.receipts.length() and correction.loadVersion == tab.loadVersion and
+  correction.documentId != "" and correction.url != "" and correction.url == B::tabUrl(tab) and
+  correction.href != "" and correction.href != correction.url and correction.label != "" and
+  correction.label != correction.original
+}
+pure def currentGuidedNameCorrection(w: Workspace): GuidedNameCorrectionState = {
+  val offeredCorrection = w.plan.nameCorrection
+  match offeredCorrection {
+    | PendingGuidedNameCorrection(pending) => if (guidedNameCorrectionCurrent(w, pending.value))
+        offeredCorrection else NoGuidedNameCorrection
+    | NoGuidedNameCorrection => NoGuidedNameCorrection
+  }
+}
+pure def canOfferGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
+  by == Host and guidedNameCorrectionCurrent(w, correction)
+pure def offerGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): Workspace = {
+  ...w, plan: { ...w.plan, nameCorrection: PendingGuidedNameCorrection({ value: correction }) }
+}
+pure def canConfirmGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
+  by == Person and currentGuidedNameCorrection(w) == PendingGuidedNameCorrection({ value: correction })
+pure def confirmGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): Workspace = {
+  ...w, plan: { ...w.plan, nameCorrection: NoGuidedNameCorrection,
+    nameOverride: { stepIndex: correction.stepIndex, label: correction.label },
+    linkStep: correction.stepIndex, linkUrl: correction.href },
+  assistant: { ...w.assistant, workVersion: w.assistant.workVersion + 1 }
+}
+pure def lawNameCorrectionRetainsTheReviewedPlan(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool = {
+  val after = confirmGuidedNameCorrection(w, correction, by)
+  canConfirmGuidedNameCorrection(w, correction, by) implies
+    after.plan.owner == w.plan.owner and after.plan.originalAsk == w.plan.originalAsk and
+    after.plan.steps == w.plan.steps and after.plan.receipts == w.plan.receipts and
+    after.browser == w.browser and nextOutcome(after.plan) == ReachNamedPage({ subject: correction.label }) and
+    after.assistant.workVersion > correction.version
+}
+pure def lawANameCorrectionNeedsItsCurrentPersonOffer(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
+  (by != Person or not(guidedNameCorrectionCurrent(w, correction))) implies not(canConfirmGuidedNameCorrection(w, correction, by))
+pure def lawGuidanceKeepsTheApprovedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): bool =
+  (w.plan.nameOverride.stepIndex == link.stepIndex and w.plan.nameOverride.label != "" and link.url != w.plan.linkUrl)
+    implies not(canSetGuidedLink(w, link, by))
+pure val correctionValues = Set(
+  { owner: "tablet", task: "read", version: 1, generation: 4, deviceVersion: 7, browserRevision: 3,
+    stepIndex: 0, loadVersion: 1, documentId: "browser-document", url: "https://utility.example",
+    href: "https://utility.example/help", original: "Support", label: "Help" })
+```
+
+### Only a current observation of the next outcome advances the plan
+
+The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Two complete main-document observations must identify the same loaded document and URL before a browser receipt can be accepted. A covering blocker, a private field or an unrecognized text input prevents a receipt. For link guidance, a page may have a witnessed idle sign-in form beside public links. Grace can highlight only same-site links that the browser identifies as outside all forms and that carry no query, fragment or connection credentials. Active, filled or edited sign-in fields, a verification challenge, or an unclassified input prevent this exception. The ranking service receives only redacted public link labels. A search field identified as such by the page can remain available for ordinary navigation. An untouched newsletter opt-in with one clearly labeled blank email input and a Subscribe button allows Grace to point to an independently observed public link outside every form, or verify the public document identity or its main heading outside forms. The address used for that evidence must have no credentials, query or fragment. This permission supplies no statement or general page-content evidence. Missing field evidence, a focused or filled text input, and an additional unrecognized control keep the opt-in private. When an observed form prevents a check, Grace explains how the person can turn browser reading off, finish the form in the same tab and decide when to allow reading and resume. If the page is still loading or Grace cannot obtain an observation, Grace offers a retry. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing or duplicate result leaves the instruction in place and gives the person a way to retry. The feedback belongs to the current account and step. A named browser step only accepts a dedicated observation of the exact approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. It compares the heading with the reviewed name after normalizing Unicode and spacing. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
+
+```quint
+type GuidedPageField = PrivatePageField | UnknownPageField | NavigationPageField | IdleOptInField | IdleLoginField
+type GuidedEvidenceUse = GuidePublicLinks | CheckPublicDocument | ReadGuidedContent
+pure def allowsLimitedGuidedEvidence(use: GuidedEvidenceUse, controls: List[GuidedPageField]): bool =
+  use != ReadGuidedContent and controls.every(controlKind =>
+    controlKind == NavigationPageField or controlKind == IdleOptInField or (use == GuidePublicLinks and controlKind == IdleLoginField))
+pure def lawLimitedEvidenceKeepsPrivateFormsOut(use: GuidedEvidenceUse, controls: List[GuidedPageField]): bool =
+  allowsLimitedGuidedEvidence(use, controls) implies (
+    use != ReadGuidedContent and controls.every(controlKind => controlKind != PrivatePageField and controlKind != UnknownPageField) and
+    (use == GuidePublicLinks or controls.every(controlKind => controlKind != IdleLoginField)))
 pure def ordinaryGuidedPage(loaded: bool, sameUrl: bool, coveringBlocker: bool, controls: List[GuidedPageField]): bool =
   loaded and sameUrl and not(coveringBlocker) and controls.every(controlKind => controlKind == NavigationPageField)
 pure def publicGuidedLink(outsideForms: bool, hasPrivateAddressState: bool): bool =
@@ -1283,7 +1367,8 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   not(isNamedDestination(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
-  val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }) }
+  val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
+    nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride }
   val assistant = w.assistant
   { ...w, plan: plan, assistant:
     if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
@@ -1311,7 +1396,9 @@ pure def lawPausedPlanCannotAdvance(w: Workspace, report: GuidedObservation, by:
 pure def lawCommitmentCannotUsePlanReceipt(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   w.commitmentTask != "" implies not(canConfirmGuided(w, report, by))
 pure val sampleStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "appointment", outcome: "Read the appointment" })
-pure val requestValues = Set({ owner: "owner", task: "task", goal: "Read my appointment", steps: List(sampleStep) })
+pure val requestValues = Set(
+  { owner: "owner", task: "task", goal: "Read my appointment", steps: List(sampleStep) },
+  { owner: "tablet", task: "read", goal: "Find Support", steps: List(ReachNamedPage({ subject: "Support" })) })
 pure val sampleReport: GuidedObservation = {
   owner: "owner", task: "task", version: 1, deviceVersion: 1, browserRevision: 0,
   step: sampleStep, sourceKey: "appointment-id", evidence: "appointment-receipt"

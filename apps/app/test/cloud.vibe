@@ -1,6 +1,7 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 
 import { Base64Url } from "effect/encoding"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import policy from "../agent/policy.json" with { type: "json" }
 
 type Attachment = { partId: string; attachmentId: string | null; filename: string; mimeType: string; size: number; pages?: number }
@@ -27,6 +28,7 @@ type Mail = {
   metadata: { historyId: string; sizeEstimate: number | null; dateHeader: string | null; messageIdHeader: string; referencesHeader: string | null; listId: string | null; precedence: string | null; autoSubmitted: string | null }
   attachments: Attachment[]
   bodyText: string
+  suspicion?: string
 }
 
 type Appointment = {
@@ -87,9 +89,11 @@ type Account = {
   boxes: Box[]
   sessions: Session[]
   outage: boolean
-  mailFault?: "dispatch" | "lookupMissing"
+  mailFault?: Outage["mailFault"]
+  calendarFault?: Outage["calendarFault"]
   sendLookups: string[]
   script: Scripted[]
+  decision?: ScriptedDecision
   turns: (Turn & { id: number })[]
   changes: { receipt: Receipt; proposal: Proposal; grantId: string }[]
   consents: string[]
@@ -151,10 +155,11 @@ schema PageChoice { address: string; choice: "allow" | "cancel" | "unfinished" }
 schema OtherConnect { address: string; password: string; incoming?: string; outgoing?: string }
 schema IncomingMail { to: Mailbox; from: Filled; fromEmail: Mailbox; subject: string; body: string }
 schema Expiry { address: string }
-schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing" }
+schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" | "reauthCreate" | "conflictCreate" }
 schema ChatContext { includes: string[]; excludes: string[] }
 schema Scripted { said?: string; context?: ChatContext; answer: string }
-schema Script { replies: Scripted[] }
+schema ScriptedDecision { goalIncludes: Filled; labels: Filled[] }
+schema Script { replies: Scripted[]; decision?: ScriptedDecision }
 schema SessionQuery { sessionId: string }
 schema GoogleAuthorization { state: Uuid; response_type: "code"; client_id: "grace-browser-fixture"; redirect_uri: Url; scope: Filled }
 schema GoogleCallback { state: Uuid; code: Uuid }
@@ -312,7 +317,10 @@ function seeded(provider: Slug, address: string, at: number, site: string, visit
       }),
       letter("clinic", address, at, "Main St Clinic", "frontdesk@mainst-clinic.test", "Reminder: your appointment tomorrow at 10 am",
         "Dear Margaret, this is a reminder of your appointment with Dr. Patel tomorrow at 10:00 am. Please fill in the attached form and bring it with you.",
-        { attachments: [{ partId: "2", attachmentId: "visit-form", filename: "Visit form.pdf", mimeType: "application/pdf", size: 48213, pages: 2 }] })
+        { attachments: [{ partId: "2", attachmentId: "visit-form", filename: "Visit form.pdf", mimeType: "application/pdf", size: 48213, pages: 2 }] }),
+      letter("scam", address, at, "Account Security", "security-alert@acc0unt-help.co", "Urgent: confirm your password",
+        `Your account will be closed today. To keep it open, confirm your password here: ${site}/${visit}/confirm-password/ Alternative: https://reader:example@invalid.example/`,
+        { isUnread: false, labels: ["INBOX"], triageScore: 0, triageReason: "", suspicion: "Asks for your password urgently from an address that imitates a real company" })
     ];
     when "outlook": one("St. Mark’s Church Office", "office@stmarks.test", "Thanksgiving dinner sign-up", "Dear Margaret, our Thanksgiving dinner is on Thursday the 26th at 5 pm in the hall. Reply to let us know if you’ll come.");
     when "yahoo": one("Garden Club", "club@garden.test", "Bulb swap on Saturday", "Bring your spare bulbs to the library steps on Saturday at 10. Coffee provided!");
@@ -390,7 +398,7 @@ const sizeOf = (base64: string) => atob(base64).length
 const servable: Record<string, RegExp> = { "text/plain": /\.txt$/i, "application/pdf": /\.pdf$/i, "image/png": /\.png$/i, "image/jpeg": /\.jpe?g$/i, "image/webp": /\.webp$/i }
 const draftIdOf = (externalId: string) => `r-${externalId}`
 const bare = (address: string) => /<([^>]+)>/.exec(address)?.[1] ?? address.trim()
-const listedMessage = ({ bodyText: _, attachments, bcc: _bcc, ...message }: Mail) => ({ ...message, hasAttachments: attachments.length > 0 })
+const listedMessage = ({ bodyText: _, attachments, bcc: _bcc, suspicion: _suspicion, ...message }: Mail) => ({ ...message, hasAttachments: attachments.length > 0 })
 const wired = (files: readonly Carried[]): Attachment[] => files.map((f, i) => ({
   partId: String(i + 1), attachmentId: f.contentRef, filename: f.name, mimeType: Object.keys(servable).find((type) => servable[type].test(f.name)) ?? "application/octet-stream", size: 0, ...f.kind === "Pdf" ? { pages: f.pages } : {}
 }))
@@ -446,6 +454,7 @@ effect function store(site: string) {
   const issued = try Ref.make(0)
   const googleCodes = try Ref.make(new Map<string, GoogleConsent>())
   const googleLinks = try Ref.make(new Map<string, string>())
+  const calendarCreates = try SynchronizedRef.make(new Map<string, { intent: string; event: Appointment }>())
   const origin = effect {
     const request = try HttpServerRequest.HttpServerRequest
     return `http://${request.headers["host"]}`
@@ -615,7 +624,7 @@ effect function store(site: string) {
     const wire = token === undefined ? undefined : try Schema.decodeUnknownEffect(GmailMessage)(try googleRequest("GET", `${googleGmail}/${encodeURIComponent(found.externalId)}?format=full`, token))
     const bodyText = wire === undefined ? found.bodyText : try Effect.fromResult(Base64Url.decodeString(wire.payload.body.data))
     return try HttpServerResponse.json({
-      message: listedMessage(found), bodyText: bodyText || found.snippet, bodyHtml: null, bodyHtmlStatus: "none", links: [], authenticationResults: [], attachments: found.attachments
+      message: listedMessage(found), bodyText: bodyText || found.snippet, bodyHtml: null, bodyHtmlStatus: "none", links: [], authenticationResults: [], attachments: found.attachments, suspicion: found.suspicion ?? null
     })
   }
 
@@ -633,12 +642,14 @@ effect function store(site: string) {
   }
 
   effect function draftList(fixed?: Slug) {
-    const { grantId } = try HttpServerRequest.schemaSearchParams(DraftsQuery)
+    const { grantId, pageToken } = try HttpServerRequest.schemaSearchParams(DraftsQuery)
     const { box } = try connection(fixed, grantId, true)
     const drafts = box.mail.filter((m) => m.labels.includes("DRAFT")).map((m) => ({
       draftId: draftIdOf(m.externalId), messageId: m.externalId, subject: m.subject, to: m.to.map(bare), snippet: m.snippet, updatedAt: m.receivedAt
     }))
-    return try HttpServerResponse.json({ version: 1, drafts, nextPageToken: null })
+    const cursor = pageToken === undefined ? 0 : drafts.findIndex((entry) => entry.draftId === pageToken)
+    if (cursor < 0) throw new Missing()
+    return try HttpServerResponse.json({ version: 1, drafts: drafts.slice(cursor, cursor + 1), nextPageToken: drafts[cursor + 1]?.draftId ?? null })
   }
 
   effect function draftContent(fixed?: Slug) {
@@ -800,20 +811,45 @@ effect function store(site: string) {
   }
 
   effect function addAppointment(fixed?: Slug) {
-    const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId } = try HttpServerRequest.schemaBodyJson(NewAppointment)
+    const fields = try HttpServerRequest.schemaBodyJson(NewAppointment)
+    const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId } = fields
     const { key, box: found } = try connection(fixed, grantId)
-    const token = (try Ref.get(googleLinks)).get(found.grantId)
-    if (token !== undefined) {
+    const fault = (try caller()).calendarFault
+    if (fault !== undefined) try change(key, (a) => ({ ...a, calendarFault: undefined }))
+    if (fault === "beforeCreate") throw new Unavailable()
+    if (fault === "refuseCreate") throw new BadAddress()
+    if (fault === "reauthCreate" || fault === "conflictCreate") {
+      const error = fault === "reauthCreate" ? "google_reauth_required" : "idempotency_conflict"
+      return try HttpServerResponse.json({ error, errorDescription: fault === "reauthCreate" ? "Google reauth required." : "Idempotency conflict.", retryable: false, outcome: "not_accepted" }, { status: 409 })
+    }
+    const create = effect {
+      const token = (try Ref.get(googleLinks)).get(found.grantId)
+      if (token === undefined) return try recordAppointment(key, found, fields)
       const raw = try Schema.decodeUnknownEffect(GoogleEventReference)(try googleRequest("POST", `${googleCalendar}/${encodeURIComponent(calendarId ?? "primary")}/events`, token, {
         summary: title, description, location, start: { dateTime: startAt, timeZone }, end: { dateTime: endAt, timeZone }, attendees
       }))
       const current = try connection(fixed, grantId)
       const added = current.box.calendar.find((event) => event.externalId === raw.id)
       if (!added) throw new Missing()
-      return try HttpServerResponse.json({ event: shown(added, timeZone) }, { status: 201 })
+      return added
     }
-    const added = try recordAppointment(key, found, { calendarId, title, description, location, startAt, endAt, timeZone, attendees })
-    return try HttpServerResponse.json({ event: shown(added, timeZone.trim()) }, { status: 201 })
+    const insert = effect {
+      if (fixed !== "google") return try create
+      const idempotency = (try HttpServerRequest.HttpServerRequest).headers["idempotency-key"]
+      if (idempotency === undefined) throw new ProviderFailed()
+      const mutation = JSON.stringify([key, idempotency])
+      const intent = JSON.stringify([found.grantId, fields])
+      return try SynchronizedRef.modifyEffect(calendarCreates, effect (receipts) => {
+        const known = receipts.get(mutation)
+        if (known !== undefined && known.intent !== intent) throw new Rebound()
+        if (known !== undefined) return [known.event, receipts] as const
+        const event = try create
+        return [event, new Map(receipts).set(mutation, { intent, event })] as const
+      })
+    }
+    const saved = try insert
+    if (fault === "createResponse") throw new Unavailable()
+    return try HttpServerResponse.json({ event: shown(saved, timeZone) }, { status: 201 })
   }
 
   effect function recordAppointment(key: string, found: Box, { title, description, location, startAt, endAt, timeZone, calendarId, attendees }: typeof NewAppointment.Type) {
@@ -1059,15 +1095,15 @@ effect function store(site: string) {
 
   effect function outage() {
     const { key } = try signedIn()
-    const { down, mailFault } = try HttpServerRequest.schemaBodyJson(Outage)
-    try change(key, (a) => ({ ...a, outage: down, mailFault }))
+    const { down, mailFault, calendarFault } = try HttpServerRequest.schemaBodyJson(Outage)
+    try change(key, (a) => ({ ...a, outage: down, mailFault, calendarFault }))
     return try HttpServerResponse.json({ ok: true })
   }
 
   effect function script() {
     const { key } = try signedIn()
-    const { replies } = try HttpServerRequest.schemaBodyJson(Script)
-    try change(key, (a) => ({ ...a, script: [...a.script, ...replies] }))
+    const { replies, decision } = try HttpServerRequest.schemaBodyJson(Script)
+    try change(key, (a) => ({ ...a, script: [...a.script, ...replies], decision: decision ?? a.decision }))
     return try HttpServerResponse.json({ ok: true })
   }
 
@@ -1095,12 +1131,13 @@ effect function store(site: string) {
   }
 
   effect function decide() {
-    try signedIn()
+    const { decision } = try signedIn()
     const body = try HttpServerRequest.schemaBodyJson(Schema.Struct({
       kind: Schema.Literal("choice"), goal: Schema.String,
       candidates: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String }))
     }))
-    const choice = body.goal.includes("help page") ? body.candidates.find((candidate) => candidate.label === "Help center")?.id ?? null : null
+    const choice = decision && body.goal.includes(decision.goalIncludes)
+      ? body.candidates.find((candidate) => decision.labels.includes(candidate.label))?.id ?? null : null
     const winner = choice ?? "none"
     const probabilities = Object.fromEntries([...body.candidates.map(({ id }) => id), "none"].map(id => [id, id === winner ? 1 : 0]))
     return try HttpServerResponse.json({ status: "ok", kind: "choice", model: "fixture", choice, confidence: 1, probabilities })
@@ -1266,7 +1303,7 @@ export function cloud(site: string) {
   return Layer.mergeAll(HttpRouter.addAll(store(site)), HttpRouter.middleware(cors, { global: true }))
 }
 
-export const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
+export const client = Layer.mergeAll(KeyValueStore.layerMemory, FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
 
 effect function post(cloud: string, path: string, body: object, key?: string) {
   const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${cloud}${path}`), body)
@@ -1295,16 +1332,16 @@ export effect function parts(cloud: string, key: string, said: string) {
   return Stream.mapEffect(data, effect (line) => (try Schema.decodeUnknownEffect(Schema.fromJsonString(Chunk))(line)).choices[0].delta.content)
 }
 
-export effect function script(cloud: string, key: string, replies: readonly Scripted[]) {
-  try post(cloud, "/fake/chat/script", { replies }, key)
+export effect function script(cloud: string, key: string, replies: readonly Scripted[], decision?: ScriptedDecision) {
+  try post(cloud, "/fake/chat/script", { replies, decision }, key)
 }
 
 export effect function expire(cloud: string, key: string, address: string) {
   try post(cloud, "/fake/expire", { address }, key)
 }
 
-export effect function outage(cloud: string, key: string, down: boolean, mailFault?: "dispatch" | "lookupMissing") {
-  try post(cloud, "/fake/outage", { down, mailFault }, key)
+export effect function outage(cloud: string, key: string, down: boolean, fault?: Outage["mailFault"] | Outage["calendarFault"]) {
+  try post(cloud, "/fake/outage", fault === "dispatch" || fault === "lookupMissing" ? { down, mailFault: fault } : { down, calendarFault: fault }, key)
 }
 
 export effect function sentMail(cloud: string, key: string) {

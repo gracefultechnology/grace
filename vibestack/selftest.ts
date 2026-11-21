@@ -3008,7 +3008,7 @@ describe("the documents name what exists", () => {
     assert.equal(staged.status, 0, staged.stderr);
     const turbo = path.join(nodeModules, ".bin", process.platform === "win32" ? "turbo.cmd" : "turbo");
     const plan = async () => {
-      const dry = await exec(turbo, ["run", "build", "typecheck", "test", "test:browser", "vibestack-studio#dev", "//#lint:js", "//#lint:css", "//#analyze", "//#selftest:tools", "//#selftest:docs", "//#selftest:examples", "--dry=json"], root, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
+      const dry = await exec(turbo, ["run", "build", "typecheck", "test", "test:browser", "@grace/cloud#dev", "vibestack-studio#dev", "//#lint:js", "//#lint:css", "//#analyze", "//#selftest:tools", "//#selftest:docs", "//#selftest:examples", "--dry=json"], root, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
       assert.equal(dry.status, 0, dry.stderr);
       const tasks: { taskId: string; hash: string; command: string; dependencies: string[]; inputs: Record<string, string> }[] = JSON.parse(dry.stdout).tasks;
       return new Map(tasks.map((task) => [task.taskId, task]));
@@ -3029,6 +3029,7 @@ describe("the documents name what exists", () => {
     const vibeDeclared = ["apps/app", "packages/ui", "vibestack/studio"].filter((dir) => read(`${dir}/tsconfig.json`, root).includes(".vibe/declarations")).map((dir) => `${JSON.parse(read(`${dir}/package.json`, root)).name}#typecheck`);
     const [prose, selftest, fixture] = [await changedBy(append("spec/app/index.md")), await changedBy(append("vibestack/selftest.ts", "\n")), await changedBy(append("vibestack/fixtures/door.md"))];
     assert.deepEqual({
+      rootUsesCloudModels: reach("//#gen").has("//#gen:cloud"),
       notWaiting: real.filter((id) => !reach(id).has("//#gen")).sort(),
       lintWaitsFor: vibeDeclared.filter((id) => tasks.get("//#lint:js")!.dependencies.includes(id)),
       devWaitsFor: tasks.get("vibestack-studio#dev")!.dependencies.toSorted(),
@@ -3042,7 +3043,8 @@ describe("the documents name what exists", () => {
         assert.equal((await exec("git", ["add", "-A"], root)).status, 0);
       }),
     }, {
-      notWaiting: ["//#analyze", "//#build", "//#lint:css", "//#selftest:docs", "//#selftest:examples", "@repo/design-system#build", "@repo/ui#typecheck", "vibestack-studio#build", "vibestack-studio#dev", "vibestack-studio#test", "vibestack-studio#typecheck"],
+      rootUsesCloudModels: true,
+      notWaiting: ["//#analyze", "//#build", "//#gen:cloud", "//#lint:css", "//#selftest:docs", "//#selftest:examples", "@repo/design-system#build", "@repo/ui#typecheck", "vibestack-studio#build", "vibestack-studio#dev", "vibestack-studio#test", "vibestack-studio#typecheck"],
       lintWaitsFor: vibeDeclared, devWaitsFor: tasks.get("vibestack-studio#build")!.dependencies.toSorted(), prose: [[], true], selftest: [[], true], fixture: ["vibestack-studio#test"], leftovers: [],
     }, "the owners' tasks, @repo/kit's among them, wait for the root's gen, and install's //#build does not, so `gen --if-valid` after it keeps a half-edited spec from failing install");
   });

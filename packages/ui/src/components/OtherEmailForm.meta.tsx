@@ -9,8 +9,9 @@ const cancel = fn();
 export const meta: ComponentMeta<OtherEmailFormProps> = {
   args: { defaultName: "Margaret Hill", onNext: next, onCancel: cancel },
   examples: {
-    "Listed provider": { defaultAddress: "margaret@yahoo.com", problem: { kind: "listedProvider", provider: "yahoo" } },
+    "Listed provider": { defaultAddress: "margaret@outlook.com", problem: { kind: "listedProvider", provider: "outlook" } },
     "Wrong password": { defaultAddress: "margaret@riverview.net", problem: { kind: "passwordRefused" } },
+    "Next refused": { defaultAddress: "margaret@riverview.net", onNext: undefined, onCancel: undefined },
   },
   states: {
     Checking: { defaultAddress: "margaret@riverview.net", checking: true },
@@ -30,6 +31,14 @@ export const meta: ComponentMeta<OtherEmailFormProps> = {
       await expect(password).toHaveValue("");
       await expect(go.disabled).toBe(true);
     },
+    "Next refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await userEvent.type(canvas.getByPlaceholderText("Your email password"), "garden42");
+      await expect(canvas.getByRole<HTMLButtonElement>("button", { name: "Next" }).disabled).toBe(true);
+      await expect(canvas.queryByRole("button", { name: "Cancel" })).toBeNull();
+    },
+    "Listed provider": ({ canvasElement }: { canvasElement: HTMLElement }) =>
+      expect(within(canvasElement).getByText(/This is an Outlook address/)).toBeTruthy(),
     "Wrong password": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Cancel" }));
       await expect(cancel).toHaveBeenCalled();

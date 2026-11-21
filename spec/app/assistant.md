@@ -32,7 +32,7 @@ type Assistance = NoTask | ReadyForStep | DoingWork | WebsiteWait | UserWait | P
 type TaskOutcome = Unfinished | Completed | VerifiedFailure | Abandoned
 type GuidanceKind = Look | Tap | Done
 type Guidance = {
-  target: str, kind: GuidanceKind, revision: int, workVersion: int, conversationVersion: int,
+  target: str, kind: GuidanceKind, title: str, revision: int, workVersion: int, conversationVersion: int,
   deviceVersion: int, browserRevision: int, shown: bool
 }
 type GuidanceReport = {
@@ -40,7 +40,7 @@ type GuidanceReport = {
   deviceVersion: int, browserRevision: int, verified: bool
 }
 pure val noGuidance: Guidance = {
-  target: "", kind: Look, revision: 0, workVersion: 0, conversationVersion: 0,
+  target: "", kind: Look, title: "", revision: 0, workVersion: 0, conversationVersion: 0,
   deviceVersion: 0, browserRevision: 0, shown: false
 }
 type Assistant = {
@@ -264,8 +264,10 @@ pure def finishTask(a: Assistant, task: str, version: int, result: TaskOutcome, 
 ### Guidance belongs to the current instruction and never grants action authority
 
 PRD INT 12 and the prototype's `gclose` control distinguish hiding a label from
-Close or Stop. The label reuses the current task checkpoint, or the latest Grace
-response when no task is active. It does not store another instruction. A trusted
+Close or Stop. The label is the few words Grace gave with the ring, such as
+"Tap Send when it looks right" (prototype 2209); when she gave none it reuses
+the current task checkpoint, or the latest Grace response when no task is
+active. Those words are hers and never a second instruction. A trusted
 host locates one semantic target and supplies the current device, page, task,
 conversation and guidance revisions. This may point to an app control or private
 sign-in field without authorizing input or exposing that field's contents.
@@ -283,8 +285,9 @@ scheduled payment turns green only once its task has finished with that
 verified result. A Done marker for the current work and conversation keeps this
 requirement even while the window or current activity hides it. Grace's own
 working marker comes from her activity. Guidance cannot name a future work or
-conversation generation. The host names the kind beside its report
-(`publishGuidanceAs`). `publishGuidance` publishes the label of a Tap.
+conversation generation. The host names the kind and Grace's few words beside
+its report (`publishGuidanceAs`). `publishGuidance` publishes a Tap labelled
+with the instruction.
 
 ```quint
 pure def guidanceInstruction(a: Assistant): str =
@@ -293,21 +296,23 @@ pure def guidanceIsCurrent(a: Assistant): bool =
   isVisible(a) and a.guidance.target != "" and guidanceInstruction(a) != "" and
   a.activity != Paused and a.activity != Rechecking and
   a.guidance.workVersion == a.workVersion and a.guidance.conversationVersion == a.conversation.generation
-pure def canPublishGuidanceAs(a: Assistant, report: GuidanceReport, kind: GuidanceKind, by: C::ConversationActor): bool =
+pure def guidanceLabel(a: Assistant): str =
+  if (a.guidance.title != "") a.guidance.title else guidanceInstruction(a)
+pure def canPublishGuidanceAs(a: Assistant, report: GuidanceReport, kind: GuidanceKind, title: str, by: C::ConversationActor): bool =
   by == C::ConversationRuntime and isVisible(a) and guidanceInstruction(a) != "" and
   a.conversation.turn != C::Thinking and a.activity != Paused and a.activity != Rechecking and report.verified and report.target != "" and
   report.revision == a.guidance.revision and report.workVersion == a.workVersion and
   report.conversationVersion == a.conversation.generation and report.deviceVersion >= 0 and report.browserRevision >= 0 and
   (kind == Done implies a.activity == Finished and a.outcome == Completed)
-pure def publishGuidanceAs(a: Assistant, report: GuidanceReport, kind: GuidanceKind, by: C::ConversationActor): Assistant = {
-  ...a, guidance: { target: report.target, kind: kind, revision: a.guidance.revision + 1,
+pure def publishGuidanceAs(a: Assistant, report: GuidanceReport, kind: GuidanceKind, title: str, by: C::ConversationActor): Assistant = {
+  ...a, guidance: { target: report.target, kind: kind, title: title, revision: a.guidance.revision + 1,
     workVersion: report.workVersion, conversationVersion: report.conversationVersion,
     deviceVersion: report.deviceVersion, browserRevision: report.browserRevision, shown: true }
 }
 pure def canPublishGuidance(a: Assistant, report: GuidanceReport, by: C::ConversationActor): bool =
-  canPublishGuidanceAs(a, report, Tap, by)
+  canPublishGuidanceAs(a, report, Tap, "", by)
 pure def publishGuidance(a: Assistant, report: GuidanceReport, by: C::ConversationActor): Assistant =
-  publishGuidanceAs(a, report, Tap, by)
+  publishGuidanceAs(a, report, Tap, "", by)
 pure def alwaysGuidanceIsNotAhead(a: Assistant): bool =
   a.guidance.workVersion <= a.workVersion and a.guidance.conversationVersion <= a.conversation.generation
 pure def alwaysDoneMeansVerifiedCompletion(a: Assistant): bool =
@@ -356,7 +361,11 @@ pure val exampleReport: GuidanceReport =
 pure val reportValues = Set(exampleReport,
   { ...exampleReport, workVersion: 0, conversationVersion: 2 }, { ...exampleReport, conversationVersion: 2 },
   { ...exampleReport, verified: false }, { ...exampleReport, target: "" },
-  { ...exampleReport, workVersion: 2, conversationVersion: 3 })
+  { ...exampleReport, workVersion: 2, conversationVersion: 3 },
+  { ...exampleReport, workVersion: 2, conversationVersion: 3, revision: 1 },
+  { ...exampleReport, workVersion: 3, conversationVersion: 3 },
+  { ...exampleReport, workVersion: 3, conversationVersion: 3, revision: 1 },
+  { ...exampleReport, workVersion: 3, conversationVersion: 3, revision: 2 })
 ```
 
 ### Page guidance shows only on the visible page and steps aside while Grace talks or works
@@ -391,7 +400,9 @@ and pauses unfinished work before a sanitized context can be used again.
 Submitting a message, by typing, speaking or tapping an answer, supersedes the
 task's current step: unfinished work that is not paused is rechecked against
 the new request, with any operation in flight fenced. `supersede` is that one
-fence, which can keep a step that waits for the person.
+fence, which can keep a step that waits for the person. A turn the host
+starts, such as an Ask Grace button, needs Grace open and supersedes nothing:
+it adds no message and is not the person's request.
 Task identifiers and checkpoints are non-secret metadata, never copies of
 private field values or unfiltered message text.
 
@@ -425,6 +436,10 @@ pure def canChooseAnswer(a: Assistant, token: int, text: str, by: C::Conversatio
   isVisible(a) and C::canChooseAnswer(a.conversation, token, text, by)
 pure def chooseAnswer(a: Assistant, token: int, text: str, by: C::ConversationActor): Assistant =
   supersede(false, { ...a, conversation: C::chooseAnswer(a.conversation, token, text, by) })
+pure def canHostTurn(a: Assistant, turnOrigin: C::TurnOrigin, by: C::ConversationActor): bool =
+  isVisible(a) and C::canHostTurn(a.conversation, turnOrigin, by)
+pure def hostTurn(a: Assistant, turnOrigin: C::TurnOrigin, by: C::ConversationActor): Assistant =
+  { ...a, conversation: C::hostTurn(a.conversation, turnOrigin, by) }
 pure def canRespond(a: Assistant, token: int, text: str, isQuestion: bool, answers: List[str], by: C::ConversationActor): bool =
   isVisible(a) and C::canRespond(a.conversation, token, text, isQuestion, answers, by)
 pure def respond(a: Assistant, token: int, text: str, isQuestion: bool, answers: List[str], audible: bool, by: C::ConversationActor): Assistant =
@@ -527,6 +542,12 @@ pure def sometimesAbandoned(a: Assistant): bool = a.outcome == Abandoned
 pure def sometimesKeyboardCaption(a: Assistant): bool = keyboardCaptionVisible(a)
 pure def sometimesReopenedOverInterruptedWork(a: Assistant): bool =
   a.presentation == Compact and a.activity == Paused and a.interruptedWork
+pure val weight_beginTask = 10
+pure val weight_finishTask = 10
+pure val weight_publishGuidanceAs = 10
+pure val weight_talk = 10
+pure val weight_hear = 10
+pure val weight_respond = 10
 pure val weight_publishGuidance = 10
 pure val weight_dismissGuidance = 10
 pure val weight_showGuidance = 10

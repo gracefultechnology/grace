@@ -66,8 +66,7 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
     onSaveAll: fn(),
   },
   examples: {
-    Scam: scam,
-    "Grace Points At The Warning": { ...scam, guide: { targetId: "caution", kind: "point" } },
+    "Scam, Grace points at the warning": { ...scam, guide: { targetId: "caution", kind: "point" } },
     "Grace points at the link": {
       ...scam,
       body: (
@@ -82,6 +81,7 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
     Loading: { status: "loading" },
     "Couldn’t open": { status: "failed", onRetry: retry },
     "Photos saved": { saveAllStatus: "saved" },
+    "Grace points at Save all": { guide: { targetId: "saveall", kind: "instruction", title: "Tap Save all to Files", onClose: fn() } },
     Bill: bill,
     "Bill confirmed": { ...bill, bill: { ...waterBill, confirmed: true, status: <PaymentStatusBadge status="unknown" /> } },
   },
@@ -115,6 +115,11 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
       await expect(canvas.getByText("Visit form.pdf")).toBeTruthy();
       await expect(["Daisies", "Save all to Files", "Open"].map((name) => canvas.queryByRole("button", { name }))).toEqual([null, null, null]);
     },
-    Scam: ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole("alert").textContent).toContain("scam"),
+    "Scam, Grace points at the warning": ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).getByRole("alert").textContent).toContain("scam"),
+    "Grace points at Save all": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByText("Tap Save all to Files")).toBeTruthy();
+      await expect(canvas.getByRole("button", { name: "Save all to Files" })).toBeTruthy();
+    },
   },
 };

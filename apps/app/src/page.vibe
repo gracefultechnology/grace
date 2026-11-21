@@ -326,6 +326,15 @@ effect function originOf(address: string | undefined) {
 
 const numberOf = (requests: ReadonlyMap<number, Request>, page: PageId, key: RequestKey) => [...requests].find(([, r]) => r.page === page && r.key === key)?.[0]
 
+effect function requestAndroidPermission(native: NativePage.Shape, signals: Queue.Queue<Signal>, requestId: number, request: Request) {
+  const ended: AndroidOutcome = "AndroidEnded"
+  const verdict = native.grant(request.page, request.key) catch effect (cause) => {
+    try warn("grant", request.page, cause)
+    return ended
+  }
+  try Queue.offer(signals, Signal.Android({ request: requestId, verdict }))
+}
+
 effect function navigatePrivate(workspace: Workspaces.Shape, native: NativePage.Shape, pages: ReadonlyMap<PageId, Page>, tab: number, address: string) {
   const w = try workspace.get()
   const id = pageOf(tab)
@@ -404,7 +413,6 @@ effect function makePageHost(openEmail: (() => Promise<void>) | undefined) {
   let presented: PageId | null | undefined = null
   const protectBrowser = browserProtection()
   const paused = new Set<PageId>()
-  const ended: AndroidOutcome = "AndroidEnded"
 
   effect function website(event: WebsiteEvent, by: WebsiteActor) {
     const result = requests.send(event, by) catch (error) => match (error) {
@@ -417,13 +425,7 @@ effect function makePageHost(openEmail: (() => Promise<void>) | undefined) {
     const request = asked.get(reply.request)
     if (request === undefined) return
     if (reply.answer === "AskAndroid") {
-      try fork.in(scope) effect {
-        const verdict = native.grant(request.page, request.key) catch effect (failed) => {
-          try warn("grant", request.page, failed)
-          return ended
-        }
-        try Queue.offer(signals, Signal.Android({ request: reply.request, verdict }))
-      }
+      try fork.in(scope) requestAndroidPermission(native, signals, reply.request, request)
       return
     }
     forget(reply.request)

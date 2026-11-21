@@ -1,57 +1,30 @@
-// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "An account's calendar is bound by its store before Calendar opens"; spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"; spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"; spec/app/calendarView.md, "Closing Calendar cancels unsubmitted edits and retains submitted writes"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Her yes is applied as the exact question she was asked"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"
+// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "An account's calendar is bound by its store before Calendar opens"; spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"; spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"; spec/app/calendarView.md, "Closing Calendar cancels unsubmitted edits and retains submitted writes"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Her yes is applied as the exact question she was asked"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/notices.md, "One toast shows at a time and the others wait their turn in order"; spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background"; spec/app/notices.md, "Only the calendar dismisses a reminder, and then it is gone everywhere"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
-import { changeOf, confirmationOf, deletionOf, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
-import { type Machine as CalendarMachine, entryAt, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type Navigation, type NavigationReport, type SeriesReceipt, type ViewMode, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
-import { type Days, moved, planned, repetitions as repeatsOf, shifted, shown } from "./schedule.ts"
+import { type CalendarSource, type CalRow, changeOf, confirmationOf, deletionOf, shownReminders, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
+import { type Machine as CalendarMachine, enabled, entryAt, hasEditing, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type SeriesReceipt, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { planned, repetitions as repeatsOf, shifted } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
-import { guidedSavePending, Machine as Workspaces, type GuidedCalendarApproval, type Workspace } from "../gen/app__workspace.effect.vibe"
-import type { Note, Watched } from "./accounts.vibe"
+import { enabled as admits, guidedSavePending, Machine as Workspaces, type GuidedCalendarApproval, type Workspace } from "../gen/app__workspace.effect.vibe"
+import type { Watched } from "./accounts.vibe"
 import { Connector, type DeletionReceipt, type Published, type StoreReceipt } from "./connector.vibe"
 import { followAccounts, Instances, tablet } from "./instances.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
+import { Machine as Notices } from "../gen/app__notices.effect.vibe"
+import { NoticeHost } from "./notices.vibe"
+import { Machine as Setup } from "../gen/app__setup.effect.vibe"
+import { day, dayOf, instant, midnight, navigation, windowOf } from "./calendarWindow.vibe"
+import { usesManagedSurfaces } from "./managedReads.vibe"
+import { webView } from "./surfacePlugin.ts"
 
-export const day = 24 * 60 * 60 * 1000
+export { day, dayOf, instant, midnight, navigation, shownDays } from "./calendarWindow.vibe"
+
 export const hour = 60 * 60 * 1000
 export const horizon = 60 * day
-
-const utc = (n: number) => new Date(n * day)
-
-export function dayOf(at: number) {
-  const d = new Date(at)
-  return Math.round(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / day)
-}
-
-export function instant(n: number, minutes: number) {
-  const d = utc(n)
-  return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, minutes).getTime()
-}
-
-export const midnight = (n: number) => instant(n, 0)
 
 const minutesOf = (at: number) => {
   const d = new Date(at)
   return d.getHours() * 60 + d.getMinutes()
-}
-
-export function shownDays(mode: ViewMode, anchor: number) {
-  const { first, until } = shown(mode, anchor)
-  return Array.from({ length: until - first }, (_, i) => first + i)
-}
-
-function windowOf(days: Days): ViewWindow {
-  const { first, until } = shown(days.mode, days.anchorDay)
-  return { ...days, fromTime: midnight(first), untilTime: midnight(until) }
-}
-
-function exact(w: ViewWindow) {
-  const { first, until } = shown(w.mode, w.anchorDay)
-  return w.fromTime < w.untilTime && dayOf(w.fromTime) === first && dayOf(w.untilTime) === until
-}
-
-export function navigation(w: ViewWindow, kind: Navigation, chosen: number): NavigationReport {
-  const window = windowOf(moved(w, kind, chosen))
-  return { window, kind, verified: exact(window) }
 }
 
 const opened = (w: ViewWindow) => w.untilTime - w.fromTime >= day
@@ -76,7 +49,7 @@ const generated = (seriesId: string, id: string) => seriesId !== "" && id.starts
 
 const provided = (v: CalendarView): CalendarView => ({ ...v, entries: v.entries.filter((m) => !generated(m.committed.seriesId, m.identity.occurrenceId)) })
 
-export const anchorOf = (v: CalendarView, seriesId: string) =>
+const anchorOf = (v: CalendarView, seriesId: string) =>
   v.entries.find((m) => m.hasSaved && m.phase === "Saved" && m.committed.seriesId === seriesId && m.committed.startAt === seriesAt(v, seriesId).details.startAt)
 
 function placeOf(v: CalendarView, definition: EntryDetails) {
@@ -184,16 +157,88 @@ const device: Store = {
 }
 
 export type CalendarReport = { readonly told: CalendarTold } | { readonly refused: Ask }
-export type CalendarNote = Note & { readonly row: string }
+export type CalendarNote = { readonly id: number; readonly row: string }
+export type Opening = "Occurrence" | "Reminder"
+export type Reminded = { readonly key: number; readonly id: string }
 
 export service CalendarNews {
   readonly reports: Stream.Stream<CalendarReport>
   publish(report: CalendarReport): void!!
   verifySaved(key: number, view: CalendarView, occurrence: string, expected: EntryDetails): boolean!!
   readonly notes: Watched<CalendarNote | undefined>
+  open(key: number, id: string, how: Opening): void!!
+  edit(key: number, id: string): void!!
+  add(day: number): void!!
+  readonly reminderAt: (subject: string) => Reminded | undefined
 }
 
 const noteFor = "2600 millis"
+
+export const say = (n: number, options: Intl.DateTimeFormatOptions) => new Date(midnight(n)).toLocaleDateString("en-US", options)
+export const longDate = (n: number) => say(n, { weekday: "long", month: "long", day: "numeric" })
+
+export function timeLabel(at: number) {
+  const t = new Date(at)
+  const h = t.getHours()
+  const m = t.getMinutes()
+  return `${h % 12 || 12}${m ? `:${String(m).padStart(2, "0")}` : ""} ${h < 12 ? "am" : "pm"}`
+}
+
+export function relative(n: number, today: number) {
+  const ahead = n - today
+  return ahead === 0 ? "Today" : ahead === 1 ? "Tomorrow" : ahead > 1 && ahead < 7 ? say(n, { weekday: "long" }) : longDate(n)
+}
+
+const reminderSubject = (d: EntryDetails, now: number) => `${d.title} ${relative(dayOf(d.startAt), dayOf(now)).toLowerCase()} at ${timeLabel(d.startAt)}`
+
+const opening = (v: CalendarView): CalendarEvent => ({ type: "openCalendar", owner: v.owner, calendarId: v.calendarId, timezone: v.timezone })
+
+const opener = (how: Opening, id: string) => (v: CalendarView): CalendarEvent =>
+  how === "Reminder" ? { type: "openReminder", id, owner: v.owner, calendarId: v.calendarId, timezone: v.timezone } : { type: "openOccurrence", id }
+
+export type Planned = { readonly onLead: boolean; readonly event: CalendarEvent }
+
+export function openingPlan(lead: CalendarView, box: CalendarView, same: boolean, day: number, how: Opening, id: string): readonly Planned[] | undefined {
+  let leadNow = lead
+  let boxNow = same ? lead : box
+  const steps: Planned[] = []
+  const take = (onLead: boolean, eventOf: (v: CalendarView) => CalendarEvent) => {
+    const v = onLead ? leadNow : boxNow
+    const event = eventOf(v)
+    if (!enabled(v, event, "ViewUser")) return false
+    const next = step(v, event, "ViewUser")
+    if (onLead || same) leadNow = next
+    if (!onLead || same) boxNow = next
+    steps.push({ onLead, event })
+    return true
+  }
+  if (!lead.opened && !take(true, opening)) return undefined
+  if (!same && !box.opened && !take(false, opening)) return undefined
+  if (!take(true, (v) => ({ type: "navigate", report: navigation(v.window, "SelectDay", day) }))) return undefined
+  return take(false, opener(how, id)) ? steps : undefined
+}
+
+export function editingPlan(v: CalendarView, id: string) {
+  const target = anchorOf(v, entryAt(v, id).committed.seriesId)?.identity.occurrenceId ?? id
+  const open: CalendarEvent = { type: "openOccurrence", id: target }
+  const first = target !== id && enabled(v, open, "ViewUser") ? [open] : []
+  const begin: CalendarEvent = { type: "changeOccurrence", id: target, command: { tag: "BeginEditing" } }
+  return enabled(first.length === 0 ? v : step(v, open, "ViewUser"), begin, "ViewUser") ? { target, events: [...first, begin] } : undefined
+}
+
+export function adding(v: CalendarView, n: number, id: string): CalendarEvent {
+  const startAt = instant(n, 10 * 60)
+  return {
+    type: "createOccurrence",
+    entry: {
+      identity: { owner: v.owner, calendarId: v.calendarId, occurrenceId: id, sourceRef: "", sourceAccount: 0, kind: "Appointment", billRef: "", billOrigin: "", billAccount: "" },
+      details: {
+        title: "", location: "", participant: "", notes: "", startAt, endAt: startAt + hour, timezone: v.timezone, allDay: false,
+        seriesId: "", recurrence: "Once", reminderEnabled: true, leadTime: hour, important: false
+      }
+    }
+  }
+}
 
 effect function remind(box: CalendarMachine.Shape) {
   const now = try Clock.currentTimeMillis
@@ -212,7 +257,11 @@ function matchesGuidedApproval(key: number, c: Calendar, approval: GuidedCalenda
     draft.endAt === approval.ends && draft.timezone === approval.timezone && draft.location === approval.location && draft.notes === approval.notes
 }
 
-effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publish: CalendarNews.Shape["publish"], span: Reach!!, workspace: Workspaces.Shape) {
+const deletedBy = (host: NoticeHost.Shape) => effect (title: string) => {
+  host.raise({ source: "Calendar", offer: "NoOffer", subject: `Deleted ${title}` }) catch () => undefined
+}
+
+effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publish: CalendarNews.Shape["publish"], span: Reach!!, workspace: Workspaces.Shape, deleted: (title: string) => void!!) {
   const sent = try Ref.make<ReadonlySet<string>>(new Set())
   const last = try Ref.make<CalendarView | undefined>(undefined)
   effect function first(mark: string) {
@@ -247,7 +296,8 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
   }
   effect function erased(v: CalendarView) {
     const result = try removedBy(v, removal(v))
-    box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore") catch () => undefined
+    const answered = Effect.as(box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore"), true) catch () => false
+    if (answered && result.succeeded) try deleted(entryAt(v, v.selectedId).committed.title)
   }
   try Stream.runForEach(box.changes, effect (v) => {
     const before = try Ref.getAndSet(last, v)
@@ -294,32 +344,52 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   const shelf = try Instances
   const proposals = try Proposal
   const workspace = try Workspaces
+  const host = try NoticeHost
+  const notices = try Notices
+  const setup = try Setup
   const hub = try PubSub.unbounded<CalendarReport>()
   const publish = (report: CalendarReport) => Effect.asVoid(PubSub.publish(hub, report))
   const lead = try Effect.orDie(shelf.calendar(tablet))
 
   if ((try lead.get()).owner === "") lead.send({ type: "bindCalendar", owner: "tablet", calendarId: "tablet", timezone: zone() }, "ViewStore") catch () => undefined
-  try fork.scoped keep(tablet, lead, device, publish, spanOf(lead), workspace)
+  try fork.scoped keep(tablet, lead, device, publish, spanOf(lead), workspace, deletedBy(host))
+
+  effect function boxOf(key: number) {
+    return shelf.calendar(key) catch () => undefined
+  }
 
   effect function each(act: (box: CalendarMachine.Shape, v: CalendarView) => CalendarEvent | undefined, by: "ViewUser" | "ViewClock") {
     for (const key of keysOf(try registry.get())) {
-      const box = shelf.calendar(key) catch () => undefined
+      const box = try boxOf(key)
       if (box === undefined) continue
       const event = act(box, try box.get())
       if (event !== undefined) box.send(event, by) catch () => undefined
     }
   }
 
+  effect function editing() {
+    for (const key of keysOf(try registry.get())) {
+      const box = try boxOf(key)
+      if (box !== undefined && hasEditing(try box.get())) return true
+    }
+    return false
+  }
+
+  effect function selectDay(boxes: readonly CalendarMachine.Shape[], n: number) {
+    if ((try workspace.get()).device.surface !== "Calendar" || (try editing())) return
+    for (const box of new Set(boxes)) box.send({ type: "navigate", report: navigation((try box.get()).window, "SelectDay", n) }, "ViewUser") catch () => undefined
+  }
+
   const visibility = Stream.changes(Stream.map(workspace.changes, (w) => w.device.surface === "Calendar"))
   try fork.scoped Stream.runForEach(visibility, effect (visible) => {
     const arrived = (try lead.get()).opened
-    try each((_, v) => v.owner === "" || (visible && v.opened) ? undefined : visible ? { type: "openCalendar", owner: v.owner, calendarId: v.calendarId, timezone: v.timezone } : { type: "closeCalendar" }, "ViewUser")
+    try each((_, v) => v.owner === "" || (visible && v.opened) ? undefined : visible ? opening(v) : { type: "closeCalendar" }, "ViewUser")
     if (visible && !arrived) lead.send({ type: "navigate", report: navigation((try lead.get()).window, "Today", dayOf(try Clock.currentTimeMillis)) }, "ViewUser") catch () => undefined
   })
 
   try fork.scoped Stream.runForEach(Stream.tick("30 seconds"), effect () => {
     for (const key of shownKeys(try registry.get())) {
-      const box = shelf.calendar(key) catch () => undefined
+      const box = try boxOf(key)
       if (box !== undefined) try remind(box)
     }
   })
@@ -327,31 +397,112 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   const listeners = new Set<() => void>()
   const board: { note: CalendarNote | undefined; next: number } = { note: undefined, next: 1 }
 
-  effect function show(said: { readonly text: string; readonly row: string }) {
-    const note = { id: board.next, ...said }
+  effect function ring(row: string) {
+    board.note = { id: board.next, row }
     board.next += 1
-    board.note = note
     listeners.forEach((listener) => listener())
     try sleep(noteFor)
     board.note = undefined
     listeners.forEach((listener) => listener())
   }
 
-  effect function noteOf(report: CalendarReport) {
+  effect function heard(report: CalendarReport) {
     if (!("told" in report) || report.told.news === "NoCalendarNews") return undefined
     const { news, key, id } = report.told
-    if (news !== "DeletedAppointment") return { text: "Saved to your calendar", row: `${key}/${id}` }
-    const box = shelf.calendar(key) catch () => undefined
-    const gone = box === undefined ? undefined : (try box.get()).entries.find((c) => c.identity.occurrenceId === id)
-    return gone === undefined ? undefined : { text: `Deleted ${gone.committed.title}`, row: "" }
+    if (news === "DeletedAppointment") return undefined
+    const box = try boxOf(key)
+    const entry = box === undefined ? undefined : (try box.get()).entries.find((c) => c.identity.occurrenceId === id)
+    host.raise({ source: "Calendar", offer: "NoOffer", subject: "Saved to your calendar" }) catch () => undefined
+    if (news === "AddedAppointment" && box !== undefined && entry !== undefined) try selectDay([lead, box], dayOf(entry.committed.startAt))
+    return `${key}/${id}`
   }
 
-  const notices = Stream.filter(Stream.mapEffect(Stream.fromPubSub(hub), noteOf), (said) => said !== undefined)
-  try fork.scoped Stream.runDrain(Stream.switchMap(notices, (said) => Stream.fromEffect(show(said))))
+  const rows = Stream.filter(Stream.mapEffect(Stream.fromPubSub(hub), heard), (row) => row !== undefined)
+  try fork.scoped Stream.runDrain(Stream.switchMap(rows, (row) => Stream.fromEffect(ring(row))))
 
+  const known = new Map<string, Reminded>()
+  const reminding = try Semaphore.make(1)
+  const noticeReminders = Effect.ignore(reminding.withPermits(1)(effect {
+    const a = try registry.get()
+    const sources: CalendarSource[] = []
+    for (const key of keysOf(a)) {
+      const box = try boxOf(key)
+      if (box !== undefined) sources.push({ key, view: try box.get() })
+    }
+    const managed = usesManagedSurfaces(try setup.get(), webView.window.location.hash)
+    const due = managed ? [] : shownReminders(a, sources).sort((x, y) => x.details.startAt - y.details.startAt)
+    const same = (r: CalRow, at: Reminded) => r.key === at.key && r.identity.occurrenceId === at.id
+    for (const [subject, at] of [...known]) {
+      if (due.some((r) => same(r, at))) continue
+      notices.send({ type: "dismissReminder", subject }, "App") catch () => undefined
+      known.delete(subject)
+    }
+    const now = try Clock.currentTimeMillis
+    for (const r of due) {
+      if ([...known.values()].some((at) => same(r, at))) continue
+      const label = reminderSubject(r.details, now)
+      const taken = (try notices.get()).reminders
+      let subject = label
+      for (let i = 2; known.has(subject) || taken.includes(subject); i++) subject = `${label} (${i})`
+      known.set(subject, { key: r.key, id: r.identity.occurrenceId })
+      const admitted = Effect.as(notices.send({ type: "remind", subject }, "App"), true) catch () => false
+      if (!admitted) known.delete(subject)
+    }
+  }))
+
+  effect function follow(_: Account, box: CalendarMachine.Shape) {
+    return try fork.scoped Stream.runForEach(box.changes, () => noticeReminders)
+  }
+  try fork.scoped followAccounts(Stream.map(registry.changes, ({ accounts }) => accounts), effect (account) => try follow(account, try shelf.calendar(account.id)))
+  try fork.scoped Stream.runForEach(Stream.merge(Stream.merge(registry.changes, lead.changes), setup.changes), () => noticeReminders)
+
+  const arrival = { type: "visit", destination: "Calendar" } as const
+
+  effect function open(key: number, id: string, how: Opening) {
+    const box = try boxOf(key)
+    const w = try workspace.get()
+    const arrive = w.device.surface !== "Calendar"
+    if (box === undefined || (arrive && !admits(w, arrival, "Person"))) return
+    const plan = openingPlan(try lead.get(), try box.get(), key === tablet, dayOf(entryAt(try box.get(), id).committed.startAt), how, id)
+    if (plan === undefined) return
+    for (const { onLead, event } of plan) {
+      const sent = Effect.as((onLead ? lead : box).send(event, "ViewUser"), true) catch () => false
+      if (!sent) return
+    }
+    if (arrive) workspace.send(arrival, "Person") catch () => undefined
+  }
+
+  effect function edit(key: number, id: string) {
+    const box = try boxOf(key)
+    if (box === undefined) return
+    const plan = editingPlan(try box.get(), id)
+    if (plan === undefined) return
+    for (const event of plan.events) {
+      const sent = Effect.as(box.send(event, "ViewUser"), true) catch () => false
+      if (!sent) return
+    }
+    const { draft, committed } = entryAt(try box.get(), plan.target)
+    if (draft.startAt === committed.startAt) return
+    const details = { ...draft, startAt: committed.startAt, endAt: committed.startAt + draft.endAt - draft.startAt }
+    box.send({ type: "changeOccurrence", id: plan.target, command: { tag: "ChangeDetails", details } }, "ViewUser") catch () => undefined
+  }
+
+  try fork.scoped Stream.runForEach(host.replies, (reply) => Effect.ignore(effect {
+    if (reply._tag !== "SeeDetails" && reply._tag !== "Dismiss") return
+    const at = known.get(reply.reminder)
+    if (at === undefined) return
+    if (reply._tag === "SeeDetails") return try open(at.key, at.id, "Reminder")
+    const box = try boxOf(at.key)
+    if (box !== undefined) try box.send({ type: "changeOccurrence", id: at.id, command: { tag: "DismissReminder" } }, "ViewUser")
+  }))
+
+  const asked = try Ref.make(-1)
   try fork.scoped Stream.runForEach(proposals.changes, effect () => {
     const p = try proposals.get()
-    if (p.agreed === 0) return
+    if (p.agreed === 0) {
+      if (p.ask.tag === "AddAsk" && (try Ref.getAndSet(asked, p.revision)) !== p.revision) try selectDay([lead], dayOf(p.ask.review.entry.details.startAt))
+      return
+    }
     const event = consented(p)
     const target = targetOf(p.ask)
     const kept = target === tablet || (linked && shownKeys(try registry.get()).includes(target))
@@ -393,7 +544,14 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
         return () => { listeners.delete(listener) }
       },
       current: () => board.note
-    }
+    },
+    open,
+    edit,
+    add: effect (n) => {
+      const id = `tablet-${(try Clock.currentTimeMillis).toString(36)}-${(try Random.nextInt).toString(36)}`
+      lead.send(adding(try lead.get(), n, id), "ViewUser") catch () => undefined
+    },
+    reminderAt: (subject) => known.get(subject)
   }
 })
 
@@ -403,6 +561,7 @@ export const calendarFeeds = Layer.effectDiscard(effect {
   const connector = try Connector
   const news = try CalendarNews
   const workspace = try Workspaces
+  const host = try NoticeHost
   const lead = try Effect.orDie(shelf.calendar(tablet))
 
   effect function watch(account: Account, box: CalendarMachine.Shape) {
@@ -426,7 +585,7 @@ export const calendarFeeds = Layer.effectDiscard(effect {
       Stream.runForEach(feed, (p) => Effect.ignore(box.send({ type: "publishOccurrence", ...p }, "ViewStore"))) catch effect (cause) => try annotateLogs(logWarning("Calendar feed not fetched; asked again on sign-in, reconnection, opening Calendar or within 5 minutes", cause), { account: account.id })
       try repeat(box, span)
     })
-    return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, spanOf(lead), workspace), fill], { concurrency: "unbounded" }))
+    return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, spanOf(lead), workspace, deletedBy(host)), fill], { concurrency: "unbounded" }))
   }
 
   const selections = Stream.map(registry.changes, ({ accounts }) => accounts.filter((account) => account.use.calendar))

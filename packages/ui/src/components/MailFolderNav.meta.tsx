@@ -14,6 +14,7 @@ export const meta: ComponentMeta<MailFolderNavProps> = {
     "All inboxes": { counts: { inbox: 3 }, accounts: mailAccounts },
     "One account": { counts: { inbox: 3 }, accounts: mailAccounts, account: 2 },
     "Account needs sign-in": { counts: { inbox: 2 }, accounts: [mailAccounts[0], { ...mailAccounts[1], needsSignIn: true }] },
+    Refused: { counts: { inbox: 3 }, accounts: mailAccounts, onSelect: undefined, onAccount: undefined },
   },
   decorator: (story) => <div className="h-[804px] w-[302px] bg-background p-4">{story()}</div>,
   play: {
@@ -33,6 +34,16 @@ export const meta: ComponentMeta<MailFolderNavProps> = {
     },
     "One account": ({ canvasElement }: { canvasElement: HTMLElement }) =>
       expect(within(canvasElement).getByRole("button", { name: /Outlook/ }).getAttribute("aria-current")).toBe("page"),
+    Refused: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      select.mockClear();
+      account.mockClear();
+      const rows = ["All inboxes", "Gmail", "Outlook", "Sent", "Trash"].map((name) => canvas.getByRole("button", { name: new RegExp(name) }));
+      await expect(rows.map((row) => row.getAttribute("aria-disabled"))).toEqual(["true", "true", "true", "true", "true"]);
+      for (const row of rows) await userEvent.click(row);
+      await expect([select.mock.calls.length, account.mock.calls.length]).toEqual([0, 0]);
+      unfocus();
+    },
     "Account needs sign-in": ({ canvasElement }: { canvasElement: HTMLElement }) =>
       expect(within(canvasElement).getByRole("img", { name: "Needs you to sign in again" })).toBeTruthy(),
   },

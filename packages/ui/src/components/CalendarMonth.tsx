@@ -17,7 +17,7 @@ export type CalendarMonthProps = Omit<ComponentProps<"div">, "onSelect"> & {
   weekdays: string[];
   /** Every day of the grid's weeks, Monday first, row by row. */
   days: CalendarMonthDay[];
-  /** Called with the key of the day a person taps. */
+  /** Called with the key of the day a person taps; without it the days are only read. */
   onSelect?: (key: string) => void;
 };
 
@@ -27,6 +27,7 @@ export type CalendarMonthProps = Omit<ComponentProps<"div">, "onSelect"> & {
  * @design packages/design-system/design.md#selected
  */
 export function CalendarMonth({ weekdays, days, onSelect, className, ...props }: CalendarMonthProps) {
+  const Day = onSelect ? "button" : "div";
   return (
     <div className={cn("grid grid-cols-7 gap-2 font-sans", className)} {...props}>
       {weekdays.map((w) => (
@@ -35,15 +36,13 @@ export function CalendarMonth({ weekdays, days, onSelect, className, ...props }:
         </div>
       ))}
       {days.map((d) => (
-        <button
+        <Day
           key={d.key}
-          type="button"
           data-prototype-ink={d.outside ? "" : undefined}
-          aria-pressed={!!d.selected}
-          onClick={() => onSelect?.(d.key)}
+          {...(onSelect && { type: "button", "aria-pressed": !!d.selected, onClick: () => onSelect(d.key) })}
           className={cn(
-            focusRing,
-            "relative box-border flex h-[78px] items-start cursor-pointer rounded-tab bg-panel px-3 py-2 text-left text-body-lg leading-[26px] font-bold text-chrome",
+            onSelect && [focusRing, "cursor-pointer"],
+            "relative box-border flex h-[78px] items-start rounded-tab bg-panel px-3 py-2 text-left text-body-lg leading-[26px] font-bold text-chrome",
             d.outside && "bg-transparent text-outside-day",
             d.selected && "bg-card text-primary shadow-raised",
             d.today && "text-alert",
@@ -61,7 +60,7 @@ export function CalendarMonth({ weekdays, days, onSelect, className, ...props }:
               {d.event}
             </em>
           )}
-        </button>
+        </Day>
       ))}
     </div>
   );
