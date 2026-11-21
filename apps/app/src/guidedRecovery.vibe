@@ -58,8 +58,10 @@ const webRecords: GuidedTaskRecords = {
   },
 }
 
+const checkpointValue = (scope: string, checkpoint: GuidedCheckpoint) => JSON.stringify({ version: 1, scope, checkpoint })
+
 type ScopeSet = { device?: string; connected?: string; localCalendar?: string; session?: string }
-type BoundTask = { task: string; scope: string; revision: number; saved: string | null; awaiting?: string }
+type BoundTask = { task: string; owner: string; scope: string; revision: number; saved: string | null; awaiting?: string }
 error CheckpointUnavailable {}
 effect function checkpointOf(scope: string, value: string | null | undefined) {
   if (!value) return undefined
@@ -76,7 +78,7 @@ function taskRecords(backend: GuidedTaskRecords | undefined) {
     return try Schema.decodeUnknownEffect(RecordValue)(try timeout(tryPromise(() => backend.read({ name: nameFor(scope) })), "2 seconds"))
   }
 
-  effect function save(current: BoundTask, checkpoint: GuidedCheckpoint | null): boolean!! {
+  effect function save(current: BoundTask, checkpoint: GuidedCheckpoint | null, advanceRevision = false): boolean!! {
     if (!backend) return false
     if (current.awaiting !== undefined) {
       const observed = read(current.scope) catch () => undefined
@@ -88,8 +90,8 @@ function taskRecords(backend: GuidedTaskRecords | undefined) {
       delete current.awaiting
     }
     if (!Number.isSafeInteger(current.revision + 1)) return false
-    const value = checkpoint === null ? "" : JSON.stringify({ version: 1, scope: current.scope, checkpoint })
-    if (value === (current.saved ?? "")) return true
+    const value = checkpoint === null ? "" : checkpointValue(current.scope, checkpoint)
+    if (!advanceRevision && value === (current.saved ?? "")) return true
     const revision = current.revision
     const receipt = effect {
       const raw = try timeout(tryPromise(() => backend.write({ name: nameFor(current.scope), revision, value })), "4 seconds")
@@ -108,14 +110,18 @@ function taskRecords(backend: GuidedTaskRecords | undefined) {
   }
 
   effect function clear(current: BoundTask) {
-    if (try save(current, null)) return true
     const observed = read(current.scope) catch () => undefined
-    if (observed === undefined) return false
-    if (!observed.value) return true
-    if (observed.revision <= current.revision) return false
-    const existing = try checkpointOf(current.scope, observed.value)
-    if (existing === undefined || existing.request.task === current.task) return false
-    return true
+    if (observed === undefined || observed.revision < current.revision) return false
+    if (!observed.value && (observed.revision > current.revision || (current.awaiting === undefined && !current.saved))) return true
+    if (observed.value) {
+      const existing = try checkpointOf(current.scope, observed.value)
+      if (existing === undefined || existing.request.owner !== current.owner) return false
+      if (existing.request.task !== current.task) return observed.revision > current.revision
+    }
+    current.revision = observed.revision
+    current.saved = observed.value ?? null
+    delete current.awaiting
+    return try save(current, null, true)
   }
 
   return { read, save, clear }
@@ -226,7 +232,7 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
     const sent = workspace.send({ type: "restoreGuided", recovery: { owner: request.owner, checkpoint } }, "Store") catch () => undefined
     if (sent !== undefined) {
       checked.add(scope)
-      binding = { task: request.task, scope, revision: saved.revision, saved: value }
+      binding = { task: request.task, owner: request.owner, scope, revision: saved.revision, saved: value }
     }
   }
 
@@ -240,12 +246,12 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
     const current = binding
     if (current !== undefined) {
       const { assistant, plan } = state
-      const sameTask = current.task === assistant.taskId && plan.steps.length > 0
+      const sameTask = current.task === assistant.taskId && current.owner === plan.owner && plan.steps.length > 0
       const stillOwns = sameTask && scopeFor(scopes, plan.steps) === current.scope && (try owns(plan.owner, plan.steps))
       if (stillOwns) {
         const checkpoint = guidedCheckpoint(state)
         if (safeCheckpoint(checkpoint)) try save(current, checkpoint)
-        else try save(current, null)
+        else try clear(current)
         return
       }
       if (sameTask && (plan.owner === "tablet" || scopeFor(scopes, plan.steps) !== undefined && (try owns(plan.owner, plan.steps)))) {
@@ -272,9 +278,9 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
       if (after.assistant.taskId !== state.assistant.taskId || after.plan.owner !== state.plan.owner ||
           !(try owns(after.plan.owner, after.plan.steps))) return
       const existing = try checkpointOf(scope, saved?.value)
-      if (existing !== undefined && existing.request.task !== after.assistant.taskId) return
+      if (existing !== undefined && (existing.request.task !== after.assistant.taskId || existing.request.owner !== after.plan.owner)) return
       checked.add(scope)
-      const held = { task: after.assistant.taskId, scope, revision: saved.revision, saved: saved.value ?? null }
+      const held = { task: after.assistant.taskId, owner: after.plan.owner, scope, revision: saved.revision, saved: saved.value ?? null }
       binding = held
       const checkpoint = guidedCheckpoint(after)
       if (safeCheckpoint(checkpoint)) try save(held, checkpoint)
@@ -304,7 +310,7 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
       const account = (try setup.get()).graceAccount.tag
       const held = binding
       if (held === undefined && account !== "GraceSignedIn") return !native || accountPlugin === undefined || account === "GraceDeviceSignedOut"
-      if (held !== undefined && held.task !== assistant.taskId) return false
+      if (held !== undefined && (held.task !== assistant.taskId || held.owner !== plan.owner)) return false
       const scopes = actualScopes(true) catch () => undefined
       const scope = scopeFor(scopes, plan.steps)
       if (scope !== undefined && held !== undefined && scope !== held.scope) try writer.withPermit(syncTask())
@@ -318,18 +324,25 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
       const state = try workspace.get()
       if (state.assistant.taskId !== fence.task || state.assistant.workVersion !== fence.version || !canAbandonTask(state, "Person"))
         throw new Rejected({ event, state, by: "Person" })
-      const current = binding
-      if (current?.task === fence.task) {
+      const current = binding?.task === fence.task && binding.owner === state.plan.owner ? binding : undefined
+      let endedDurably = false
+      if (current !== undefined) {
         const scopes = actualScopes(true) catch () => undefined
         if (scopes === undefined) throw new CheckpointUnavailable()
-        if ([scopes.device, scopes.connected, scopes.localCalendar].includes(current.scope) && !(try clear(current)))
-          throw new CheckpointUnavailable()
+        if (scopeFor(scopes, state.plan.steps) === current.scope && (try owns(state.plan.owner, state.plan.steps))) {
+          if (!(try clear(current))) throw new CheckpointUnavailable()
+          endedDurably = true
+        }
       }
       const after = try workspace.get()
-      if (after.assistant.taskId !== fence.task || after.assistant.workVersion !== fence.version)
+      if (after.assistant.taskId !== fence.task || after.plan.owner !== state.plan.owner ||
+          (!endedDurably && after.assistant.workVersion !== fence.version))
         throw new Rejected({ event, state: after, by: "Person" })
-      const result = try workspace.send(event, "Person")
-      if (current?.task === fence.task) {
+      const result = endedDurably && after.assistant.activity === "Finished" ? { state: after, out: [] }
+        : endedDurably && after.assistant.presentation === "Closed"
+          ? try workspace.send({ type: "discardGuidedRecovery", fence: { task: fence.task, version: after.assistant.workVersion } }, "Host")
+          : try workspace.send(event, "Person")
+      if (current !== undefined) {
         checked.delete(current.scope)
         binding = undefined
       }
@@ -344,7 +357,7 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
       const state = try workspace.get()
       const { assistant, plan } = state
       if (scopeFor(scopes, plan.steps) !== current.scope || assistant.taskId !== task ||
-          assistant.workVersion !== version || !(try owns(plan.owner, plan.steps))) return false
+          assistant.workVersion !== version || plan.owner !== current.owner || !(try owns(plan.owner, plan.steps))) return false
       const checkpoint = guidedCheckpoint(state)
       if (checkpoint.save.tag !== "GuidedSaveReconcile" || !safeCheckpoint(checkpoint) ||
           !(try save(current, checkpoint))) return false
@@ -375,13 +388,16 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
         }
         if (!canStartReadReview(after, reviewRevision, "Person")) return false
         const existing = scope === undefined ? undefined : try checkpointOf(scope, saved?.value)
-        if (existing !== undefined && (binding === undefined || binding.task !== existing.request.task || binding.revision !== saved?.revision)) return false
         let held: BoundTask | undefined
         if (scope !== undefined) {
           if (!backend || saved === undefined) return false
-          held = { task: request.task, scope, revision: saved.revision, saved: saved.value ?? null }
           const checkpoint = guidedCheckpoint(startReadReview(after, reviewRevision, "Person"))
-          if (!safeCheckpoint(checkpoint) || !(try save(held, checkpoint))) return false
+          if (!safeCheckpoint(checkpoint)) return false
+          const sameReview = saved.value === checkpointValue(scope, checkpoint)
+          if (existing !== undefined && !sameReview &&
+              (binding === undefined || binding.task !== existing.request.task || binding.owner !== existing.request.owner || binding.revision !== saved.revision)) return false
+          held = { task: request.task, owner: request.owner, scope, revision: saved.revision, saved: saved.value ?? null }
+          if (!(try save(held, checkpoint))) return false
           const check = actualScopes(true) catch () => undefined
           if (scopeFor(check, request.steps) !== scope || check?.session !== scopes?.session) {
             try save(held, existing ?? null)

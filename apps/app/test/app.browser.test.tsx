@@ -2171,13 +2171,30 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
   let readable = false;
   let writable = true;
   let lost = false;
+  let beforeClear: (() => void) | undefined;
+  let delayProgress = false;
+  let pendingProgress: (() => void) | undefined;
+  const storedRecord = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({
+    revision: Schema.Int, value: Schema.String,
+  })));
   const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
     if (key.startsWith("grace/guided-task-") && !readable) throw new Error("The store is unavailable");
     return (this === localStorage ? get : sessionGet)(key);
   });
   const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
     if (key.startsWith("grace/guided-task-") && !writable) throw new Error("The store is unavailable");
+    if (key.startsWith("grace/guided-task-") && delayProgress && storedRecord(value).value !== "") {
+      pendingProgress = () => {
+        if (storedRecord(get(key)).revision + 1 === storedRecord(value).revision) set(key, value);
+      };
+      throw new Error("The write result has not arrived");
+    }
     (this === localStorage ? set : sessionSet)(key, value);
+    if (key.startsWith("grace/guided-task-") && value.includes('"value":""') && beforeClear) {
+      const interrupt = beforeClear;
+      beforeClear = undefined;
+      interrupt();
+    }
     if (key.startsWith("grace/guided-task-") && lost) {
       lost = false;
       readable = false;
@@ -2188,18 +2205,20 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
   let view = tabletView(runtime);
   const sync = () => runtime.runPromise(Effect.flatMap(GuidedRecovery, (recovery) => recovery.keepProgress()));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
-  try {
-    await view.render();
-    const workspace = await runtime.runPromise(Workspaces);
-    await act(() => runtime.runPromise(workspace.send({ type: "restoreGuided", recovery: {
+  const restoreTask = (workspace: Workspaces.Shape, task: string) => act(() => runtime.runPromise(
+    workspace.send({ type: "restoreGuided", recovery: {
       owner: "tablet",
       checkpoint: {
-        request: { owner: "tablet", task: "receipt-retry", goal: "Save my appointment", steps: [{ tag: "ReadMail" }, { tag: "SaveMailAppointment" }] },
+        request: { owner: "tablet", task, goal: "Save my appointment", steps: [{ tag: "ReadMail" }, { tag: "SaveMailAppointment" }] },
         receipts: [{ sourceKey: "prior-mail", evidence: "The appointment is Thursday." }], workVersion: 4,
         correction: { tag: "NoGuidedCheckpointCorrection" },
         save: { tag: "GuidedSaveReconcile", occurrence: "", owner: "mail", calendar: "primary", mailDigest: "prior-mail" },
       },
     } }, "Store")));
+  try {
+    await view.render();
+    const workspace = await runtime.runPromise(Workspaces);
+    await restoreTask(workspace, "receipt-retry");
     await tap("Ask Grace");
     await sync();
     await sync();
@@ -2211,9 +2230,7 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
     const key = Object.keys(localStorage).find((entry) => entry.startsWith("grace/guided-task-"));
     expect(key).toBeDefined();
     if (key === undefined) throw new Error("The reviewed task was never saved");
-    const persisted = () => Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Struct({
-      revision: Schema.Int, value: Schema.String,
-    })))(get(key));
+    const persisted = () => storedRecord(get(key));
     const first = persisted();
     expect(first.value).toContain("receipt-retry");
     await act(() => runtime.runPromise(workspace.send({ type: "stop" }, "Person")));
@@ -2227,14 +2244,37 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
     await expect.element(page.getByRole("button", { name: "End this task", exact: true })).toBeEnabled();
     expect(persisted().value).not.toBe("");
     writable = true;
+    beforeClear = () => {
+      void runtime.runPromise(workspace.send({ type: "stop" }, "Person"));
+    };
     await tap("End this task");
-    await expect.poll(() => persisted().value).toBe("");
+    await expect.poll(async () => ({
+      stored: persisted().value,
+      outcome: (await runtime.runPromise(workspace.get())).assistant.outcome,
+    })).toEqual({ stored: "", outcome: "Abandoned" });
     await view.dispose();
     runtime = ManagedRuntime.make(application(undefined));
     view = tabletView(runtime);
     await view.render();
     await tap("Ask Grace");
     expect(page.getByRole("button", { name: "Resume Grace" }).query()).toBeNull();
+
+    const restarted = await runtime.runPromise(Workspaces);
+    await act(() => runtime.runPromise(restarted.send({ type: "closeGrace" }, "Person")));
+    const tombstone = persisted();
+    delayProgress = true;
+    await restoreTask(restarted, "pending-progress");
+    await tap("Ask Grace");
+    await sync();
+    expect(pendingProgress).toBeDefined();
+    expect(persisted()).toEqual(tombstone);
+    await tap("End this task");
+    await expect.poll(async () => ({
+      revision: persisted().revision,
+      outcome: (await runtime.runPromise(restarted.get())).assistant.outcome,
+    })).toEqual({ revision: tombstone.revision + 1, outcome: "Abandoned" });
+    pendingProgress?.();
+    expect(persisted()).toEqual({ revision: tombstone.revision + 1, value: "" });
   } finally {
     await view.dispose();
     read.mockRestore();
