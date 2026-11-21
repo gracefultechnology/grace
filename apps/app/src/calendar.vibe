@@ -1,8 +1,8 @@
 // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "An account's calendar is bound by its store before Calendar opens"; spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"; spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"; spec/app/calendarView.md, "Closing Calendar cancels unsubmitted edits and retains submitted writes"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Her yes is applied as the exact question she was asked"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/notices.md, "One toast shows at a time and the others wait their turn in order"; spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background"; spec/app/notices.md, "Only the calendar dismisses a reminder, and then it is gone everywhere"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
-import { type CalendarSource, type CalRow, changeOf, confirmationOf, deletionOf, shownReminders, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
-import { type Machine as CalendarMachine, enabled, entryAt, hasEditing, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type SeriesReceipt, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { askedDay, type CalendarSource, type CalRow, changeOf, confirmationOf, confirmRing, type DayToShow, deletionOf, savedDay, shownReminders, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
+import { type Machine as CalendarMachine, enabled, entryAt, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type SeriesReceipt, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { planned, repetitions as repeatsOf, shifted } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
 import { GuidedRecovery } from "./guidedRecovery.vibe"
@@ -24,7 +24,7 @@ export { day, dayOf, instant, midnight, navigation, shownDays } from "./calendar
 export const hour = 60 * 60 * 1000
 export const horizon = 60 * day
 
-const minutesOf = (at: number) => {
+export const minutesOf = (at: number) => {
   const d = new Date(at)
   return d.getHours() * 60 + d.getMinutes()
 }
@@ -417,17 +417,18 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     }
   }
 
-  effect function editing() {
-    for (const key of keysOf(try registry.get())) {
+  effect function sourcesOf(a: Registry) {
+    const sources: CalendarSource[] = []
+    for (const key of keysOf(a)) {
       const box = try boxOf(key)
-      if (box !== undefined && hasEditing(try box.get())) return true
+      if (box !== undefined) sources.push({ key, view: try box.get() })
     }
-    return false
+    return sources
   }
 
-  effect function selectDay(boxes: readonly CalendarMachine.Shape[], n: number) {
-    if ((try workspace.get()).device.surface !== "Calendar" || (try editing())) return
-    for (const box of new Set(boxes)) box.send({ type: "navigate", report: navigation((try box.get()).window, "SelectDay", n) }, "ViewUser") catch () => undefined
+  effect function turnTo(boxes: readonly CalendarMachine.Shape[], shown: DayToShow) {
+    if (!shown.show) return
+    for (const box of new Set(boxes)) box.send({ type: "navigate", report: navigation((try box.get()).window, "SelectDay", dayOf(shown.startAt)) }, "ViewUser") catch () => undefined
   }
 
   const visibility = Stream.changes(Stream.map(workspace.changes, (w) => w.device.surface === "Calendar"))
@@ -482,14 +483,14 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   }
 
   effect function heard(report: CalendarReport) {
-    if (!("told" in report) || report.told.news === "NoCalendarNews") return undefined
-    const { news, key, id } = report.told
-    if (news === "DeletedAppointment") return undefined
-    const box = try boxOf(key)
-    const entry = box === undefined ? undefined : (try box.get()).entries.find((c) => c.identity.occurrenceId === id)
+    if (!("told" in report)) return undefined
+    const ring = confirmRing(report.told)
+    if (!ring.shown) return undefined
     host.raise({ source: "Calendar", offer: "NoOffer", subject: "Saved to your calendar" }) catch () => undefined
-    if (news === "AddedAppointment" && box !== undefined && entry !== undefined) try selectDay([lead, box], dayOf(entry.committed.startAt))
-    return `${key}/${id}`
+    const a = try registry.get()
+    const box = try boxOf(ring.key)
+    if (box !== undefined) try turnTo([lead, box], savedDay(a, try sourcesOf(a), report.told))
+    return `${ring.key}/${ring.id}`
   }
 
   const rows = Stream.filter(Stream.mapEffect(Stream.fromPubSub(hub), heard), (row) => row !== undefined)
@@ -499,11 +500,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   const reminding = try Semaphore.make(1)
   const noticeReminders = Effect.ignore(reminding.withPermits(1)(effect {
     const a = try registry.get()
-    const sources: CalendarSource[] = []
-    for (const key of keysOf(a)) {
-      const box = try boxOf(key)
-      if (box !== undefined) sources.push({ key, view: try box.get() })
-    }
+    const sources = try sourcesOf(a)
     const managed = usesManagedSurfaces(try setup.get(), webView.window.location.hash)
     const due = managed ? [] : shownReminders(a, sources).sort((x, y) => x.details.startAt - y.details.startAt)
     const same = (r: CalRow, at: Reminded) => r.key === at.key && r.identity.occurrenceId === at.id
@@ -571,13 +568,12 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     if (box !== undefined) try box.send({ type: "changeOccurrence", id: at.id, command: { tag: "DismissReminder" } }, "ViewUser")
   }))
 
-  const asked = try Ref.make(-1)
+  const earlier = try Ref.make(try proposals.get())
   try fork.scoped Stream.runForEach(proposals.changes, effect () => {
     const p = try proposals.get()
-    if (p.agreed === 0) {
-      if (p.ask.tag === "AddAsk" && (try Ref.getAndSet(asked, p.revision)) !== p.revision) try selectDay([lead], dayOf(p.ask.review.entry.details.startAt))
-      return
-    }
+    const a = try registry.get()
+    try turnTo([lead], askedDay(a, try sourcesOf(a), try Ref.getAndSet(earlier, p), p))
+    if (p.agreed === 0) return
     const event = consented(p)
     const target = targetOf(p.ask)
     const kept = target === tablet || (linked && shownKeys(try registry.get()).includes(target))
