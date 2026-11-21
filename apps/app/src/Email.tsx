@@ -6,7 +6,7 @@ import type { Accounts } from "../gen/app__accounts.ts";
 import { canReplyToMessage, emptyContent, enabled, type Event as MailEvent, mayExportAttachments, messageRecord, photoAssets, readable, showsScamWarning } from "../gen/app__email.ts";
 import type { Folder, MessageChange } from "../gen/app__emailItem.ts";
 import { type Files, hasFile, type SavedFile } from "../gen/app__files.ts";
-import { type HomeMailStatus, type MailBanner, type MailSource, type Row, accountRows, banners, folderRows, fromChoices, homeRows, homeStatus, openSource, outboxCount, outboxRows, showsConnect, showsMail, showsOutbox, undoable, unreadIn } from "../gen/app__mailboxes.ts";
+import { type HomeMailStatus, type MailBanner, type MailSource, type Row, accountRows, banners, draftsIn, folderRows, fromChoices, homeRows, homeStatus, openSource, outboxCount, outboxRows, showsConnect, showsMail, showsOutbox, undoable, unreadIn } from "../gen/app__mailboxes.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import type { Attached, MailContent } from "./connector.vibe";
 import { EmailCompose, type Picking, thumbnail } from "./EmailCompose.tsx";
@@ -211,7 +211,6 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const folder: Folder = lead?.folder ?? "InboxFolder";
   const rows = accountRows(registry, sources);
   const waitingCount = outboxCount(registry, sources);
-  const drafts = shown.reduce((n, b) => n + b.state.messages.filter((r) => r.folder === "DraftsFolder").length, 0);
   const outbox = showsOutbox(registry, sources, outboxChosen);
   const untitled = (subject: string | undefined) => subject === "" ? "(no subject)" : subject ?? "";
   const waiting: MailSummary[] = outboxRows(registry, sources).map((r) => {
@@ -260,7 +259,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   });
 
   return (
-    <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), drafts, outbox: waitingCount }}
+    <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), drafts: draftsIn(registry, sources), outbox: waitingCount }}
       guide={rowGuide} accounts={rows} account={registry.inboxFilter || undefined} banners={notes.length ? notes : undefined} messages={outbox ? waiting : listed} toast={toast}
       onWrite={writable ? () => setPicking({ field: "to", query: "" }) : undefined}
       status={shownBanners.some((b) => b.kind === "OfflineBanner") ? "offline" : failed.length ? "failed" : "ready"}

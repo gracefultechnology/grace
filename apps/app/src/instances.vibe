@@ -1,4 +1,4 @@
-// spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/email.md, "Sending or discarding retires the completed draft revision without hiding newer work"
+// spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/email.md, "Sending or discarding retires the completed draft revision without hiding newer work"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { Machine as CalendarMachine, stored as storedCalendar } from "../gen/app__calendarView.effect.vibe"
 import { type Event as MailEvent, hasMessage, initial as initialMail, listingScope, Machine as MailMachine, messageRecord, retainedOnly, stored as storedMail, type Mailbox, type ReadReceipt } from "../gen/app__email.effect.vibe"
@@ -280,6 +280,8 @@ export const reading = Layer.effectDiscard(effect {
           const accepted = Effect.as(box.send({ type: "receiveMessage", scope, listing: found.receipt }, "MailConnector"), true) catch () => false
           if (accepted) shelf.remember(id, { content: found.content })
         })
+        const total = mail.draftCount() catch () => undefined
+        if (total !== undefined) box.send({ type: "countDrafts", generation: m.generation, total }, "MailConnector") catch () => undefined
         return read(m.generation)
       };
       when "OpenMessage": effect {

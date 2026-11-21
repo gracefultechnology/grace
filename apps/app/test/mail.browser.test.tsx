@@ -508,6 +508,8 @@ it("Write or reply and confirm before sending", async () => {
   await act(() => userEvent.fill(words(), "Shall we have lunch on Tuesday?"));
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week").map((m) => [b.address, m.labels]))).toEqual([[outlook, ["DRAFT"]]]);
+  // spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"
+  await expect.element(row("Drafts 1")).toBeVisible();
   await click(row("Drafts"));
   await click(email(/^To Susan.*Lunch next week/));
   await expect.element(subject()).toHaveValue("Lunch next week");
