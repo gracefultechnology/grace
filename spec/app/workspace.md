@@ -980,11 +980,10 @@ origin. Both paths preserve the conversation.
 ```quint
 pure def canRefuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
   observationArrives(w, currentObservation, by) and X::canRefuseOrigin(w.execution, currentObservation.website, X::BrowserBridge)
-pure def waitForPerson(a: A::Assistant, checkpoint: str): A::Assistant =
-  { ...a, activity: A::UserWait, checkpoint: checkpoint, operation: "", workVersion: a.workVersion + 1 }
 pure def refuseOrigin(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): Workspace = {
   ...w, execution: X::refuseOrigin(w.execution, currentObservation.website, X::BrowserBridge),
-  assistant: waitForPerson(w.assistant, currentObservation.checkpoint),
+  assistant: A::receiveStep(w.assistant, w.assistant.taskId, w.assistant.workVersion, "",
+    currentObservation.checkpoint, true, C::ConversationRuntime),
   observedDevice: currentObservation.deviceVersion, observedBrowser: currentObservation.browserRevision
 }
 pure def canLeaveToPerson(w: Workspace, operationRequest: OperationRequest, by: WorkspaceActor): bool =
@@ -995,7 +994,8 @@ pure def canLeaveToPerson(w: Workspace, operationRequest: OperationRequest, by: 
   X::canLeaveToPerson(w.execution, operationRequest.target, X::BrowserBridge)
 pure def leaveToPerson(w: Workspace, operationRequest: OperationRequest, by: WorkspaceActor): Workspace = {
   ...w, execution: X::leaveToPerson(w.execution, operationRequest.target, X::BrowserBridge),
-  assistant: waitForPerson(w.assistant, w.assistant.checkpoint),
+  assistant: A::receiveStep(w.assistant, w.assistant.taskId, w.assistant.workVersion, "",
+    w.assistant.checkpoint, true, C::ConversationRuntime),
   commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment
 }
 pure def sometimesOtherOriginBlocksTask(w: Workspace): bool =
