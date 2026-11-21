@@ -262,8 +262,8 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await tap(page.getByRole("region", { name: "Settings" }).getByRole("button", { name: "Ask Grace", exact: true }));
   expect(await window()).toBe("Compact");
   await say("Which one is mine?", { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "I’m not sure"], actions: [] });
-  expect(toldGrace()).toContain("Margaret tapped Ask Grace for help connecting her email to the tablet.");
-  expect(toldGrace()).toContain(`Margaret removed her Gmail email (${gmail}) from the tablet.`);
+  expect(toldGrace()).toContain("The person tapped Ask Grace for help connecting their email to the tablet.");
+  expect(toldGrace()).toContain(`The person removed their Gmail email (${gmail}) from the tablet.`);
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Grace" }));
 
@@ -277,13 +277,13 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await tap(form("Other email").getByRole("button", { name: "Next" }));
   await tap(form("Mail settings").getByRole("button", { name: "Ask Grace" }));
   await say("What are these?", { text: "They are the addresses your email company uses. They are not secret.", actions: [] });
-  expect(toldGrace()).toContain("Her email company said the password she typed was wrong.");
-  expect(toldGrace()).toContain("Margaret tapped Ask Grace while connecting her riverview.net email");
+  expect(toldGrace()).toContain("Their email company said the password they typed was wrong.");
+  expect(toldGrace()).toContain("The person tapped Ask Grace while connecting their riverview.net email");
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await tap(form("Mail settings").getByRole("button", { name: "Connect" }));
   await expect.element(page.getByText("Other email · Connected")).toBeVisible();
   await reopen("Is my email on now?", { text: "Yes, your Riverview email is on the tablet.", actions: [] });
-  expect(toldGrace()).toContain(`Margaret connected her Riverview email (${riverview}) to the tablet.`);
+  expect(toldGrace()).toContain(`The person connected their Riverview email (${riverview}) to the tablet.`);
   expect(toldGrace()).not.toContain(otherPassword);
   expect(toldGrace()).not.toContain("Not-the-password-7");
 });

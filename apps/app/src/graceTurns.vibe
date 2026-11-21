@@ -4,10 +4,12 @@ import { fromPerson } from "../gen/app__request.effect.vibe"
 import { Machine as Workspaces, enabled, privateSurfaceActive, replyControlContext, step, type Event, type ReplyControlContext } from "../gen/app__workspace.effect.vibe"
 import { Agent } from "./agent.vibe"
 import type { EmbeddedAgent } from "./agentPlugin.ts"
+import { agentTextLimit, personSays, tabletShows, turnText } from "./agentTurn.ts"
+import { looker, render, sendable } from "./context.vibe"
 import { Conversation } from "./conversation.vibe"
 import { withhold } from "./private.ts"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedAuthority } from "./managedReads.vibe"
+import { ManagedReads, guidedAuthority } from "./managedReads.vibe"
 import { ReplyControls } from "./replyControls.vibe"
 import { Reply } from "./reply.schema.ts"
 import { webView } from "./surfacePlugin.ts"
@@ -25,6 +27,8 @@ type BridgeEvent = { kind: "data" | "end"; payload: unknown }
 type DecodedEvent = { kind: "data"; value: typeof StreamData.Type } | { kind: "end"; value: typeof StreamEnd.Type }
 
 error TurnUnavailable
+
+const turnTimeout = "60 seconds"
 
 function sameContext(a: ReplyControlContext, b: ReplyControlContext) {
   return a.generation === b.generation && a.device === b.device && a.browser === b.browser && a.preferences === b.preferences
@@ -74,11 +78,11 @@ effect function finalReply(plugin: EmbeddedAgent, conversation: typeof Creation.
     const payload = Schema.decodeUnknownEffect(ResponseEvent)(event.value.data) catch () => undefined
     if (payload?.type === "error") throw new TurnUnavailable()
     if (payload?.type !== "done") return said
-    if (payload.fullText === undefined || payload.fullText.trim() === "" || payload.fullText.length > 32768) throw new TurnUnavailable()
+    if (payload.fullText === undefined || payload.fullText.trim() === "" || payload.fullText.length > agentTextLimit) throw new TurnUnavailable()
     return payload.fullText
   })
   const cancelTurn = () => Effect.ignore(timeout(tryPromise(() => plugin.request({ method: "POST", path: `/api/turns/${conversation.roomId}/abort` })), "2 seconds"))
-  const final = try timeout(onInterrupt(collect, cancelTurn), "60 seconds")
+  const final = try timeout(onInterrupt(collect, cancelTurn), turnTimeout)
   if (final === "") throw new TurnUnavailable()
   return final
 }
@@ -90,7 +94,9 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
   const turns = try Conversation
   const setup = try Setup
   const agent = try Agent
-  const opened = try Ref.make<typeof Creation.Type.data.conversation | undefined>(undefined)
+  const managed = try ManagedReads
+  const look = try looker()
+  const opened = try Ref.make<{ conversation: typeof Creation.Type.data.conversation; messages: number } | undefined>(undefined)
 
   effect function setReady(raw: unknown) {
     const status = Schema.decodeUnknownEffect(Status)(raw) catch () => undefined
@@ -122,20 +128,22 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
     if (privateSurfaceActive(scene)) return
     const request = try controls.capture()
     const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
-    const { messages } = scene.assistant.conversation
+    const transcript = scene.assistant.conversation
+    const { messages } = transcript
     const index = messages.length - 1
     const message = messages[index]
     if (message === undefined || message.author !== "HumanMessage") return
-    const text = try Effect.orDie(Effect.try(() => withhold({ text: message.text, passwords: [] })))
-    if (text !== message.text) {
+    if ((try Effect.orDie(Effect.try(() => sendable(transcript)))) === undefined) {
       workspace.send({ type: "purgePrivate", token, messageIndex: index, purgeDraft: false }, "Host") catch () => undefined
       return
     }
+    const shown = render(try look(), try Clock.currentTimeMillis, { notDone: [], unread: [] }, [], try managed.guidedSelection())
+    const { text } = try Effect.orDie(Effect.try(() => turnText([tabletShows, ...shown.text.split("\n")], `${personSays} ${JSON.stringify(message.text)}`, agentTextLimit)))
     effect {
       const current = try Ref.get(opened)
-      const conversation = current ?? (try createConversation(plugin))
-      if (current === undefined) try Ref.set(opened, conversation)
-      const raw = try finalReply(plugin, conversation, text)
+      const conversation = current !== undefined && current.messages < messages.length ? current.conversation : (try timeout(createConversation(plugin), turnTimeout))
+      try Ref.set(opened, { conversation, messages: messages.length })
+      const raw = try finalReply(plugin, conversation, text.trim())
       const reply = try Schema.decodeUnknownEffect(Reply)(raw)
       const safe = try Effect.orDie(Effect.try(() => withhold({ text: reply.text, passwords: [] })))
       const choicesSafe = try Effect.orDie(Effect.try(() => reply.answers.every((answer) => withhold({ text: answer, passwords: [] }) === answer)))
