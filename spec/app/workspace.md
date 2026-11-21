@@ -111,11 +111,11 @@ pure val noGuidedStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: 
 pure def hasNext(plan: GuidedPlan): bool = plan.receipts.length() < plan.steps.length()
 pure def nextOutcome(plan: GuidedPlan): GuidedStep = {
   val index = plan.receipts.length()
-  val step = plan.steps.nthOr(index, noGuidedStep)
-  if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match step {
+  val plannedOutcome = plan.steps.nthOr(index, noGuidedStep)
+  if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match plannedOutcome {
     | ReachNamedPage(_) => ReachNamedPage({ subject: plan.nameOverride.label })
-    | _ => step
-  } else step
+    | _ => plannedOutcome
+  } else plannedOutcome
 }
 type Workspace = {
   device: S::Shell, browser: B::Browser, assistant: A::Assistant,
