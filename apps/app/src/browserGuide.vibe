@@ -11,7 +11,7 @@ import { NativePage, guidedPageState, privateFormRecovery } from "./nativePage.v
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { withhold } from "./private.ts"
 
-export type BrowserGuidance = { kind: "Link"; words: string } | { kind: "Menu" | "Unavailable"; words: string; alternateHref?: string }
+export type BrowserGuidance = { kind: "Link"; words: string } | { kind: "Menu" | "Unavailable"; words: string; alternateHref?: string; tryAnotherMenu?: boolean }
 
 export service BrowserGuide {
   point(onMenu: (guidance: BrowserGuidance) => void): BrowserGuidance!!
@@ -157,6 +157,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
     }
     return true
   }
+  let triedMenus: { key: string; documentId: string; menus: PublicMenu[] } | undefined
   let active: { id: PageId; key: string; account: DecisionSession; alternateHref?: string; branch?: readonly PublicMenu[] } | undefined
   try fork.scoped Stream.runForEach(workspace.changes, effect (state) => {
     const old = active
@@ -223,6 +224,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       const signedIn = (try setup.get()).graceAccount
       if ((account.accountId !== undefined && signedIn.tag === "GraceSignedIn" && account.accountId !== signedIn.accountId) ||
           (try currentContext())?.key !== start.key) return changed
+      if (initial === undefined) return unobservable
       const request = publicWords(start.goal)
       const target = publicWords(start.target)
       if (!request || (start.target !== "" && (!target || target.includes("*")))) return unavailable
@@ -231,15 +233,30 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       const goal = request.length + instruction.length <= CLEF_DECISION_LIMITS.goal ? request + instruction : request
       const guided = start
       const branch: PublicMenu[] = []
+      const skipped = start.approvedHref === undefined && triedMenus?.key === start.key && triedMenus.documentId === initial.documentId ? triedMenus.menus : []
+      triedMenus = undefined
+      function offerAnotherMenu(words: string, documentId: string, alternateHref?: string): BrowserGuidance {
+        const first = branch[0]
+        if (!first) return unavailableBecause(words)
+        triedMenus = { key: guided.key, documentId, menus: [...skipped, first] }
+        return { kind: "Unavailable", words, tryAnotherMenu: true, alternateHref }
+      }
       let disclosed: LinkObservation | undefined
       effect function visibleChoices(snapshot: LinkObservation, publicOnly: boolean) {
         const allLinks = links(snapshot, guided.url, target, publicOnly || branch.length > 0 || guided.approvedHref !== undefined)
           .filter((link) => guided.approvedHref === undefined || (link.href === guided.approvedHref && link.exact))
-        if (branch.length === 0) return allLinks
+        if (branch.length === 0 && skipped.length === 0) return allLinks
         const children: PublicLink[] = []
         for (const link of allLinks) {
-          if (link.pointable && !branch.some((menu) => menu.selector === link.selector) &&
-              (try inBranch(guided.id, guided.url.href, branch, link.selector))) children.push(link)
+          if (!link.pointable || branch.some((menu) => menu.selector === link.selector)) continue
+          let excluded = false
+          for (const menu of skipped) {
+            if (link.selector === menu.selector || (try inBranch(guided.id, guided.url.href, [menu], link.selector))) {
+              excluded = true
+              break
+            }
+          }
+          if (!excluded && (try inBranch(guided.id, guided.url.href, branch, link.selector))) children.push(link)
         }
         return children
       }
@@ -295,7 +312,11 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         if (decision.retry) { retries++; continue }
         if (decision.stopped !== undefined) return decision.stopped
         const winner = decision.winner
-        if (winner === undefined) return unavailable
+        if (winner === undefined) {
+          if ("winner" in decision && branch.length && active?.key === guided.key)
+            return offerAnotherMenu(`I couldn’t find “${target}” in the “${branch[branch.length - 1]?.label}” menu.`, snapshot.documentId)
+          return unavailable
+        }
         const current = page.observeLinks(start.id) catch () => undefined
         if (current === undefined || current.documentId !== snapshot.documentId) return changed
         const state = guidedPageState(current, start.url.href, "GuidePublicLinks")
@@ -329,7 +350,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
           const menuGuide = { id: start.id, key: start.key, account, alternateHref, branch: [...branch] }
           active = menuGuide
           if (!opensMenu || !node.selector) {
-            return { kind: "Unavailable", words: `The open menu ${branch.map((menu) => "“" + menu.label + "”").join(" › ")} calls this link “${node.label}”.`, alternateHref }
+            return offerAnotherMenu(`The open menu ${branch.map((menu) => "“" + menu.label + "”").join(" › ")} calls this link “${node.label}”.`, current.documentId, alternateHref)
           }
           branch.push({ selector: node.selector, label: node.label })
           disclosed = undefined
