@@ -352,14 +352,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       }, { timeout: 15_000 }).toEqual({ address: landed.url, arrived: true });
       const resume = page.getByRole("button", { name: "Resume Grace" });
       const check = page.getByRole("button", { name: "Check page", exact: true });
-      await expect.poll(() => resume.query() !== null || check.query() !== null, {
-        message: "Waiting for Grace to offer Resume Grace or Check page after navigation",
-      }).toBe(true);
+      await expect.element(resume.or(check).first()).toBeVisible();
       if (resume.query() !== null) await userEvent.click(resume);
       await userEvent.click(check);
-      await expect.poll(() => finished.query() !== null || continuing.query() !== null, {
-        message: "Waiting for Grace to show a completed read or a page-check result after Check page",
-      }).toBe(true);
+      await expect.element(finished.or(continuing).first()).toBeVisible();
       const checked = finished.query() !== null;
       hops.push({ url: landed.url, documentId: landed.documentId, checked });
       if (checked) break;
