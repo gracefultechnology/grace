@@ -156,6 +156,17 @@ it('Browse and return to the page I left (spec/app/browser.md, "Story: Browse an
   instruction.click();
   await expect.element(address).toHaveValue(instruction.href);
   await expect.poll(() => tab(id)?.load).toBe("Loaded");
+  const prior = tab(id)!;
+  expect(prior.history.slice(-2)).toEqual([readable, instruction.href]);
+  const instructionPage = shown(id)?.contentDocument;
+  if (!instructionPage) throw new Error("The instruction page is unreadable");
+  instructionPage.location.assign(new URL("index.html", site).href);
+  await expect.poll(() => {
+    const after = tab(id)!;
+    return shown(id)?.contentDocument === null && after.loadVersion > prior.loadVersion && after.load === "Loaded";
+  }).toBe(true);
+  expect(tab(id)?.history).toEqual(prior.history);
+  await expect.element(address).toHaveAccessibleDescription("");
 
   const unavailable = new URL(site);
   unavailable.protocol = "https:";

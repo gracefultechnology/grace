@@ -296,6 +296,18 @@ it("Use the website under Grace's controls", async () => {
   expect(tab(1).load).toBe("Loading");
   await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
   await expect.poll(() => [tab(1).load, tab(1).secure]).toEqual(["Loaded", true]);
+  const siteAddress = page.getByRole("textbox", { name: "Address" });
+  const firstVisit = tab(1).history;
+  await expect.element(siteAddress).toHaveAccessibleDescription("Encrypted connection");
+  await native.ask("pageStarted", { id: "tab-1", url: "https://example.com/" });
+  await expect.element(siteAddress).toHaveAccessibleDescription("");
+  await native.report("tab-1", "https://example.com/", 35, { securityBlocked: true });
+  await expect.poll(async () => { await native.route(); return shown(page.getByText("This page isn't safe to open.")); }).toBe(true);
+  expect([tab(1).history, native.calls("reloadSurface")]).toEqual([firstVisit, []]);
+  await native.started("tab-1");
+  await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(async () => { await native.route(); return tab(1).secure; }).toBe(true);
+  await expect.element(siteAddress).toHaveAccessibleDescription("Encrypted connection");
   // spec/app/surface.md, "The page fills the rect the interface measured for it"
   const pageArea = document.querySelector("section[aria-label='Internet'] div[aria-hidden='true']")!;
   await expect.poll(() => native.calls("setBounds").at(-1)).toMatchObject({ id: "tab-1", ...rectOf(pageArea) });
