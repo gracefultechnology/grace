@@ -170,7 +170,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       const start = try currentContext()
       if (!shown || !start || shown.key !== start.key || shown.alternateHref !== correction.href ||
           !canConfirmGuidedNameCorrection(try workspace.get(), correction, "Person")) return false
-      effect function observesOfferedName() {
+      const observesOfferedName = effect () => {
         const sameAccount = tryPromise(() => shown.account.current()) catch () => false
         if (!sameAccount || active !== shown || (try currentContext())?.key !== shown.key ||
             !canConfirmGuidedNameCorrection(try workspace.get(), correction, "Person")) return false
