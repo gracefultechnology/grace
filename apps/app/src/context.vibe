@@ -358,7 +358,7 @@ const unreadReport = (kind: string) => known.has(kind)
 export function render(s: Scene, now: number, { notDone, unread }: Last, told: readonly string[], selected: GuidedManagedSelection): Shown {
   const { device, assistant, preferences: { session } } = s.workspace
   const legacy = selected.kind === "legacy"
-  const visibleManaged = selected.kind === "mail" && device.surface === "Email" ? "Selected email subject: " + withholdMail({ text: selected.subject, passwords: [] }, namesCode(selected.subject))
+  const visibleManaged = selected.kind === "mail" && device.surface === "Email" ? "Selected email subject: " + selected.subjectForGrace
     : selected.kind === "calendar" && device.surface === "Calendar" ? "Selected calendar appointment: " + selected.title : ""
   const part = legacy || (device.surface !== "Email" && device.surface !== "Calendar") ? screen(s)
     : { lines: visibleManaged === "" ? [] : [visibleManaged], targets: [] }
