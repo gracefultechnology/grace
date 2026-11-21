@@ -214,14 +214,14 @@ function instantOf(value: string) {
   return Date.parse(value.length === 10 ? value + "T00:00:00" : value);
 }
 
-function Agenda({ calendar, move, open, busy, children }: {
+function Agenda({ calendar, today, move, open, busy, children }: {
   calendar: Extract<ManagedSnapshot, {kind: "calendar"}>;
+  today: number;
   move: (kind: Navigation, day: number) => void;
   open: (id: string) => void;
   busy: boolean;
   children: ReactNode;
 }) {
-  const today = dayOf(Date.now());
   const selected = calendar.window.selectedDay;
   const events = calendar.rows.toSorted((a, b) => instantOf(a.startAt) - instantOf(b.startAt));
   const between = (first: number, until: number) => events.filter((row) => instantOf(row.startAt) < midnight(until) && instantOf(row.endAt) > midnight(first));
@@ -248,7 +248,7 @@ function Agenda({ calendar, move, open, busy, children }: {
 }
 
 /** Grace's hosted read view for an Inbox or the primary Google calendar. */
-export function ManagedRead({ view }: { view: ReadView }) {
+export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const runtime = useRuntime();
   const account = useMachine(runtime).state;
   const [failed, setFailed] = useState<string>();
@@ -464,7 +464,7 @@ export function ManagedRead({ view }: { view: ReadView }) {
       {event.description && <PageText className="w-full whitespace-pre-wrap">{event.description}</PageText>}
     </section>
   ) : (
-    <Agenda calendar={snapshot} busy={pending} move={(move, day) => run({ kind: "calendarWindow", accountId, grant, move, day })} open={(id) => run({ kind: "open", id })}>
+    <Agenda calendar={snapshot} today={dayOf(now)} busy={pending} move={(move, day) => run({ kind: "calendarWindow", accountId, grant, move, day })} open={(id) => run({ kind: "open", id })}>
       {showNotice}
       {canSchedule && <Button variant="prominent" size="pill" onClick={() => setEditor({ key: projection })}>New appointment</Button>}
       {problem}

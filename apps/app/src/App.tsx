@@ -213,7 +213,7 @@ function Screen() {
       {useManaged && (surface === "Email" || surface === "Calendar") && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
           <AppWindow {...under(covered)} title={surface} icon={surface === "Email" ? <Mail size={26} /> : <CalendarDays size={26} />} closeLabel={`Close ${surface}`} onClose={visit("Home").onClick}>
-            <ManagedRead view={surface} />
+            <ManagedRead view={surface} now={now.getTime()} />
           </AppWindow>
         </OverPage>
       )}
