@@ -1331,6 +1331,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let unconfirmed: string | undefined;
   const fetch = window.fetch.bind(window);
   let events = [{ externalId: "event-1", title: "Dentist", description: "Bring your glasses.", location: "Main Street", startAt: time, endAt: end, isAllDay: false, etag: '"one"', editable: true, seriesId: null as string | null }];
+  const pagedVisit = { ...events[0], externalId: "paged-visit", title: "Lab visit" };
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
   const reminderEvent = { ...events[0], externalId: "reminder-only", title: "Eye exam", description: "Bring the referral." };
   let series = { ...occurrence, externalId: "visit-series", etag: '"series-one"', seriesId: null };
@@ -1484,12 +1485,19 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         }
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId });
       }
-      case "/api/v1/eliza/google/calendar/feed":
+      case "/api/v1/eliza/google/calendar/feed": {
         expect(api.searchParams.get("grantId")).toBe(grant);
+        const from = api.searchParams.get("timeMin") ?? "";
+        const until = api.searchParams.get("timeMax") ?? "";
+        const inWindow = (row: typeof pagedVisit) => row.startAt < until && row.endAt > from;
+        const cursor = JSON.stringify([from, until]);
+        const next = api.searchParams.get("pageToken");
+        if (next !== null && next !== cursor) return reply({ error: "Invalid page token for this interval" }, 400);
         return reply({
-          accountId: person.id, nextPageToken: null,
-          events: [...events, later].filter((row) => row.startAt < (api.searchParams.get("timeMax") ?? "") && row.endAt > (api.searchParams.get("timeMin") ?? "")),
+          accountId: person.id, nextPageToken: next === null && inWindow(pagedVisit) ? cursor : null,
+          events: (next === null ? [...events, later] : [pagedVisit]).filter(inWindow),
         });
+      }
       default: return fetch(input, options);
     }
   });
@@ -1633,6 +1641,8 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     }))).toBeUndefined();
     expect(changed).toEqual([]);
     await tap("Back to calendar");
+    await tap("Load more");
+    await expect.element(page.getByRole("button", { name: /Lab visit/ })).toBeVisible();
     await act(() => page.getByRole("radio", { name: "Month", exact: true }).click());
     await tap("Next month");
     await expect.element(page.getByRole("button", { name: /Dentist/ })).not.toBeInTheDocument();

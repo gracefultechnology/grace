@@ -270,8 +270,9 @@ effect function fetchPage(authorization: AccountActions.Shape, scope: ReadyScope
     return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, folder, search, counts: loaded.counts ?? (prior?.kind === "mail" ? prior.counts : undefined), rows, next: loaded.nextPageToken }
   }
   const window = prior?.kind === "calendar" ? prior.window : navigation(initialCalendarView.window, "Today", dayOf(try Clock.currentTimeMillis)).window
-  const from = home?.from ?? new Date(window.fromTime).toISOString()
-  const until = home?.until ?? new Date(window.mode === "MonthView" ? window.untilTime : Math.max(window.untilTime, midnight(window.selectedDay + 15))).toISOString()
+  const interval = next && prior?.kind === "calendar" ? prior : home
+  const from = interval?.from ?? new Date(window.fromTime).toISOString()
+  const until = interval?.until ?? new Date(window.mode === "MonthView" ? window.untilTime : Math.max(window.untilTime, midnight(window.selectedDay + 15))).toISOString()
   const loaded = try query("calendar/feed", { timeMin: from, timeMax: until, ...paging }, CalendarPage, authorization)
   if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
   const existing = next && prior?.kind === "calendar" ? prior.rows : []
