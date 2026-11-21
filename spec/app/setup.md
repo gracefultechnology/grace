@@ -737,33 +737,25 @@ calendar. For a repeating appointment, the person chooses a single occurrence
 or reviews and confirms the entire series separately. Grace checks provider
 evidence before showing success.
 
-Set-up's part is who may change anything: only the signed-in web account
-named by the change, through its current grant, and a device session alone
-never. Trash needs mail with Trash enabled, and an appointment change needs
-the calendar with changes enabled, so enabling one never enables the other.
-Moving a message to Trash or changing an existing appointment requires the
-ID and version that the person reviewed. Grace checks both when it stages
-the proposal and again before sending the change. For a whole-series change,
-Grace checks the series selected for review. A series lookup can open a
-review only while the selection that requested it is still on screen.
-Creating an appointment starts
-with a new item, and Undo refers to the confirmed Trash operation.
-The provider's receipt must name the same account, item and operation before
-Grace shows success. The managed Google Trash, Undo and
-appointment change run in the shell through these checks. They do not go
-through the [Email](./email.md) or [Calendar view](./calendarView.md)
-machines, whose rules hold Undo after confirmation, the read-back, the
-one-or-all choice and the evidence before success for the local mailbox and
-calendar only. The two laws below check who may change and that only the
-selected ID and version may be changed. The shell makes the rest of this
-heading's checks, and no rule here makes them: the second check of the ID
-and version before sending, a series lookup opening a review only while its
-selection is on screen, a new item for each created appointment, Undo
-naming the confirmed Trash operation, and the provider's receipt naming the
-same account, item and operation. Until the Email and Calendar view machines
-govern the managed path, Undo only after the provider's confirmation, the
-read-back with a new series' frequency and time zone, skipped months and the
-one-or-all choice are also promises of this heading that no rule checks.
+The two Setup laws below cover permission and selection. A managed change
+requires the signed-in web account, its current grant and the permission for
+that operation. Trash requires both mail and Trash access. An appointment
+change requires both calendar access and permission to change appointments.
+The selection check accepts only the exact, nonempty ID and version the
+person reviewed.
+
+The managed Google shell enforces the remaining steps at runtime. It checks
+the ID and version when it stages the proposal and again before sending.
+For a whole-series change it opens review only while the selection that
+requested the series is still on screen. A new appointment starts with a new
+item. Undo names the confirmed Trash operation. Before showing success, Grace
+checks that the provider receipt names the same account, item and operation.
+
+These runtime steps, including read-back of frequency and time zone, skipping
+months without the selected day and choosing one occurrence or the whole
+series, are outside the two Setup laws. The [Email](./email.md) and
+[Calendar view](./calendarView.md) rules cover the corresponding local
+mailbox and calendar operations.
 
 ```quint
 type ManagedChange = ManagedTrash | ManagedAppointmentChange
@@ -824,12 +816,11 @@ checks the current account and sign-in freshness when it receives the action
 and shown account together. The browser accepts only the registered callback
 with the request's own state and exactly one code. The request carries
 neither the recovery key nor a password. The service and tablet bind the
-code to the original native request and enforce its single use. Only the
-native recovery operation's own check that the exchange completed and was
-verified lets browser approval reach it. The browser, service and tablet
-enforce these checks at runtime, and no rule here checks them. The two approval laws
-below cover the decision given registration, freshness, account match and
-confirmation.
+code to the original native request and enforce its single use. Native
+recovery checks that the exchange completed and was verified before using
+the approval. These browser, service and tablet checks run outside the two
+Setup laws below, which take registration, freshness, account match and
+confirmation as inputs.
 
 ```quint
 pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
