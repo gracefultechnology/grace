@@ -2295,12 +2295,6 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       text: "Review and start the read plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target: "Account history" }] }],
     }),
-  }, {
-    said: ask,
-    answer: JSON.stringify({
-      text: "Review and start the read plan.", isQuestion: false, answers: [],
-      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target }, "ReadMail", "ReadMail", "ReadCalendar"] }],
-    }),
   }], { goalIncludes: "help page", labels: [target] }), client));
   const subject = "Reminder: your appointment tomorrow at 10 am";
   const incoming = await fetch(new URL("/fake/gmail/incoming", cloud), {
@@ -2412,26 +2406,39 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       default: return browserFetch(input, init);
     }
   });
-  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
-
-  try {
-    await act(() => userEvent.click(page.getByRole("button", { name: "Internet" })));
+  let visit = await cloudReadPlan(native, cloud, secret);
+  const { routeTo, tap } = visit;
+  const field = page.getByRole("textbox", { name: "Message to Grace" });
+  const openBrowserAndAsk = async () => {
+    await tap(page.getByRole("button", { name: "Internet" }));
     await native.route();
     await visitExampleSite(native);
-
     await tap(page.getByRole("button", { name: "Ask Grace" }));
-    const field = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(field);
-    await act(() => field.fill(invalidAsk));
-    await act(() => userEvent.keyboard("{Enter}"));
-    await routeTo(page.getByText("I could not prepare that read plan.", { exact: true }));
-    expect(page.getByRole("button", { name: "Start read plan" }).query()).toBeNull();
+  };
+  const reviewPlan = async () => {
+    await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+      said: ask,
+      answer: JSON.stringify({
+        text: "Review and start the read plan.", isQuestion: false, answers: [],
+        actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target }, "ReadMail", "ReadMail", "ReadCalendar"] }],
+      }),
+    }]), client));
     await act(() => field.fill(ask));
     await act(() => userEvent.keyboard("{Enter}"));
     await routeTo(page.getByRole("list", { name: "Read plan" }).getByText(target, { exact: true }));
     await expect.element(page.getByRole("region", { name: "Review read plan" }).getByText(ask, { exact: true })).toBeVisible();
     await tap(page.getByRole("button", { name: "Collapse", exact: true }));
     await expect.poll(async () => { await native.route(); return native.calls("presentSurface").at(-1)?.id; }).toBe("tab-1");
+  };
+
+  try {
+    await openBrowserAndAsk();
+    await act(() => field.fill(invalidAsk));
+    await act(() => userEvent.keyboard("{Enter}"));
+    await routeTo(page.getByText("I could not prepare that read plan.", { exact: true }));
+    expect(page.getByRole("button", { name: "Start read plan" }).query()).toBeNull();
+    await reviewPlan();
     const check = page.getByRole("button", { name: "Check page" });
     const plan = page.getByRole("region", { name: "Task plan" });
     const pending = plan.getByRole("paragraph");
@@ -2472,6 +2479,20 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
     expect(guideCalls).toBe(0);
     guideOwner = "guide-owner";
+    await tap(showLink);
+    await routeTo(page.getByText("The page or task changed. Ask me again on the page you want."));
+    expect(guideCalls).toBe(0);
+    await visit.dispose();
+    visit = await cloudReadPlan(native, cloud, secret);
+    currentPage = home;
+    await openBrowserAndAsk();
+    await reviewPlan();
+    await tap(page.getByRole("button", { name: "Start read plan" }));
+    await tap(allowReading);
+    await tap(resumeReading);
+    currentPage = about;
+    await native.report("tab-1", origin + about.path, 100);
+    await tap(resume);
     for (const challenge of ["captcha", "code"] as const) {
       challengeShown = challenge;
       await tap(showLink);
@@ -2602,7 +2623,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(plan.getByText("Open page: Help center", { exact: true }));
     await expect.poll(() => plan.getByText(`Open message: ${subject}`, { exact: true }).elements().length).toBe(2);
   } finally {
-    await dispose();
+    await visit.dispose();
     accountNetwork.mockRestore();
     localStorage.clear();
   }
