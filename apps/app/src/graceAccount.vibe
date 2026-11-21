@@ -145,6 +145,15 @@ export effect function browserFilesAccess() {
   return try decode(try accepted(webTransport, "/api/product/files/scope", "GET"), Schema.Struct({ owner: filesScope, session: filesScope }))
 }
 
+const BrowserGuideLease = Schema.Struct({ id: Schema.NullOr(Schema.NonEmptyString) })
+
+export effect function nativeBrowserGuideLease() {
+  const bridge = accountPlugin
+  if (bridge === undefined) return undefined
+  const response = try tryPromise(() => bridge.browserGuideLease())
+  return (try Schema.decodeUnknownEffect(BrowserGuideLease)(response)).id ?? undefined
+}
+
 export effect function browserAccountId() {
   return (try session(webTransport)).account?.id
 }

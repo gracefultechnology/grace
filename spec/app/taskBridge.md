@@ -1,8 +1,8 @@
 # Convert the current bill preparation into a scoped review
 
-This stateless library connects [bill preparation](./billpay.md) to the existing
+This stateless library connects [bill preparation](./prep.md) to the existing
 [workspace review](./workspace.md), without state or a payment/review transition.
-For every BillPreparation handoff, the host must use this conversion, then consume
+For every Prep handoff, the host must use this conversion, then consume
 its result through existing `reviewCommitment` with the authenticated Host actor.
 
 ## Story: Review the payment I actually chose
@@ -29,10 +29,10 @@ The existing payment revision increment rejects a duplicate original envelope.
 These laws cover the conversion. They do not establish that a supplied state is
 the live application state or that browser evidence describes the actual page.
 Those remain host obligations. Direct workspace review is for callers that actually
-performed equivalent provider-form/choice verification, not an alternative BP handoff route.
+performed equivalent provider-form/choice verification, not an alternative preparation handoff route.
 
 ```quint
-import billpay as BP from "./billpay"
+import prep as P from "./prep"
 import billKind as BK from "./billKind"
 import commitment as CM from "./commitment"
 import task as T from "./task"
@@ -44,13 +44,13 @@ import browser as B from "./browser"
 import browserControls as BC from "./browserControls"
 import execution as X from "./execution"
 
-type ScopedPreparedReview = { handoff: BP::BillEffect, captured: W::CommitmentTokens }
+type ScopedPreparedReview = { handoff: P::PrepEffect, captured: W::CommitmentTokens }
 type ReviewConversion = ReviewDeclined | ReviewConverted({ report: W::CurrentReview })
 
 pure def reportFromHandoff(transfer: ScopedPreparedReview): W::CurrentReview =
   val handoff = transfer.handoff
   match handoff {
-    | ReviewPayment(details) => {
+    | Review(details) => {
       deviceVersion: transfer.captured.deviceVersion,
       browserRevision: transfer.captured.browserRevision,
       taskVersion: transfer.captured.taskVersion,
@@ -61,16 +61,16 @@ pure def reportFromHandoff(transfer: ScopedPreparedReview): W::CurrentReview =
     }
   }
 
-pure def preparationMatchesHandoff(preparation: BP::BillPreparation, transfer: ScopedPreparedReview): bool =
+pure def preparationMatchesHandoff(preparation: P::Prep, transfer: ScopedPreparedReview): bool =
   val handoff = transfer.handoff
   match handoff {
-    | ReviewPayment(details) => preparation.live and preparation.phase == BP::HandedOff and
+    | Review(details) => preparation.live and preparation.phase == P::HandedOff and
       details.version == preparation.version and details.key == preparation.key and
       details.proposal == preparation.choice and details.evidence == preparation.evidence
   }
 
 pure def convertPreparedReview(
-  preparation: BP::BillPreparation, w: W::Workspace,
+  preparation: P::Prep, w: W::Workspace,
   transfer: ScopedPreparedReview, by: W::WorkspaceActor
 ): ReviewConversion =
   if (preparationMatchesHandoff(preparation, transfer) and W::commitmentTokensMatch(w, transfer.captured) and
@@ -79,7 +79,7 @@ pure def convertPreparedReview(
   else ReviewDeclined
 
 pure def lawConversionKeepsCurrentChoice(
-  preparation: BP::BillPreparation, w: W::Workspace,
+  preparation: P::Prep, w: W::Workspace,
   transfer: ScopedPreparedReview, by: W::WorkspaceActor
 ): bool =
   val converted = convertPreparedReview(preparation, w, transfer, by)
@@ -92,7 +92,7 @@ pure def lawConversionKeepsCurrentChoice(
 }
 
 pure def lawConversionRequiresCurrentWorkspace(
-  preparation: BP::BillPreparation, w: W::Workspace,
+  preparation: P::Prep, w: W::Workspace,
   transfer: ScopedPreparedReview, by: W::WorkspaceActor
 ): bool =
   val converted = convertPreparedReview(preparation, w, transfer, by)
@@ -103,7 +103,7 @@ pure def lawConversionRequiresCurrentWorkspace(
 }
 
 pure def lawCurrentPreparationConverts(
-  preparation: BP::BillPreparation, w: W::Workspace,
+  preparation: P::Prep, w: W::Workspace,
   transfer: ScopedPreparedReview, by: W::WorkspaceActor
 ): bool =
   val converted = convertPreparedReview(preparation, w, transfer, by)
@@ -123,14 +123,14 @@ preparation pauses, or with a payload field or captured token that is stale. The
 
 ```quint
 pure val preparationValues = {
-  val begun = BP::begin(BP::initial, CM::exampleKey, "source", T::Person)
-  val signed = BP::inspectAccess(begun, { key: CM::exampleKey, version: 1, access: BP::SignedIn }, T::Host)
-  val facts = BP::readFacts(signed, { key: CM::exampleKey, version: 2, evidence: "source", facts: K::sampleBillFacts }, T::Host)
-  val chosen = BP::choose(BP::confirmFacts(facts, T::Person), CM::exampleTerms, T::Person)
-  val verified = BP::verifyForm(chosen, { ...CM::exampleReview, revision: 4 }, T::Host)
-  val handed = BP::handOff(verified, T::Actuator).state
-  val paused = BP::pause(handed, T::Person)
-  Set(BP::initial, chosen, verified, handed, paused, BP::resume(paused, T::Person))
+  val begun = P::begin(P::initial, CM::exampleKey, "source", T::Person)
+  val signed = P::inspectAccess(begun, { key: CM::exampleKey, version: 1, access: P::SignedIn }, T::Host)
+  val facts = P::readFacts(signed, { key: CM::exampleKey, version: 2, evidence: "source", facts: K::sampleBillFacts }, T::Host)
+  val chosen = P::choose(P::confirmFacts(facts, T::Person), CM::exampleTerms, T::Person)
+  val verified = P::verifyForm(chosen, { ...CM::exampleReview, revision: 4 }, T::Host)
+  val handed = P::handOff(verified, T::Actuator).state
+  val paused = P::pause(handed, T::Person)
+  Set(P::initial, chosen, verified, handed, paused, P::resume(paused, T::Person))
 }
 pure val wValues = {
   val started = W::changeLifecycle(W::initial, W::StartupSucceeded, W::Host)
@@ -162,14 +162,14 @@ pure val wValues = {
 }
 pure val transferValues = {
   val details = { key: CM::exampleKey, proposal: CM::exampleTerms, evidence: "source", version: 4 }
-  val valid = wValues.map(w => { handoff: BP::ReviewPayment(details), captured: { deviceVersion: w.device.contextVersion,
+  val valid = wValues.map(w => { handoff: P::Review(details), captured: { deviceVersion: w.device.contextVersion,
     browserRevision: w.browser.revision, taskVersion: w.assistant.workVersion, revision: w.commitment.revision, attempt: w.commitment.attempt } })
   valid
-    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, version: 3 }) }))
-    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, key: { ...CM::exampleKey, account: "other-account" } }) }))
-    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, proposal: T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } }) }) }))
-    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, evidence: "other-evidence" }) }))
-    .union(valid.map(t => { ...t, handoff: BP::ReviewPayment({ ...details, evidence: "" }) }))
+    .union(valid.map(t => { ...t, handoff: P::Review({ ...details, version: 3 }) }))
+    .union(valid.map(t => { ...t, handoff: P::Review({ ...details, key: { ...CM::exampleKey, account: "other-account" } }) }))
+    .union(valid.map(t => { ...t, handoff: P::Review({ ...details, proposal: T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } }) }) }))
+    .union(valid.map(t => { ...t, handoff: P::Review({ ...details, evidence: "other-evidence" }) }))
+    .union(valid.map(t => { ...t, handoff: P::Review({ ...details, evidence: "" }) }))
     .union(valid.map(t => { ...t, captured: { ...t.captured, deviceVersion: t.captured.deviceVersion - 1 } }))
     .union(valid.map(t => { ...t, captured: { ...t.captured, browserRevision: t.captured.browserRevision - 1 } }))
     .union(valid.map(t => { ...t, captured: { ...t.captured, taskVersion: t.captured.taskVersion - 1 } }))

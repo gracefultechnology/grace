@@ -1,7 +1,6 @@
 // spec/app/files.md, "A library belongs to one owner and identifies files independently of their names"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"
 import { browserFilesAccess } from "./graceAccount.vibe"
 import type { FileAttachment, FilesPort } from "./filesPlugin.ts"
-// eslint-disable-next-line @typescript-eslint/consistent-type-imports -- a schema field reads this import as a value; vibelang's ESLint tree shows it as `typeof` (smithersai/vibelang#666)
 import { HeldFile } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
 
