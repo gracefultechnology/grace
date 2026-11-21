@@ -180,8 +180,9 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
           (state === "Ordinary" || state === "PublicOnly") && hasPublicName(fresh, start.url, correction.label, correction.href)
       }
       const witnessed = (try observesOfferedName()) && (try observesOfferedName())
+      const sameAccount = witnessed && (tryPromise(() => shown.account.current()) catch () => false)
       if (active !== shown) return false
-      if (witnessed && (try currentContext())?.key === start.key) {
+      if (sameAccount && (try currentContext())?.key === start.key) {
         const accepted = workspace.send({ type: "confirmGuidedNameCorrection", correction }, "Person") catch () => undefined
         if (accepted !== undefined) return true
       }

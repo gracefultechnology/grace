@@ -238,7 +238,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {localCommands && guide.mic === "GuideMicUnavailable" && <PageText role="status">Cloud speech is unavailable. You can type a Passwords command.</PageText>}
           {localCommands && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that Passwords command. Try typing it.</PageText>}
           {canCheck && <AnswerChips>
-            {correction && <AnswerChip onClick={chooseSiteName}>Use “{correction.label}” for this step</AnswerChip>}
+            {correction && <AnswerChip className="mr-0 h-auto min-h-13 max-w-full shrink whitespace-normal wrap-anywhere" onClick={chooseSiteName}>Use “{correction.label}” for this step</AnswerChip>}
             {guideKey && <AnswerChip disabled={checking?.phase === "checking" || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>Show me the link</AnswerChip>}
             <AnswerChip disabled={checking?.phase === "checking"} onClick={check}>{label}</AnswerChip>
           </AnswerChips>}

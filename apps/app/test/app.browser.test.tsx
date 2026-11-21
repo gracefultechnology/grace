@@ -2436,9 +2436,15 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
   let heading = "Example";
   let domRevision = 1;
   let replacement: "idle" | "armed" | "observed" | "replaced" = "idle";
+  let session = "2".repeat(64);
+  let observationsBeforeSignIn = 0;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       if (replacement === "armed") replacement = "observed";
+      if (observationsBeforeSignIn > 0) {
+        observationsBeforeSignIn--;
+        if (observationsBeforeSignIn === 0) session = "3".repeat(64);
+      }
       return { documentId, frameScope: "main", result: {
         snapshotId: documentId, domRevision, url, title: heading, text: heading,
         complete: true, readyState: "complete", blockers: [],
@@ -2464,7 +2470,7 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
           documentId = "replacement-directory";
           replacement = "replaced";
         }
-        return Promise.resolve(Response.json({ accountId: "guide-owner", owner: "1".repeat(64), session: "2".repeat(64) }));
+        return Promise.resolve(Response.json({ accountId: "guide-owner", owner: "1".repeat(64), session }));
       case "/api/auth/session": return Promise.resolve(Response.json({ account: { id: "guide-owner", email: "owner@grace.test" } }));
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
@@ -2506,6 +2512,14 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
     await tap(offer);
     await routeTo(status("Link unavailable").getByText("The page or task changed. Ask me again on the page you want."));
     expect(replacement).toBe("replaced");
+    await expect.element(pending(requested)).toHaveAttribute("aria-current", "step");
+    expect(pageReceipt.query()).toBeNull();
+
+    await tap(showLink);
+    await routeTo(offer);
+    observationsBeforeSignIn = 2;
+    await tap(offer);
+    await routeTo(status("Link unavailable").getByText("The page or task changed. Ask me again on the page you want."));
     await expect.element(pending(requested)).toHaveAttribute("aria-current", "step");
     expect(pageReceipt.query()).toBeNull();
 
