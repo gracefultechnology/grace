@@ -575,11 +575,11 @@ pure def lawCloseNeverSendsOrRetiresADraft(device: S::Shell, calendarView: V::Ca
 pure def lawCloseKeepsTheComposerContent(device: S::Shell, calendarView: V::CalendarView, mailbox: E::Mailbox,
     files: F::Files, app: S::Surface, draftId: str, by: RegistryActor): bool =
   val closed = closeApp(device, calendarView, mailbox, files, app, draftId, by)
+  val empty = app == S::Email and E::canCloseEmptyComposer(mailbox, E::MailUser)
+  val expected = if (empty) E::closeEmptyComposer(mailbox, E::MailUser) else mailbox
   match closed {
     | CloseDeclined => true
     | ClosedApp(result) =>
-        val empty = app == S::Email and E::canCloseEmptyComposer(mailbox, E::MailUser)
-        val expected = if (empty) E::closeEmptyComposer(mailbox, E::MailUser) else mailbox
         result.mail.draft.to == expected.draft.to and result.mail.draft.subject == expected.draft.subject and
         result.mail.draft.body == expected.draft.body and result.mail.draftAttachments == expected.draftAttachments and
         result.mail.draft.cc.subseteq(expected.draft.cc) and expected.draft.cc.subseteq(result.mail.draft.cc) and
