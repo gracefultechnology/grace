@@ -296,6 +296,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const words = (label: string) => (label.toLowerCase().replace(/[’']s\b/gu, "").match(/[\p{L}\p{N}]+/gu) ?? [])
       .map(word => word === "men" ? "man" : word === "women" ? "woman" : word.replace(/s$/u, ""));
     const namedWords = new Set(words(named?.subject ?? ""));
+    const labelMatchesGoal = (label: string | undefined) => {
+      const tokens = label === undefined ? [] : words(label);
+      return tokens.length > 0 && tokens.every(word => namedWords.has(word));
+    };
     const visited = new Set([initial.url]);
     const disclosed = new Set<string>();
     const disclosures: { url: string; documentId: string; snapshotId: string; instruction: string; label: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
@@ -330,18 +334,32 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
           if (failure) {
             const instruction = failure.textContent ?? "The link could not be highlighted";
             const [, branch, leaf] = instruction.match(/^The open menu (?:“[^”]+” › )*“([^”]+)” calls this link “([^”]+)”\.?$/u) ?? [];
-            if (branch && leaf && !outcome.nameCorrection && [branch, leaf].every(label => words(label).length > 0 && words(label).every(word => namedWords.has(word)))) {
+            const branchMatches = labelMatchesGoal(branch);
+            const leafMatches = labelMatchesGoal(leaf);
+            const offeredControl = leaf ? `Use “${leaf}” for this step` : undefined;
+            const approval = offeredControl ? page.getByRole("button", { name: offeredControl, exact: true }) : undefined;
+            if (branch && leaf && approval && !outcome.nameCorrection && branchMatches && leafMatches) {
               expect(actionsTaken()).toBeLessThan(7);
-              await userEvent.click(page.getByRole("button", { name: `Use “${leaf}” for this step`, exact: true }));
+              await userEvent.click(approval);
               await expect.poll(() => plan.getByText(`Find and check “${leaf}”.`, { exact: true }).query() !== null, {
                 timeout: 45_000,
               }).toBe(true);
               outcome.nameCorrection = { original: named.subject, branch, leaf, instruction, documentId: previous.documentId };
               await userEvent.click(showLink);
             } else {
+              const last = disclosures.at(-1);
+              if (exploratory && branch && leaf && approval && offeredControl && approval.query() !== null &&
+                  (!branchMatches || !leafMatches) && last?.documentId === previous.documentId && last.label === branch) {
+                await expect.element(approval).toBeVisible();
+                outcome.miss = "rejected-scoped-leaf";
+                outcome.rejectedNameCorrection = {
+                  original: named.subject, branch, leaf, offeredControl, branchMatches, leafMatches,
+                  documentId: previous.documentId, instruction,
+                };
+                return;
+              }
               const nextMenu = page.getByRole("button", { name: "Try another menu", exact: true });
               if (nextMenu.query() === null) {
-                const last = disclosures.at(-1);
                 if (exploratory && last?.documentId === previous.documentId &&
                     (instruction === `I couldn’t see “${named.subject}” in the open menu. You can try another menu.` ||
                      instruction === `I couldn’t find “${named.subject}” in the “${last.label}” menu.`)) {

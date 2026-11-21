@@ -191,6 +191,17 @@ jobs:
             select(map(.taskId | tonumber) == $tasks) |
             map({taskId, cohort: (if (.taskId | tonumber) as $id | $required | index($id) then "required" else "exploratory" end),
               miss: .outcome.miss, failed: (.outcome.failure != null), completed: (.outcome.graceTerminal | type == "string"),
+              rejectedLeaf: (if .outcome.miss == "rejected-scoped-leaf" then
+                .outcome.rejectedNameCorrection as $offer |
+                .outcome.disclosures[-1] as $last |
+                ($offer.original | type == "string" and length > 0) and
+                ($offer.leaf | type == "string" and length > 0) and
+                ($offer.branch | type == "string" and length > 0) and
+                ($offer.documentId | type == "string" and length > 0) and
+                $offer.documentId == $last.documentId and $offer.branch == $last.label and
+                ($offer.branchMatches == false or $offer.leafMatches == false) and
+                $offer.offeredControl == ("Use “" + $offer.leaf + "” for this step")
+                else false end),
               officialScore: .webArena.officialScore, noActionScore: .webArena.noActionScore,
               hostedGuidance: (.webArena.qualifiedHostedGuidance == true),
               checkedPlan: (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
@@ -205,7 +216,8 @@ jobs:
           ' "$WEBARENA_RESULTS/scorecard.json" >> "$GITHUB_STEP_SUMMARY"
           jq -e '
             all(.[]; (.failed | not) and (.completed or (.cohort == "exploratory" and
-              (.miss == "missing-reviewed-step" or .miss == "target-absent-from-open-menu" or .miss == "repeated-address"))) and
+              (.miss == "missing-reviewed-step" or .miss == "target-absent-from-open-menu" or .miss == "repeated-address" or
+                (.miss == "rejected-scoped-leaf" and .rejectedLeaf)))) and
               .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1)) and
             all(.[] | select(.cohort == "required"); .officialScore == 1 and .hostedGuidance and .checkedPlan)
           ' "$WEBARENA_RESULTS/scorecard.json"
