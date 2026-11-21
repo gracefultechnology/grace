@@ -409,6 +409,14 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("radio", { name: "Photos" }));
   await click(piano);
   await click(page.getByRole("button", { name: "Share" }));
+  // spec/app/mailboxes.md, "Writing starts at Who is it to?, and Cc and Bcc show once opened or used"
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(page.getByText("Email discarded")).toBeVisible();
+  await expect.element(row("Inbox")).toHaveAttribute("aria-current", "page");
+  await click(page.getByRole("button", { name: "Close Email" }));
+  await click(page.getByRole("button", { name: /^Files/ }));
+  await click(piano);
+  await click(page.getByRole("button", { name: "Share" }));
   await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
   await click(page.getByRole("button", { name: "Susan" }));
   await expect.element(subject()).toHaveValue("A photo");
