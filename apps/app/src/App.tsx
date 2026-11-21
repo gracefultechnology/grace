@@ -214,7 +214,7 @@ function Screen() {
       {!ours && (surface === "Email" || surface === "Calendar") && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
           <AppWindow {...under(covered)} title={surface} icon={surface === "Email" ? <Mail size={26} /> : <CalendarDays size={26} />} closeLabel={`Close ${surface}`} onClose={visit("Home").onClick}>
-            {owner === "Hosted" ? <ManagedRead view={surface} />
+            {owner === "Hosted" ? <ManagedRead view={surface} now={now.getTime()} />
               : <ListRow role="status" className="m-6" leading={<Spinner size="lg" aria-hidden />} title={`Getting your ${surface === "Email" ? "email" : "calendar"}…`} />}
           </AppWindow>
         </OverPage>

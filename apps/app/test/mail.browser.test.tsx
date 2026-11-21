@@ -5,6 +5,7 @@ import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
+import { tabUrl } from "../gen/app__browser.ts";
 import { approveSave, create, initial as emptyOccurrence, noDetails, noIdentity, save } from "../gen/app__calendar.ts";
 import { bindCalendar, initial as emptyCalendar, publishOccurrence, type CalendarView } from "../gen/app__calendarView.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
@@ -12,9 +13,10 @@ import { Email } from "../src/Email.tsx";
 import { RuntimeContext } from "../src/useApp.ts";
 import { application } from "../src/app.vibe";
 import { Instances } from "../src/instances.vibe";
+import { chooseMailLink } from "../src/mailLink.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
-import { mount, actOnScreen, browserAccountResponse } from "./screen.tsx";
+import { tabletView, actOnScreen, browserAccountResponse } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -79,8 +81,11 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
     localStorage.setItem("accounts", JSON.stringify(kept()));
   }
   const connectivity = vi.spyOn(window.navigator, "onLine", "get");
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  const view = await mount(runtime);
+  const open = () => ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
+  let runtime = open();
+  let view = tabletView(runtime);
+  onTestFinished(() => view.dispose());
+  await view.render();
   onTestFinished(async () => {
     connectivity.mockRestore();
     browserSession.mockRestore();
@@ -89,6 +94,28 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
   });
   return {
     secret,
+    restartFromEarlierMailbox: async (account: number) => {
+      await view.dispose();
+      const key = `mail/${account}`;
+      const raw = localStorage.getItem(key);
+      if (raw === null) throw new Error("Missing the saved mailbox");
+      const box = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))(raw);
+      expect(box.draftsTotal).toBeTypeOf("number");
+      const { draftsTotal: _, ...earlier } = box;
+      localStorage.setItem(key, JSON.stringify(earlier));
+      runtime = open();
+      view = tabletView(runtime);
+      await view.render();
+    },
+    browserTabs: () => runtime.runPromise(Effect.flatMap(Workspaces, (desk) => Effect.map(desk.get(), (w) => w.browser.tabs.map((tab) => [tab.id, tabUrl(tab)])))),
+    pendingLink: (account: number) => runtime.runPromise(Effect.gen(function*() {
+      const shelf = yield* Instances;
+      const box = yield* shelf.mail(account);
+      const { generation, messageRef: ref, link } = yield* box.get();
+      const read = shelf.held(account, ref)?.read;
+      if (!read || link.status !== "LinkHeld") throw new Error("No email link is waiting for confirmation");
+      return () => runtime.runPromise(chooseMailLink({ account, ref, generation, version: read.version, link: link.link }, "confirm"));
+    })),
     appointments: (key: number) => runtime.runPromise(Effect.gen(function*() {
       const shelf = yield* Instances;
       const calendar = yield* shelf.calendar(key);
@@ -588,7 +615,7 @@ it("Write or reply and confirm before sending", async () => {
 }, 600_000);
 
 it('Review an unsent reply (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
-  const { secret, host, company } = await start();
+  const { secret, host, company, restartFromEarlierMailbox } = await start();
   await replyToClinic();
   await act(() => userEvent.fill(words(), "Please call me tomorrow."));
   const send = page.getByRole("button", { name: "Send", exact: true });
@@ -606,12 +633,59 @@ it('Review an unsent reply (spec/app/email.md, "Only the current approved draft 
   expect((await operations()).slice(previous).map((c) => c.receipt.state)).toEqual(["prepared"]);
   await expect.poll(async () => (await company()).sendLookups.includes("prepared")).toBe(true);
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "lookupMissing"), client));
+  await restartFromEarlierMailbox(1);
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await expect.element(words()).toHaveValue("Please call me this afternoon.");
+  await expect.element(send).toBeDisabled();
   await host("Offline");
   await host("Online");
   await expect.poll(async () => (await company()).sendLookups.includes("missing")).toBe(true);
   await expect.element(send).toBeDisabled();
   expect((await company()).boxes.flatMap((box) => box.mail).filter((message) => message.subject === "Re: Reminder: your appointment tomorrow at 10 am" && message.labels.includes("SENT"))).toHaveLength(0);
   expect(await operations()).toHaveLength(previous + 1);
+});
+
+it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email released opens in a new Browser tab, and no other link does")', async () => {
+  // spec/app/email.md, "A scam warning needs current evidence and holds that message's links"
+  const { person, company, browserTabs, pendingLink } = await start();
+  const before = await browserTabs();
+  const sent = async () => (await company()).boxes.flatMap((box) => box.mail.filter((message) => message.labels.includes("SENT")).map((message) => message.externalId));
+  const priorMail = await sent();
+  const openEmail = () => click(page.getByRole("button", { name: /^Email/ }));
+  const address = page.getByRole("textbox", { name: "Address", exact: true });
+  const flagged = page.getByRole("link", { name: /confirm-password/ });
+  const warning = page.getByRole("dialog", { name: "Open this link?" });
+  await openEmail();
+  await opened(/Account Security/, "Urgent: confirm your password");
+  await expect.element(page.getByRole("link", { name: /invalid\.example/ })).not.toBeInTheDocument();
+  const target = flagged.element().textContent;
+  await click(flagged);
+  await expect.element(warning.getByText(target ?? "", { exact: true })).toBeVisible();
+  expect(await browserTabs()).toEqual(before);
+  await click(warning.getByRole("button", { name: "Stay in email" }));
+  expect(warning.query()).toBeNull();
+  await click(flagged);
+  const confirmEarlier = await pendingLink(1);
+  await person({ type: "setUse", id: 1, use: { mail: false, calendar: true, contacts: true } });
+  await expect.element(warning).not.toBeInTheDocument();
+  expect(await confirmEarlier()).toBe(false);
+  expect(await browserTabs()).toEqual(before);
+  await person({ type: "setUse", id: 1, use: { mail: true, calendar: true, contacts: true } });
+  await expect.element(warning.getByText(target ?? "", { exact: true })).toBeVisible();
+  await click(warning.getByRole("button", { name: "Open in Browser" }));
+  await expect.element(address).toHaveValue(target ?? "");
+  const first = await browserTabs();
+  expect(first.slice(0, -1)).toEqual(before);
+  await click(page.getByRole("button", { name: "Home", exact: true }));
+  await openEmail();
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await opened(/Riverside Power/, "Your Riverside Power bill is ready");
+  const ordinary = page.getByRole("link", { name: /bill\// });
+  const destination = ordinary.element().textContent;
+  await click(ordinary);
+  await expect.element(address).toHaveValue(destination ?? "");
+  expect((await browserTabs()).slice(0, -1)).toEqual(first);
+  expect(await sent()).toEqual(priorMail);
 });
 
 it("Delete a message and recover it safely", async () => {

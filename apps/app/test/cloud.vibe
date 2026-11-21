@@ -89,8 +89,8 @@ type Account = {
   boxes: Box[]
   sessions: Session[]
   outage: boolean
-  mailFault?: "dispatch" | "lookupMissing"
-  calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate"
+  mailFault?: Outage["mailFault"]
+  calendarFault?: Outage["calendarFault"]
   sendLookups: string[]
   script: Scripted[]
   decision?: ScriptedDecision
@@ -155,7 +155,7 @@ schema PageChoice { address: string; choice: "allow" | "cancel" | "unfinished" }
 schema OtherConnect { address: string; password: string; incoming?: string; outgoing?: string }
 schema IncomingMail { to: Mailbox; from: Filled; fromEmail: Mailbox; subject: string; body: string }
 schema Expiry { address: string }
-schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" }
+schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" | "reauthCreate" | "conflictCreate" }
 schema ChatContext { includes: string[]; excludes: string[] }
 schema Scripted { said?: string; context?: ChatContext; answer: string }
 schema ScriptedDecision { goalIncludes: Filled; labels: Filled[] }
@@ -319,7 +319,7 @@ function seeded(provider: Slug, address: string, at: number, site: string, visit
         "Dear Margaret, this is a reminder of your appointment with Dr. Patel tomorrow at 10:00 am. Please fill in the attached form and bring it with you.",
         { attachments: [{ partId: "2", attachmentId: "visit-form", filename: "Visit form.pdf", mimeType: "application/pdf", size: 48213, pages: 2 }] }),
       letter("scam", address, at, "Account Security", "security-alert@acc0unt-help.co", "Urgent: confirm your password",
-        `Your account will be closed today. To keep it open, confirm your password here: ${site}/${visit}/confirm-password/`,
+        `Your account will be closed today. To keep it open, confirm your password here: ${site}/${visit}/confirm-password/ Alternative: https://reader:example@invalid.example/`,
         { isUnread: false, labels: ["INBOX"], triageScore: 0, triageReason: "", suspicion: "Asks for your password urgently from an address that imitates a real company" })
     ];
     when "outlook": one("St. Mark’s Church Office", "office@stmarks.test", "Thanksgiving dinner sign-up", "Dear Margaret, our Thanksgiving dinner is on Thursday the 26th at 5 pm in the hall. Reply to let us know if you’ll come.");
@@ -642,12 +642,14 @@ effect function store(site: string) {
   }
 
   effect function draftList(fixed?: Slug) {
-    const { grantId } = try HttpServerRequest.schemaSearchParams(DraftsQuery)
+    const { grantId, pageToken } = try HttpServerRequest.schemaSearchParams(DraftsQuery)
     const { box } = try connection(fixed, grantId, true)
     const drafts = box.mail.filter((m) => m.labels.includes("DRAFT")).map((m) => ({
       draftId: draftIdOf(m.externalId), messageId: m.externalId, subject: m.subject, to: m.to.map(bare), snippet: m.snippet, updatedAt: m.receivedAt
     }))
-    return try HttpServerResponse.json({ version: 1, drafts, nextPageToken: null })
+    const cursor = pageToken === undefined ? 0 : drafts.findIndex((entry) => entry.draftId === pageToken)
+    if (cursor < 0) throw new Missing()
+    return try HttpServerResponse.json({ version: 1, drafts: drafts.slice(cursor, cursor + 1), nextPageToken: drafts[cursor + 1]?.draftId ?? null })
   }
 
   effect function draftContent(fixed?: Slug) {
@@ -816,6 +818,10 @@ effect function store(site: string) {
     if (fault !== undefined) try change(key, (a) => ({ ...a, calendarFault: undefined }))
     if (fault === "beforeCreate") throw new Unavailable()
     if (fault === "refuseCreate") throw new BadAddress()
+    if (fault === "reauthCreate" || fault === "conflictCreate") {
+      const error = fault === "reauthCreate" ? "google_reauth_required" : "idempotency_conflict"
+      return try HttpServerResponse.json({ error, errorDescription: fault === "reauthCreate" ? "Google reauth required." : "Idempotency conflict.", retryable: false, outcome: "not_accepted" }, { status: 409 })
+    }
     const create = effect {
       const token = (try Ref.get(googleLinks)).get(found.grantId)
       if (token === undefined) return try recordAppointment(key, found, fields)
@@ -1334,7 +1340,7 @@ export effect function expire(cloud: string, key: string, address: string) {
   try post(cloud, "/fake/expire", { address }, key)
 }
 
-export effect function outage(cloud: string, key: string, down: boolean, fault?: "dispatch" | "lookupMissing" | "createResponse" | "beforeCreate" | "refuseCreate") {
+export effect function outage(cloud: string, key: string, down: boolean, fault?: Outage["mailFault"] | Outage["calendarFault"]) {
   try post(cloud, "/fake/outage", fault === "dispatch" || fault === "lookupMissing" ? { down, mailFault: fault } : { down, calendarFault: fault }, key)
 }
 

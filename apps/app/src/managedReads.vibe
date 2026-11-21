@@ -1,6 +1,8 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
 import { type Setup as SetupState, Machine as Setup, isSelectedVersion, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { initial as initialCalendarView, type Navigation, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { dayOf, midnight, navigation } from "./calendarWindow.vibe"
 import type { Recurrence } from "../gen/app__calendar.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import { Library } from "./files.vibe"
@@ -18,7 +20,11 @@ const nullableText = Schema.NullOr(Schema.String)
 schema MailMetadata { historyId?: nullableText }
 export schema MailRow { metadata?: MailMetadata; externalId: idField; from: string; subject: string; receivedAt: dateField; isUnread: boolean }
 export schema EventRow { etag?: nullableText; editable?: boolean; seriesId?: nullableText; timezone?: nullableText; externalId: idField; title: string; description: string; location: string; startAt: dateField; endAt: dateField; isAllDay: boolean }
-const MailPage = Schema.Struct({ accountId: idField, messages: Schema.Array(MailRow), nextPageToken: Schema.NullOr(Schema.String) })
+const Folder = Schema.Literals(["inbox", "sent", "drafts", "trash"])
+export type ManagedFolder = typeof Folder.Type
+const count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const MailCounts = Schema.Struct({ inboxUnread: count, drafts: count })
+const MailPage = Schema.Struct({ accountId: idField, folder: Schema.optionalKey(Folder), q: Schema.optionalKey(Schema.String), messages: Schema.Array(MailRow), nextPageToken: Schema.NullOr(Schema.String), counts: Schema.optionalKey(MailCounts) })
 const CalendarPage = Schema.Struct({ accountId: idField, events: Schema.Array(EventRow), nextPageToken: Schema.NullOr(Schema.String) })
 export schema MailReply { recipient: string; subject: string }
 const attachmentLimit = 8 * 1024 * 1024
@@ -85,8 +91,8 @@ type Scope =
   | { kind: "waiting"; view: ReadView; reason: Waiting }
   | { kind: "ready"; view: ReadView; accountId: string; grant: string }
 type ReadyScope = Extract<Scope, { kind: "ready" }>
-type Mail = { proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
-type Calendar = { proposed?: StagedWork; kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
+type Mail = { folder: ManagedFolder; search: string; counts?: typeof MailCounts.Type; proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
+type Calendar = { window: ViewWindow; proposed?: StagedWork; kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
 export type ManagedSnapshot =
   | { kind: "closed" }
   | { kind: "waiting"; view: ReadView; reason: Waiting }
@@ -97,7 +103,7 @@ export type ManagedSnapshot =
 
 type HomeOccurrence = { accountId: string; grant: string; id: string; version: string | null }
 type ReadIntent = Intent & { homeOccurrence?: HomeOccurrence }
-type Command = { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" | "saveAttachment" | "savePhotos" }
+type Command = (({ kind: "mailFolder"; folder: ManagedFolder; search: string } | { kind: "calendarWindow"; move: Navigation; day: number }) & WriteScope) | { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" | "saveAttachment" | "savePhotos" }
 
 export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | (
   { accountId: string; googleEmail: string; grant: string; id: string; version: string } &
@@ -254,21 +260,27 @@ effect function scopeOf(native: boolean, view: ReadView, account: SetupState, in
   return { kind: "ready", view, accountId, grant: account.googleLink.tag === "GoogleLinkConnected" ? account.googleLink.grant : "" }
 }
 
-effect function fetchPage(authorization: AccountActions.Shape, scope: ReadyScope, prior?: Mail | Calendar, next?: string) {
+effect function fetchPage(authorization: AccountActions.Shape, scope: ReadyScope, prior?: Mail | Calendar, next?: string, home?: ReturnType<typeof range>) {
   const paging = { pageToken: next, grantId: scope.grant }
   if (scope.view === "Email") {
-    const loaded = try query("gmail/triage", { maxResults: "20", ...paging }, MailPage, authorization)
-    if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
-    const existing = prior?.kind === "mail" ? prior.rows : []
+    const folder = prior?.kind === "mail" ? prior.folder : "inbox"
+    const search = prior?.kind === "mail" ? prior.search : ""
+    const loaded = try query("gmail/triage", { maxResults: "20", folder, q: search || undefined, counts: "1", ...paging }, MailPage, authorization)
+    const sameListing = loaded.folder === undefined && loaded.q === undefined
+      ? folder === "inbox" && search.trim() === "" : loaded.folder === folder && loaded.q === search.trim()
+    if (!sameListing || !managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
+    const existing = next && prior?.kind === "mail" ? prior.rows : []
     const rows = [...new Map([...existing, ...loaded.messages].map((row) => [row.externalId, row])).values()]
-    return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken }
+    return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, folder, search, counts: loaded.counts ?? (prior?.kind === "mail" ? prior.counts : undefined), rows, next: loaded.nextPageToken }
   }
-  const window = prior?.kind === "calendar" ? { from: prior.from, until: prior.until } : range(try Clock.currentTimeMillis)
-  const loaded = try query("calendar/feed", { timeMin: window.from, timeMax: window.until, ...paging }, CalendarPage, authorization)
+  const window = prior?.kind === "calendar" ? prior.window : navigation(initialCalendarView.window, "Today", dayOf(try Clock.currentTimeMillis)).window
+  const from = home?.from ?? new Date(window.fromTime).toISOString()
+  const until = home?.until ?? new Date(window.mode === "MonthView" ? window.untilTime : Math.max(window.untilTime, midnight(window.selectedDay + 15))).toISOString()
+  const loaded = try query("calendar/feed", { timeMin: from, timeMax: until, ...paging }, CalendarPage, authorization)
   if (!managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
-  const existing = prior?.kind === "calendar" ? prior.rows : []
+  const existing = next && prior?.kind === "calendar" ? prior.rows : []
   const rows = [...new Map([...existing, ...loaded.events].map((row) => [row.externalId, row])).values()]
-  return { kind: "calendar" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken, ...window }
+  return { kind: "calendar" as const, accountId: scope.accountId, grant: scope.grant, rows, next: loaded.nextPageToken, from, until, window }
 }
 
 effect function watchHomeCards(native: boolean, pending: Ref.Ref<ReadIntent | undefined>) {
@@ -289,7 +301,7 @@ effect function watchHomeCards(native: boolean, pending: Ref.Ref<ReadIntent | un
       const one = selected?.[0]
       if (!one || !selected) return
       const loaded = try Effect.forEach(selected, effect (scope) => {
-        return fetchPage(authorization, scope) catch () => undefined
+        return fetchPage(authorization, scope, undefined, undefined, range(try Clock.currentTimeMillis)) catch () => undefined
       }, { concurrency: 2 })
       const account = try setup.get()
       if (account.graceAccount.tag !== "GraceSignedIn" || account.graceAccount.accountId !== one.accountId ||
@@ -590,8 +602,10 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       return [homeOccurrence, next] as const
     })
     if (scope.kind !== "ready") return try publish(scope)
+    const previous = try SubscriptionRef.get(latest)
+    const prior = !home && (previous.kind === "mail" || previous.kind === "calendar") && previous.accountId === scope.accountId && previous.grant === scope.grant ? previous : undefined
     try publish({ kind: "loading", view: scope.view, accountId: scope.accountId })
-    const result = fetchPage(authorization, scope) catch () => ({ kind: "failed", view: scope.view, accountId: scope.accountId } as const)
+    const result = fetchPage(authorization, scope, prior, undefined, home ? range(try Clock.currentTimeMillis) : undefined) catch () => ({ kind: "failed", view: scope.view, accountId: scope.accountId } as const)
     if (home && result.kind === "calendar" && scope.accountId === home.accountId && scope.grant === home.grant && (try still(scope))) {
       const selected = result.rows.find((row) => row.externalId === home.id && (row.etag ?? null) === home.version)
       return try publish({ ...result, selected })
@@ -686,10 +700,20 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       try publish(shown.kind === "calendar" ? { ...shown, selected: undefined, series: undefined, proposed: undefined } : { ...shown, selected: undefined, attachment: undefined, proposed: undefined })
       return true
     }
+    if (command.kind === "mailFolder" || command.kind === "calendarWindow") {
+      if (command.accountId !== scope.accountId || command.grant !== scope.grant) return false
+      const prior = command.kind === "mailFolder" && shown.kind === "mail" ? { ...shown, folder: command.folder, search: command.search }
+        : command.kind === "calendarWindow" && shown.kind === "calendar" ? { ...shown, window: navigation(shown.window, command.move, command.day).window } : undefined
+      if (prior === undefined) return false
+      const page = try fetchPage(authorization, scope, prior)
+      if (!(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
+      try publish(page)
+      return true
+    }
     if (command.kind === "more") {
       if (shown.next === null) return false
       const page = try fetchPage(authorization, scope, shown, shown.next)
-      if (!(try still(scope))) return false
+      if (!(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
       try publish(page)
       return true
     }

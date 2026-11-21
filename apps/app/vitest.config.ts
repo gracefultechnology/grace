@@ -25,6 +25,7 @@ const BenchmarkDefinition = Schema.Struct({
   chat: Schema.optional(Schema.Literal("upstream")),
   siteStorageState: Schema.optional(Schema.NonEmptyString),
   evaluator: Schema.optional(Schema.Literal("webarena")),
+  exploratory: Schema.optional(Schema.Literal(true)),
   requiredStep: Schema.optional(Schema.Literal("ReachNamedPage")),
   receipt: Schema.NonEmptyString,
 });
@@ -85,6 +86,18 @@ async function source(file: "command" | "guidance", entry: "pageCommand" | "page
   const run = exports[entry];
   if (typeof run !== "function") throw new Error("The pinned browser command is missing");
   return Function.prototype.toString.call(run);
+}
+
+const observationWorld = "grace-benchmark";
+
+async function observeFromDocumentStart(page: Page) {
+  const session = await page.context().newCDPSession(page);
+  await session.send("Page.enable");
+  await session.send("Page.addScriptToEvaluateOnNewDocument", {
+    worldName: observationWorld,
+    source: `if (window === window.top) (${await source("command", "pageCommand")})(null)`,
+  });
+  return session;
 }
 
 async function benchmarkSurface(context: BrowserCommandContext, action: SiteAction) {
@@ -163,14 +176,24 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const grade = await fleet?.grade(definition.taskId, run.site?.page, guided);
       const webArenaGrade = await officialGrades.get(definition.taskId)?.(action.outcome, {
         guided, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
-      }).catch((error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }));
+      }).catch(() => ({ failure: "The official WebArena evaluation failed" }));
       const receipt = { ...observation, grade, webArena: webArenaGrade };
       if (fleet) fleet.record(definition.taskId, receipt);
       else writeFileSync(definition.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-      if (webArenaGrade && (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore !== 1))
-        throw new Error("The pinned WebArena evaluator did not score the observed document as a match");
-      if (webArenaGrade && decisionProvider === "hosted" && !webArenaGrade.qualifiedHostedGuidance)
-        throw new Error("The WebArena landing has no verified hosted guidance");
+      if (webArenaGrade && action.outcome.failure === undefined) {
+        if (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore === null || webArenaGrade.noActionScore !== 0)
+          throw new Error("The pinned WebArena evaluator did not return a landing score and a zero no-action control");
+        if (definition.exploratory) {
+          if ((definition.chat === "upstream" && run.chatStatus !== 200) ||
+              run.decisionResults.some(({ http, result }) => http !== 200 || result?.status !== "ok"))
+            throw new Error("A hosted WebArena service failed during the exploratory case");
+        } else {
+          if (webArenaGrade.officialScore !== 1)
+            throw new Error("The pinned WebArena evaluator did not score the observed document as a match");
+          if (decisionProvider === "hosted" && !webArenaGrade.qualifiedHostedGuidance)
+            throw new Error("The WebArena landing has no verified hosted guidance");
+        }
+      }
     } finally {
       activeRuns.delete(context.page);
       if (run.decisionRoute) await context.page.unroute(run.decisionRoute);
@@ -187,19 +210,34 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       throw new Error("A benchmark instance opens one local synthetic website");
     const storage = definition.siteStorageState === undefined ? undefined
       : Schema.decodeUnknownSync(SiteState)(JSON.parse(readFileSync(definition.siteStorageState, "utf8")));
-    if (storage && (!storage.cookies.length || storage.cookies.some(({ domain }) => domain !== start.hostname) || storage.origins.some((stored) => stored.origin !== origin)))
+    if (storage && (!storage.cookies.length || storage.cookies.some(({ domain }) => domain.replace(/^\./u, "") !== start.hostname) || storage.origins.some((stored) => stored.origin !== origin)))
       throw new Error("Benchmark storage state must belong only to the declared synthetic website");
     const browser = await context.context.browser()?.newContext({
       ignoreHTTPSErrors: true,
       ...(storage && { storageState: { cookies: [...storage.cookies], origins: storage.origins.map(({ origin, localStorage }) => ({ origin, localStorage: [...localStorage] })) } }),
     });
     if (!browser) throw new Error("The benchmark needs a Chromium browser context");
-    const website = await browser.newPage();
-    run.site = { page: website, origin, browser, session: await browser.newCDPSession(website) };
-    await website.route("**/*", (route) => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
-    const response = await website.goto(action.url, { waitUntil: "load" });
-    if (!response?.ok()) throw new Error("The benchmark site did not load");
-    return { url: website.url() };
+    try {
+      const website = await browser.newPage();
+      const session = await observeFromDocumentStart(website);
+      await website.route("**/*", (route) => {
+        const request = route.request();
+        const url = new URL(request.url());
+        if (url.origin !== origin) return route.abort();
+        if (definition.evaluator === "webarena" && definition.taskId === "157" &&
+          (!["GET", "HEAD"].includes(request.method()) || request.isNavigationRequest() && !url.pathname.startsWith("/admin/")))
+          return route.abort();
+        return route.continue();
+      });
+      const response = await website.goto(action.url, { waitUntil: "load" });
+      if (!response?.ok()) throw new Error("The benchmark site did not load");
+      if (activeRuns.get(context.page) !== run || run.site) throw new Error("The benchmark instance changed while opening the site");
+      run.site = { page: website, origin, browser, session };
+      return { url: website.url() };
+    } catch (error) {
+      await browser.close();
+      throw error;
+    }
   }
   if (!existing) throw new Error("The Chromium benchmark site is not open");
   return observeSite(existing, action);
@@ -213,7 +251,7 @@ async function observeSite(existing: Site, action: SiteObservation) {
   const { id, loaderId, url } = frameTree.frame;
   if (new URL(url).origin !== origin) throw new Error("The site left its benchmark origin");
   if (existing.world?.loaderId !== loaderId) {
-    const { executionContextId } = await session.send("Page.createIsolatedWorld", { frameId: id, worldName: "grace-benchmark" });
+    const { executionContextId } = await session.send("Page.createIsolatedWorld", { frameId: id, worldName: observationWorld });
     existing.world = { loaderId, executionContextId };
   }
   const { executionContextId } = existing.world;
@@ -383,8 +421,8 @@ async function releasedStatement(context: BrowserCommandContext, attempt: string
       browser = await context.context.browser()?.newContext({ ignoreHTTPSErrors: true });
       if (!browser) throw new Error("The statement trial needs an isolated Chromium context");
       const page = await browser.newPage();
+      const site = { page, origin: new URL(episode.startUrl).origin, browser, session: await observeFromDocumentStart(page) };
       await episode.prepareStatement(page);
-      const site = { page, origin: new URL(episode.startUrl).origin, browser, session: await browser.newCDPSession(page) };
       if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
       await context.page.bringToFront();
       if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
@@ -458,7 +496,7 @@ declare module "vitest" {
     site: string;
     cloud: string;
     groundProxy: string;
-    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { gradeWholeCohort: boolean })[];
+    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { exploratory: boolean; gradeWholeCohort: boolean })[];
     billworldStatements: readonly { label: string; billerId?: string }[];
   }
 }
@@ -473,7 +511,9 @@ export default defineConfig(async (env) => {
           test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } },
         }
       : entry);
-  const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep }) => ({ taskId, intent, startUrl, requiredStep, gradeWholeCohort: Boolean(fleet) }));
+  const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
+    taskId, intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet),
+  }));
   const billworldStatements = releasedDirectory === undefined ? [] : [
     { label: "released" },
     ...fleetStatementCases.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId })),
