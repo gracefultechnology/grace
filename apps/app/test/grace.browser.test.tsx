@@ -1,7 +1,7 @@
 // spec/app/agentActions.md, "Story: Ask Grace to help with my email"; spec/app/agentActions.md, "Story: Ask Grace about my calendar"; spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"
 import { Effect } from "effect";
 import { act } from "react";
-import { afterAll, beforeAll, expect, inject, it } from "vitest";
+import { beforeEach, expect, inject, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { addAccount, goBack, initial } from "../gen/app__accounts.ts";
@@ -12,25 +12,12 @@ import { Agent, type GraceAction } from "../src/agent.vibe";
 import { day, dayOf, midnight } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, otherPassword, script, signIn } from "./cloud.vibe";
-import { browserAccountResponse, connected, mountAccounts } from "./screen.tsx";
+import { actOnScreen, captureSignedOutChat, connected, mountAccounts } from "./screen.tsx";
 import "../src/main.css";
 
-const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
-const fetched = globalThis.fetch;
+actOnScreen();
 const chatBodies: string[] = [];
-const decoded = (body: BodyInit | null | undefined) => typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "";
-beforeAll(async () => {
-  globalThis.fetch = (input, init) => {
-    const url = input instanceof Request ? input.url : String(input);
-    const account = browserAccountResponse(new URL(url, location.href));
-    if (account) return Promise.resolve(account);
-    if (url.includes("/chat/completions")) chatBodies.push(decoded(init?.body));
-    return fetched(input, init);
-  };
-  environment.IS_REACT_ACT_ENVIRONMENT = true;
-  await page.viewport(1280, 800);
-});
-afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; globalThis.fetch = fetched; });
+beforeEach(() => captureSignedOutChat(chatBodies));
 
 const cloud: string = inject("cloud");
 const gmail = "owner@grace.test";

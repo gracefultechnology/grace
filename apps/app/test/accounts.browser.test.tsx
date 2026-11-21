@@ -6,7 +6,7 @@ import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import type { WiFiPlugin } from "../src/surfacePlugin.ts";
 import { client, expire, otherPassword, outage, reply, signIn } from "./cloud.vibe";
-import { mount, actOnScreen, browserAccountResponse } from "./screen.tsx";
+import { mount, actOnScreen, captureSignedOutChat } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -16,7 +16,6 @@ const riverview = "margaret@riverview.net";
 const yahoo = "margaret@yahoo.com";
 const wrongPassword = "Not-the-password-7";
 
-const chatBodies: string[] = [];
 const otherChecks: string[] = [];
 const providerPages: string[] = [];
 const toasts: string[] = [];
@@ -29,23 +28,18 @@ const watcher = new MutationObserver(() => {
 });
 const fetched = globalThis.fetch;
 const opened = window.open.bind(window);
-const decoded = (body: BodyInit | null | undefined) => typeof body === "string" ? body : body instanceof Uint8Array ? new TextDecoder().decode(body) : "";
 const network = { online: true };
 const wifi: Pick<WiFiPlugin, "getConnectivity"> = { getConnectivity: () => Promise.resolve({ online: network.online, validated: network.online, captivePortal: false, ssid: null }) };
 
 let secret = "";
 let firstListing: Promise<void> | undefined;
+const chatBodies: string[] = [];
+beforeEach(() => captureSignedOutChat(chatBodies, (url) => {
+  if (url.includes("/connections/other")) otherChecks.push(url);
+  return url.includes("/mail/outlook/search") ? firstListing : undefined;
+}));
 
 beforeAll(() => {
-  globalThis.fetch = (input, init) => {
-    const url = input instanceof Request ? input.url : String(input);
-    const account = browserAccountResponse(new URL(url, location.href));
-    if (account) return Promise.resolve(account);
-    if (url.includes("/chat/completions")) chatBodies.push(decoded(init?.body));
-    if (url.includes("/connections/other")) otherChecks.push(url);
-    const held = url.includes("/mail/outlook/search") ? firstListing : undefined;
-    return held ? held.then(() => fetched(input, init)) : fetched(input, init);
-  };
   window.open = (url, ...rest) => {
     providerPages.push(String(url));
     return opened(url, ...rest);
@@ -55,7 +49,6 @@ beforeAll(() => {
 beforeEach(async () => {
   localStorage.clear();
   toasts.length = 0;
-  chatBodies.length = 0;
   otherChecks.length = 0;
   providerPages.length = 0;
   network.online = true;
@@ -67,7 +60,6 @@ beforeEach(async () => {
 });
 afterAll(() => {
   watcher.disconnect();
-  globalThis.fetch = fetched;
   window.open = opened;
 });
 
