@@ -189,6 +189,11 @@ effect function googleLink(transport: Transport, accountId: string): GoogleLink!
   }
 }
 
+export effect function currentManagedMailGrant(account: string, grant: string) {
+  const link = try googleLink(webTransport, account)
+  return link.tag === "GoogleLinkConnected" && link.mail && link.grant === grant
+}
+
 effect function connectGoogle(transport: Transport, operation: Extract<Operation, { kind: "connectGoogle" }>) {
   const response = try accepted(transport, "/api/v1/eliza/google/connect/initiate", "POST", {
     mail: operation.mail, calendar: operation.calendar, sendMail: operation.sendMail, trashMail: operation.trashMail, writeCalendar: operation.writeCalendar, expectedEmail: operation.expectedEmail,

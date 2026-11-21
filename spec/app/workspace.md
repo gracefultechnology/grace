@@ -47,6 +47,7 @@ import preferences as R from "./preferences"
 import wake as W from "./wake"
 import interaction as I from "./interaction"
 import browserControls as BC from "./browserControls"
+import handoffs as H from "./handoffs"
 
 type WorkspaceActor = Person | Host | Store | Actuator
 type StepDetails = { surface: S::Surface, subject: str, outcome: str }
@@ -508,6 +509,27 @@ pure def purgePrivate(w: Workspace, token: int, messageIndex: int, purgeDraft: b
 }
 ```
 
+### A released email link opens Browser and its fresh tab together
+
+After Email releases the selected message's link, the host opens Browser with
+that link already loading in its own new tab. The existing tabs retain their
+pages, including a tab used for private sign-in. A change of surface or
+browser revision since the person chose the link withdraws the handoff.
+
+```quint
+type ReleasedEmailLink = { link: str, deviceVersion: int, browserRevision: int }
+pure val releaseValues = Set(
+  { link: "https://mail.example/bill", deviceVersion: 2, browserRevision: 0 },
+  { link: "https://mail.example/bill", deviceVersion: 3, browserRevision: 0 },
+  { link: "", deviceVersion: 2, browserRevision: 0 })
+pure def canOpenReleasedEmailLink(w: Workspace, release: ReleasedEmailLink, by: WorkspaceActor): bool =
+  by == Host and release.deviceVersion == w.device.contextVersion and release.browserRevision == w.browser.revision and
+  H::mayShowEmailDestination(w.device, w.browser, release.link)
+pure def openReleasedEmailLink(w: Workspace, release: ReleasedEmailLink, by: WorkspaceActor): Workspace =
+  val target = H::showEmailDestination(w.device, w.browser, release.link)
+  interrupted(target.device, target.browser, w)
+```
+
 ### Conversation input and geometry use the same owned assistant state
 
 The pure interaction dispatcher calls existing assistant operations. User
@@ -692,7 +714,7 @@ pure def canDismissPopover(w: Workspace, by: WorkspaceActor): bool = by == Perso
 pure def dismissPopover(w: Workspace, by: WorkspaceActor): Workspace =
   interrupted(S::dismissPopover(w.device), w.browser, w)
 pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace): bool =
-  (via == "setAvailability" or via == "visit" or
+  (via == "setAvailability" or via == "visit" or via == "openReleasedEmailLink" or
    via == "returnToApplication" or via == "closeBrowser" or via == "closeGrace" or via == "stop" or
    (via == "changePage" and after.browser.revision != before.browser.revision) or
    via == "chooseHomePage" or via == "chooseSettingsPage" or via == "togglePopover" or via == "dismissPopover")
@@ -1876,7 +1898,7 @@ pure def stepCommitmentSwitchRetainsRecords(before: Workspace, via: str, after: 
 pure def stepDepartureKeepsCommitmentAttempt(before: Workspace, via: str, after: Workspace): bool =
   (via == "changePage" implies after.commitment.attempt == before.commitment.attempt and
     after.commitment.durable == before.commitment.durable) and
-  ((via == "changeLifecycle" or via == "setAvailability" or via == "visit" or
+  ((via == "changeLifecycle" or via == "setAvailability" or via == "visit" or via == "openReleasedEmailLink" or
     via == "returnToApplication" or via == "closeBrowser" or via == "closeGrace" or via == "stop" or
     (via == "changePage" and before.browser.revision != after.browser.revision) or
     via == "unexpectedPage" or via == "purgePrivate" or via == "abandonTask" or

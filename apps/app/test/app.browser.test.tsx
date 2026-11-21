@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { cdp, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
+import { activeTab, tabUrl } from "../gen/app__browser.ts";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { defaults, effectiveBrightness } from "../gen/app__preferences.ts";
 import { Machine as Workspaces, type GuidedCheckpoint } from "../gen/app__workspace.effect.vibe";
@@ -1293,6 +1294,11 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let changed: string[] = [];
   const reminders: number[] = [];
   const literalText = "<strong>This stays plain text.</strong>";
+  const destination = "https://receipt.example/statement_(2026)";
+  let body = literalText;
+  let historyId = "8";
+  let labels = ["INBOX"];
+  let statusOwner = person.id;
   const originalText = "<script>Original attachment</script>";
   const originalHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(originalText))),
     (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -1382,7 +1388,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/billing/subscription": return reply({ status: "inactive", canManage: false, canCheckout: true });
       case "/api/v1/eliza/google/status":
         return reply({
-          accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: connectorConfigured, connected: connectorConfigured,
+          accountId: statusOwner, provider: "google", side: "owner", mode: "cloud_managed", configured: connectorConfigured, connected: connectorConfigured,
           identity: connectorConfigured ? { email: person.email } : null, connectionId: connectorConfigured ? grant : null,
           grantedCapabilities: connectorConfigured ? ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"] : [],
         });
@@ -1409,9 +1415,9 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         });
         expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant });
         return reply({
-          accountId: replyFromOwner ? person.id : "different-owner", message: mail, historyId: "8", attachments: [attachment, archive, pdf, ...photoParts.map(({ part }) => part)], bodyTextAvailable: true,
+          accountId: replyFromOwner ? person.id : "different-owner", message: { ...mail, labels, fromEmail: "robin@example.test", metadata: { historyId } }, historyId, attachments: [attachment, archive, pdf, ...photoParts.map(({ part }) => part)], bodyTextAvailable: true,
           reply: { recipient: "robin@example.test", subject: "Your receipt" },
-          bodyText: replyFromOwner ? literalText : "Another person’s message",
+          bodyText: replyFromOwner ? body : "Another person’s message",
         });
       case "/api/v1/eliza/google/gmail/attachment": {
         attachmentReads++;
@@ -1645,6 +1651,47 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
     expect(sent).toEqual(["reply", "new"]);
     await tap("Close Email");
+    const browser = () => runtime.runSync(Effect.flatMap(Workspaces, (m) => m.get())).browser;
+    const initialTabs = browser().tabs;
+    body = `See ${destination}.`;
+    labels = ["SPAM"];
+    const messageLink = page.getByRole("link", { name: destination });
+    const openMessage = async () => { await tap(/^Email/); await tap(/Your receipt/); };
+    await openMessage();
+    await expect.element(page.getByText(/Gmail marked this message as spam/)).toBeVisible();
+    await tap("Reply");
+    await expect.element(messageLink).not.toBeInTheDocument();
+    await tap("Close draft");
+    await act(() => messageLink.click());
+    const confirmation = page.getByRole("dialog", { name: "Open this link?" });
+    await expect.element(confirmation.getByText(destination, { exact: true })).toBeVisible();
+    await tap("Stay in email");
+    expect(browser().tabs).toEqual(initialTabs);
+    await act(() => messageLink.click());
+    historyId = "9";
+    await tap("Open in Browser");
+    await expect.element(page.getByText(/This link couldn’t open/)).toBeVisible();
+    expect(browser().tabs).toEqual(initialTabs);
+    await tap("Back to Inbox");
+    await tap(/Your receipt/);
+    await act(() => messageLink.click());
+    statusOwner = "another-grace-account";
+    await tap("Open in Browser");
+    await expect.element(page.getByText(/This link couldn’t open/)).toBeVisible();
+    expect(browser().tabs).toEqual(initialTabs);
+    statusOwner = person.id;
+    await act(() => messageLink.click());
+    await tap("Open in Browser");
+    await expect.poll(() => tabUrl(activeTab(browser()))).toBe(destination);
+    expect(browser().tabs.slice(0, -1).map((tab) => tab.id)).toEqual(initialTabs.map((tab) => tab.id));
+    await tap("Home");
+    labels = ["INBOX"];
+    body = `Plain address ${destination}?current=1.`;
+    await openMessage();
+    await act(() => page.getByRole("link", { name: `${destination}?current=1` }).click());
+    await expect.poll(() => tabUrl(activeTab(browser()))).toBe(`${destination}?current=1`);
+    expect(browser().tabs).toHaveLength(initialTabs.length + 2);
+    await tap("Home");
     await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: /Dentist/ })));
     await expect.element(page.getByText("Bring your glasses.", { exact: true })).toBeVisible();
     expect(reminders).toEqual([]);

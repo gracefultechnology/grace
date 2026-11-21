@@ -1,11 +1,12 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
-import { Button, CalendarEventRow, CalendarMonth, CalendarNav, CalendarWeekStrip, EmptyState, Input, MailAttachment, MailFolderNav, MailMessageRow, PageHeading, PageText, RetryNotice, SearchField, SegmentedControl, Textarea } from "@repo/ui";
+import { Alert, BrowserDialog, BrowserDialogText, Button, CalendarEventRow, CalendarMonth, CalendarNav, CalendarWeekStrip, EmptyState, Input, MailAttachment, MailFolderNav, MailLink, MailMessageRow, PageHeading, PageText, RetryNotice, SearchField, SegmentedControl, Textarea } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
 import { type ReactNode, useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
 import type { Recurrence } from "../gen/app__calendar.ts";
 import { mayChangeManaged, mayReadManaged, maySendManagedMail } from "../gen/app__setup.ts";
-import { inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
+import { actionableMailBody, inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
+import { messageLinkParts } from "./messageLinks.vibe";
 import { calendarGrid } from "./Calendar.tsx";
 import { dayOf, instant, midnight } from "./calendarWindow.vibe";
 import type { Navigation } from "../gen/app__calendarView.ts";
@@ -26,8 +27,8 @@ function start(event: EventRow) {
 
 const managedState = Stream.unwrap(Effect.map(ManagedReads, (reads) => reads.state));
 
-function MailDraft({ accountId, email, grant, reply, open }: {
-  accountId: string; email: string; grant: string; open?: boolean; reply?: MailReply & { source: string };
+function MailDraft({ accountId, email, grant, reply, open, onEditing }: {
+  accountId: string; email: string; grant: string; open?: boolean; onEditing?: (active: boolean) => Promise<void>; reply?: MailReply & { source: string };
 }) {
   const runtime = useRuntime();
   const envelope = reply ? { recipient: reply.recipient, subject: reply.subject } : { recipient: "", subject: "" };
@@ -49,12 +50,17 @@ function MailDraft({ accountId, email, grant, reply, open }: {
     const result = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.sendMail({ accountId, email, grant, draft: approved, checkOnly, replyTo: reply?.source })));
     if (Exit.isSuccess(result) && result.value) {
       setDraft({ ...envelope, text: "" });
+      await onEditing?.(false);
       setStep("Sent");
     } else setStep("Uncertain");
   });
+  const edit = (opened: boolean) => startTransition(async () => {
+    await onEditing?.(opened);
+    setStep(opened ? "Edit" : "Inbox");
+  });
   if (step === "Inbox" || step === "Sent") return <div className="flex flex-col items-start gap-3">
     {step === "Sent" && <PageText role="status">Gmail accepted your email.</PageText>}
-    <Button variant="prominent" size="pill" onClick={() => setStep("Edit")}>
+    <Button variant="prominent" size="pill" onClick={() => edit(true)}>
       {draft.text || (!reply && (draft.recipient || draft.subject)) ? "Continue draft" : reply ? "Reply" : "New email"}
     </Button>
   </div>;
@@ -71,7 +77,7 @@ function MailDraft({ accountId, email, grant, reply, open }: {
       onChange={(event) => update({ text: event.target.value })} /></label>
     {saveFailed && <RetryNotice role="alert">This browser couldn’t keep the draft.</RetryNotice>}
     <div className="flex gap-3">
-      <Button type="button" variant="capsule" size="pill" onClick={() => setStep("Inbox")}>Close draft</Button>
+      <Button type="button" variant="capsule" size="pill" onClick={() => edit(false)}>Close draft</Button>
       <Button type="submit" variant="prominent" size="pill" disabled={!draft.text.trim()}>Review email</Button>
     </div>
   </form>;
@@ -282,6 +288,8 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const grant = link?.tag === "GoogleLinkConnected" ? link.grant : "";
   const accountId = signedIn?.accountId ?? "";
   const projection = JSON.stringify([view, accountId, grant]);
+  const selectedMail = snapshot.kind === "mail" ? snapshot.selected : undefined;
+  const mailProjection = JSON.stringify([projection, selectedMail?.message.externalId, selectedMail?.historyId]);
   const notice = writeNotice?.key === projection ? writeNotice : undefined;
   const exact = editor?.key === projection ? editor : undefined;
   const canTrash = signedIn && link && mayChangeManaged(signedIn, link, accountId, grant, "ManagedTrash");
@@ -352,10 +360,17 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const more = snapshot.next === null ? null :
     <Button variant="capsule" size="pill" loading={pending} onClick={() => run({ kind: "more" })}>Load more</Button>;
   const retry = failed?.retry;
-  const problem = failed?.key === projection && <RetryNotice role="alert" retrying={pending} onRetry={retry && (() => run(retry))}>{failed.text}</RetryNotice>;
+  const problem = failed && (failed.key === projection || failed.key === mailProjection) && <RetryNotice role="alert" retrying={pending} onRetry={retry && (() => run(retry))}>{failed.text}</RetryNotice>;
 
   if (snapshot.kind === "mail") {
     const selected = snapshot.selected;
+    const follow = (href: string, choice: "open" | "confirm" | "cancel") => startTransition(async () => {
+      setFailed(undefined);
+      const opened = await runtime.runPromise(Effect.flatMap(ManagedReads, (reads) => reads.chooseLink(snapshot, href, choice)));
+      if (!opened) setFailed({ key: mailProjection, text: "This link couldn’t open. Reopen the email to check its current contents." });
+    });
+    const reviewLink = snapshot.linkReview?.link;
+    const canFollow = actionableMailBody(selected) && !snapshot.replying && !snapshot.attachment && !snapshot.proposed;
     const suggested = snapshot.proposed?.proposal;
     const draft = suggested?.kind === "draft" ? snapshot.proposed : undefined;
     const photos = selected?.attachments.filter((part) => part.mimeType.startsWith("image/")) ?? [];
@@ -371,7 +386,16 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
         <PageHeading>{selected.message.subject || "No subject"}</PageHeading>
         <PageText>{selected.message.from || "Unknown sender"}</PageText>
         <PageText tone="secondary">{day(selected.message.receivedAt)}</PageText>
-        <PageText className="w-full whitespace-pre-wrap">{selected.bodyTextAvailable ? selected.bodyText : "This email has no plain-text preview."}</PageText>
+        {selected.message.labels?.includes("SPAM") && <Alert variant="caution">Gmail marked this message as spam.{selected.message.fromEmail && ` It was sent by ${selected.message.fromEmail}.`}</Alert>}
+        <PageText className="w-full whitespace-pre-wrap">{selected.bodyTextAvailable ? messageLinkParts(selected.bodyText).map((part) => {
+          if (typeof part === "string") return part;
+          const { href } = part;
+          return href && canFollow ? <MailLink key={part.start} onOpen={() => follow(href, "open")}>{part.text}</MailLink> : part.text;
+        }) : "This email has no plain-text preview."}</PageText>
+        {canFollow && reviewLink && <BrowserDialog title="Open this link?" tone="caution" onEscape={() => follow(reviewLink, "cancel")} actions={<>
+          <Button variant="prominent" onClick={() => follow(reviewLink, "cancel")}>Stay in email</Button>
+          <Button variant="capsule" loading={pending} onClick={() => follow(reviewLink, "confirm")}>Open in Browser</Button>
+        </>}><BrowserDialogText className="break-all">{reviewLink}</BrowserDialogText></BrowserDialog>}
         {selected.attachments.length > 0 && <section aria-label="Attachments" aria-busy={pending || undefined} className="flex w-full flex-col gap-3">
           {Array.from(new Map(selected.attachments.map((part) => [JSON.stringify([part.partId, part.name, part.mimeType, part.size]), part]))).map(([key, part]) => (
             <MailAttachment key={key} name={part.name}
@@ -413,7 +437,8 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
         </section>}
         {selected.reply && signedIn && link?.tag === "GoogleLinkConnected" && maySendManagedMail(signedIn, link, snapshot.accountId, grant) && (
           <MailDraft key={JSON.stringify([accountId, grant, selected.message.externalId, draft?.number])} open={draft !== undefined} accountId={accountId} email={link.email}
-            grant={grant} reply={{ ...selected.reply, source: selected.message.externalId }} />
+            grant={grant} onEditing={(active) => runtime.runPromise(Effect.flatMap(ManagedReads, (reads) => reads.replyVisibility(snapshot, active)))}
+            reply={{ ...selected.reply, source: selected.message.externalId }} />
         )}
       </section>
     ) : (

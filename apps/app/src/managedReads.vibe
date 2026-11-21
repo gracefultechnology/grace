@@ -1,13 +1,14 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
 import { type Setup as SetupState, Machine as Setup, isSelectedVersion, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
-import { guidedDetails, Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedDetails, Machine as Workspaces, type GuidedStep, type ReleasedEmailLink } from "../gen/app__workspace.effect.vibe"
 import { initial as initialCalendarView, type Navigation, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { dayOf, midnight, navigation } from "./calendarWindow.vibe"
 import type { Recurrence } from "../gen/app__calendar.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import { Library } from "./files.vibe"
 import { accountPlugin, reminderPlugin } from "./accountPlugin.ts"
-import { AccountActions, apiOrigin } from "./graceAccount.vibe"
+import { AccountActions, apiOrigin, currentManagedMailGrant } from "./graceAccount.vibe"
+import { messageLinkParts } from "./messageLinks.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 export type ReadView = "Email" | "Calendar"
@@ -18,7 +19,7 @@ const dateField = Schema.String.check(Schema.makeFilter((text) => Number.isFinit
 schema Intent { view: "Email" | "Calendar"; returning: boolean; owner?: string; occurrence?: string }
 const nullableText = Schema.NullOr(Schema.String)
 schema MailMetadata { historyId?: nullableText }
-export schema MailRow { metadata?: MailMetadata; labels?: readonly string[]; externalId: idField; from: string; subject: string; receivedAt: dateField; isUnread: boolean }
+export schema MailRow { metadata?: MailMetadata; labels?: readonly string[]; fromEmail?: nullableText; externalId: idField; from: string; subject: string; receivedAt: dateField; isUnread: boolean }
 export schema EventRow { etag?: nullableText; editable?: boolean; seriesId?: nullableText; timezone?: nullableText; externalId: idField; title: string; description: string; location: string; startAt: dateField; endAt: dateField; isAllDay: boolean }
 const Folder = Schema.Literals(["inbox", "sent", "drafts", "trash"])
 export type ManagedFolder = typeof Folder.Type
@@ -41,6 +42,10 @@ const supportedMedia = Schema.Literals(["application/pdf", "text/plain", "image/
 schema AttachmentDescriptor { partId: string; name: attachmentName; mimeType: idField; size: Schema.Int; supported: boolean }
 const MailBody = Schema.Struct({ accountId: idField, message: MailRow, historyId: Schema.NullOr(historyField),
   attachments: Schema.Array(AttachmentDescriptor), reply: Schema.optional(Schema.NullOr(MailReply)), bodyText: Schema.String, bodyTextAvailable: Schema.Boolean })
+export function actionableMailBody(selected: typeof MailBody.Type | undefined) {
+  return selected?.bodyTextAvailable && selected.historyId && selected.message.labels &&
+    (selected.message.metadata?.historyId === undefined || selected.message.metadata.historyId === selected.historyId) ? selected : undefined
+}
 const transferTicket = Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{2}){1,4096}$/))
 const AttachmentReceipt = Schema.Struct({ version: Schema.Literal(1), accountId: idField, messageId: idField, historyId: historyField,
   partId: partIdField, name: attachmentName, mimeType: supportedMedia, size: Schema.Int, supported: Schema.Literal(true),
@@ -91,7 +96,7 @@ type Scope =
   | { kind: "waiting"; view: ReadView; reason: Waiting }
   | { kind: "ready"; view: ReadView; accountId: string; grant: string }
 type ReadyScope = Extract<Scope, { kind: "ready" }>
-type Mail = { folder: ManagedFolder; search: string; counts?: typeof MailCounts.Type; proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
+type Mail = { linkReview?: ReleasedEmailLink; replying?: boolean; folder: ManagedFolder; search: string; counts?: typeof MailCounts.Type; proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
 export function inboxTrashVersion(mail: Mail) {
   const row = mail.selected?.message
   return mail.folder !== "trash" && row?.labels?.includes("INBOX") && !row.labels.includes("TRASH") ? row.metadata?.historyId : undefined
@@ -148,6 +153,8 @@ export service ManagedReads {
   get(): ManagedSnapshot!!
   ownsSurfaces(): boolean!!
   guidedSelection(): GuidedManagedSelection!!
+  chooseLink(shown: Mail, link: string, choice: "open" | "confirm" | "cancel"): boolean!!
+  replyVisibility(shown: Mail, opened: boolean): void!!
   send(command: Command): boolean!!
   stage(proposal: ProposedWork): boolean!!
   series(scope: WriteScope, occurrenceId: string): (EventRow | undefined)!!
@@ -414,6 +421,7 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
   activeScope: () => Scope!!; still: (scope: ReadyScope) => boolean!!
   publish: (snapshot: ManagedSnapshot) => void!!; refresh: (scope: Scope) => void!!
 }) {
+  const desk = try Workspaces
   const proposedNumber = try Ref.make(0)
 
   effect function publishReview(scope: ReadyScope, shown: Mail | Calendar, next: Mail | Calendar) {
@@ -540,7 +548,50 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     return try still(scope)
   }
 
-  return { stage, series, change, sendMail }
+  effect function chooseLink(shown: Mail, link: string, choice: "open" | "confirm" | "cancel") {
+    const selected = actionableMailBody(shown.selected)
+    if (!selected || (try SubscriptionRef.get(latest)) !== shown || shown.attachment || shown.proposed || shown.replying) return false
+    const held = shown.linkReview
+    if (choice === "open" ? held !== undefined : held?.link !== link) return false
+    const reading = held ? { ...shown, linkReview: undefined } : shown
+    if (held) {
+      const claimed = try SubscriptionRef.modifySome(latest, (current) => current === shown ? [true, Option.some(reading)] : [false, Option.none()])
+      if (!claimed || choice === "cancel") return claimed
+    }
+    if (!messageLinkParts(selected.bodyText).some((part) => typeof part !== "string" && part.href === link)) return false
+    const scope = try activeScope()
+    if (scope.kind !== "ready" || scope.view !== "Email" || scope.accountId !== shown.accountId || scope.grant !== shown.grant) return false
+    const google = (try setup.get()).googleLink
+    if (google.tag !== "GoogleLinkConnected" || (try localMailDraft(shown.accountId, google.email, selected.message.externalId)).operationId) return false
+    const before = try desk.get()
+    const release = held ?? { link, deviceVersion: before.device.contextVersion, browserRevision: before.browser.revision }
+    const messageId = selected.message.externalId
+    const fresh = try query("gmail/read", { grantId: scope.grant, messageId }, MailBody, authorization)
+    const warned = selected.message.labels?.includes("SPAM") === true
+    if (!managedReadMatches(scope.accountId, fresh.accountId, messageId, fresh.message.externalId) ||
+      !actionableMailBody(fresh) || fresh.historyId !== selected.historyId || fresh.bodyText !== selected.bodyText ||
+      fresh.message.from !== selected.message.from || fresh.message.fromEmail !== selected.message.fromEmail ||
+      fresh.message.subject !== selected.message.subject || fresh.message.labels?.includes("SPAM") !== warned ||
+      !(try currentManagedMailGrant(scope.accountId, scope.grant)) || !(try still(scope)) || (try SubscriptionRef.get(latest)) !== reading) return false
+    if (warned && choice === "open") {
+      return try SubscriptionRef.modifySome(latest, (current) => current === shown ? [true, Option.some({ ...shown, linkReview: release })] : [false, Option.none()])
+    }
+    try desk.send({ type: "openReleasedEmailLink", release }, "Host", () => {
+      const account = Effect.runSync(setup.get())
+      return Effect.runSync(SubscriptionRef.get(latest)) === reading && account.graceAccount.tag === "GraceSignedIn" &&
+        account.graceAccount.accountId === scope.accountId && account.googleLink.tag === "GoogleLinkConnected" &&
+        account.googleLink.grant === scope.grant && mayReadManaged(account.graceAccount, account.googleLink, "ManagedEmail")
+    })
+    return true
+  }
+
+  effect function replyVisibility(shown: Mail, opened: boolean) {
+    const current = try SubscriptionRef.get(latest)
+    if (current.kind === "mail" && current.selected === shown.selected && current.accountId === shown.accountId && current.grant === shown.grant)
+      try publish({ ...current, replying: opened })
+  }
+
+  return { stage, series, change, sendMail, chooseLink, replyVisibility }
 }
 
 export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effect {
@@ -557,7 +608,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const previous = try SubscriptionRef.get(latest)
     const url = previous.kind === "mail" ? previous.attachment?.url : undefined
     if (url && (snapshot.kind !== "mail" || snapshot.attachment?.url !== url)) webView.window.URL.revokeObjectURL(url)
-    try SubscriptionRef.set(latest, snapshot)
+    try SubscriptionRef.set(latest, snapshot.kind === "mail" && snapshot.linkReview ? { ...snapshot, linkReview: undefined } : snapshot)
   }
 
   try addFinalizer(() => publish({ kind: "closed" }))
@@ -632,7 +683,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
 
   const { openAttachment, saveAttachment } = mailAttachments(authorization, files,
     effect (scope, shown) => (try still(scope)) && (try SubscriptionRef.get(latest)) === shown, publish)
-  const { stage, series, change, sendMail } = try managedWrites({ setup, authorization, latest, activeScope, still, publish, refresh })
+  const { stage, series, change, sendMail, chooseLink, replyVisibility } = try managedWrites({ setup, authorization, latest, activeScope, still, publish, refresh })
 
   effect function send(command: Command) {
     if (command.kind === "homeOccurrence") {
@@ -731,7 +782,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const preview = try query("gmail/read", { messageId: command.id, grantId: scope.grant }, MailBody, authorization)
     if (!managedReadMatches(scope.accountId, preview.accountId, command.id, preview.message.externalId) ||
         !(try still(scope)) || (try SubscriptionRef.get(latest)) !== shown) return false
-    try publish({ ...shown, selected: preview, photosSaved: undefined, attachment: undefined, proposed: undefined })
+    try publish({ ...shown, selected: preview, replying: false, photosSaved: undefined, attachment: undefined, proposed: undefined })
     return true
   }
 
@@ -766,6 +817,8 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     get: () => SubscriptionRef.get(latest),
     ownsSurfaces,
     guidedSelection,
+    chooseLink: effect (shown, link, choice) => chooseLink(shown, link, choice) catch () => false,
+    replyVisibility,
     send: effect (command) => gate.withPermit(send(command)) catch () => false,
     stage: effect (proposal) => gate.withPermit(stage(proposal)) catch () => false,
     series: effect (scope, occurrenceId) => gate.withPermit(series(scope, occurrenceId)) catch () => undefined,
