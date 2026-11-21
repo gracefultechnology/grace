@@ -24,7 +24,7 @@ on:
         type: string
         required: false
       webarena:
-        description: Run official Shopping tasks 260 and 261 with hosted guidance
+        description: Run official WebArena Shopping tasks with hosted guidance and controls
         type: boolean
         default: false
   pull_request:
@@ -172,20 +172,79 @@ jobs:
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
         run: |
           test -n "$GRACE_BENCHMARK_CLEF_ORIGIN" && test -n "$GRACE_BENCHMARK_CLEF_KEY"
+          tasks='[260,261,262,263,264,298,299]'
+          required='[260,261,262,263]'
           git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
             jq -e --arg start "$SHOPPING_ORIGIN/" --arg results "$WEBARENA_RESULTS" \
-              --arg state "$WEBARENA_PRIVATE/shopping-state.json" \
-              '[.[] | select(.task_id == 260 or .task_id == 261) |
+              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$tasks" --argjson required "$required" \
+              '[.[] | select(.task_id as $id | $tasks | index($id)) |
                 {taskId: (.task_id | tostring), intent, startUrl: $start, receipt: ($results + "/task-" + (.task_id | tostring) + ".json"),
                  siteStorageState: $state, evaluator: "webarena"} +
-                (if .task_id == 261 then {chat: "upstream", requiredStep: "ReachNamedPage"} else {} end)]' \
-              > "$GRACE_BROWSER_BENCHMARK_FILE"
+                (if .task_id as $id | $required | index($id) then {} else {exploratory: true} end) +
+                (if .task_id == 260 then {} else {chat: "upstream", requiredStep: "ReachNamedPage"} end)] |
+                select(map(.taskId | tonumber) == $tasks)' > "$GRACE_BROWSER_BENCHMARK_FILE"
+          browser_exit=0
           pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' |
-            tee "$WEBARENA_RESULTS/grace-browser.log"
-          jq -es 'length == 2 and all(.[]; .webArena.officialScore == 1 and .webArena.qualifiedHostedGuidance == true)' \
-            "$WEBARENA_RESULTS/task-260.json" "$WEBARENA_RESULTS/task-261.json"
-          jq -e '.chatStatus == 200 and .outcome.chatProvider == "upstream" and
-            (.outcome.reviewedDestination | length) > 0 and .outcome.hops[-1].checked' "$WEBARENA_RESULTS/task-261.json"
+            tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
+          jq -es --argjson tasks "$tasks" --argjson required "$required" '
+            def verified_action_budget:
+              .outcome as $out |
+              ($out.disclosures // []) as $menus |
+              ($out.menuRetries // []) as $retries |
+              ($out.hops // []) as $hops |
+              ($out.nameCorrection // null) as $approval |
+              (($menus | length) + ($retries | length) + ($hops | length) + (if $approval then 1 else 0 end)) == 8 and
+              ($menus | length) == ($menus | unique_by([.documentId, .snapshotId]) | length) and
+              all($menus[]; (.documentId | type == "string" and length > 0) and
+                (.snapshotId | type == "string" and length > 0) and .disclosed == true and .after > .before) and
+              ($retries | length) == ($retries | unique_by([.documentId, .instruction]) | length) and
+              all($retries[]; (.instruction | type == "string" and length > 0) and
+                (.documentId as $doc | any($menus[]; .documentId == $doc))) and
+              ($hops | length) == ($hops | unique_by(.documentId) | length) and
+              all($hops[]; (.documentId | type == "string" and length > 0) and .documentId != $out.start.documentId and
+                (.url | type == "string" and length > 0)) and
+              ($approval == null or (($approval.leaf | type == "string" and length > 0) and
+                ($approval.instruction | type == "string" and length > 0) and
+                ($approval.documentId as $doc | any($menus[]; .documentId == $doc))));
+            sort_by(.taskId | tonumber) |
+            select(map(.taskId | tonumber) == $tasks) |
+            map({taskId, cohort: (if (.taskId | tonumber) as $id | $required | index($id) then "required" else "exploratory" end),
+              miss: .outcome.miss, failed: (.outcome.failure != null), completed: (.outcome.graceTerminal | type == "string"),
+              rejectedLeaf: (if .outcome.miss == "rejected-scoped-leaf" then
+                .outcome.rejectedNameCorrection as $offer |
+                .outcome.disclosures[-1] as $last |
+                ($offer.original | type == "string" and length > 0) and $offer.original == .outcome.reviewedDestination and
+                ($offer.instruction | type == "string" and length > 0) and
+                ($offer.leaf | type == "string" and length > 0) and
+                ($offer.branch | type == "string" and length > 0) and
+                ($offer.documentId | type == "string" and length > 0) and
+                $offer.documentId == $last.documentId and $offer.branch == $last.label and
+                ($offer.branchMatches | type == "boolean") and ($offer.leafMatches | type == "boolean") and
+                ($offer.branchMatches == false or $offer.leafMatches == false) and
+                $offer.offeredControl == ("Use “" + $offer.leaf + "” for this step")
+                else false end),
+              exhaustedBudget: (.outcome.miss == "action-budget-exhausted" and verified_action_budget),
+              officialScore: .webArena.officialScore, noActionScore: .webArena.noActionScore,
+              hostedGuidance: (.webArena.qualifiedHostedGuidance == true),
+              checkedPlan: (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
+                (.outcome.reviewedDestination | length) > 0 and .outcome.hops[-1].checked == true))})
+          ' "$WEBARENA_RESULTS"/task-*.json > "$WEBARENA_RESULTS/scorecard.json"
+          jq -r '
+            "### WebArena Shopping",
+            "",
+            "| Official task | Cohort | Landing score | No-action score | Hosted guidance | Checked plan |",
+            "| --- | --- | --- | --- | --- | --- |",
+            (.[] | "| \(.taskId) | \(.cohort) | \(.officialScore) | \(.noActionScore) | \(.hostedGuidance) | \(.checkedPlan) |")
+          ' "$WEBARENA_RESULTS/scorecard.json" >> "$GITHUB_STEP_SUMMARY"
+          jq -e '
+            all(.[]; (.failed | not) and (.completed or (.cohort == "exploratory" and
+              (.miss == "missing-reviewed-step" or .miss == "target-absent-from-open-menu" or .miss == "repeated-address" or
+                (.miss == "rejected-scoped-leaf" and .rejectedLeaf) or
+                (.miss == "action-budget-exhausted" and .exhaustedBudget)))) and
+              .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1)) and
+            all(.[] | select(.cohort == "required"); .officialScore == 1 and .hostedGuidance and .checkedPlan)
+          ' "$WEBARENA_RESULTS/scorecard.json"
+          test "$browser_exit" -eq 0
       - if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -193,6 +252,7 @@ jobs:
           path: |
             ${{ runner.temp }}/grace-webarena-results/shopping-image.json
             ${{ runner.temp }}/grace-webarena-results/task-*.json
+            ${{ runner.temp }}/grace-webarena-results/scorecard.json
             ${{ runner.temp }}/grace-webarena-results/grace-browser.log
           if-no-files-found: warn
   billworld:
@@ -549,9 +609,14 @@ jobs:
             ${{ github.workspace }}/.cache/grace-released-billworld-results/fleet-view-bill-*/
             ${{ github.workspace }}/.cache/grace-released-billworld-results/fleet-view-bill-qualification.json
           if-no-files-found: error
-  verify:
+  checks:
+    name: ${{ matrix.lane }}
     if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena)
     runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: ${{ fromJSON(inputs.cross_app_only && '["product"]' || '["product","selftest-a","selftest-b","selftest-rest"]') }}
     environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
     env:
       TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}
@@ -563,13 +628,19 @@ jobs:
           submodules: true
       - id: setup
         uses: ./.github/actions/setup
+        with:
+          job: ${{ matrix.lane }}
       - name: Exercise Google consent and guided tasks across apps with local fixtures
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
-          -t 'Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step'
-      - if: ${{ !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm verify --continue --summarize
+          -t "Gmail signup to Calendar|Follow one reviewed plan across apps|Save a separately approved email appointment|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
+      - if: ${{ matrix.lane == 'product' && !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue --summarize
+      - if: ${{ matrix.lane != 'product' && !cancelled() && steps.setup.outcome == 'success' }}
+        env:
+          LANE: ${{ matrix.lane }}
+        run: pnpm all "//#selftest:tools:${LANE#selftest-}" --continue --summarize
       - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != ''
         uses: actions/cache/save@v6
         with:
@@ -585,7 +656,7 @@ jobs:
         with:
           path: .turbo/cache
           key: ${{ steps.setup.outputs.turbo-cache-key }}
-      - if: always() && !inputs.cross_app_only
+      - if: always() && !inputs.cross_app_only && matrix.lane == 'product'
         uses: actions/upload-artifact@v7
         with:
           name: proof
@@ -596,7 +667,7 @@ jobs:
       - if: failure() && !inputs.cross_app_only
         uses: actions/upload-artifact@v7
         with:
-          name: failures
+          name: ${{ matrix.lane == 'product' && 'failures' || format('failures-{0}', matrix.lane) }}
           path: |
             test/counterexamples/
             test/__traces__/
@@ -612,3 +683,12 @@ jobs:
             vibestack/examples/*/test/__traces__/
           if-no-files-found: ignore
           include-hidden-files: true
+  verify:
+    needs: checks
+    if: always() && needs.checks.result != 'skipped'
+    runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
+    steps:
+      - name: Require every selected verification job to pass
+        env:
+          RESULT: ${{ needs.checks.result }}
+        run: test "$RESULT" = success

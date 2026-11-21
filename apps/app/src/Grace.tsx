@@ -274,7 +274,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {localCommands && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that Passwords command. Try typing it.</PageText>}
           {canCheck && <AnswerChips>
             {correction && <AnswerChip className="mr-0 h-auto min-h-13 max-w-full shrink whitespace-normal wrap-anywhere" onClick={chooseSiteName}>Use “{correction.label}” for this step</AnswerChip>}
-            {guideKey && <AnswerChip disabled={checking?.phase === "checking" || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>Show me the link</AnswerChip>}
+            {guideKey && <AnswerChip disabled={checking?.phase === "checking" || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>{feedback?.result?.kind === "Unavailable" && feedback.result.tryAnotherMenu ? "Try another menu" : "Show me the link"}</AnswerChip>}
             <AnswerChip disabled={checking?.phase === "checking"} onClick={check}>{label}</AnswerChip>
           </AnswerChips>}
           {answers.length > 0 && (
