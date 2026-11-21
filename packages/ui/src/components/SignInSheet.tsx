@@ -58,7 +58,7 @@ export function SignInSheet({
               {cancelLabel}
             </Button>
           </div>
-          <div className="flex flex-col items-center text-lg leading-[normal] text-muted-foreground">
+          <div className="flex flex-col items-center text-control leading-[normal] text-muted-foreground">
             <DialogPrimitive.Title className="m-0 text-body-lg font-bold text-foreground">
               {owner}
               <span className="sr-only"> sign-in page</span>

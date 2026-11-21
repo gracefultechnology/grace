@@ -217,7 +217,9 @@ her uninstalled, data and all, before the install.
 socket: an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into":
 "<accessible name>" }`, `{ "press": "Enter" }` or `{ "expect": "<text on screen>" }`, each given two
 minutes; a step with any other key or an empty name is refused before the build, and a tap fails
-when no visible thing or more than one has that name. `{ "call": "<Plugin>.<method>", "with": {
+when no visible thing or more than one has that name. `{ "homeCard": "Email" }` selects a Home
+button by its title, including when its accessible name also announces a changing status.
+`{ "call": "<Plugin>.<method>", "with": {
 … }, "returns": { … } }` calls that native plugin's method in the page and fails unless it resolves
 with a value holding everything `returns` names (nested objects compared the same way, other values
 exactly); with `"refuses": "<message>"` in place of `returns` it fails unless the call rejects with

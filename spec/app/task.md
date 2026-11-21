@@ -21,7 +21,7 @@ pure def validKey(key: Subject): bool =
 
 ### Terms are none, a payment or a booking, each complete
 
-A payment names a positive amount, a fee that is not negative, its currency, a day and the funding it is paid from. A booking names its service and a slot that is a start and a positive length; a cost is known only when the booking is priced, and a cost above zero names its currency. The details a booking shares are kinds of detail, such as a name or a phone number, never their values. A report handed to review carries the subject, the terms, their revision and the evidence they were read from.
+A payment names a positive amount, a fee that is not negative, its currency, a day and the funding it is paid from. A booking names its service and a slot that is a start and a positive length; a cost is known only when the booking is priced, and a cost above zero names its currency. The booking lists the supported kinds of personal detail shared with the provider: name, phone or address. The review holds only those labels. The person's actual details stay out of the review record. A report handed to review carries the subject, the terms, their revision and the evidence they were read from.
 
 ```quint
 type Proposal = { amount: int, fee: int, currency: str, day: int, funding: str }
@@ -31,10 +31,11 @@ type Terms = NoTerms | PayTerms({ pay: Proposal }) | BookTerms({ book: Booking }
 type ReviewReport = { key: Subject, proposal: Terms, revision: int, evidence: str }
 pure def validProposal(proposal: Proposal): bool =
   proposal.amount > 0 and proposal.fee >= 0 and proposal.currency != "" and proposal.day > 0 and proposal.funding != ""
+pure val bookingDetails = Set("name", "phone", "address")
 pure def validBooking(booking: Booking): bool =
   booking.service != "" and booking.slot.start > 0 and booking.slot.minutes > 0 and booking.cost >= 0 and
   (booking.priced or booking.cost == 0) and (booking.cost > 0 implies booking.currency != "") and
-  booking.shares.every(detail => detail != "")
+  booking.shares.every(detail => bookingDetails.contains(detail))
 pure def validTerms(kind: TaskKind, terms: Terms): bool = match terms {
   | NoTerms => false
   | PayTerms(x) => kind == BillPay and validProposal(x.pay)
@@ -50,6 +51,7 @@ pure val payValues = Set(
   { amount: 0, fee: 0, currency: "", day: 0, funding: "" })
 pure val bookValues = Set(
   { service: "follow-up", slot: { start: 10, minutes: 30, venue: "clinic" }, priced: false, cost: 0, currency: "", shares: List("name", "phone"), acceptsClash: false },
+  { service: "follow-up", slot: { start: 10, minutes: 30, venue: "clinic" }, priced: false, cost: 0, currency: "", shares: List("a private value"), acceptsClash: false },
   { service: "", slot: { start: 0, minutes: 0, venue: "" }, priced: false, cost: 5, currency: "", shares: List(""), acceptsClash: true })
 ```
 

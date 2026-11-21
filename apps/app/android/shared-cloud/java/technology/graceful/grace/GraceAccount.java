@@ -137,17 +137,17 @@ public final class GraceAccount extends CloudSignInPlugin {
  }
 
  private void publishSession() {
-  try { notifyListeners("sessionChanged", projection(readOwner() != null), true); }
+  try { notifyListeners("sessionChanged", projection(readOwner()), true); }
   catch (Exception unavailable) { }
  }
 
- private static JSObject projection(boolean signedIn) {
-  return new JSObject().put("kind", signedIn ? "signedIn" : "signedOut");
+ static JSObject projection(CloudDeviceAccount.Session session) {
+  return GracePasswordsOwner.accountStatus(session);
  }
 
  @Override @PluginMethod public void status(PluginCall call) {
   ACCOUNT.execute(() -> {
-   try { call.resolve(projection(readOwner() != null)); }
+   try { call.resolve(projection(readOwner())); }
    catch (Exception unavailable) { call.reject("Device account is unavailable"); }
   });
  }
@@ -186,7 +186,7 @@ public final class GraceAccount extends CloudSignInPlugin {
     SharedGraceCredentials.withRead(() -> {
      current.run();
      if (owner == null || !owner.equals(session(getContext()))) throw new IllegalStateException("Account changed");
-     notifyListeners("sessionChanged", projection(true), true);
+     notifyListeners("sessionChanged", projection(owner), true);
      call.resolve();
      return null;
     });
@@ -200,7 +200,7 @@ public final class GraceAccount extends CloudSignInPlugin {
   recovery.accountChanged();
   try {
    super.signOut(accountCall(call, ignored -> {
-    notifyListeners("sessionChanged", projection(false), true);
+    notifyListeners("sessionChanged", projection(null), true);
     call.resolve();
    }));
   } catch (RuntimeException unavailable) { call.reject("Couldn't sign out on this device"); }

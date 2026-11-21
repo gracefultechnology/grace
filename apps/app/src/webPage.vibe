@@ -22,7 +22,7 @@ export function webPage() {
       const url = frame.going === undefined ? undefined : Url.make(frame.going)
       frame.going = undefined
       if (url === undefined) Queue.offerUnsafe(events, PageEvent.Started({ id, url }))
-      Queue.offerUnsafe(events, PageEvent.Changed({ id, url, loading: false, result: "Loaded" }))
+      Queue.offerUnsafe(events, PageEvent.Changed({ id, url, loading: false, result: "Loaded", back: frame.at > 0, forward: frame.at + 1 < frame.history.length }))
     }
     const remove = (id: PageId) => {
       frames.get(id)?.element.remove()

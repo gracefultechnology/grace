@@ -96,5 +96,5 @@ export function Quint({ code }: { code: string }) {
 }
 
 export const Code = ({ children, className }: { children: ReactNode; className?: string }) => (
-  <pre className={cn("m-0 overflow-x-auto rounded-md border border-border bg-muted px-3 py-2 font-mono text-xs leading-relaxed", className)}>{children}</pre>
+  <pre className={cn("m-0 overflow-x-auto rounded-md border border-border bg-muted px-3 py-2 font-mono text-mark leading-relaxed", className)}>{children}</pre>
 );

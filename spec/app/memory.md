@@ -154,6 +154,9 @@ The emitted value is an authorization for this fact and destination, not
 proof that a website changed. The browser checks the same revision, current
 task, origin/account and observation again immediately before applying it.
 Corrections, deletion, Stop and navigation cancel stale queued capabilities.
+After the host reads back the matching filled field, [the saved-detail
+check](./memoryActuation.md) records why Grace used it in the visible task
+checkpoint. The explanation contains no personal detail or website text.
 
 ```quint
 pure def canDispatchFill(f: PersonalFact, fillTicket: FillTicket, by: MemoryActor): bool =

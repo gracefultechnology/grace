@@ -64,6 +64,10 @@ const kinds: [path: string, [RegExp, string]][] = [
   ["z.#", [/^-?(?:0|[1-9]\d{0,8})$/, "an integer z-index"]], ["focus.width", length], ["focus.offset", [/^-?\d*\.?\d+(?:rem|px)$/, "a length in rem or px"]],
   ["keyframes.*", [/^(?:[^{}]*\{[^{}]*\})+$/, "keyframe stops, such as 50%{opacity:0}"]], ["animate.*", text],
 ]
+const tokenPath = (pattern: string) => new RegExp(`^${pattern.replaceAll(".", "\\.").replace("*", "[a-z][a-z0-9-]*").replace("#", "[a-z0-9][a-z0-9-]*")}$`)
+const tokenKinds = kinds.map(([pattern, kind]) => ({ path: tokenPath(pattern), kind }))
+const kindOf = (path: string) => tokenKinds.find((entry) => entry.path.test(path))?.kind
+const tokenGroups = [...new Set(kinds.flatMap(([pattern]) => pattern.split(".").slice(0, -1).map((_, at, parts) => parts.slice(0, at + 1).join("."))))].map(tokenPath)
 const required = ["light", "dark"].flatMap((theme) => colorNames.map((name) => `color.${theme}.${name}`)).concat("radius", "font.sans", "font.mono")
 
 /** Tailwind v4's default palette (tailwindcss 4.3 theme.css): the colors of `bg-red-500` and the like. */
@@ -101,11 +105,8 @@ export function parseTokens(input: unknown): Tokens {
     return isRecord(value) ? value : {}
   }
   const names = (path: string) => Object.keys(group(path))
-  const matches = (pattern: string, path: string) => new RegExp(`^${pattern.replaceAll(".", "\\.").replace("*", "[a-z][a-z0-9-]*").replace("#", "[a-z0-9][a-z0-9-]*")}$`).test(path)
-  const kindOf = (path: string) => kinds.find(([pattern]) => matches(pattern, path))?.[1]
-  const groups = [...new Set(kinds.flatMap(([pattern]) => pattern.split(".").slice(0, -1).map((_, at, parts) => parts.slice(0, at + 1).join("."))))]
   // An empty group (`shadow: {}`) is fine; an empty object at a value's path (`weight.a`, `text.body.size`) or anywhere else is not.
-  const problems = found.concat(holes(input, "").filter(([path]) => path && !(groups.some((pattern) => matches(pattern, path)) && !kindOf(path)))).flatMap(([path, value]) => {
+  const problems = found.concat(holes(input, "").filter(([path]) => path && !(tokenGroups.some((pattern) => pattern.test(path)) && !kindOf(path)))).flatMap(([path, value]) => {
     const kind = kindOf(path)
     if (!kind) return [`unknown token path: ${path}`]
     return typeof value === "string" && kind[0].test(value) ? [] : [`${path}: expected ${kind[1]}, got ${JSON.stringify(value)}`]

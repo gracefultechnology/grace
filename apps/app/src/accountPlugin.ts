@@ -1,7 +1,7 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
 import { Capacitor, type PluginListenerHandle, registerPlugin } from "@capacitor/core";
 
-type AccountStatus = { kind: "signedIn" | "signedOut" };
+type AccountStatus = { kind: "signedIn"; voiceDisclosureScope: string } | { kind: "signedOut" };
 
 interface AccountPlugin {
   status(): Promise<AccountStatus>;
