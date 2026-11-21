@@ -20,6 +20,7 @@ export const meta: ComponentMeta<MailServersFormProps> = {
     Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       connect.mockClear();
+      await expect(canvas.getByText(/or Grace can look them up\./)).toBeTruthy();
       const outgoing = canvas.getByRole("textbox", { name: "Outgoing mail server" });
       await userEvent.clear(outgoing);
       await expect(canvas.getByRole<HTMLButtonElement>("button", { name: "Connect" }).disabled).toBe(true);

@@ -8,7 +8,10 @@ import { NoticeHost, Reply } from "./notices.vibe";
 import { OverPage } from "./PageLayer.tsx";
 import { useRuntime, useWorkspace } from "./useApp.ts";
 
-const words = (notice: Notice) => (isBackOnline(notice) ? "Back online" : notice.offer === "SeeDetails" ? `Reminder: ${notice.subject}` : notice.subject);
+export type ReminderNotice = { title: string; line: string; toast: string; seeDetails: boolean; dismiss: boolean };
+export type Reminders = (subject: string) => ReminderNotice | undefined;
+
+const words = (notice: Notice, told?: ReminderNotice) => (isBackOnline(notice) ? "Back online" : notice.offer === "SeeDetails" ? `Reminder: ${told?.toast ?? notice.subject}` : notice.subject);
 const toastButton = "h-11 px-3.5 text-body font-bold text-frame-lilac bg-glass/14 active:bg-glass/24";
 
 function useNotices() {
@@ -18,22 +21,23 @@ function useNotices() {
   return { state, can, host };
 }
 
-export function Notices({ above }: { above: number }) {
+export function Notices({ above, reminders }: { above: number; reminders?: Reminders }) {
   const { state, can, host } = useNotices();
   const toast = state?.shown.at(0);
   if (toast === undefined) return null;
-  const actable = can({ type: "act", id: toast.id }, "Person");
+  const told = toast.offer === "SeeDetails" ? reminders?.(toast.subject) : undefined;
+  const actable = can({ type: "act", id: toast.id }, "Person") && (told?.seeDetails ?? true);
   const act = host((h) => h.act(toast.id));
   return (
     <OverPage className="absolute left-1/2 z-[45] -translate-x-1/2" style={{ bottom: above + 24 }}>
       <Toast key={toast.id} onUndo={toast.offer === "Undo" && actable ? act : undefined}>
-        {words(toast)}
+        {words(toast, told)}
         {toast.offer === "SeeDetails" && actable && (
           <Button variant="plain" size="compact" className={toastButton} onClick={act}>
             See details
           </Button>
         )}
-        {can({ type: "closeToast", id: toast.id }, "Person") && (
+        {can({ type: "closeToast", id: toast.id }, "Person") && (told?.dismiss ?? true) && (
           <Button variant="plain" size="compact" aria-label="Close" className={toastButton} onClick={host((h) => h.close(toast.id))}>
             <X aria-hidden size={20} strokeWidth={2.4} />
           </Button>
@@ -43,7 +47,7 @@ export function Notices({ above }: { above: number }) {
   );
 }
 
-export function NoticeBanner() {
+export function NoticeBanner({ reminders }: { reminders?: Reminders }) {
   const { state, host } = useNotices();
   const { can, send } = useWorkspace();
   if (state === undefined) return null;
@@ -57,13 +61,15 @@ export function NoticeBanner() {
         <Banner icon={<WifiSlash size={30} />} title="Not connected to the internet" line="Grace can help you reconnect."
           actions={<Button variant="prominent" size="compact" disabled={!can(wifi)} onClick={() => void send(wifi)}><Wifi aria-hidden size={22} strokeWidth={2.2} />Fix Wi-Fi</Button>} />
       );
-    case "ReminderBanner":
+    case "ReminderBanner": {
+      const told = reminders?.(banner.subject);
       return (
-        <Banner icon={<span className="flex text-alert"><BellIcon className="size-7.5" /></span>} title={banner.subject}
+        <Banner icon={<span className="flex text-alert"><BellIcon className="size-7.5" /></span>} title={told?.title ?? banner.subject} line={told?.line}
           actions={<>
-            <Button variant="prominent" size="compact" onClick={host((h) => h.reply(Reply.SeeDetails({ reminder: banner.subject })))}>See details</Button>
-            <Button variant="plain" size="compact-icon" aria-label="Dismiss" onClick={host((h) => h.reply(Reply.Dismiss({ reminder: banner.subject })))}><X aria-hidden size={24} strokeWidth={1.75} /></Button>
+            {(told?.seeDetails ?? true) && <Button variant="prominent" size="compact" onClick={host((h) => h.reply(Reply.SeeDetails({ reminder: banner.subject })))}>See details</Button>}
+            <Button variant="plain" size="compact-icon" aria-label="Dismiss" disabled={!(told?.dismiss ?? true)} onClick={host((h) => h.reply(Reply.Dismiss({ reminder: banner.subject })))}><X aria-hidden size={24} strokeWidth={1.75} /></Button>
           </>} />
       );
+    }
   }
 }

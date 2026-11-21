@@ -42,7 +42,7 @@ export type CalendarAppProps = Omit<AppWindowProps, "title" | "icon" | "actions"
   /** The events of the next two weeks, in the week view. */
   upcoming: CalendarEventItem[];
   upcomingHeading?: string;
-  /** Called with the id of the event a person opens. */
+  /** Called with the id of the event a person opens; without it the rows are only read, as a draft's is. */
   onOpenEvent?: (id: string) => void;
   /** Goes back to today; without it Today is not offered. */
   onToday?: () => void;
@@ -109,7 +109,14 @@ export function CalendarApp({
     items.length > 0 && (
       <div className="flex flex-col gap-3">
         {items.map(({ id, ...item }) => (
-          <Fragment key={id}>{guided(guide, id, <CalendarEventRow {...item} onClick={() => onOpenEvent?.(id)} />, { radius: 22, placement: "below", className: "flex" })}</Fragment>
+          <Fragment key={id}>
+            {guided(
+              guide,
+              id,
+              <CalendarEventRow {...item} {...(onOpenEvent ? { onClick: () => onOpenEvent(id) } : { "aria-disabled": true, className: "cursor-default active:scale-100" })} />,
+              { radius: 22, placement: "below", className: "flex" },
+            )}
+          </Fragment>
         ))}
       </div>
     );

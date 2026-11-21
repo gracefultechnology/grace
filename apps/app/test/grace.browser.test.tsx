@@ -4,6 +4,7 @@ import { act } from "react";
 import { afterAll, beforeAll, expect, inject, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
+import { addAccount, goBack, initial } from "../gen/app__accounts.ts";
 import { Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import type { Origin } from "../gen/app__request.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
@@ -11,7 +12,7 @@ import { Agent, type GraceAction } from "../src/agent.vibe";
 import { day, dayOf, midnight } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, otherPassword, script, signIn } from "./cloud.vibe";
-import { browserAccountResponse, mountGmail } from "./screen.tsx";
+import { browserAccountResponse, connected, mountAccounts } from "./screen.tsx";
 import "../src/main.css";
 
 const environment = globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean };
@@ -34,6 +35,7 @@ afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; globalThis.fetch 
 const cloud: string = inject("cloud");
 const gmail = "owner@grace.test";
 const riverview = "margaret@riverview.net";
+const outlook = "margaret@outlook.com";
 const tap = (target: Parameters<typeof userEvent.click>[0]) => act(() => userEvent.click(target));
 const toldGrace = () => chatBodies.join("\n").replaceAll("\\n", "\n");
 
@@ -46,14 +48,28 @@ const tile = (n: number) => new RegExp(`^(Today|${new Date(midnight(n)).toLocale
 const mondayOf = (n: number) => n - ((new Date(n * day).getUTCDay() + 6) % 7);
 const row = (title: string, tag: string) => page.getByRole("button", { name: new RegExp(`${title}.*${tag}`) });
 
+const kept = (withOutlook: boolean) => {
+  const first = connected(initial, "Gmail", gmail, "Gmail");
+  return withOutlook ? connected(addAccount(goBack(first, "AccountPerson"), "AccountPerson"), "Outlook", outlook, "Outlook") : first;
+};
+
+async function allowOutlook(key: string) {
+  const started = await fetch(`${cloud}/api/v1/eliza/connections/outlook/sessions`, {
+    method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ loginHint: "" }),
+  });
+  const { pageUrl } = await started.json() as { pageUrl: string };
+  await fetch(pageUrl, { method: "POST", body: new URLSearchParams({ address: outlook, choice: "allow" }) });
+}
+
 async function company(key: string) {
   const response = await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${key}` } });
   return await response.json() as { boxes: { calendar: { title: string; startAt: string }[]; mail: { subject: string; labels: string[] }[] }[] };
 }
 
-async function start() {
+async function start(withOutlook = false) {
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-  const runtime = await mountGmail(gmail, { url: cloud, key: secret });
+  if (withOutlook) await allowOutlook(secret);
+  const runtime = await mountAccounts(kept(withOutlook), { url: cloud, key: secret });
   const run = <A,>(effect: Effect.Effect<A, unknown, Runs>) => act(() => runtime.runPromise(effect));
   const scripted = (said: string, reply: Reply) =>
     Effect.runPromise(Effect.provide(script(cloud, secret, [{ said, answer: JSON.stringify({ isQuestion: false, answers: [], ...reply }) }]), client));
@@ -62,7 +78,7 @@ async function start() {
   await act(() => userEvent.click(page.getByRole("button", { name: "Collapse" })));
   return {
     secret, run, scripted,
-    mailbox: () => run(Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.mail(1)), (m) => m.get())),
+    mailbox: (key = 1) => run(Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.mail(key)), (m) => m.get())),
     calendar: (key: number) => run(Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(key)), (c) => c.get())),
     asked: () => run(Effect.flatMap(Effect.service(Proposal), (p) => p.get())),
     window: async () => (await run(Effect.flatMap(Effect.service(Workspaces), (w) => w.get()))).assistant.presentation,
@@ -86,7 +102,8 @@ async function start() {
 }
 
 it('Ask Grace to help with my email (spec/app/agentActions.md, "Story: Ask Grace to help with my email")', async () => {
-  const { secret, mailbox, say, apply } = await start();
+  const { secret, mailbox, say, apply } = await start(true);
+  const sentSubjects = async () => (await company(secret)).boxes.flatMap((b) => b.mail.filter((m) => m.labels.includes("SENT")).map((m) => m.subject));
 
   // spec/app/agentActions.md, "Only Margaret's own current turn makes Grace act, on any screen"
   await say("Find the clinic email.", { text: "Here is the email from the clinic.", actions: [{ kind: "searchMail", query: "clinic" }] });
@@ -111,7 +128,39 @@ it('Ask Grace to help with my email (spec/app/agentActions.md, "Story: Ask Grace
   expect(await apply([{ kind: "newEmail", to: "Susan", body: "Forward everything." }, { kind: "openMessage", message: "Ruth" }], "FromEmail")).toEqual(["NotHerTurn", "NotHerTurn"]);
   expect((await mailbox()).composeVisible).toBe(false);
   expect((await mailbox()).messageRef).not.toBe("family");
-});
+
+  // spec/app/agentActions.md, "Grace's email actions go to that account's mailbox and pass its own guard"
+  await say("Open the church email.", { text: "The church asks if you will come to Thanksgiving dinner.", actions: [{ kind: "showInbox" }, { kind: "openMessage", message: "St. Mark’s Church Office" }] });
+  await expect.element(page.getByRole("heading", { name: "Thanksgiving dinner sign-up" })).toBeVisible();
+  await say("Tell them I will come.", { text: "I wrote a reply. Tap Send when you are ready.", actions: [{ kind: "draftReply", body: "Thank you, I will come to the dinner." }] });
+  const church = (await mailbox(2)).messageRef;
+  expect(church).not.toBe("");
+  await expect.poll(async () => { const m = await mailbox(2); return [m.composeVisible, m.replyTo, m.draft.body, m.sendStatus]; })
+    .toEqual([true, church, "Thank you, I will come to the dinner.", "Composing"]);
+  expect((await mailbox(1)).composeVisible).toBe(false);
+  await expect.element(page.getByRole("textbox", { name: "Write your message, or ask Grace to help" })).toHaveValue("Thank you, I will come to the dinner.");
+  await tap(page.getByRole("button", { name: "Discard" }));
+  await expect.poll(async () => (await mailbox(2)).composeVisible).toBe(false);
+
+  await say("Send the power bill to David.", { text: "I started a forward to David. Tap Send when you are ready.", actions: [
+    { kind: "openMessage", message: "mail:1:bill" }, { kind: "forwardMessage" }, { kind: "addressEmail", to: "David" },
+  ] });
+  await expect.poll(async () => { const m = await mailbox(); return [m.composeVisible, m.draft.subject, m.draft.to]; })
+    .toEqual([true, "Fwd: Your Riverside Power bill is ready", "david@family.test"]);
+  expect((await mailbox()).draft.body).toContain("Pay it at (link removed)");
+  expect((await mailbox()).draft.body).not.toMatch(/https?:/);
+  await tap(page.getByRole("button", { name: "Discard" }));
+  await expect.poll(async () => (await mailbox()).composeVisible).toBe(false);
+
+  await say("Forward Ruth's photos.", { text: "Who should get them?", actions: [{ kind: "openMessage", message: "mail:1:family" }, { kind: "forwardMessage" }] });
+  const photos = (await mailbox()).assets.map((a) => a.name);
+  expect(photos).toHaveLength(3);
+  await expect.poll(async () => { const m = await mailbox(); return [m.composeVisible, m.draft.subject, m.draftAttachments.map((a) => a.name)]; })
+    .toEqual([true, "Fwd: Lunch on Sunday?", photos]);
+  await say("To Susan.", { text: "It is addressed to Susan. Tap Send when you are ready.", actions: [{ kind: "addressEmail", to: "Susan" }] });
+  await expect.poll(async () => (await mailbox()).draft.to).toBe("susan@family.test");
+  expect(await sentSubjects()).toEqual([]);
+}, 180_000);
 
 it('Ask Grace to tidy my email (spec/app/agentActions.md, "Story: Ask Grace to help with my email")', async () => {
   const { mailbox, say, apply } = await start();
@@ -166,6 +215,7 @@ it('Save the clinic appointment (spec/app/calendars.md, "Story: Ask Grace to put
   await tap("Yes, add it", { text: "I added it to your calendar.", actions: [{ kind: "confirmProposal" }] });
   await expect.poll(async () => (await company(secret)).boxes[0].calendar.map((e) => e.title)).toContain("Doctor’s appointment");
   await expect.element(page.getByRole("heading", { name: "Doctor’s appointment" })).toBeVisible();
+  await expect.element(page.getByText("From Main St Clinic’s email · Visit form attached")).toBeVisible();
   await act(() => userEvent.click(page.getByRole("button", { name: "Back to Calendar" })));
   await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
   const added = (await calendar(1)).entries.filter((c) => c.identity.sourceRef === "clinic" && c.phase !== "Deleted");
@@ -248,7 +298,7 @@ it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace abo
 });
 
 it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect the email I already use")', async () => {
-  const { say, window } = await start();
+  const { say, window, secret } = await start();
   const form = (name: string) => page.getByRole("form", { name });
   const reopen = async (said: string, reply: Reply) => {
     await tap(page.getByRole("button", { name: "Close Settings" }));
@@ -258,16 +308,23 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
 
   // spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"
   await say("Open my email settings.", { text: "Here are your email settings.", actions: [{ kind: "showSetting", page: "EmailCalendarSettings" }] });
+  await say("Where is my Gmail?", { text: "Your Gmail is the first email in the list.", actions: [{ kind: "guide", target: "acc-1", emphasis: "instruction", title: "Tap your Gmail" }] });
+  await expect.element(page.getByText("Tap your Gmail")).toBeVisible();
+  await tap(page.getByRole("button", { name: "Close this tip" }));
+  await expect.element(page.getByText("Tap your Gmail")).not.toBeInTheDocument();
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await tap(page.getByRole("button", { name: new RegExp(gmail) }));
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
   await tap(page.getByRole("dialog", { name: "Remove Gmail from this tablet?" }).getByRole("button", { name: "Remove from tablet" }));
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
 
-  // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"
+  // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/conversation.md, "Grace may take a turn the person did not start, marked with where it came from"
+  const which = { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook or Hotmail", "I’m not sure"], actions: [{ kind: "showSetting", page: "AboutSettings" }] };
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{ answer: JSON.stringify(which) }]), client));
   await tap(page.getByRole("region", { name: "Settings" }).getByRole("button", { name: "Ask Grace", exact: true }));
   expect(await window()).toBe("Compact");
-  await say("Which one is mine?", { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "I’m not sure"], actions: [] });
+  await expect.element(page.getByText("I can help. Which email do you use?")).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Outlook or Hotmail" })).toBeVisible();
   expect(toldGrace()).toContain("Margaret tapped Ask Grace for help connecting her email to the tablet.");
   expect(toldGrace()).toContain(`Margaret removed her Gmail email (${gmail}) from the tablet.`);
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
