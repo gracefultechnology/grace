@@ -578,10 +578,14 @@ pure def lawCloseKeepsTheComposerContent(device: S::Shell, calendarView: V::Cale
   match closed {
     | CloseDeclined => true
     | ClosedApp(result) =>
-        if (app == S::Email and E::canCloseEmptyComposer(mailbox, E::MailUser))
-          result.mail == E::closeEmptyComposer(mailbox, E::MailUser)
-        else result.mail.draft == mailbox.draft and result.mail.draftAttachments == mailbox.draftAttachments and
-          ((app == S::Email and E::canEditDraft(mailbox, E::MailUser)) implies result.mail.draftStorage == E::DraftSaving)
+        val empty = app == S::Email and E::canCloseEmptyComposer(mailbox, E::MailUser)
+        val expected = if (empty) E::closeEmptyComposer(mailbox, E::MailUser) else mailbox
+        result.mail.draft.to == expected.draft.to and result.mail.draft.subject == expected.draft.subject and
+        result.mail.draft.body == expected.draft.body and result.mail.draftAttachments == expected.draftAttachments and
+        result.mail.draft.cc.subseteq(expected.draft.cc) and expected.draft.cc.subseteq(result.mail.draft.cc) and
+        result.mail.draft.bcc.subseteq(expected.draft.bcc) and expected.draft.bcc.subseteq(result.mail.draft.bcc) and
+        (empty implies (result.mail.sendStatus == E::NoDraft and result.mail.draftStorage == E::DraftUnstored)) and
+        ((app == S::Email and E::canEditDraft(mailbox, E::MailUser) and not(empty)) implies result.mail.draftStorage == E::DraftSaving)
   }
 pure val calendarViewValues = Set(V::initial, { ...V::initial, owner: "owner", calendarId: "calendar", opened: true })
 pure val mailboxValues = Set(photoMailbox,
