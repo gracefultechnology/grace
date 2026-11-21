@@ -825,16 +825,19 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
   if ("approve" in step) {
     const screen = "/data/local/tmp/grace-approve.xml";
     const until = Date.now() + 180_000;
+    let seen: unknown = "nothing";
     while (Date.now() < until) {
-      const nodes = deviceNodes(await shell(serial, `uiautomator dump ${screen} >/dev/null && cat ${screen}; rm -f ${screen}`, 75).catch(() => ""));
-      const button = nodes.find((node) => node.label === step.approve && node.clickable && node.enabled && ["com.android.settings", "com.android.systemui"].includes(node.packageName));
+      const dumped = await shell(serial, `uiautomator dump ${screen} >/dev/null && cat ${screen}; rm -f ${screen}`, 75).catch((error: unknown) => error);
+      const nodes = typeof dumped === "string" ? deviceNodes(dumped).filter((node) => ["com.android.settings", "com.android.systemui"].includes(node.packageName) && node.clickable && node.enabled) : [];
+      const button = nodes.find((node) => node.label === step.approve);
       if (button) {
         await shell(serial, `input tap ${button.x} ${button.y}`);
         return;
       }
+      seen = typeof dumped === "string" ? nodes.map((node) => node.label || node.description) : dumped;
       await delay(1000);
     }
-    throw new Error(`Android showed no ${step.approve} button on ${serial}`);
+    throw new Error(`Android showed no ${step.approve} button on ${serial}; last seen ${seen instanceof Error ? seen.message : JSON.stringify(seen)}`);
   }
   if ("notification" in step) {
     await shell(serial, "am start -W -a android.settings.SETTINGS", 120);

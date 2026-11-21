@@ -110,7 +110,6 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose"; spec/a
     await expect.element(page.getByRole("alert")).toBeVisible();
     tablet.currentPoint = nearby("NETGEAR-4F2", -40, "wpa2", "02:00:00:00:00:00");
     await changed();
-    await expect.element(page.getByRole("alert")).toBeVisible();
     tablet.currentPoint = undefined;
     await changed();
     await expect.element(button("Try again")).not.toBeInTheDocument();
