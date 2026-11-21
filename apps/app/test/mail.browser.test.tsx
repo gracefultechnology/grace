@@ -4,7 +4,7 @@ import { act } from "react";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
-import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
+import { addAccount, goBack, initial } from "../gen/app__accounts.ts";
 import { approveSave, create, initial as emptyOccurrence, noDetails, noIdentity, save } from "../gen/app__calendar.ts";
 import { bindCalendar, initial as emptyCalendar, publishOccurrence, type CalendarView } from "../gen/app__calendarView.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
@@ -14,7 +14,7 @@ import { application } from "../src/app.vibe";
 import { Instances } from "../src/instances.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
-import { tabletView, actOnScreen, browserAccountResponse } from "./screen.tsx";
+import { tabletView, actOnScreen, allowOutlook, browserAccountResponse, connected } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -37,19 +37,7 @@ const Kept = Schema.Struct({
   changes: Schema.Array(Schema.Struct({ receipt: Schema.Struct({ requestId: Schema.String, kind: Schema.String, state: Schema.String }) })),
 });
 
-async function allowOutlook(key: string) {
-  const started = await fetch(new URL("/api/v1/eliza/connections/outlook/sessions", cloud), {
-    method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ loginHint: "" }),
-  });
-  const { pageUrl } = await started.json() as { pageUrl: string };
-  await fetch(pageUrl, { method: "POST", body: new URLSearchParams({ address: outlook, choice: "allow" }) });
-}
-
 function kept(): Accounts {
-  const connected = (a: Accounts, provider: Provider, address: string, name: string) => {
-    const chosen = chooseProvider(a, provider, "AccountPerson");
-    return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, name, "AccountConnector");
-  };
   return connected(addAccount(goBack(connected(initial, "Gmail", gmail, "Gmail"), "AccountPerson"), "AccountPerson"), "Outlook", outlook, "Outlook");
 }
 
@@ -75,7 +63,7 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
       key === "sourceAccount" && value === 0 ? undefined : value));
   }
   if (withAccounts) {
-    await allowOutlook(secret);
+    await allowOutlook({ cloud, key: secret, address: outlook });
     localStorage.setItem("accounts", JSON.stringify(kept()));
   }
   const connectivity = vi.spyOn(window.navigator, "onLine", "get");
@@ -145,6 +133,10 @@ const forgotten = (owner: string) => new Promise<void>((resolve, reject) => {
   request.onsuccess = () => resolve();
   request.onerror = () => reject(new Error("The test could not delete the file library", { cause: request.error }));
 });
+const writeTo = async (name: string) => {
+  await click(page.getByRole("button", { name: "Write" }));
+  await click(page.getByRole("button", { name, exact: true }));
+};
 const opened = async (from: RegExp, title: string) => {
   await click(email(from));
   await expect.element(page.getByRole("heading", { name: title })).toBeVisible();
@@ -463,8 +455,7 @@ it("Write or reply and confirm before sending", async () => {
   await expect.element(email(/^Main St Clinic.*You replied: “Thank you, I’ll be there\.…”/)).toBeVisible();
 
   // spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
-  await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name: "Susan" }));
+  await writeTo("Susan");
   await act(() => userEvent.fill(subject(), "Sunday"));
   await act(() => userEvent.fill(words(), "See you on Sunday."));
   await click(page.getByRole("button", { name: "Add", exact: true }));
@@ -505,15 +496,13 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Write" }));
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
-  await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name: "Susan" }));
+  await writeTo("Susan");
   await act(() => userEvent.fill(words(), "Never mind."));
   await click(page.getByRole("button", { name: "Discard" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
 
   // spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"
-  await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name: "Susan" }));
+  await writeTo("Susan");
   await expect.element(page.getByRole("button", { name: outlook })).toBeVisible();
   await act(() => userEvent.fill(subject(), "Lunch next week"));
   await act(() => userEvent.fill(words(), "Shall we have lunch on Tuesday?"));
@@ -530,8 +519,7 @@ it("Write or reply and confirm before sending", async () => {
 
   // spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
   await click(row("All inboxes"));
-  await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name: "Susan" }));
+  await writeTo("Susan");
   await act(() => userEvent.fill(subject(), "Tea on Friday"));
   await act(() => userEvent.fill(words(), "Would you come for tea on Friday?"));
   await click(page.getByRole("button", { name: "Close Email" }));

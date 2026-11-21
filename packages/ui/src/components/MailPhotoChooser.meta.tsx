@@ -1,16 +1,12 @@
 import { expect, fn, screen, userEvent } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
-import { photos } from "./FilesApp.meta.tsx";
+import { photoGroups } from "./FilesApp.meta.tsx";
 import type { MailPhotoChooserProps } from "./MailPhotoChooser.tsx";
 
 export const meta: ComponentMeta<MailPhotoChooserProps> = {
   args: {
     open: true,
-    photos: [
-      { id: "stage", src: photos.stage, label: "Photo 1" },
-      { id: "flowers", src: photos.flowers, label: "Photo 2" },
-      { id: "garden", src: photos.garden, label: "Photo 3" },
-    ],
+    photos: photoGroups[0].photos,
     onChoose: fn(),
     onRetry: fn(),
     onCancel: fn(),
