@@ -5,7 +5,7 @@ import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceH
 import { Effect, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
-import { guidedDetails, localPasswordCommands, mayGuideReadLink, type GuidedStep } from "../gen/app__workspace.ts";
+import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, nextOutcome, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import { OverPage } from "./PageLayer.tsx";
@@ -52,7 +52,7 @@ const checkRetries: Partial<Record<GuidedStep["tag"], string>> = {
 /** @model spec/app/assistant.md */
 
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
-  const { workspace, can, send, say, current, checkGuidedRead, pointAtReadLink, startReadReview, resumeReadPlan } = useWorkspace();
+  const { workspace, can, send, say, current, checkGuidedRead, pointAtReadLink, confirmGuidedName, startReadReview, resumeReadPlan } = useWorkspace();
   const guide = usePasswordGuide();
   const runtime = useRuntime();
   const { assistant, plan, review, device, browser } = workspace!;
@@ -77,7 +77,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const localCommands = localPasswordCommands(device);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   const [guidedCheck, setGuidedCheck] = useState<{ key: string; phase: "checking" | "retry" | "privateForm" }>();
-  const [linkFeedback, setLinkFeedback] = useState<{ key: string; result?: BrowserGuidance }>();
+  const [linkFeedback, setLinkFeedback] = useState<{ key: string; attempt: symbol; result?: BrowserGuidance }>();
   // Prototype `layout()`: the window sits on the keyboard.
   const keyboard = useKeyboardHeight();
   if (assistant.presentation === "Closed") return null;
@@ -95,7 +95,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const start = { type: "startReadReview", reviewRevision: review.revision } as const;
   const showReview = can(start) && review.request.owner === guidedOwner(authority, review.request.steps);
   const next = plan.receipts.length;
-  const currentStep = plan.steps[next];
+  const currentStep = hasNext(plan) ? nextOutcome(plan) : undefined;
   const hasPlan = plan.steps.length > 0;
   const owner = guidedOwner(authority, plan.steps);
   const ownsPlan = plan.owner === owner;
@@ -135,9 +135,19 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     ? `I couldn’t verify “${details?.subject}” on this page. Check the page again or try another link.`
     : checkRetries[stepKind] ?? pageRetry;
   const feedback = guideKey && linkFeedback?.key === guideKey ? linkFeedback : undefined;
+  const alternateHref = feedback?.result && "alternateHref" in feedback.result ? feedback.result.alternateHref : undefined;
+  const nameOffer = workspace && alternateHref ? currentGuidedNameCorrection(workspace) : undefined;
+  const correction = nameOffer?.tag === "PendingGuidedNameCorrection" && alternateHref === nameOffer.value.href ? nameOffer.value : undefined;
+  const chooseSiteName = () => {
+    if (!correction) return;
+    const refused = () => setLinkFeedback((current) => current === feedback
+      ? { key: guideKey, attempt: Symbol(), result: { kind: "Unavailable", words: "The page or task changed. Ask me again on the page you want." } } : current);
+    void confirmGuidedName(correction).then((accepted) => { if (!accepted) refused(); }, refused);
+  };
   const showLink = () => {
-    setLinkFeedback({ key: guideKey });
-    const report = (result: BrowserGuidance) => setLinkFeedback((current) => current?.key === guideKey ? { key: guideKey, result } : current);
+    const attempt = Symbol();
+    setLinkFeedback({ key: guideKey, attempt });
+    const report = (result: BrowserGuidance) => setLinkFeedback((current) => current?.attempt === attempt ? { ...current, result } : current);
     void pointAtReadLink(report).then(report, () => report({ kind: "Unavailable", words: "I could not highlight a link on this page." }));
   };
 
@@ -210,9 +220,12 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                 <>
                   <blockquote className="text-body">{plan.originalAsk}</blockquote>
                   <ol className="flex flex-col gap-2">
-                    {keyedSteps(plan.steps).map(({ step, key }, index) => <li key={key} aria-current={index === next ? "step" : undefined}>
-                      {index < next ? plan.receipts[index]?.evidence : step.tag === "ReachNamedPage" ? `Find and check “${step.subject}”.` : guidedDetails(step).outcome}
-                    </li>)}
+                    {keyedSteps(plan.steps).map(({ step, key }, index) => {
+                      const displayed = index === next && currentStep ? currentStep : step;
+                      return <li key={key} aria-current={index === next ? "step" : undefined}>
+                        {index < next ? plan.receipts[index]?.evidence : displayed.tag === "ReachNamedPage" ? `Find and check “${displayed.subject}”.` : guidedDetails(displayed).outcome}
+                      </li>;
+                    })}
                   </ol>
                 </>
               ) : <p aria-current={currentStep ? "step" : undefined}>{stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence}</p>}
@@ -225,6 +238,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
           {localCommands && guide.mic === "GuideMicUnavailable" && <PageText role="status">Cloud speech is unavailable. You can type a Passwords command.</PageText>}
           {localCommands && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that Passwords command. Try typing it.</PageText>}
           {canCheck && <AnswerChips>
+            {correction && <AnswerChip className="mr-0 h-auto min-h-13 max-w-full shrink whitespace-normal wrap-anywhere" onClick={chooseSiteName}>Use “{correction.label}” for this step</AnswerChip>}
             {guideKey && <AnswerChip disabled={checking?.phase === "checking" || (feedback !== undefined && (feedback.result === undefined || feedback.result.kind === "Menu"))} onClick={showLink}>Show me the link</AnswerChip>}
             <AnswerChip disabled={checking?.phase === "checking"} onClick={check}>{label}</AnswerChip>
           </AnswerChips>}
