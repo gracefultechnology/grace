@@ -1288,9 +1288,9 @@ pure def lawGuidanceKeepsTheApprovedLink(w: Workspace, link: GuidedLink, by: Wor
   (w.plan.nameOverride.stepIndex == link.stepIndex and w.plan.nameOverride.label != "" and link.url != w.plan.linkUrl)
     implies not(canSetGuidedLink(w, link, by))
 pure val correctionValues = Set(
-  { owner: "tablet", task: "read", version: 1, generation: 2, deviceVersion: 2, browserRevision: 1,
-    stepIndex: 0, loadVersion: 1, documentId: "browser-document", url: "https://biller.example/",
-    href: "https://biller.example/help", original: "Support", label: "Help" })
+  { owner: "tablet", task: "read", version: 1, generation: 4, deviceVersion: 7, browserRevision: 3,
+    stepIndex: 0, loadVersion: 1, documentId: "browser-document", url: "https://utility.example",
+    href: "https://utility.example/help", original: "Support", label: "Help" })
 ```
 
 ### Only a current observation of the next outcome advances the plan
@@ -1362,7 +1362,9 @@ pure def lawPausedPlanCannotAdvance(w: Workspace, report: GuidedObservation, by:
 pure def lawCommitmentCannotUsePlanReceipt(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   w.commitmentTask != "" implies not(canConfirmGuided(w, report, by))
 pure val sampleStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "appointment", outcome: "Read the appointment" })
-pure val requestValues = Set({ owner: "owner", task: "task", goal: "Read my appointment", steps: List(sampleStep) })
+pure val requestValues = Set(
+  { owner: "owner", task: "task", goal: "Read my appointment", steps: List(sampleStep) },
+  { owner: "tablet", task: "read", goal: "Find Support", steps: List(ReachNamedPage({ subject: "Support" })) })
 pure val sampleReport: GuidedObservation = {
   owner: "owner", task: "task", version: 1, deviceVersion: 1, browserRevision: 0,
   step: sampleStep, sourceKey: "appointment-id", evidence: "appointment-receipt"
