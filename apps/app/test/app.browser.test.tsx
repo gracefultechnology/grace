@@ -1,7 +1,7 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
-import { Effect, ManagedRuntime, Schema } from "effect";
+import { Effect, Latch, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
@@ -2673,15 +2673,15 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(await receipts()).toEqual([]);
 
     privatePage = true;
-    const probing = Promise.withResolvers<void>();
-    const resumeProbe = Promise.withResolvers<void>();
-    nextSnapshot = () => { nextScope = () => { probing.resolve(); return resumeProbe.promise; }; };
+    const probing = Latch.makeUnsafe();
+    const resumeProbe = Latch.makeUnsafe();
+    nextSnapshot = () => { nextScope = () => { probing.openUnsafe(); return Effect.runPromise(resumeProbe.await); }; };
     const pending = runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.checkGuidedRead()));
     try {
-      await probing.promise;
+      await Effect.runPromise(probing.await);
       await tap(button("Turn off browser reading"));
     } finally {
-      resumeProbe.resolve();
+      resumeProbe.openUnsafe();
     }
     expect(await pending).toBe(false);
     expect(await receipts()).toEqual([]);
