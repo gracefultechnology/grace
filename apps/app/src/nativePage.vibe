@@ -62,7 +62,7 @@ export function guidedPageState(observation: LinkObservation | undefined, url: s
 export error PageFailed { cause: unknown }
 
 export data PageEvent {
-  Changed { id: PageId; url: Url | undefined; loading: boolean; result: Load }
+  Changed { id: PageId; url: Url | undefined; loading: boolean; result: Load; back: boolean; forward: boolean }
   Crashed { id: PageId }
   Started { id: PageId; url: Url | undefined }
   Asked { id: PageId; key: RequestKey; ask: Ask; topFrame: boolean; said: string }
@@ -147,7 +147,7 @@ function surfaceEvents(plugin: SurfacePlugin) {
   const heard = Stream.callback<Heard>((queue) => acquireRelease(
     Effect.orDie(tryPromise(() => Promise.all([
       plugin.addListener("navigationChanged", hear(queue, NavigationChanged, (e) => e.exists === false ? undefined : PageEvent.Changed({
-        id: e.id, url: e.currentUrl ?? undefined, loading: e.progress !== undefined && e.progress < 100,
+        id: e.id, url: e.currentUrl ?? undefined, back: e.canGoBack === true, forward: e.canGoForward === true, loading: e.progress !== undefined && e.progress < 100,
         result: e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded"
       }))),
       plugin.addListener("surfaceCrashed", hear(queue, SurfaceCrashed, (e) => PageEvent.Crashed({ id: e.id }))),

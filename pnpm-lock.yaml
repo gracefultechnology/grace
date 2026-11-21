@@ -154,6 +154,11 @@ catalogs:
 overrides:
   '@effect/platform-node-shared': 4.1.1
 
+patchedDependencies:
+  lemmascript@0.6.10:
+    hash: 40d0cb42b2f42b946ce6cc378938353500a461c2407bf0d087a5e95496db0e77
+    path: patches/lemmascript-0.6.10-8c2a339.patch
+
 importers:
 
   .:
@@ -171,8 +176,8 @@ importers:
         specifier: 4.1.1
         version: 4.1.1
       lemmascript:
-        specifier: ^0.6.8
-        version: 0.6.9(zod@4.6.7)
+        specifier: 0.6.10
+        version: 0.6.10(patch_hash=40d0cb42b2f42b946ce6cc378938353500a461c2407bf0d087a5e95496db0e77)(zod@4.6.7)
       playwright:
         specifier: 'catalog:'
         version: 1.65.0
@@ -4376,8 +4381,8 @@ packages:
     peerDependencies:
       lemmascript: '>=0.6.0 <0.7.0'
 
-  lemmascript@0.6.9:
-    resolution: {integrity: sha512-xllecETK8UjRV7Y9gyI/WFMUixOSTlcChkYwbj9EYGntzb4qOddOM8CFBaYp7HVgibyGJt9E93zHKyYsBYDo8Q==}
+  lemmascript@0.6.10:
+    resolution: {integrity: sha512-Hp0PGneuXJbHwG1bjnVSugZn1yd6vT0NOavhhfb+vCfzkNuL7IQo+4XzftDsoMcRrQcfh7v0FkjM5QQHgWgiXA==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -9623,26 +9628,26 @@ snapshots:
       unbash: 6.0.4
       yaml: 2.9.1
 
-  lemmascript-claimcheck@0.2.1(lemmascript@0.6.9(zod@4.6.7))(zod@4.6.7):
+  lemmascript-claimcheck@0.2.1(lemmascript@0.6.10(patch_hash=40d0cb42b2f42b946ce6cc378938353500a461c2407bf0d087a5e95496db0e77)(zod@4.6.7))(zod@4.6.7):
     dependencies:
       claimcheck: 0.6.1(zod@4.6.7)
-      lemmascript: 0.6.9(zod@4.6.7)
+      lemmascript: 0.6.10(patch_hash=40d0cb42b2f42b946ce6cc378938353500a461c2407bf0d087a5e95496db0e77)(zod@4.6.7)
     transitivePeerDependencies:
       - supports-color
       - zod
 
-  lemmascript-guard@0.1.0(lemmascript@0.6.9(zod@4.6.7)):
+  lemmascript-guard@0.1.0(lemmascript@0.6.10(patch_hash=40d0cb42b2f42b946ce6cc378938353500a461c2407bf0d087a5e95496db0e77)(zod@4.6.7)):
     dependencies:
-      lemmascript: 0.6.9(zod@4.6.7)
+      lemmascript: 0.6.10(patch_hash=40d0cb42b2f42b946ce6cc378938353500a461c2407bf0d087a5e95496db0e77)(zod@4.6.7)
       ts-morph: 25.0.1
     optional: true
 
-  lemmascript@0.6.9(zod@4.6.7):
+  lemmascript@0.6.10(patch_hash=40d0cb42b2f42b946ce6cc378938353500a461c2407bf0d087a5e95496db0e77)(zod@4.6.7):
     dependencies:
-      lemmascript-claimcheck: 0.2.1(lemmascript@0.6.9(zod@4.6.7))(zod@4.6.7)
+      lemmascript-claimcheck: 0.2.1(lemmascript@0.6.10(patch_hash=40d0cb42b2f42b946ce6cc378938353500a461c2407bf0d087a5e95496db0e77)(zod@4.6.7))(zod@4.6.7)
       ts-morph: 25.0.1
     optionalDependencies:
-      lemmascript-guard: 0.1.0(lemmascript@0.6.9(zod@4.6.7))
+      lemmascript-guard: 0.1.0(lemmascript@0.6.10(patch_hash=40d0cb42b2f42b946ce6cc378938353500a461c2407bf0d087a5e95496db0e77)(zod@4.6.7))
     transitivePeerDependencies:
       - supports-color
       - zod

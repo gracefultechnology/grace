@@ -36,13 +36,13 @@ type PageLayer = {
   shown: bool, hostVisible: bool, page: Rect, drawn: List[Rect],
   routed: List[Rect], requested: List[Rect],
   routingReady: bool, pending: bool, version: int,
-  keyboard: int, reclaimed: Set[int]
+  keyboard: int, reclaimed: Set[int], privateBack: Set[int], privateForward: Set[int]
 }
 pure val noRect: Rect = { x: 0, y: 0, width: 0, height: 0 }
 pure val initial: PageLayer = {
   shown: false, hostVisible: true, page: noRect, drawn: List(), routed: List(), requested: List(),
   routingReady: false, pending: false, version: 0,
-  keyboard: 0, reclaimed: Set()
+  keyboard: 0, reclaimed: Set(), privateBack: Set(), privateForward: Set()
 }
 pure def covers(r: Rect, p: Point): bool =
   p.x >= r.x and p.y >= r.y and p.x < r.x + r.width and p.y < r.y + r.height
@@ -52,6 +52,30 @@ pure def alwaysRectsAreWellFormed(l: PageLayer): bool =
   wellFormed(l.page) and l.drawn.every(r => wellFormed(r)) and
   l.routed.every(r => wellFormed(r)) and l.requested.every(r => wellFormed(r))
 pure def alwaysVersionIsNonnegative(l: PageLayer): bool = l.version >= 0
+```
+
+### A private page reports which history directions are available
+
+Each live private tab reports whether Android can go Back or Forward. Only
+these two permissions are kept for the lifetime of its native surface. Going
+back or forward runs in that surface, including between pages at one origin.
+
+```quint
+type PrivateHistory = { tab: int, back: bool, forward: bool }
+pure def historyFor(l: PageLayer, tab: int): PrivateHistory =
+  { tab: tab, back: l.privateBack.contains(tab), forward: l.privateForward.contains(tab) }
+pure def withTab(tabs: Set[int], tab: int, present: bool): Set[int] =
+  if (present) tabs.union(Set(tab)) else tabs.exclude(Set(tab))
+pure def canReportHistory(l: PageLayer, history: PrivateHistory): bool =
+  history.tab > 0 and historyFor(l, history.tab) != history
+pure def reportHistory(l: PageLayer, history: PrivateHistory): PageLayer = {
+  ...l, privateBack: withTab(l.privateBack, history.tab, history.back),
+  privateForward: withTab(l.privateForward, history.tab, history.forward)
+}
+pure def lawHistoryAppliesOnlyToItsTab(l: PageLayer, history: PrivateHistory, tab: int): bool =
+  historyFor(reportHistory(l, history), tab) == (if (tab == history.tab) history else historyFor(l, tab))
+pure val historyValues = Set({ tab: 2, back: false, forward: false }, { tab: 2, back: true, forward: false },
+  { tab: 2, back: false, forward: true }, { tab: 2, back: true, forward: true })
 ```
 
 ### A touch reaches the website only on the shown page and outside every routed control

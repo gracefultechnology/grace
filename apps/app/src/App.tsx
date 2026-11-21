@@ -31,7 +31,7 @@ const websiteBackEvents: Record<"CancelClearData" | "DismissWebsiteRequest", (r:
   DismissWebsiteRequest: (r) => ({ type: "answer", id: presented(r).id, choice: declineChoice(presented(r).ask) }),
 };
 // and the workspace's.
-const backEvents: Record<Exclude<BackAction, "Unconsumed" | keyof typeof websiteBackEvents>, WorkspaceEvent> = {
+const backEvents: Record<Exclude<BackAction, "Unconsumed" | "PrivatePageBack" | keyof typeof websiteBackEvents>, WorkspaceEvent> = {
   DismissPopover: { type: "dismissPopover" },
   DismissAddress: { type: "changePage", browserInput: { tag: "DismissAddress" } },
   DismissKeyboard: { type: "interact", input: { tag: "DismissKeyboard" } },
@@ -85,7 +85,7 @@ function Screen() {
   const account = useSetup(runtime).state?.graceAccount;
   const cards = useHomeCards();
   const files = useFilesHome();
-  const { workspace, can, send, current } = useWorkspace();
+  const { workspace, can, send, current, privateHistory, stepPrivate } = useWorkspace();
   const website = useWebsiteRequests();
   const { accounts } = useAccounts();
   const read = useMailContent();
@@ -101,9 +101,10 @@ function Screen() {
     const back = (event: Event) => {
       // The key is decided on the workspace as it is now, which a render may not show yet.
       const now = current(), requests = website.current();
-      const action = backAction(now.device, now.assistant, now.browser, requests);
+      const action = backAction(now.device, now.assistant, now.browser, requests, privateHistory(now.browser.selected));
       if (action === "Unconsumed") return;
       event.preventDefault();
+      if (action === "PrivatePageBack") return void stepPrivate(now.browser.selected, "HistoryBack");
       if (action === "CancelClearData" || action === "DismissWebsiteRequest") return void website.send(websiteBackEvents[action](requests));
       // Back takes the address field's focus with its edit.
       if (action === "DismissAddress" && document.activeElement instanceof HTMLElement) document.activeElement.blur();

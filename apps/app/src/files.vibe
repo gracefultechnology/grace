@@ -14,10 +14,11 @@ export schema FileLease { lease: fileId }
 const displayName = Schema.NonEmptyString.check(Schema.isMaxLength(180))
 const fileTimestamp = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(8640000000000000))
 const attachmentDigest = Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/))
+const attachmentSource = HeldFile
 export schema FileEntry {
   attachmentSource?: attachmentDigest; attachmentSha256?: attachmentDigest
   id: fileId; name: displayName; kind: "photo" | "pdf"; savedAt: fileTimestamp; pages: Schema.Int
-  source?: HeldFile; version?: Schema.NonEmptyString
+  source?: attachmentSource; version?: Schema.NonEmptyString
 }
 export schema FileCatalog { entries: FileEntry[] }
 

@@ -55,7 +55,7 @@ export function ListRow({ title, subtitle, truncate = false, leading, trailing, 
       ) : (
         <div className="min-w-0">{text}</div>
       )}
-      {time && <span className="ml-auto self-start pt-1.5 text-lg leading-6 font-medium whitespace-nowrap text-muted-foreground">{time}</span>}
+      {time && <span className="ml-auto self-start pt-1.5 text-control leading-6 font-medium whitespace-nowrap text-muted-foreground">{time}</span>}
       {trailing ? <span className="relative ml-auto flex flex-none items-center">{trailing}</span> : null}
       {chevron && <ChevronRight aria-hidden size={26} strokeWidth={2.4} className={cn("flex-none text-chevron", trailing ? "ml-3.5" : "ml-auto")} />}
     </div>

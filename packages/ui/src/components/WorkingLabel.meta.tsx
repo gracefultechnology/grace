@@ -14,7 +14,7 @@ export const meta: ComponentMeta<WorkingLabelProps> = {
   decorator: (story) => (
     <TabletScreen>
       <div className="absolute rounded-md bg-card shadow-elevation-panel" style={{ left: 185, top: 235, width: 518, height: 430 }} />
-      <div className="absolute flex items-center rounded-sm bg-card px-3 text-lg text-muted-foreground ring-1 ring-border" style={{ left: field.x, top: field.y, width: field.width, height: field.height }}>MM/DD/YYYY</div>
+      <div className="absolute flex items-center rounded-sm bg-card px-3 text-control text-muted-foreground ring-1 ring-border" style={{ left: field.x, top: field.y, width: field.width, height: field.height }}>MM/DD/YYYY</div>
       <GuideRing rect={field} gap={6} tight motion="still" />
       {story()}
     </TabletScreen>
