@@ -187,7 +187,8 @@ it('Save the clinic appointment (spec/app/calendars.md, "Story: Ask Grace to put
     .toEqual([["family", "Lunch with Ruth", "From Ruth’s email"]]);
 });
 
-it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace about my calendar"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar")', async () => {
+it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace about my calendar")', async () => {
+  // spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"
   const { secret, calendar, asked, say, tap, apply } = await start();
   const today = dayOf(Date.now());
   const saved = async (key: number) => (await calendar(key)).entries.filter((c) => c.phase === "Saved");

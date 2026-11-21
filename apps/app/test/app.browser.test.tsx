@@ -1273,7 +1273,8 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
 });
 
 
-it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment")', async () => {
+it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
+  // spec/app/email.md, "Story: Read an email and its original attachment"
   const person = { id: "private-qa-account", email: "reader@example.test" };
   const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
