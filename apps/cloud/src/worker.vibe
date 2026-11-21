@@ -25,7 +25,7 @@ const cloud = cloudWorker<GraceCloud>(async (request, _env, db, account) => {
     provide Digest.layerWebCrypto {
       const owner = try scopeDigest(["grace/files/owner", account, organization])
       const session = try scopeDigest(["grace/files/session", owner, credentials[0]])
-      return scopeResponse(200, { owner, session })
+      return scopeResponse(200, { accountId: account, owner, session })
     }
   })
 })
