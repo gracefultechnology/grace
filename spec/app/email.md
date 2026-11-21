@@ -66,7 +66,7 @@ type Mailbox = {
   draftAttachments: List[F::SavedFile], draftId: str, draftVersion: int, retiredDrafts: str -> int, composeVisible: bool, draftStorage: DraftStorage, storedRevision: int, draftRequest: int,
   revision: int, approvedRevision: int, sendStatus: SendStatus,
   operationId: str, issuedSends: Set[str], sendEvidence: str, sendResultSaved: bool,
-  outbox: List[QueuedSend], outboxSent: int,
+  outbox: List[QueuedSend], outboxSent: int, draftsTotal: int,
   bill: Bill, warning: Warning, link: LinkRequest
 }
 pure val noRetiredDrafts: str -> int = Map()
@@ -84,7 +84,7 @@ pure val initial: Mailbox = {
   draftAttachments: List(), draftId: "", draftVersion: 0, retiredDrafts: Map(), composeVisible: false, draftStorage: DraftUnstored, storedRevision: -1, draftRequest: 0,
   revision: 0, approvedRevision: -1, sendStatus: NoDraft,
   operationId: "", issuedSends: Set(), sendEvidence: "", sendResultSaved: false,
-  outbox: List(), outboxSent: 0,
+  outbox: List(), outboxSent: 0, draftsTotal: 0,
   bill: noBill, warning: noWarning, link: noLink
 }
 pure def messageRecord(m: Mailbox, ref: str): I::MessageRecord =
@@ -402,6 +402,25 @@ pure def lawStaleListingIsRejected(m: Mailbox, scope: ListingScope, listing: I::
   scope != listingScope(m) implies not(canReceiveMessage(m, scope, listing, by))
 pure def sometimesTrashFolder(m: Mailbox): bool = m.folder == I::TrashFolder
 pure def sometimesDraftsFolder(m: Mailbox): bool = m.folder == I::DraftsFolder
+```
+
+### Drafts shows the provider's count of saved drafts, whichever folder is open
+
+The Drafts row in the folder list shows how many drafts the account has
+saved (`prototype/Grace Prototype.html:2030–2038`), before she ever opens Drafts.
+The mailbox keeps that number as the provider reports it: the connector
+reports the account's draft count with each listing, and again after a draft
+is saved or deleted, for the mailbox's current read generation; a count from
+an earlier generation is refused, and the count is never negative. Reporting
+it changes nothing else in the mailbox.
+
+```quint
+pure def canCountDrafts(m: Mailbox, generation: int, total: int, by: MailActor): bool =
+  by == MailConnector and readable(m) and generation == m.generation and total >= 0
+pure def countDrafts(m: Mailbox, generation: int, total: int, by: MailActor): Mailbox = { ...m, draftsTotal: total }
+pure def lawStaleDraftCountIsRefused(m: Mailbox, generation: int, total: int, by: MailActor): bool =
+  (generation != m.generation or total < 0) implies not(canCountDrafts(m, generation, total, by))
+pure def sometimesDraftsCountedElsewhere(m: Mailbox): bool = m.draftsTotal > 0 and m.folder != I::DraftsFolder
 ```
 
 ### Selected-message changes update the same canonical record and invalidate stale actions
@@ -1262,6 +1281,7 @@ pure val draftIdValues = Set("draftA")
 pure val generationValues = Set(1, 3, 4, 5)
 pure val revisionValues = Set(1, 2, 3)
 pure val requestValues = Set(1, 2)
+pure val totalValues = Set(0, 2)
 pure val draftRevisionValues = Set(1, 2, 3)
 pure val verifiedValues = Set(true)
 pure val readGrantedValues = Set(true)

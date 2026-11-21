@@ -1,7 +1,7 @@
 import { Trash2 } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
-import { Dialog, DialogActions, DialogContent, DialogTitle, type DialogProps } from "./Dialog.tsx";
+import { Dialog, DialogActions, DialogClose, DialogContent, DialogTitle, type DialogProps } from "./Dialog.tsx";
 import { PageText } from "./PageHeading.tsx";
 
 export type RemoveAccountDialogProps = Omit<DialogProps, "children"> & {
@@ -11,9 +11,9 @@ export type RemoveAccountDialogProps = Omit<DialogProps, "children"> & {
   keeper: string;
   /** Emails still waiting in Outbox to go from this email: it cannot be removed until they have gone. */
   waiting?: number;
-  /** Called by Remove from tablet; this is her approval. */
+  /** Called by Remove from tablet; this is her approval. Without it Remove from tablet is shown disabled. */
   onRemove?: () => void;
-  /** Called by Keep it. */
+  /** Called by Keep it, which also closes the dialog through `onOpenChange`. */
   onKeep?: () => void;
   className?: string;
 };
@@ -43,12 +43,14 @@ export function RemoveAccountDialog({ name, keeper, waiting = 0, onRemove, onKee
         )}
         <DialogActions>
           {waiting === 0 && (
-            <Button variant="warn" size="pill" onClick={onRemove}>
+            <Button variant="warn" size="pill" disabled={!onRemove} onClick={onRemove}>
               <Trash2 size={22} strokeWidth={2.2} aria-hidden />
               Remove from tablet
             </Button>
           )}
-          <Button variant="capsule" size="pill" onClick={onKeep}>Keep it</Button>
+          <DialogClose asChild>
+            <Button variant="capsule" size="pill" onClick={onKeep}>Keep it</Button>
+          </DialogClose>
         </DialogActions>
       </DialogContent>
     </Dialog>

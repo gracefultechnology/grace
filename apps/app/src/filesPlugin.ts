@@ -7,6 +7,8 @@ export interface FileAttachment {
   file: SavedFile;
   data: string;
   version: string;
+  from?: string;
+  subject?: string;
 }
 
 export interface FilesPort {

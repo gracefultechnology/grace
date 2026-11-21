@@ -8,6 +8,7 @@ export const meta: ComponentMeta<CalendarMonthProps> = {
   decorator: onWindow,
   examples: {
     "Another Day Chosen": { days: monthDays.map((d) => ({ ...d, selected: !d.outside && d.day === "16" })) },
+    "Choosing refused": { onSelect: undefined },
   },
   play: {
     Default: async ({ args, canvasElement }: { args: CalendarMonthProps; canvasElement: HTMLElement }) => {
@@ -17,6 +18,11 @@ export const meta: ComponentMeta<CalendarMonthProps> = {
         }),
       );
       await expect(args.onSelect).toHaveBeenCalledWith("2026-11-16");
+    },
+    "Choosing refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByText("Lunch with Susan")).toBeVisible();
+      await expect(canvas.queryByRole("button")).toBeNull();
     },
   },
 };
