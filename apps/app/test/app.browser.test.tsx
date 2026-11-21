@@ -292,7 +292,22 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects")).toMatchObject([{ id: "tab-1", rects: [] }]);
   await native.route();
   await native.started("tab-1");
-  await native.report("tab-1", "https://example.com/", 100);
+  await native.ask("navigationChanged", { id: "tab-1", exists: true, currentUrl: "https://example.com/", pageError: null, securityBlocked: false });
+  expect(tab(1).load).toBe("Loading");
+  await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(() => [tab(1).load, tab(1).secure]).toEqual(["Loaded", true]);
+  const siteAddress = page.getByRole("textbox", { name: "Address" });
+  const firstVisit = tab(1).history;
+  await expect.element(siteAddress).toHaveAccessibleDescription("Encrypted connection");
+  await native.ask("pageStarted", { id: "tab-1", url: "https://example.com/" });
+  await expect.element(siteAddress).toHaveAccessibleDescription("");
+  await native.report("tab-1", "https://example.com/", 35, { securityBlocked: true });
+  await expect.poll(async () => { await native.route(); return shown(page.getByText("This page isn't safe to open.")); }).toBe(true);
+  expect([tab(1).history, native.calls("reloadSurface")]).toEqual([firstVisit, []]);
+  await native.started("tab-1");
+  await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(async () => { await native.route(); return tab(1).secure; }).toBe(true);
+  await expect.element(siteAddress).toHaveAccessibleDescription("Encrypted connection");
   // spec/app/surface.md, "The page fills the rect the interface measured for it"
   const pageArea = document.querySelector("section[aria-label='Internet'] div[aria-hidden='true']")!;
   await expect.poll(() => native.calls("setBounds").at(-1)).toMatchObject({ id: "tab-1", ...rectOf(pageArea) });
@@ -396,7 +411,7 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
   expect(native.unanswered()).toBe(1);
   // spec/app/browser.md, "Load results must match the tab and request that produced them": the site's certificate is refused this time.
-  await native.report("tab-1", "https://example.com/", 100, { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
+  await native.report("tab-1", "https://example.com/", 43, { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
   await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
   expect(tab(1).load).not.toBe("SecurityBlocked");
   await native.route();
@@ -785,9 +800,11 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   });
   expect(native.calls("createSurface")[1]).not.toHaveProperty("profileKey");
   await native.route();
-  await native.report("tab-2", "https://utility.example", 100);
+  await native.report("tab-2", "https://utility.example", 100, { pageError: null, securityBlocked: false });
   const address = page.getByRole("textbox", { name: "Private website address" });
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
   await enter(address, "https://utility.example/enter/sample?ref=one-time");
+  await expect.element(address).toHaveAccessibleDescription("");
   await act(() => userEvent.keyboard("{Enter}"));
   await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
     url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
@@ -836,6 +853,13 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   const { agent, requests, answer, created, refused } = deviceAgent();
   const openEmail = vi.fn<() => Promise<void>>().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("No mail app could open"));
   const browserState = await signInPrivately(native, undefined, { native: true, agent, openPrivateEmail: openEmail });
+  await native.started("tab-3");
+  await native.report("tab-3", "https://issuer.example/private?ref=one-time", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(() => browserState().tabs.find((tab) => tab.id === 3)?.load).toBe("Loaded");
+  const privateAddress = page.getByRole("textbox", { name: "Private website address" });
+  await expect.element(privateAddress).toHaveValue("https://utility.example");
+  await expect.element(privateAddress).toHaveAccessibleDescription("");
+  expect(JSON.stringify(browserState())).not.toContain("one-time");
   expect(openEmail.mock.calls).toEqual([[], []]);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
@@ -3187,10 +3211,13 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   const save = "Read this email and save its appointment.";
   const browserAsk = "Check the website I have open.";
   const newAppointment = "Check the open appointment on this account.";
+  const subject = "Managed appointment details 642815";
+  const maskedSubject = "Managed appointment details ******";
+  const body = "Riverview Clinic message body about signing in.";
   await Effect.runPromise(Effect.provide(script(cloud, secret, [
     { said: ask, context: {
-      includes: ["Selected email subject: Managed appointment details"],
-      excludes: ["appointment with Dr. Patel", "Main St Clinic", "Eye check with Dr. Patel"],
+      includes: ["Selected email subject: " + maskedSubject],
+      excludes: ["642815", body, "appointment with Dr. Patel", "Main St Clinic", "Eye check with Dr. Patel"],
     }, answer: JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: ["ReadMail", "ReadMail", "ReadCalendar"] }] }) },
     { said: newAppointment, context: { includes: ["Selected calendar appointment: Account B appointment"], excludes: ["Managed appointment details"] },
@@ -3214,9 +3241,9 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   let hostedChoices = 0;
   const when = Date.now();
   const receivedAt = new Date(when).toISOString();
-  const selected = { externalId: "mail-one", from: "Riverview Clinic", subject: "Managed appointment details", receivedAt,
+  const selected = { externalId: "mail-one", from: "Riverview Clinic", subject, receivedAt,
     isUnread: true, metadata: { historyId: "one" } };
-  const second = { ...selected, externalId: "mail-two", from: "Eastwood Clinic" };
+  const second = { ...selected, externalId: "mail-two", from: "Eastwood Clinic", snippet: "Sign-in notice" };
   const appointment = { externalId: "event-one", title: "Managed calendar appointment", description: "", location: "Riverview",
     startAt: new Date(when + 3_600_000).toISOString(), endAt: new Date(when + 7_200_000).toISOString(), isAllDay: false, etag: "one" };
   const otherAppointment = { ...appointment, externalId: "event-b", title: "Account B appointment" };
@@ -3268,7 +3295,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
         expect(url.searchParams.get("grantId")).toBe(grant);
         const row = url.searchParams.get("messageId") === second.externalId ? second : selected;
         return respond({ accountId: person.id, message: { ...row, metadata: { historyId } }, historyId: null, attachments: [],
-          bodyText: row.from + " message body", bodyTextAvailable: true });
+          bodyText: row === selected ? body : row.from + " message body", bodyTextAvailable: true });
       }
       case "/api/v1/eliza/google/calendar/feed":
         expect(url.searchParams.get("grantId")).toBe(grant);
@@ -3337,7 +3364,8 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await refresh();
     await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
     await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
+    await routeTo(page.getByRole("heading", { name: subject, exact: true }));
+    await routeTo(page.getByText(body, { exact: true }));
     await tap(button("Ask Grace"));
     await send(ask);
     const review = page.getByRole("region", { name: "Review read plan" });
@@ -3379,9 +3407,9 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(await receipts()).toEqual([]);
 
     await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
+    await routeTo(page.getByText(body, { exact: true }));
     await tap(button("Check email"));
-    const mailReceipt = "Open message: " + selected.subject;
+    const mailReceipt = "Open message: " + maskedSubject;
     await expect.poll(receipts).toEqual([mailReceipt]);
 
     organization = "c";
@@ -3409,7 +3437,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Home"));
     await tap(button(/^Email/));
     await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
+    await routeTo(page.getByText(body, { exact: true }));
     await tap(button("Resume Grace"));
     expect(await check()).toBe("Used");
     expect(await receipts()).toEqual([mailReceipt]);
@@ -3424,7 +3452,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     connected = true;
     await refresh();
     await tap(button(/Riverview Clinic/));
-    await routeTo(page.getByText("Riverview Clinic message body"));
+    await routeTo(page.getByText(body, { exact: true }));
     expect(await check()).not.toBe("Confirmed");
     expect(await receipts()).toEqual([mailReceipt]);
 
