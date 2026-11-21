@@ -680,7 +680,8 @@ it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email rele
   await openEmail();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await opened(/Riverside Power/, "Your Riverside Power bill is ready");
-  const ordinary = page.getByRole("link", { name: /bill\// });
+  await expect.element(page.getByRole("link", { name: /\/statement\/\[print\]$/ })).toBeVisible();
+  const ordinary = page.getByRole("link", { name: /\/bill\/#statement_\(journal\)$/ });
   const destination = ordinary.element().textContent;
   await click(ordinary);
   await expect.element(address).toHaveValue(destination ?? "");

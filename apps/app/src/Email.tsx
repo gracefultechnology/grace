@@ -10,7 +10,8 @@ import { type HomeMailStatus, type MailBanner, type MailSource, type Row, accoun
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import type { Attached, MailContent } from "./connector.vibe";
 import { EmailCompose, type Picking, thumbnail } from "./EmailCompose.tsx";
-import { chooseMailLink, linkDestination, type LinkChoice, messageLinks } from "./mailLink.vibe";
+import { chooseMailLink, type LinkChoice } from "./mailLink.vibe";
+import { messageLinkParts } from "./messageLinks.vibe";
 import { answerable, headerFor, queuedAt, recipientsOf } from "./mail.vibe";
 import { type MailInstance, type MailWriter, useAccounts, useFiles, useMail, useMailContent, useMailFile, useMailHeld, useRuntime, useWorkspace, WithMailboxes } from "./useApp.ts";
 
@@ -25,20 +26,9 @@ const folderOf = (folder: Folder) => (Object.keys(folders) as (keyof typeof fold
 const sourcesOf = (boxes: readonly MailInstance[]): MailSource[] => boxes.map((b) => ({ account: b.id, mailbox: b.state }));
 const pages = (n: number) => `${n} page${n === 1 ? "" : "s"}`;
 const close = "Close Email";
-const unlinked = (body: string) => body.replace(new RegExp(messageLinks.source, "gi"), "(link removed)");
 const tones = [1, 2, 3, 4, 5, 6] as const;
 const toneOf = (key: string) => tones[[...key.trim().toLowerCase()].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 0) % tones.length];
 const contact = (name: string, address: string): MailContact => ({ name, tone: toneOf(address || name) });
-const linked = (body: string, guide: GuidePointing | undefined, open: (link: string) => void) => {
-  const parts = body.split(new RegExp(`(${messageLinks.source})`, "gi"));
-  let offset = 0;
-  return parts.map((part, i) => {
-    const key = offset;
-    offset += part.length;
-    const link = i % 2 ? linkDestination(part) : undefined;
-    return link ? <MailLink key={key} guide={i === 1 ? guide : undefined} onOpen={() => open(link)}>{part}</MailLink> : part;
-  });
-};
 const unshown = "This attachment couldn’t be shown";
 const unrendered = "This PDF can’t be shown on this tablet.";
 
@@ -182,7 +172,9 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     const open: MailEvent = { type: "readMail", kind: "OpenMessage", ref, approved: true };
     const target = { ref, revision: messageRecord(m, ref).revision };
     const change = (kind: MessageChange) => offer(opening, { type: "changeSelectedMessage", target, change: kind });
-    const forward: MailEvent = { type: "forwardMessage", content: { ...emptyContent, subject: `Fwd: ${c?.subject ?? ""}`, body: unlinked(c?.body ?? "") } };
+    const body = messageLinkParts(c?.body ?? "");
+    const firstLink = body.find((part) => typeof part !== "string" && part.href !== undefined);
+    const forward: MailEvent = { type: "forwardMessage", content: { ...emptyContent, subject: `Fwd: ${c?.subject ?? ""}`, body: body.map((part) => typeof part === "string" ? part : "(link removed)").join("") } };
     const photos = photoAssets(m);
     const pdfs = m.assets.filter((a) => a.kind === "Pdf");
     const attachment = (file: SavedFile): MailEvent => ({ type: "readMail", kind: "OpenAttachment", ref: file.sourceRef, approved: true });
@@ -202,12 +194,16 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     };
     const saveAll = saver.offer(allPhotos);
     const present: Record<Ringed, boolean> = {
-      caution: scam, mbody: ready, saveall: ready && photos.length > 0 && saveAll !== undefined, file: ready && pdfs.length > 0, link: ready && messageLinks.test(c?.body ?? ""),
+      caution: scam, mbody: ready, saveall: ready && photos.length > 0 && saveAll !== undefined, file: ready && pdfs.length > 0, link: ready && firstLink !== undefined,
     };
     const pointing = aimed(guide((target) => (isRinged(target) && present[target] ? target : undefined)));
     return (
       <>
-      <MailMessageView from={contact(c?.from ?? "", c?.fromAddress ?? "")} address={scam ? c?.fromAddress : undefined} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={linked(c?.body ?? "", pointing.link, (link) => follow(link, "open"))} guide={pointing.message}
+      <MailMessageView from={contact(c?.from ?? "", c?.fromAddress ?? "")} address={scam ? c?.fromAddress : undefined} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={body.map((part) => {
+          if (typeof part === "string") return part;
+          const { href } = part;
+          return href ? <MailLink key={part.start} guide={part === firstLink ? pointing.link : undefined} onOpen={() => follow(href, "open")}>{part.text}</MailLink> : part.text;
+        })} guide={pointing.message}
         scam={scam} inTrash={messageRecord(m, ref).folder === "TrashFolder"}
         photos={ready ? photos.map((p) => picture(p, held(opening.id, p))) : undefined} onOpenPhoto={opener(photos)}
         onSaveAll={saveAll} saveAllStatus={saver.status(photos)} onRetrySaveAll={saver.offer(allPhotos)}
