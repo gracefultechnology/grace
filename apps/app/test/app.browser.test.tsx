@@ -885,16 +885,26 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   expect(page.getByRole("button", { name: /^Open Private sign-in/ }).query()).toBeNull();
 
   await native.report("tab-1", "https://utility.example/bills", 100);
+  const refusedTargets = ["Sign me in to clinic.example", "Sign me in to Maple Clinic", "Log me in here or on clinic.example", "What is the weather today?"];
+  for (const words of refusedTargets) {
+    const index = requests.length;
+    await ask(words);
+    await expect.poll(() => sentTurn(requests[index]?.body).said).toBe(words);
+    await answer(index, signInReply);
+    await expect.poll(() => page.getByText(signInReply.text, { exact: true }).elements().length).toBe(index + 1);
+    expect(offer.query()).toBeNull();
+  }
+  const sameHost = requests.length;
   await ask("Can you log me in to utility.example?");
-  await expect.poll(() => sentTurn(requests[2]?.body).said).toBe("Can you log me in to utility.example?");
-  await answer(2, signInReply);
+  await expect.poll(() => sentTurn(requests[sameHost]?.body).said).toBe("Can you log me in to utility.example?");
+  await answer(sameHost, signInReply);
   await expect.element(offer).toBeVisible();
   expect(privateSurfaces()).toHaveLength(opened);
   await act(() => userEvent.click(offer));
   await expect.poll(() => privateSurfaces().at(-1)).toMatchObject({ id: "tab-5", url: "https://utility.example", storage: "isolated", process: "isolated" });
   expect(browserState().recent).toEqual(["https://utility.example/bills", "http://utility.example/plain", "https://utility.example/normal"]);
   expect(created).toHaveLength(1);
-  expect(requests.map(({ path }) => path)).toEqual(Array(3).fill(`/api/conversations/${created[0].id}/messages/stream`));
+  expect(requests.map(({ path }) => path)).toEqual(Array(3 + refusedTargets.length).fill(`/api/conversations/${created[0].id}/messages/stream`));
   expect(refused).toEqual([]);
   await backToHomeThenLeaveToAndroid();
 }, 120_000);

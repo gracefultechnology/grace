@@ -7,7 +7,7 @@ import { ManagedReads, type ManagedSnapshot, type ProposedWork } from "./managed
 import { NativePage } from "./nativePage.vibe"
 import { withhold } from "./private.ts"
 import type { Action } from "./reply.schema.ts"
-import { privateSignInRequest } from "./requestedPrivateSignIn.vibe"
+import { offeredPrivateSignIn } from "./requestedPrivateSignIn.vibe"
 
 type Suggested = typeof Action.Type
 type Control =
@@ -18,7 +18,7 @@ type Control =
   | { kind: "managed"; title: string; proposed: ProposedWork }
   | { kind: "read"; title: string; accountId: string; grant: string; id: string }
 export type ReplyOffer = { id: number; context: ReplyControlContext; messageIndex: number; messageText: string; labels: string[]; blocked: boolean }
-type RequestScene = { context: ReplyControlContext; managed: ManagedSnapshot }
+type RequestScene = { context: ReplyControlContext; managed: ManagedSnapshot; signIn: ReturnType<typeof offeredPrivateSignIn> }
 type Offer = { visible: ReplyOffer; controls: readonly Control[] }
 
 export service ReplyControls {
@@ -59,7 +59,7 @@ function safeText(text: string, max: number) {
   return text.length <= max && withhold({ text, passwords: [] }) === text
 }
 
-function plan(action: Suggested, w: Workspace, managed: ManagedSnapshot, signsIn: boolean): Control | undefined {
+function plan(action: Suggested, w: Workspace, { managed, signIn }: RequestScene): Control | undefined {
   const settings = w.preferences.session
   const selected = managed.kind === "calendar" ? managed.selected : undefined
   const selectedFor = (entry: string) => selected?.externalId === entry || selected?.title.toLowerCase() === entry.toLowerCase() ? selected : undefined
@@ -83,10 +83,7 @@ function plan(action: Suggested, w: Workspace, managed: ManagedSnapshot, signsIn
       { Back: "Go back", Forward: "Go forward", Reload: "Reload this page", NewTab: "Open a tab" }[action.control],
       { type: "changePage", browserInput: { tag: action.control } },
     ) : undefined
-    case "privateSignIn": {
-      const browserInput = signsIn ? privateSignInRequest(w) : undefined
-      return browserInput && ownerControl("Open Private sign-in for " + new URL(browserInput.origin).hostname, { type: "changePage", browserInput })
-    }
+    case "privateSignIn": return signIn && ownerControl("Open Private sign-in for " + new URL(signIn.origin).hostname, { type: "changePage", browserInput: signIn })
     case "navigate": {
       const url = website(action.url)
       return url ? { kind: "website", title: "Open " + url.hostname, url: url.href } : undefined
@@ -187,7 +184,7 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
     if (message?.author !== "GraceMessage") return
     const account = try setup.get()
     const planned = actions.slice(0, 3).map((action) => {
-      const direct = plan(action, w, scene.managed, page.privateSignIn)
+      const direct = plan(action, w, scene)
       const view = !direct ? managedView(action) : undefined
       const control: Control | undefined = direct ?? (view && native
         ? { kind: "hosted", title: "Open " + view + " on Grace’s website", view }
@@ -250,7 +247,12 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
   return {
     state: Stream.map(SubscriptionRef.changes(active), (offer) => offer?.visible),
     get: () => Effect.map(SubscriptionRef.get(active), (offer) => offer?.visible),
-    capture: effect () => ({ context: replyControlContext(try desk.get()), managed: try managed.get() }),
+    capture: effect () => {
+      const w = try desk.get()
+      const person = w.assistant.conversation.messages.at(-1)
+      const signIn = page.privateSignIn && person?.author === "HumanMessage" ? offeredPrivateSignIn(w, person.text) : undefined
+      return { context: replyControlContext(w), managed: try managed.get(), signIn }
+    },
     offer: (scene, response, actions) => gate.withPermit(offer(scene, response, actions)),
     choose: effect (id, index) => gate.withPermit(choose(id, index)) catch () => false
   }
