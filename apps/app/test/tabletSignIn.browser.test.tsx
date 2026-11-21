@@ -1,9 +1,10 @@
-import { ManagedRuntime } from "effect";
+import { Effect, Latch, ManagedRuntime } from "effect";
 import { act } from "react";
 import { expect, it, onTestFinished, vi } from "vitest";
 import { cdp, page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
-import { actOnScreen, mount } from "./screen.tsx";
+import { AccountActions } from "../src/graceAccount.vibe";
+import { actOnScreen, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -31,9 +32,11 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   browser.on("Fetch.requestPaused", captureReturn);
   let accountId = "tablet-owner";
   const authorizations: unknown[] = [];
+  let beforeReply: ((path: string) => Promise<void>) | undefined;
   const network = window.fetch.bind(window);
   const service = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
     const path = typeof input === "string" ? new URL(input, location.href).pathname : "";
+    await beforeReply?.(path);
     if (path === "/api/auth/session") return Response.json({ account: { id: accountId, email: accountId + "@example.test" } });
     if (path !== "/api/auth/device/authorize") return network(input, init);
     authorizations.push(await new Response(init?.body).json());
@@ -50,7 +53,10 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
     await browser.send("Fetch.disable");
   });
   await browser.send("Fetch.enable", { patterns: [{ urlPattern: "*/android/auth/callback*", resourceType: "Document" }] });
-  await mount(ManagedRuntime.make(application(undefined)));
+  let runtime = ManagedRuntime.make(application(undefined));
+  let view = tabletView(runtime);
+  onTestFinished(() => view.dispose());
+  await view.render();
 
   const signIn = page.getByRole("button", { name: "Sign in on tablet" });
   await act(() => userEvent.click(signIn));
@@ -73,4 +79,49 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   await expect.poll(() => returns).toEqual([callback.href]);
   expect(authorizations).toEqual([...retries, { challenge, state, expectedAccountId: accountId }]);
   await expect.element(signIn).not.toBeInTheDocument();
+  const dispatched = [...returns];
+
+  const cancel = page.getByRole("button", { name: "Cancel tablet sign-in" });
+  const click = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  for (const path of ["/api/auth/session", "/api/auth/device/authorize"]) {
+    await view.dispose();
+    const nextState = (path.endsWith("session") ? "e" : "f").repeat(43);
+    destination.searchParams.set("device_state", nextState);
+    callback.searchParams.set("state", nextState);
+    history.replaceState(null, "", destination);
+    runtime = ManagedRuntime.make(application(undefined));
+    view = tabletView(runtime);
+    await view.render();
+    await expect.element(signIn).toBeEnabled();
+    const sent = authorizations.length;
+    const arrived = Latch.makeUnsafe();
+    const reply = Latch.makeUnsafe();
+    beforeReply = async (requested) => {
+      if (requested !== path) return;
+      beforeReply = undefined;
+      arrived.openUnsafe();
+      await Effect.runPromise(reply.await);
+    };
+    try {
+      await act(() => userEvent.click(signIn));
+      await Effect.runPromise(arrived.await);
+      await expect.element(signIn).toBeDisabled();
+      await expect.element(cancel).toBeEnabled();
+      if (path.endsWith("authorize")) {
+        await click("Text size");
+        await expect.element(cancel).not.toBeInTheDocument();
+        await click("Account");
+      }
+      await act(() => userEvent.click(cancel));
+      await expect.element(cancel).not.toBeInTheDocument();
+    } finally {
+      beforeReply = undefined;
+      reply.openUnsafe();
+    }
+    await act(() => runtime.runPromise(Effect.flatMap(AccountActions, (actions) => actions.run({ kind: "refresh" }))));
+    await expect.element(page.getByRole("button", { name: "Sign out", exact: true })).toBeEnabled();
+    expect(authorizations.slice(sent)).toEqual(path.endsWith("session") ? [] : [{ challenge, state: nextState, expectedAccountId: accountId }]);
+    expect(returns).toEqual(dispatched);
+    expect(page.getByRole("alert").query()).toBeNull();
+  }
 });

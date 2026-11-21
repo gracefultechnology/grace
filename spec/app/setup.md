@@ -501,7 +501,7 @@ own choice, while a web account is signed in, and the confirmation holds
 only while the reports name that signed-in account: any other report, even
 one that the account could not be checked, asks her again. She confirms for
 the account she is shown, and may confirm again for that same account when
-the tablet's sign-in did not finish.
+the tablet's sign-in did not finish. She can cancel while Grace checks the account or waits for a sign-in code. After cancellation, a late reply cannot open the tablet callback.
 
 A tablet signed in with its own session never offers checkout or the payment
 provider: it opens Grace's web account to manage the subscription. That
