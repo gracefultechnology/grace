@@ -2,7 +2,7 @@
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
 import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
-import { Effect, Stream } from "effect";
+import { Effect, Exit, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { CalendarNews } from "./calendar.vibe";
@@ -78,6 +78,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const localCommands = localPasswordCommands(device);
   const [draft, setDraft] = useDraft(conversation.draft, assistant.keyboard === "ChatKeyboard");
   const [startFailure, setStartFailure] = useState<number>();
+  const [endFailure, setEndFailure] = useState<string>();
   const [guidedCheck, setGuidedCheck] = useState<{ key: string; phase: "checking" | "retry" | "privateForm" }>();
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; attempt: symbol; result?: BrowserGuidance }>();
   // Prototype `layout()`: the window sits on the keyboard.
@@ -143,6 +144,10 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     },
   } as const;
   const scopeKey = JSON.stringify([owner, assistant.taskId, assistant.workVersion, conversation.generation, next, device.contextVersion, browser.revision]);
+  const endTask = () => {
+    setEndFailure(undefined);
+    void closeInterruptedDraft().then(() => send(abandon)).then((result) => { if (Exit.isFailure(result)) setEndFailure(scopeKey); }, () => setEndFailure(scopeKey));
+  };
   const guideKey = ownsPlan && workspace && mayGuideReadLink(workspace) ? scopeKey : "";
   const checking = canCheck && guidedCheck?.key === scopeKey ? guidedCheck : undefined;
   const check = () => {
@@ -235,8 +240,9 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               }}>Start read plan</AnswerChip></AnswerChips>
             </section>
           )}
+          {endFailure === scopeKey && can(abandon) && <GraceBubble role="status" aria-label="End task result">This task is still open. Try ending it again.</GraceBubble>}
           {hasPlan && !ownsPlan && can(abandon) && (
-            <AnswerChips><AnswerChip onClick={() => void send(abandon)}>End previous task</AnswerChip></AnswerChips>
+            <AnswerChips><AnswerChip onClick={endTask}>End previous task</AnswerChip></AnswerChips>
           )}
           {hasPlan && ownsPlan && (
             <section aria-label="Task plan" className="flex flex-col gap-2 rounded-window bg-bubble px-5 py-2.5 text-grace-ink">
@@ -256,7 +262,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               ) : <p aria-current={currentStep ? "step" : undefined}>{recoveryInstruction ?? (stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence)}</p>}
               {recoveredSave && <AnswerChips>
                 {device.surface !== "Calendar" && can(calendar) && <AnswerChip onClick={() => void openRecoveryCalendar()}>Open Calendar</AnswerChip>}
-                {can(abandon) && <AnswerChip onClick={() => void closeInterruptedDraft().then(() => send(abandon))}>End this task</AnswerChip>}
+                {can(abandon) && <AnswerChip onClick={endTask}>End this task</AnswerChip>}
               </AnswerChips>}
             </section>
           )}
