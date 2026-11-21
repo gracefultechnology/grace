@@ -3324,10 +3324,11 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
       const save = page.getByRole("button", { name: "Save", exact: true });
       await routeTo(save);
       await expect.element(save).toBeDisabled();
-      const read = Storage.prototype.getItem;
+      const localRead = localStorage.getItem.bind(localStorage);
+      const sessionRead = sessionStorage.getItem.bind(sessionStorage);
       const unavailableFence = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
         if (key.startsWith("calendar-guided-create:")) throw new Error("Calendar draft storage is unavailable");
-        return read.call(this, key);
+        return (this === localStorage ? localRead : sessionRead)(key);
       });
       try {
         await tap(button("End this task"));
