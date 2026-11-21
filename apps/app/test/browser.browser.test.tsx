@@ -216,18 +216,12 @@ const BrowserControl = Schema.Struct({
 });
 it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
-  const receiptFailure = (failure: unknown) => {
-    const detail = failure instanceof Error ? failure.message : String(failure);
-    const firstLine = detail.split(/[\r\n]/u, 1)[0] ?? "";
-    return firstLine
-      .replace(new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, "gu"), "")
-      .replace(/[\p{Cc}\p{Cf}]/gu, "")
-      .replace(/\b(?:[a-z][a-z0-9+.-]*:\/\/|www\.)[^\s"'<>]+/giu, "[redacted URL]")
-      .replace(/\b(?:bearer|basic)\s+[^\s,;]+/giu, "[redacted authorization]")
-      .replace(/\b(?:password|passwd|secret|token|cookie|authorization|api[-_ ]?key)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu, "[redacted credential]")
-      .replace(/\b[\w.+-]+@[\w.-]+\.[a-z]{2,}(?::[^\s,;]+)?/giu, "[redacted identity]")
-      .replace(/\b(?:sk-|github_pat_|gh[pousr]_|xox[baprs]-)[\w.-]+|\b[\w+=/-]{24,}(?:\.[\w+=/-]{8,})*/gu, "[redacted token]")
-      .trim().slice(0, 240) || "Benchmark step failed";
+  const receiptFailure = (failure: unknown, stage: "Browser setup" | "Browser journey" | "Benchmark grading or cleanup") => {
+    if (failure instanceof Error && (failure.name === "TimeoutError" ||
+        failure.message.startsWith("expect.poll() function didn't resolve in time") ||
+        failure.message.startsWith("expect.poll() assertion didn't resolve in time"))) return `${stage} timed out`;
+    if (failure instanceof Error && failure.name === "AssertionError") return `${stage} assertion failed`;
+    return `${stage} failed`;
   };
   await transport({ kind: "begin", taskId });
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
@@ -245,8 +239,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         native.started(actual.url);
         native.finished(actual.url);
       } catch (error) {
-        outcome.browserBoundaryFailure = { operation: "createSurface", url: request.url, detail: receiptFailure(error) };
-        throw error;
+        const detail = receiptFailure(error, "Browser setup");
+        outcome.browserBoundaryFailure = { operation: "createSurface", detail };
+        throw new Error(detail);
       }
     },
     presentSurface(request) {
@@ -466,10 +461,15 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     await expect.element(finished).toBeVisible();
     outcome.graceTerminal = plan.element().textContent;
   } catch (error) {
-    outcome.failure = receiptFailure(error);
-    if (!gradeWholeCohort) throw error;
+    const detail = receiptFailure(error, "Browser journey");
+    outcome.failure = detail;
+    if (!gradeWholeCohort) throw new Error(detail);
   } finally {
-    await transport({ kind: "receipt", outcome });
+    try {
+      await transport({ kind: "receipt", outcome });
+    } catch (error) {
+      throw new Error(receiptFailure(error, "Benchmark grading or cleanup"));
+    }
   }
 }, 240_000);
 
