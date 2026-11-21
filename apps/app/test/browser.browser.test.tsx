@@ -289,6 +289,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const menuGuidance = page.getByRole("status", { name: "Open submenu guidance" });
     const linkGuidance = page.getByRole("status", { name: "Link guide result" });
     const guidanceFailure = page.getByRole("status", { name: "Link unavailable" });
+    const words = (label: string) => (label.toLowerCase().replace(/[’']s\b/gu, "").match(/[\p{L}\p{N}]+/gu) ?? [])
+      .map(word => word === "men" ? "man" : word === "women" ? "woman" : word.replace(/s$/u, ""));
+    const namedWords = new Set(words(named?.subject ?? ""));
     const visited = new Set([initial.url]);
     const disclosed = new Set<string>();
     const disclosures: { url: string; documentId: string; snapshotId: string; instruction: string; label: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
@@ -317,7 +320,20 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
             return linkGuidance.query() !== null || guidanceFailure.query() !== null ||
               (typeof instruction === "string" && instruction !== lastInstruction);
           }, { timeout: Math.max(1, guidanceDeadline - performance.now()) }).toBe(true);
-          if (guidanceFailure.query()) throw new Error(guidanceFailure.query()?.textContent ?? "The link could not be highlighted");
+          const failure = guidanceFailure.query();
+          if (failure) {
+            const instruction = failure.textContent ?? "The link could not be highlighted";
+            const [, branch, leaf] = instruction.match(/^The open menu (?:“[^”]+” › )*“([^”]+)” calls this link “([^”]+)”\.?$/u) ?? [];
+            if (!branch || !leaf || outcome.nameCorrection || ![branch, leaf].every(label => words(label).length > 0 && words(label).every(word => namedWords.has(word))))
+              throw new Error(instruction);
+            await userEvent.click(page.getByRole("button", { name: `Use “${leaf}” for this step`, exact: true }));
+            await expect.poll(() => plan.getByText(`Find and check “${leaf}”.`, { exact: true }).query() !== null, {
+              timeout: Math.max(1, guidanceDeadline - performance.now()),
+            }).toBe(true);
+            outcome.nameCorrection = { original: named.subject, branch, leaf, instruction, documentId: previous.documentId };
+            await userEvent.click(showLink);
+            continue;
+          }
           if (linkGuidance.query() !== null) break;
           expect(hops.length + disclosures.length).toBeLessThan(7);
           const instruction = menuGuidance.element().textContent;
