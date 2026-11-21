@@ -14,7 +14,7 @@ import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type GuidedEvidenceUse, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent } from "./agent.vibe"
-import { browserAccountId, nativeBrowserGuideLease } from "./graceAccount.vibe"
+import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
 import { type Help, helpWith, type Last, looker, render, sendable, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
 import { Instances, tablet } from "./instances.vibe"
@@ -233,11 +233,13 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const { graceAccount } = try setup.get()
     if (graceAccount.tag === "GraceDeviceSignedIn") {
       const lease = nativeBrowserGuideLease() catch () => undefined
-      return lease === undefined ? undefined : JSON.stringify([graceAccount.tag, lease])
+      return lease !== undefined && (try setup.get()).graceAccount.tag === graceAccount.tag ? JSON.stringify([graceAccount.tag, lease]) : undefined
     }
     if (graceAccount.tag === "GraceSignedIn") {
-      const owner = browserAccountId() catch () => undefined
-      return owner === graceAccount.accountId ? JSON.stringify([graceAccount.tag, owner]) : undefined
+      const scope = browserSessionScope() catch () => undefined
+      const active = (try setup.get()).graceAccount
+      return scope !== undefined && active.tag === "GraceSignedIn" && active.accountId === graceAccount.accountId &&
+        scope.accountId === active.accountId ? JSON.stringify([active.tag, scope.session]) : undefined
     }
     return graceAccount.tag
   }
@@ -377,15 +379,19 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const account = browserScope === undefined ? undefined : try browserReadAccount()
       if (browserScope !== undefined && account === undefined) return "Refused"
       const context = replyControlContext(current)
-      effect function ownsBrowserRead() {
+      effect function currentBrowserWorkspace() {
         const w = try workspace.get()
         return replyControlsCurrent(w, context) && !privateSurfaceActive(w) &&
           w.device.surface === "Browser" && w.device.observationAllowed && activeTab(w.browser).load === "Loaded" &&
           w.assistant.activity === current.assistant.activity && w.assistant.conversation.turn === "Ready" &&
           !w.assistant.conversation.question && w.assistant.replacementId === "" &&
           w.execution.phase === "Idle" && w.commitmentTask === "" &&
-          browserReadScope(w) === browserScope && (try browserReadAccount()) === account
+          browserReadScope(w) === browserScope
       }
+      effect function ownsBrowserRead() {
+        return (try browserReadAccount()) === account && (try currentBrowserWorkspace())
+      }
+      if (browserScope !== undefined && !(try currentBrowserWorkspace())) return "Refused"
       const found = try guidedReceipt(scene, step, native, managed)
       if (found === undefined) return "NotFound"
       if (found === "PrivateForm") return (try ownsBrowserRead()) ? found : "Refused"

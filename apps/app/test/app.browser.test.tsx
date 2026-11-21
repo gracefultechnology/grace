@@ -1,7 +1,8 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
-import { Effect, ManagedRuntime, Option, Schema } from "effect";
+import { Effect, Latch, Layer, ManagedRuntime, Option, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
@@ -19,6 +20,7 @@ import { application } from "../src/app.vibe";
 import { Conversation } from "../src/conversation.vibe";
 import { FileCatalog, FileLease, FileStorage } from "../src/files.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
+import { ManagedReads } from "../src/managedReads.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
@@ -1488,6 +1490,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     (byte) => byte.toString(16).padStart(2, "0")).join("");
   let filesScope = filesOwner;
   let trashed = false;
+  let trashRequests = 0;
   const sent: string[] = [];
   let changed: string[] = [];
   const reminders: number[] = [];
@@ -1535,6 +1538,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const occurrence = { ...events[0], externalId: "visit-one", title: "Therapy", etag: '"occurrence"', seriesId: "visit-series" };
   const reminderEvent = { ...events[0], externalId: "reminder-only", title: "Eye exam", description: "Bring the referral." };
   let series = { ...occurrence, externalId: "visit-series", etag: '"series-one"', seriesId: null };
+  let beforeSeriesReply: (() => Promise<void>) | undefined;
   events.push(occurrence);
   const reply = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
   const changeInput = Schema.fromJsonString(Schema.Struct({
@@ -1556,11 +1560,11 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     })),
   }));
   const decodeChange = Schema.decodeUnknownSync(changeInput);
-  const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
+  const provider = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
     const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
     switch (api.pathname) {
       case "/api/auth/session": return reply({ account: signedIn ? person : null });
-      case "/api/product/files/scope": return signedIn ? reply({ owner: filesScope, session: "7".repeat(64) }) : reply({}, 401);
+      case "/api/product/files/scope": return signedIn ? reply({ accountId: person.id, owner: filesScope, session: "7".repeat(64) }) : reply({}, 401);
       case "/api/auth/refresh": return reply({}, 401);
       case "/api/auth/providers": return reply({ google: false, email: true, sms: false });
       case "/api/auth/email/send":
@@ -1619,6 +1623,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         expect(Object.fromEntries(api.searchParams)).toEqual({ grantId: grant, operationId: unconfirmed });
         return reply({ accountId: person.id, operationId: unconfirmed, messageId: "sent-2" });
       case "/api/v1/eliza/google/gmail/trash": {
+        trashRequests++;
         const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, messageId: mail.externalId, version: trashed ? "9" : "8" });
         if (trashed) expect(outbound.undoOf).toEqual(expect.any(String));
@@ -1642,6 +1647,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/eliza/google/calendar/series":
         expect(api.searchParams.get("occurrenceId")).toBe(occurrence.externalId);
         expect(api.searchParams.get("grantId")).toBe(grant);
+        await beforeSeriesReply?.();
         return reply({ accountId: person.id, occurrenceId: occurrence.externalId, event: series });
       case "/api/v1/eliza/google/calendar/change": {
         const outbound = decodeChange(options?.body);
@@ -1771,6 +1777,12 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
     expect(sent).toEqual(["reply"]);
 
+    const managed = await runtime.runPromise(ManagedReads);
+    const scope = { accountId: person.id, grant };
+    const oldMessage = { kind: "trash", id: mail.externalId, version: "7" } as const;
+    expect(await runtime.runPromise(managed.stage({ ...scope, ...oldMessage }))).toBe(false);
+    expect(await runtime.runPromise(managed.change(scope, oldMessage))).toBeUndefined();
+    expect(trashRequests).toBe(0);
     await tap("Move to Trash");
     await expect.element(page.getByText("Moved to Trash.")).toBeVisible();
     await tap("Undo");
@@ -1795,6 +1807,13 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Reminder choice saved. Your tablet schedules it when it reconnects.")).toBeVisible();
     await tap("Remove reminder");
     await expect.poll(() => reminders).toEqual([60, 0]);
+    expect(await runtime.runPromise(managed.stage({
+      ...scope, kind: "appointment", version: events[0].etag, title: "Dentist", start: time, location: "Main Street", repeat: "Once",
+    }))).toBe(false);
+    expect(await runtime.runPromise(managed.change(scope, {
+      kind: "appointment", action: "delete", id: events[0].externalId, version: "old-etag",
+    }))).toBeUndefined();
+    expect(changed).toEqual([]);
     await tap("Change appointment");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Dentist follow-up"));
     await tap("Review appointment");
@@ -1816,6 +1835,29 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByRole("button", { name: /Lunch/ })).toBeVisible();
     await tap(/Therapy/);
     await expect.element(page.getByRole("button", { name: "Change this occurrence" })).toBeVisible();
+    const seriesRequested = Latch.makeUnsafe();
+    const releaseSeries = Latch.makeUnsafe();
+    beforeSeriesReply = () => { seriesRequested.openUnsafe(); return Effect.runPromise(releaseSeries.await); };
+    const removal = { ...scope, kind: "removeAppointment", id: occurrence.externalId, version: occurrence.etag, series: true } as const;
+    const pendingRemoval = runtime.runPromise(managed.stage(removal));
+    try {
+      await Effect.runPromise(seriesRequested.await);
+      await tap("Close Calendar");
+      await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true })));
+      await expect.element(page.getByRole("button", { name: "Close Calendar", exact: true })).toBeVisible();
+      await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
+    } finally {
+      beforeSeriesReply = undefined;
+      releaseSeries.openUnsafe();
+    }
+    expect(await pendingRemoval).toBe(false);
+    await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
+    expect(changed).toEqual(["update", "delete", "create"]);
+    await tap(/Therapy/);
+    await act(async () => { expect(await runtime.runPromise(managed.stage(removal))).toBe(true); });
+    await expect.element(page.getByRole("heading", { name: "Remove this appointment?" })).toBeVisible();
+    await expect.element(page.getByText("Entire series", { exact: true })).toBeVisible();
+    await act(async () => { await runtime.runPromise(managed.send({ kind: "dismissProposal" })); });
     await tap("Change entire series");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Therapy sessions"));
     await tap("Review appointment");
@@ -1872,6 +1914,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
 }, 120_000);
 
 it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
+  const clock = Layer.effectDiscard(TestClock.setTime(new Date(2026, 10, 20, 12).getTime())).pipe(Layer.provideMerge(TestClock.layer()));
   const audio = { step: 0, min: 0, max: 15, muted: false };
   let brightness = 20;
   let denyBrightness = false;
@@ -1886,7 +1929,7 @@ it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and s
       setBrightness: ({ percent }) => { if (!denyBrightness) brightness = percent; return Promise.resolve(); },
       setVolume: ({ step, muted }) => { Object.assign(audio, { step, muted }); return Promise.resolve(); },
     },
-  }));
+  }).pipe(Layer.provideMerge(clock)));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   await mount(runtime);
   await expect.poll(() => readback.at(-1)).toEqual({ brightness: 100, muted: false, step: 9 });
@@ -2421,6 +2464,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (url.origin !== window.location.origin) return browserFetch(input, init);
     switch (url.pathname) {
+      case "/api/product/files/scope": return Promise.resolve(guideOwner === null ? new Response(null, { status: 401 }) :
+        Response.json({ accountId: guideOwner, owner: "1".repeat(64), session: (guideOwner === "another-owner" ? "3" : "2").repeat(64) }));
       case "/api/auth/session": return Promise.resolve(Response.json({ account: guideOwner === null ? null : { id: guideOwner, email: "owner@grace.test" } }));
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
@@ -2793,6 +2838,10 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   let person = firstOwner;
   let browserCookieOwner: typeof firstOwner | undefined;
   let ownerProbes = 0;
+  let sessionGeneration = 1;
+  let privatePage = false;
+  let nextSnapshot: (() => void) | undefined;
+  let nextScope: (() => Promise<void>) | undefined;
   let hostedChoices = 0;
   const when = Date.now();
   const receivedAt = new Date(when).toISOString();
@@ -2818,9 +2867,17 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     if (url.origin === new URL(cloud).origin) return fetch(input, options);
     const respond = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
     switch (url.pathname) {
-      case "/api/auth/session":
+      case "/api/auth/session": return respond({ account: signedIn ? browserCookieOwner ?? person : null });
+      case "/api/product/files/scope": {
+        if (!signedIn) return respond({}, 401);
         if (browserCookieOwner) ownerProbes++;
-        return respond({ account: signedIn ? browserCookieOwner ?? person : null });
+        const current = browserCookieOwner ?? person;
+        const owner = (current.id === firstOwner.id ? "a" : "b").repeat(64);
+        const result = { accountId: current.id, owner, session: owner.slice(0, 62) + sessionGeneration.toString(16).padStart(2, "0") };
+        const wait = nextScope;
+        nextScope = undefined;
+        return wait ? wait().then(() => respond(result)) : respond(result);
+      }
       case "/api/v1/decisions":
         hostedChoices++;
         expect(new Headers(options?.headers).get("X-Eliza-Account")).toBe(secondOwner.id);
@@ -2858,10 +2915,12 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
         browserCookieOwner = firstOwner;
         switchOwnerDuringPageRead = false;
       }
+      nextSnapshot?.();
+      nextSnapshot = undefined;
       const documentId = browserUrl === browserHome ? "owner-guide-home" : "owner-guide-help";
       return { documentId, frameScope: "main", result: {
         snapshotId: documentId, domRevision: 1, url: browserUrl, title: "Example",
-        text: "Example Help center", complete: true, readyState: "complete", blockers: [],
+        text: "Example Help center", complete: true, readyState: "complete", blockers: privatePage ? [{ kind: "captcha", covers: "partial" }] : [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [{ id: "help", tag: "a", label: "Help center", href: browserHome + "help", inViewport: true,
           bounds: { x: 100, y: 80, width: 100, height: 32 } }],
@@ -3001,6 +3060,10 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(page.getByText("Open page: https://example.org/").query()).toBeNull();
 
     browserCookieOwner = undefined;
+    nextSnapshot = () => { sessionGeneration++; };
+    await tap(guide);
+    await routeTo(page.getByRole("status", { name: "Link unavailable" }).getByText("The page or task changed. Ask me again on the page you want."));
+    expect(hostedChoices).toBe(0);
     await tap(guide);
     await routeTo(page.getByRole("status", { name: "Link guide result" }));
     expect(hostedChoices).toBe(1);
@@ -3013,6 +3076,27 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(switchOwnerDuringPageRead).toBe(false);
     expect(await receipts()).toEqual([]);
     browserCookieOwner = undefined;
+    nextSnapshot = () => { sessionGeneration++; };
+    expect(await check()).toBe("Refused");
+    expect(await receipts()).toEqual([]);
+
+    privatePage = true;
+    const probing = Latch.makeUnsafe();
+    const resumeProbe = Latch.makeUnsafe();
+    nextSnapshot = () => { nextScope = () => { probing.openUnsafe(); return Effect.runPromise(resumeProbe.await); }; };
+    const pending = runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.checkGuidedRead()));
+    try {
+      await Effect.runPromise(probing.await);
+      await tap(button("Turn off browser reading"));
+    } finally {
+      resumeProbe.openUnsafe();
+    }
+    expect(await pending).toBe("Refused");
+    expect(await receipts()).toEqual([]);
+
+    privatePage = false;
+    await tap(button("Allow Grace to read this browser"));
+    await tap(button("Resume Grace"));
     await tap(button("Check page"));
     await expect.poll(receipts).toEqual(["Open page: " + browserUrl]);
   } finally {
