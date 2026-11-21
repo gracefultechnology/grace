@@ -32,8 +32,8 @@ export function Rail() {
               <button type="button" title={spec.file} aria-current={S.view === "specs" && spec.file === S.sel} onClick={() => select(spec.file)}
                 className={cn(focusRing, "flex min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 text-left")}>
                 <Dot mark={mark} label={label} />
-                <span className={cn("flex-1 truncate font-mono text-sm", spec.deleted && "text-muted-foreground line-through")}>{specLabel(spec.file).split("/").pop()}</span>
-                <span title="stories · rules" className="text-xs text-muted-foreground tabular-nums">{spec.outline.stories.length}·{spec.outline.stories.reduce((n, s) => n + s.rules.length, 0)}</span>
+                <span className={cn("flex-1 truncate font-mono text-detail", spec.deleted && "text-muted-foreground line-through")}>{specLabel(spec.file).split("/").pop()}</span>
+                <span title="stories · rules" className="text-mark text-muted-foreground tabular-nums">{spec.outline.stories.length}·{spec.outline.stories.reduce((n, s) => n + s.rules.length, 0)}</span>
               </button>
               {spec.deleted ? <IconButton name="undo" label={`Keep ${spec.file}`} onClick={() => deleteSpec(spec, false)} />
                 : <IconButton name="trash" label={`Delete ${spec.file}`} danger onClick={() => deleteSpec(spec, true)} />}
@@ -44,11 +44,11 @@ export function Rail() {
       {S.components && (
         <button type="button" aria-current={S.view === "components"} onClick={() => { S.view = "components"; redraw(); }}
           className={cn("mt-2 flex items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-accent", S.view === "components" && "bg-accent")}>
-          Components<span className="text-xs text-muted-foreground tabular-nums">{S.components.components.length}</span>
+          Components<span className="text-mark text-muted-foreground tabular-nums">{S.components.components.length}</span>
         </button>
       )}
       <div className="mt-2 flex gap-1">
-        <Input data-newspec value={name} placeholder="area/child" aria-label="Path of a new spec" className="h-8 font-mono text-sm"
+        <Input data-newspec value={name} placeholder="area/child" aria-label="Path of a new spec" className="h-8 font-mono text-detail"
           onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") create(); }} />
         <IconButton name="plus" label="Add spec" onClick={create} />
       </div>

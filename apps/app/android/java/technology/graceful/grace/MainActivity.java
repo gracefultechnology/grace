@@ -49,7 +49,6 @@ public class MainActivity extends ElizaBridgeActivity {
   registerPlugin(GraceFiles.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
   registerPlugin(PasswordsPlugin.class);
-  registerPlugin(GraceGuideSpeechPlugin.class);
   registerPlugin(PrivateViewPlugin.class);
   registerPlugin(GraceDevicePlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
@@ -131,7 +130,7 @@ public class MainActivity extends ElizaBridgeActivity {
  private Uri accountCallback(Intent intent) {
   if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return null;
   Uri data = intent.getData();
-  return GraceAccount.account(this).handles(data) ? data : null;
+  return GraceAccount.handles(this, data) ? data : null;
  }
 
  private void acceptAccountCallback(Uri data) {

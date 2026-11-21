@@ -85,7 +85,7 @@ export function MailMessageRow({ from, subject, time, account, attachment = fals
       trailing={
         account ? (
           <span className="flex flex-col items-end gap-1 self-start pt-1.5 whitespace-nowrap text-muted-foreground">
-            <span className="text-label leading-6 font-medium">{time}</span>
+            <span className="text-control leading-6 font-medium">{time}</span>
             <span className="text-caption leading-5 font-semibold">{account}</span>
           </span>
         ) : undefined

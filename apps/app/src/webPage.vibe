@@ -25,13 +25,13 @@ export function webPage() {
       frame.going = opens ? url : undefined
       if (opens) frame.element.src = url
       Queue.offerUnsafe(events, PageEvent.Started({ id, url: Url.make(url) }))
-      if (!opens) Queue.offerUnsafe(events, PageEvent.Changed({ id, url: Url.make(url), loading: false, result: "LoadFailed", secure: false }))
+      if (!opens) Queue.offerUnsafe(events, PageEvent.Changed({ id, url: Url.make(url), loading: false, result: "LoadFailed", secure: false, back: frame.at > 0, forward: frame.at + 1 < frame.history.length }))
     }
     const loaded = (id: PageId, frame: Frame) => {
       const url = frame.going === undefined ? undefined : Url.make(frame.going)
       frame.going = undefined
       if (url === undefined) Queue.offerUnsafe(events, PageEvent.Started({ id, url }))
-      Queue.offerUnsafe(events, PageEvent.Changed({ id, url, loading: false, result: "Loaded", secure: secureAddress(url) }))
+      Queue.offerUnsafe(events, PageEvent.Changed({ id, url, loading: false, result: "Loaded", secure: secureAddress(url), back: frame.at > 0, forward: frame.at + 1 < frame.history.length }))
     }
     const remove = (id: PageId) => {
       frames.get(id)?.element.remove()

@@ -9,7 +9,7 @@ const sink = "active:scale-97 motion-reduce:active:scale-100";
 const fades = "disabled:text-grace-ink/32 disabled:opacity-100 aria-disabled:text-grace-ink/32 aria-disabled:opacity-100";
 
 const buttonVariants = cva(
-  [focusRing, "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50"],
+  [focusRing, "inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md text-detail font-medium whitespace-nowrap disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50"],
   {
     variants: {
       variant: {

@@ -3,6 +3,7 @@
   "globalDependencies": [
     ".nvmrc",
     "pnpm-workspace.yaml",
+    "patches/**",
     "tsconfig.base.json",
     "vibestack/*.ts",
     "vibestack/gen/**",

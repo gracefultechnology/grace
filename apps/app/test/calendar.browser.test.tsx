@@ -67,7 +67,8 @@ async function start(down = false) {
   };
 }
 
-it('Browse (spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence")', async () => {
+it('Browse (spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives")', async () => {
+  // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"
   const { secret, eyeDay, card, run, reachable, agree, toEyeWeek } = await start(true);
   const person = (event: AccountEvent) => run(Effect.flatMap(Effect.service(AccountsMachine), (a) => a.send(event, "AccountPerson")));
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
@@ -113,7 +114,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   const gmailView = await run(selectedGmailCalendar);
   const startAt = midnight(eyeDay) + 15 * hour;
   const entry = {
-    identity: { owner: gmailView.owner, calendarId: gmailView.calendarId, occurrenceId: "clinic-visit", sourceRef: "clinic", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" },
+    identity: { owner: gmailView.owner, calendarId: gmailView.calendarId, occurrenceId: "clinic-visit", sourceRef: "clinic", sourceAccount: 1, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" },
     details: {
       title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached",
       startAt, endAt: startAt + hour, timezone: gmailView.timezone, allDay: false, seriesId: "", recurrence: "Once" as const, reminderEnabled: true, leadTime: day, important: false,
@@ -125,6 +126,32 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await expect.element(page.getByText("From the clinic’s email · Visit form attached")).toBeVisible();
   await click("Back to Calendar");
   await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
+
+  const original = (await run(selectedGmailCalendar)).entries.find((e) => e.identity.sourceRef === entry.identity.sourceRef && e.phase === "Saved");
+  if (!original) throw new Error("The added appointment has no saved source");
+  expect(original.identity.sourceAccount).toBe(1);
+  await click("Close Calendar");
+  const events = new URL("/api/v1/eliza/google/calendar/events", cloud);
+  const headers = { authorization: `Bearer ${secret}`, "content-type": "application/json" };
+  const removed = await fetch(`${events}/${encodeURIComponent(original.identity.occurrenceId)}`, { method: "DELETE", headers });
+  expect(removed.ok).toBe(true);
+  const created = await fetch(events, { method: "POST", headers, body: JSON.stringify({
+    title: entry.details.title, location: "West clinic", startAt: new Date(startAt).toISOString(),
+    endAt: new Date(startAt + hour).toISOString(), timeZone: gmailView.timezone,
+  }) });
+  expect(created.status).toBe(201);
+  const { event: replacement } = await created.json() as { event: { externalId: string } };
+  expect(replacement.externalId).not.toBe(original.identity.occurrenceId);
+  await toEyeWeek();
+  await expect.poll(async () => (await run(selectedGmailCalendar)).entries.some((e) => e.identity.occurrenceId === replacement.externalId && e.phase === "Saved"), atCloud).toBe(true);
+  await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
+  await expect.element(page.getByText("West clinic")).toBeVisible();
+  await expect.element(page.getByText("No reminder")).toBeVisible();
+  await expect.element(page.getByText("Dr. Patel", { exact: true })).not.toBeInTheDocument();
+  const selected = await run(selectedGmailCalendar);
+  expect(selected.entries.find((e) => e.identity.occurrenceId === selected.selectedId)?.identity).toMatchObject({
+    occurrenceId: replacement.externalId, sourceRef: "", sourceAccount: 0,
+  });
 }, journey);
 
 const edit = async (title: string, repeats: string) => {
@@ -226,14 +253,14 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await expect.poll(titles, atCloud).toEqual([]);
 }, journey);
 
-it('Delete the first and then every appointment of a repeating email series (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
+it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
   const { secret, eyeDay, toEyeWeek, run, agree } = await start();
   // spec/app/calendarView.md, "The deletion question binds its selected occurrence and explicit scope"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"
   await toEyeWeek();
   const gmailView = await run(selectedGmailCalendar);
   const walkAt = midnight(eyeDay) + 10 * hour;
   const walk = {
-    identity: { owner: gmailView.owner, calendarId: gmailView.calendarId, occurrenceId: "walk", sourceRef: "", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" },
+    identity: { owner: gmailView.owner, calendarId: gmailView.calendarId, occurrenceId: "walk", sourceRef: "", sourceAccount: 0, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" },
     details: {
       title: "Walk with Joan", location: "", participant: "", notes: "", startAt: walkAt, endAt: walkAt + hour, timezone: gmailView.timezone, allDay: false,
       seriesId: "walk", recurrence: "Weekly" as const, reminderEnabled: false, leadTime: 0, important: false,
