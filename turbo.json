@@ -333,6 +333,11 @@
       "cache": false,
       "persistent": true
     },
+    "@grace/cloud#dev": {
+      "dependsOn": ["//#gen:cloud"],
+      "cache": false,
+      "persistent": true
+    },
     "vibestack-studio#dev": {
       "dependsOn": [
         "gen",
