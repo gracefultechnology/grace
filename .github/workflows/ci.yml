@@ -240,7 +240,7 @@ jobs:
             (.[] | "| \(.taskId) | \(.cohort) | \(.officialScore) | \(.noActionScore) | \(.hostedGuidance) | \(.checkedPlan) |")
           ' "$WEBARENA_RESULTS/scorecard.json" >> "$GITHUB_STEP_SUMMARY"
           jq -e '
-            all(.[]; (.failed | not) and (.completed or (.cohort == "exploratory" and
+            all(.[]; (.failed | not) and (.completed == (.miss == null)) and (.completed or (.cohort == "exploratory" and
               (.miss == "missing-reviewed-step" or .miss == "target-absent-from-open-menu" or .miss == "repeated-address" or
                 (.miss == "rejected-scoped-leaf" and .rejectedLeaf) or
                 (.miss == "action-budget-exhausted" and .exhaustedBudget)))) and

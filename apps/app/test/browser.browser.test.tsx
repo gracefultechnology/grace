@@ -216,12 +216,12 @@ const BrowserControl = Schema.Struct({
 });
 it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
-  const receiptFailure = (failure: unknown, stage: "Browser setup" | "Browser journey" | "Benchmark grading or cleanup") => {
+  const publicFailure = (failure: unknown, stage: "Browser setup" | "Browser journey" | "Benchmark grading or cleanup") => {
     if (failure instanceof Error && (failure.name === "TimeoutError" ||
         failure.message.startsWith("expect.poll() function didn't resolve in time") ||
-        failure.message.startsWith("expect.poll() assertion didn't resolve in time"))) return `${stage} timed out`;
-    if (failure instanceof Error && failure.name === "AssertionError") return `${stage} assertion failed`;
-    return `${stage} failed`;
+        failure.message.startsWith("expect.poll() assertion didn't resolve in time"))) return new Error(`${stage} timed out`);
+    if (failure instanceof Error && failure.name === "AssertionError") return new Error(`${stage} assertion failed`);
+    return new Error(`${stage} failed`);
   };
   await transport({ kind: "begin", taskId });
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
@@ -239,9 +239,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         native.started(actual.url);
         native.finished(actual.url);
       } catch (error) {
-        const detail = receiptFailure(error, "Browser setup");
-        outcome.browserBoundaryFailure = { operation: "createSurface", detail };
-        throw new Error(detail);
+        const failure = publicFailure(error, "Browser setup");
+        outcome.browserBoundaryFailure = { operation: "createSurface", detail: failure.message };
+        throw failure;
       }
     },
     presentSurface(request) {
@@ -461,15 +461,13 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     await expect.element(finished).toBeVisible();
     outcome.graceTerminal = plan.element().textContent;
   } catch (error) {
-    const detail = receiptFailure(error, "Browser journey");
-    outcome.failure = detail;
-    if (!gradeWholeCohort) throw new Error(detail);
+    const failure = publicFailure(error, "Browser journey");
+    outcome.failure = failure.message;
+    if (!gradeWholeCohort) throw failure;
   } finally {
-    try {
-      await transport({ kind: "receipt", outcome });
-    } catch (error) {
-      throw new Error(receiptFailure(error, "Benchmark grading or cleanup"));
-    }
+    await transport({ kind: "receipt", outcome }).catch((error: unknown) => {
+      throw publicFailure(error, "Benchmark grading or cleanup");
+    });
   }
 }, 240_000);
 
