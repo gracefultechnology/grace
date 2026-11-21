@@ -60,7 +60,7 @@ export type TaskFactsCardProps = Omit<PanelProps, "variant" | "children"> & {
 /**
  * Grace's own read-out of a task's current facts as seen on its website: who and which account, then a row for each
  * fact, and whether a result already exists. It is Grace's summary, not the website restyled.
- * @model spec/app/billpay.md
+ * @model spec/app/prep.md
  * @design packages/design-system/design.md#windows
  */
 export function TaskFactsCard({ who, account, rows, existing, onOpen, onRecheck, conflict, labels, className, ...props }: TaskFactsCardProps) {
