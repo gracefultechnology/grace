@@ -4,7 +4,7 @@ import { act } from "react";
 import { expect, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
-import { actOnScreen, mount } from "./screen.tsx";
+import { actOnScreen, mount, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -42,4 +42,38 @@ it('Dim the tablet at night (spec/app/preferences.md, "Night dimming and sound s
   await expect.poll(() => brightness).toBe(30);
   await act(() => runtime.runPromise(TestClock.adjust("1 minute")));
   await expect.poll(() => brightness).toBe(60);
+});
+
+it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence")', async () => {
+  const stored: { revision: number; value: string | null } = { revision: 0, value: null };
+  let acceptsWrites = false;
+  let refused = 0;
+  const start = () => ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    preferences: {
+      read: () => Promise.resolve({ ...stored }),
+      write: ({ revision, value }) => {
+        if (!acceptsWrites || revision !== stored.revision) return Promise.reject(new Error(`refused ${++refused}`));
+        Object.assign(stored, { revision: revision + 1, value });
+        return Promise.resolve({ revision: stored.revision });
+      },
+    },
+  }).pipe(Layer.provideMerge(TestClock.layer())));
+  const runtime = start();
+  const first = tabletView(runtime);
+  try {
+    await first.render();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Volume", exact: true })));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Mute", exact: true })));
+    await expect.element(page.getByText("Muted")).toBeVisible();
+    await expect.poll(() => refused).toBe(1);
+    acceptsWrites = true;
+    await act(() => runtime.runPromise(TestClock.adjust("1 minute")));
+    await expect.poll(() => stored.revision).toBe(1);
+  } finally {
+    await first.dispose();
+  }
+  await mount(start());
+  await act(() => userEvent.click(page.getByRole("button", { name: "Volume", exact: true })));
+  await expect.element(page.getByText("Muted")).toBeVisible();
 });
