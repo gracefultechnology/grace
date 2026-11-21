@@ -1,4 +1,4 @@
-// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
+// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"
 import { Machine as Accounts, type Account } from "../gen/app__accounts.effect.vibe"
 import { canQueueSend, canSendDraft, currentDraft, draftStoreBusy, emptyContent, enabled, type Event as MailEvent, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
@@ -72,6 +72,11 @@ effect function relist(box: MailMachine.Shape) {
 
 effect function closeUndo(box: MailMachine.Shape, record: MessageRecord) {
   box.send({ type: "closeUndoToast", target: { ref: record.identity.ref, revision: record.undoRevision } }, "MailHost") catch () => undefined
+}
+
+effect function countDrafts(mail: MailConnection, box: MailMachine.Shape, generation: number) {
+  const total = mail.draftCount() catch () => undefined
+  if (total !== undefined) box.send({ type: "countDrafts", generation, total }, "MailConnector") catch () => undefined
 }
 
 effect function noteSent(registry: Accounts.Shape, id: number, to: string) {
@@ -218,6 +223,9 @@ export const mailing = Layer.effect(Mail, effect {
     const opened = after.view === "Message" && (before.view !== "Message" || before.messageRef !== after.messageRef || before.generation !== after.generation)
     if (opened && answerable(after) && headerFor(board, shelf.held(account.id, after.messageRef), account.id, after) === undefined) try fork.in(scope) prepareReply(account.id, mail, box, after)
     if (opened && after.folder === "DraftsFolder") try fork.in(scope) reopen(mail, box, after)
+    const listed = before.readKind === "Search" && before.readStatus === "Reading" && after.readStatus === "ReadIdle"
+    const stored = (before.draftStorage === "DraftSaving" && after.draftStorage === "DraftSaved") || (before.draftStorage === "DraftDeleting" && after.draftStorage === "DraftUnstored")
+    if (listed || stored) try fork.in(scope) countDrafts(mail, box, after.generation)
     if (board.sharing === account.id && (!after.composeVisible || after.draft.to !== "")) post({ sharing: undefined })
     const changes = settled(before, after)
     for (const { record } of changes.filter((c) => c.record.folder !== "PurgedFolder")) {

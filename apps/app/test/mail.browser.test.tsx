@@ -463,6 +463,7 @@ it("Write or reply and confirm before sending", async () => {
   await act(() => userEvent.fill(words(), "Thank you, I’ll be there."));
   // spec/app/email.md, "The visible Send button approves exactly the composer the user sees"
   await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(page.getByText("Sent to Main St Clinic")).toBeVisible();
   await expect.poll(() => sentWith("Re: Reminder: your appointment tomorrow at 10 am")).toEqual([gmail]);
   await click(row("Sent"));
   await opened(/Main St Clinic/, "Re: Reminder: your appointment tomorrow at 10 am");
@@ -530,6 +531,8 @@ it("Write or reply and confirm before sending", async () => {
   await act(() => userEvent.fill(words(), "Shall we have lunch on Tuesday?"));
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week").map((m) => [b.address, m.labels]))).toEqual([[outlook, ["DRAFT"]]]);
+  // spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/mailboxes.md, "Drafts counts the shown accounts’ saved drafts"
+  await expect.element(row("Drafts 1")).toBeVisible();
   await click(row("Drafts"));
   await click(email(/^To Susan.*Lunch next week/));
   await expect.element(subject()).toHaveValue("Lunch next week");
@@ -561,6 +564,7 @@ it("Write or reply and confirm before sending", async () => {
 
   // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
   await click(row("All inboxes"));
+  await expect.element(row("Drafts 1")).toBeVisible();
   await opened(/Ruth/, "Lunch on Sunday?");
   await host("Offline");
   await expect.element(page.getByRole("button", { name: "Reply" })).toBeVisible();
