@@ -172,7 +172,7 @@ jobs:
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
         run: |
           test -n "$GRACE_BENCHMARK_CLEF_ORIGIN" && test -n "$GRACE_BENCHMARK_CLEF_KEY"
-          tasks='[260,261,262,263,264]'
+          tasks='[260,261,262,263,264,298,299]'
           git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
             jq -e --arg start "$SHOPPING_ORIGIN/" --arg results "$WEBARENA_RESULTS" \
               --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$tasks" \
@@ -181,15 +181,34 @@ jobs:
                  siteStorageState: $state, evaluator: "webarena"} +
                 (if .task_id == 260 then {} else {chat: "upstream", requiredStep: "ReachNamedPage"} end)] |
                 select(map(.taskId | tonumber) == $tasks)' > "$GRACE_BROWSER_BENCHMARK_FILE"
+          browser_exit=0
           pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' |
-            tee "$WEBARENA_RESULTS/grace-browser.log"
+            tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
           jq -es --argjson tasks "$tasks" '
-            sort_by(.taskId | tonumber) as $receipts |
-            ($receipts | map(.taskId | tonumber)) == $tasks and
-            all($receipts[]; .webArena.officialScore == 1 and .webArena.noActionScore == 0 and .webArena.qualifiedHostedGuidance == true and
-              (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
-                (.outcome.reviewedDestination | length) > 0 and .outcome.hops[-1].checked == true)))
-          ' "$WEBARENA_RESULTS"/task-*.json
+            sort_by(.taskId | tonumber) |
+            select(map(.taskId | tonumber) == $tasks) |
+            map({taskId, cohort: (if .taskId == "260" or .taskId == "261" then "baseline" else "exploratory" end),
+              officialScore: .webArena.officialScore, noActionScore: .webArena.noActionScore,
+              hostedGuidance: (.webArena.qualifiedHostedGuidance == true),
+              checkedPlan: (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
+                (.outcome.reviewedDestination | length) > 0 and .outcome.hops[-1].checked == true))})
+          ' "$WEBARENA_RESULTS"/task-*.json > "$WEBARENA_RESULTS/scorecard.json"
+          jq -r '
+            "### WebArena Shopping",
+            "",
+            "| Official task | Cohort | Landing score | No-action score | Hosted guidance | Checked plan |",
+            "| --- | --- | --- | --- | --- | --- |",
+            (.[] | "| \(.taskId) | \(.cohort) | \(.officialScore) | \(.noActionScore) | \(.hostedGuidance) | \(.checkedPlan) |")
+          ' "$WEBARENA_RESULTS/scorecard.json" >> "$GITHUB_STEP_SUMMARY"
+          jq -e '
+            all(.[]; .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1)) and
+            all(.[] | select(.cohort == "baseline"); .officialScore == 1 and .hostedGuidance and .checkedPlan)
+          ' "$WEBARENA_RESULTS/scorecard.json"
+          if jq -e 'all(.[]; .hostedGuidance and .checkedPlan)' "$WEBARENA_RESULTS/scorecard.json"; then
+            test "$browser_exit" -eq 0
+          else
+            test "$browser_exit" -eq 1
+          fi
       - if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -197,6 +216,7 @@ jobs:
           path: |
             ${{ runner.temp }}/grace-webarena-results/shopping-image.json
             ${{ runner.temp }}/grace-webarena-results/task-*.json
+            ${{ runner.temp }}/grace-webarena-results/scorecard.json
             ${{ runner.temp }}/grace-webarena-results/grace-browser.log
           if-no-files-found: warn
   billworld:

@@ -291,7 +291,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const guidanceFailure = page.getByRole("status", { name: "Link unavailable" });
     const visited = new Set([initial.url]);
     const disclosed = new Set<string>();
-    const disclosures: { url: string; documentId: string; snapshotId: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
+    const disclosures: { url: string; documentId: string; snapshotId: string; instruction: string; label: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
     outcome.disclosures = disclosures;
     const browserObservationTimeoutMs = 15_000;
     const hops: { url: string; documentId: string; checked: boolean; checkResultWaitMs: number }[] = [];
@@ -309,29 +309,43 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         throw error;
       }
       if (named) {
-        await expect.poll(() => menuGuidance.query() !== null || linkGuidance.query() !== null || guidanceFailure.query() !== null, { timeout: 45_000 }).toBe(true);
-        if (guidanceFailure.query()) throw new Error(guidanceFailure.query()?.textContent ?? "The link could not be highlighted");
-        if (menuGuidance.query() !== null) {
-          expect(disclosed.has(previous.documentId)).toBe(false);
-          outcome.menuInstruction = menuGuidance.query()?.textContent
+        let lastInstruction: string | undefined;
+        let guidanceDeadline = performance.now() + 45_000;
+        while (true) {
+          await expect.poll(() => {
+            const instruction = menuGuidance.query()?.textContent;
+            return linkGuidance.query() !== null || guidanceFailure.query() !== null ||
+              (typeof instruction === "string" && instruction !== lastInstruction);
+          }, { timeout: Math.max(1, guidanceDeadline - performance.now()) }).toBe(true);
+          if (guidanceFailure.query()) throw new Error(guidanceFailure.query()?.textContent ?? "The link could not be highlighted");
+          if (linkGuidance.query() !== null) break;
+          expect(hops.length + disclosures.length).toBeLessThan(7);
+          const instruction = menuGuidance.element().textContent;
+          if (!instruction || instruction === lastInstruction) throw new Error("Grace did not present fresh submenu guidance");
+          outcome.menuInstruction = instruction;
+          const hoverTimeout = lastInstruction === undefined ? 15_000 : Math.min(15_000, Math.max(1, guidanceDeadline - performance.now()));
           await expect.poll(async () => {
-            const result = await transport({ kind: "hoverGuide" })
-            outcome.menuInteraction = result
-            if (result.reason) throw new Error(typeof result.reason === "string" ? result.reason : JSON.stringify(result.reason))
-            return result.disclosed === true
-          }, { timeout: 15000 }).toBe(true)
+            const result = await transport({ kind: "hoverGuide" });
+            outcome.menuInteraction = result;
+            if (result.reason) throw new Error(typeof result.reason === "string" ? result.reason : JSON.stringify(result.reason));
+            return result.disclosed === true;
+          }, { timeout: hoverTimeout }).toBe(true);
           const evidence = Schema.decodeUnknownSync(Schema.Struct({
             disclosed: Schema.Literal(true), url: Schema.NonEmptyString, documentId: Schema.NonEmptyString,
-            snapshotId: Schema.NonEmptyString, pointer: Schema.Struct({ x: Schema.Finite, y: Schema.Finite }),
+            snapshotId: Schema.NonEmptyString, label: Schema.NonEmptyString,
+            pointer: Schema.Struct({ x: Schema.Finite, y: Schema.Finite }),
             before: Schema.Int, after: Schema.Int,
           }))(outcome.menuInteraction);
           expect(evidence.url).toBe(previous.url);
           expect(evidence.documentId).toBe(previous.documentId);
+          expect(instruction).toContain(`“${evidence.label}”`);
           expect(evidence.after).toBeGreaterThan(evidence.before);
-          disclosed.add(evidence.documentId);
-          disclosures.push(evidence);
-          await expect.poll(() => linkGuidance.query() !== null || guidanceFailure.query() !== null, { timeout: 50_000 }).toBe(true);
-          if (guidanceFailure.query()) throw new Error(guidanceFailure.query()?.textContent ?? "The submenu link could not be highlighted");
+          const disclosureId = JSON.stringify([evidence.documentId, evidence.snapshotId]);
+          expect(disclosed.has(disclosureId)).toBe(false);
+          disclosed.add(disclosureId);
+          disclosures.push({ ...evidence, instruction });
+          if (lastInstruction === undefined) guidanceDeadline = performance.now() + 50_000;
+          lastInstruction = instruction;
         }
       }
       await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
