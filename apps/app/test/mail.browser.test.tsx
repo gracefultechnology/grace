@@ -439,7 +439,9 @@ it("See all my email in one place", async () => {
   await expect.element(page.getByText(/^From Main St Clinic · Saved /)).toBeVisible();
   await click(page.getByRole("radio", { name: "Photos" }));
   await click(piano);
-  await click(page.getByRole("button", { name: "Share" }));
+  const share = page.getByRole("button", { name: "Share" });
+  await expect.element(share).toBeVisible();
+  await click(share);
   await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
   await click(page.getByRole("button", { name: "Susan" }));
   await expect.element(subject()).toHaveValue("A photo");
