@@ -37,6 +37,10 @@ Turborepo (`turbo.json`) orders these and skips a task whose inputs it has seen
 what a change reaches. `check` is never skipped whole: `spec` keeps its own finer cache in `.spec-cache/`, and runs the
 application again each time.
 
+To build the Grace app and Worker together, use `pnpm all @repo/app#build @grace/cloud#build`.
+Turbo schedules their shared Eliza cloud model generator once, including when its cache is disabled.
+Each package's own `pnpm build` also prepares its prerequisites when run directly.
+
 A package joins by having a script named `gen`, `build`, `typecheck`, `test`, `test:browser` or `check`. Its other
 tasks wait for its `gen` and the root's, and its `check` for all of them, since `check` rewrites `gen/`. A package that
 can never own a root spec waits for no root `gen`, so a spec edit leaves its tasks cached: Studio, which has a `spec/`

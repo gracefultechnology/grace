@@ -1,5 +1,5 @@
 // spec/app/files.md, "A library belongs to one owner and identifies files independently of their names"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"
-import { browserFilesAccess } from "./graceAccount.vibe"
+import { browserSessionScope } from "./graceAccount.vibe"
 import type { FileAttachment, FilesPort } from "./filesPlugin.ts"
 import { HeldFile } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
@@ -54,8 +54,8 @@ export function browserFiles(): FilesPort {
   effect function current(token: string) {
     const saved = leases.get(token)
     if (!saved) throw new BrowserFilesUnavailable()
-    const now = try browserFilesAccess()
-    if (saved.owner !== now.owner || saved.session !== now.session || leases.get(token) !== saved) throw new BrowserFilesUnavailable()
+    const now = try browserSessionScope()
+    if (now === undefined || saved.owner !== now.owner || saved.session !== now.session || leases.get(token) !== saved) throw new BrowserFilesUnavailable()
     return now.owner
   }
 
@@ -91,8 +91,8 @@ export function browserFiles(): FilesPort {
 
   return {
     open: (expected) => runPromise(effect {
-      const access = try browserFilesAccess()
-      if (expected && access.owner !== expected.owner) throw new BrowserFilesUnavailable()
+      const access = try browserSessionScope()
+      if (access === undefined || (expected && access.owner !== expected.owner)) throw new BrowserFilesUnavailable()
       const lease = try Effect.try(() => webView.window.crypto.randomUUID())
       leases.clear()
       leases.set(lease, access)
