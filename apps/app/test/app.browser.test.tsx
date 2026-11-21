@@ -1,7 +1,7 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
-import { Effect, ManagedRuntime, Schema } from "effect";
+import { Effect, Latch, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
@@ -1273,7 +1273,8 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
 });
 
 
-it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment")', async () => {
+it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
+  // spec/app/email.md, "Story: Read an email and its original attachment"
   const person = { id: "private-qa-account", email: "reader@example.test" };
   const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
@@ -1354,7 +1355,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     const api = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
     switch (api.pathname) {
       case "/api/auth/session": return reply({ account: signedIn ? person : null });
-      case "/api/product/files/scope": return signedIn ? reply({ owner: filesScope, session: "7".repeat(64) }) : reply({}, 401);
+      case "/api/product/files/scope": return signedIn ? reply({ accountId: person.id, owner: filesScope, session: "7".repeat(64) }) : reply({}, 401);
       case "/api/auth/refresh": return reply({}, 401);
       case "/api/auth/providers": return reply({ google: false, email: true, sms: false });
       case "/api/auth/email/send":
@@ -2117,13 +2118,20 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let reviseDuringRead = false;
   let replaceDocumentDuringRead = false;
   let addChallengeDuringRead = false;
-  let challengeShown = false;
+  let challengeShown: false | "code" | "captcha" = false;
   let signInWidget: "hidden" | "idle" | "active" | "accountOnly" = "hidden";
+  const blankNewsletterEmail = {
+    id: "newsletter-email", tag: "input", type: "email", fieldName: "email", label: "Sign Up for Our Newsletter:",
+    sensitive: null, form: { index: 2, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: false,
+  };
+  let newsletterEmail: typeof blankNewsletterEmail | null = null;
+  const blankSearch = { focused: false, edited: false, hasInput: false };
+  let searchEvidence: Partial<typeof blankSearch> = blankSearch;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       return { documentId: currentPage.id, frameScope: "main", result: {
         snapshotId: currentPage.id, domRevision, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
-        complete: true, readyState: "complete", blockers: [],
+        complete: true, readyState: "complete", blockers: challengeShown === "captcha" ? [{ kind: "captcha", covers: "partial" }] : [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
           ...(signInWidget === "hidden" ? [] : [
@@ -2134,10 +2142,19 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
             { id: "sign-in-link", tag: "a", label: "Private sign-in link", form: { index: 0 }, focused: false, href: "https://example.org/forgot", inViewport: true },
             { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
           ]),
-          { id: "search", tag: "input", type: "text", role: "combobox", fieldName: "q", label: "Search", href: null, inViewport: true },
-          ...(challengeShown ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code", href: null, inViewport: true }] : []),
-          { id: "about", tag: "a", label: "About us", href: "https://example.org/about", inViewport: true },
-          { id: "clipped-help", tag: "a", label: "Help center", href: "https://example.org/help", inViewport: true,
+          { id: "search", tag: "input", type: "text", role: "combobox", fieldName: "q", label: "Search",
+            form: { index: 1, name: null }, ...searchEvidence, href: null, inViewport: true },
+          ...(newsletterEmail === null ? [] : [
+            newsletterEmail,
+            { id: "subscribe", tag: "button", type: "submit", label: "Subscribe", sensitive: null,
+              form: newsletterEmail.form, focused: false, submits: true, href: null, inViewport: false },
+            { id: "form-help", tag: "a", label: "Help center inside a form", form: { index: 3, name: null },
+              href: "https://example.org/form-help", inViewport: true },
+          ]),
+          ...(challengeShown === "code" ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code",
+            form: { index: 4, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: true }] : []),
+          { id: "about", tag: "a", label: "About us", form: null, href: "https://example.org/about", inViewport: true },
+          { id: "clipped-help", tag: "a", label: "Help center", form: null, href: "https://example.org/help", inViewport: true,
             bounds: { x: 100, y: -2, width: 100, height: 32 } },
           { id: "help", tag: "a", label: "Help center", form: null, href: "https://example.org/help", inViewport: true,
             bounds: { x: 100, y: 80, width: 100, height: 32 } },
@@ -2147,7 +2164,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     return { result: { accepted: true } };
   }, false, () => {
     if (reviseDuringRead) domRevision++;
-    if (addChallengeDuringRead) challengeShown = true;
+    if (addChallengeDuringRead) challengeShown = "code";
     if (replaceDocumentDuringRead) {
       currentPage = { ...currentPage, id: currentPage.id + "-new-document" };
       replaceDocumentDuringRead = false;
@@ -2162,6 +2179,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
     if (url.origin !== window.location.origin) return browserFetch(input, init);
     switch (url.pathname) {
+      case "/api/product/files/scope": return Promise.resolve(guideOwner === null ? new Response(null, { status: 401 }) :
+        Response.json({ accountId: guideOwner, owner: "1".repeat(64), session: (guideOwner === "another-owner" ? "3" : "2").repeat(64) }));
       case "/api/auth/session": return Promise.resolve(Response.json({ account: guideOwner === null ? null : { id: guideOwner, email: "owner@grace.test" } }));
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
@@ -2171,6 +2190,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         expect(init?.body).not.toContain("Private sign-in link");
         expect(init?.body).not.toContain("Private username");
         expect(init?.body).not.toContain("Credential URL");
+        expect(init?.body).not.toContain("Help center inside a form");
+        expect(init?.body).not.toContain("Sign Up for Our Newsletter");
         expect(init?.credentials).toBe("include");
         const headers = new Headers(init?.headers);
         expect(headers.has("Authorization")).toBe(false);
@@ -2233,6 +2254,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     currentPage = about;
     await native.report("tab-1", origin + about.path, 100);
     await tap(resume);
+    newsletterEmail = blankNewsletterEmail;
     await tap(check);
     const result = page.getByRole("status", { name: "Page check result" });
     await expect.poll(() => result.query()?.textContent).toContain(target);
@@ -2240,15 +2262,18 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     expect(plan.getByText(/^Open page:/).query()).toBeNull();
     expect(plan.getByText("Read checks complete").query()).toBeNull();
     await routeTo(check);
+    newsletterEmail = null;
 
     await tap(showLink);
     await routeTo(page.getByText("Sign in to Grace to get help choosing a link."));
     expect(guideCalls).toBe(0);
     guideOwner = "guide-owner";
-    challengeShown = true;
-    await tap(showLink);
-    await routeTo(page.getByText(/Finish the form yourself in this tab/));
-    expect(guideCalls).toBe(0);
+    for (const challenge of ["captcha", "code"] as const) {
+      challengeShown = challenge;
+      await tap(showLink);
+      await routeTo(page.getByText(/Finish the form yourself in this tab/));
+      expect(guideCalls).toBe(0);
+    }
     challengeShown = false;
     signInWidget = "active";
     await tap(showLink);
@@ -2269,6 +2294,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.element(pending).toHaveAttribute("aria-current", "step");
 
     signInWidget = "hidden";
+    newsletterEmail = blankNewsletterEmail;
+    const beforeNewsletterGuide = guideCalls;
+    await tap(showLink);
+    await expect.poll(() => guideCalls).toBe(beforeNewsletterGuide + 1);
+    await routeTo(page.getByText("Look for “Help center” on example.org."));
+    expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
+      documentId: about.id, command: { guidance: { nodeId: "help" } },
+    });
+
+    newsletterEmail = null;
     currentPage = help;
     await native.report("tab-1", origin + help.path, 100);
     await native.route();
@@ -2291,9 +2326,35 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     expect(plan.getByText(/^Open page:/).query()).toBeNull();
     addChallengeDuringRead = false;
     challengeShown = false;
+    const blockedNewsletters = [
+      { edited: true },
+      { focused: true },
+      { hasInput: true },
+      { label: "Contact email" },
+    ];
+    const beforeNewsletterRead = native.calls("readPage").length;
+    for (const fields of blockedNewsletters) {
+      newsletterEmail = { ...blankNewsletterEmail, ...fields };
+      await tap(check);
+      await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+    }
+    newsletterEmail = blankNewsletterEmail;
+    for (const key of ["focused", "edited", "hasInput"] as const) {
+      searchEvidence = { ...blankSearch };
+      delete searchEvidence[key];
+      await tap(check);
+      await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+    }
+    expect(native.calls("readPage")).toHaveLength(beforeNewsletterRead);
+    searchEvidence = blankSearch;
     reviseDuringRead = true;
     await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
+    const headingReads = native.calls("readPage").slice(beforeNewsletterRead);
+    expect(headingReads.length).toBeGreaterThan(0);
+    expect(headingReads.every(({ selector }) => typeof selector === "string" && selector.includes("h1"))).toBe(true);
     expect(result.query()).toBeNull();
     expect(check.query()).toBeNull();
 
@@ -2370,6 +2431,10 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   let person = firstOwner;
   let browserCookieOwner: typeof firstOwner | undefined;
   let ownerProbes = 0;
+  let sessionGeneration = 1;
+  let privatePage = false;
+  let nextSnapshot: (() => void) | undefined;
+  let nextScope: (() => Promise<void>) | undefined;
   let hostedChoices = 0;
   const when = Date.now();
   const receivedAt = new Date(when).toISOString();
@@ -2394,9 +2459,17 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     if (url.origin === new URL(cloud).origin) return fetch(input, options);
     const respond = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
     switch (url.pathname) {
-      case "/api/auth/session":
+      case "/api/auth/session": return respond({ account: signedIn ? browserCookieOwner ?? person : null });
+      case "/api/product/files/scope": {
+        if (!signedIn) return respond({}, 401);
         if (browserCookieOwner) ownerProbes++;
-        return respond({ account: signedIn ? browserCookieOwner ?? person : null });
+        const current = browserCookieOwner ?? person;
+        const owner = (current.id === firstOwner.id ? "a" : "b").repeat(64);
+        const result = { accountId: current.id, owner, session: owner.slice(0, 62) + sessionGeneration.toString(16).padStart(2, "0") };
+        const wait = nextScope;
+        nextScope = undefined;
+        return wait ? wait().then(() => respond(result)) : respond(result);
+      }
       case "/api/v1/decisions":
         hostedChoices++;
         expect(new Headers(options?.headers).get("X-Eliza-Account")).toBe(secondOwner.id);
@@ -2425,14 +2498,23 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       default: return fetch(input, options);
     }
   });
-  const browserUrl = "https://example.org/";
+  const browserHome = "https://example.org/";
+  let browserUrl = browserHome;
+  let switchOwnerDuringPageRead = false;
   const native = fakePlugin(({ command }) => {
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
-      return { documentId: "owner-guide-page", frameScope: "main", result: {
-        snapshotId: "owner-guide-page", domRevision: 1, url: browserUrl, title: "Example",
-        text: "Example Help center", complete: true, readyState: "complete", blockers: [],
+      if (switchOwnerDuringPageRead) {
+        browserCookieOwner = firstOwner;
+        switchOwnerDuringPageRead = false;
+      }
+      nextSnapshot?.();
+      nextSnapshot = undefined;
+      const documentId = browserUrl === browserHome ? "owner-guide-home" : "owner-guide-help";
+      return { documentId, frameScope: "main", result: {
+        snapshotId: documentId, domRevision: 1, url: browserUrl, title: "Example",
+        text: "Example Help center", complete: true, readyState: "complete", blockers: privatePage ? [{ kind: "captcha", covers: "partial" }] : [],
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
-        elements: [{ id: "help", tag: "a", label: "Help center", href: browserUrl + "help", inViewport: true,
+        elements: [{ id: "help", tag: "a", label: "Help center", href: browserHome + "help", inViewport: true,
           bounds: { x: 100, y: 80, width: 100, height: 32 } }],
       } };
     }
@@ -2565,11 +2647,50 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await routeTo(page.getByRole("status", { name: "Link unavailable" }).getByText("The page or task changed. Ask me again on the page you want."));
     expect(ownerProbes).toBeGreaterThan(0);
     expect(hostedChoices).toBe(0);
+    await tap(button("Check page"));
+    await routeTo(page.getByRole("status", { name: "Page check result" }));
+    expect(page.getByText("Open page: https://example.org/").query()).toBeNull();
 
     browserCookieOwner = undefined;
+    nextSnapshot = () => { sessionGeneration++; };
+    await tap(guide);
+    await routeTo(page.getByRole("status", { name: "Link unavailable" }).getByText("The page or task changed. Ask me again on the page you want."));
+    expect(hostedChoices).toBe(0);
     await tap(guide);
     await routeTo(page.getByRole("status", { name: "Link guide result" }));
     expect(hostedChoices).toBe(1);
+    browserUrl = browserHome + "help";
+    await native.report("tab-1", browserUrl, 100);
+    await native.route();
+    await tap(button("Resume Grace"));
+    switchOwnerDuringPageRead = true;
+    expect(await check()).toBe(false);
+    expect(switchOwnerDuringPageRead).toBe(false);
+    expect(await receipts()).toEqual([]);
+    browserCookieOwner = undefined;
+    nextSnapshot = () => { sessionGeneration++; };
+    expect(await check()).toBe(false);
+    expect(await receipts()).toEqual([]);
+
+    privatePage = true;
+    const probing = Latch.makeUnsafe();
+    const resumeProbe = Latch.makeUnsafe();
+    nextSnapshot = () => { nextScope = () => { probing.openUnsafe(); return Effect.runPromise(resumeProbe.await); }; };
+    const pending = runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.checkGuidedRead()));
+    try {
+      await Effect.runPromise(probing.await);
+      await tap(button("Turn off browser reading"));
+    } finally {
+      resumeProbe.openUnsafe();
+    }
+    expect(await pending).toBe(false);
+    expect(await receipts()).toEqual([]);
+
+    privatePage = false;
+    await tap(button("Allow Grace to read this browser"));
+    await tap(button("Resume Grace"));
+    await tap(button("Check page"));
+    await expect.poll(receipts).toEqual(["Open page: " + browserUrl]);
   } finally {
     await act(() => Promise.resolve(root.unmount()));
     await runtime.dispose();

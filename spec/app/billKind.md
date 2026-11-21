@@ -1,6 +1,6 @@
 # Paying a bill, as one kind of task
 
-What makes a task a bill payment: the facts read from the provider's website, when they are whole, where the bill stands, which payment fits it, what Grace may type for it and which payment she may suggest. The [registry of kinds](./taskKinds.md) is the only reader of a bill's own fields; the [bill preparation](./billpay.md) and the [commitment](./commitment.md) never read them. The preparation and its [review](./preparationReview.md) import this library only so that the bill's types can be named.
+What makes a task a bill payment: the facts read from the provider's website, when they are whole, where the bill stands, which payment fits it, what Grace may type for it and which payment she may suggest. The [registry of kinds](./taskKinds.md) is the only reader of a bill's own fields; the [bill preparation](./prep.md) and the [commitment](./commitment.md) never read them. The preparation and its [review](./taskBridge.md) import this library only so that the bill's types can be named.
 
 ## Story: Read a bill and judge a payment against it
 
