@@ -185,8 +185,7 @@ export const mailing = Layer.effect(Mail, effect {
   }
 
   effect function say(id: number, text: string) {
-    if (quiet.has(id)) quiet.delete(id)
-    else try show(text)
+    if (!quiet.delete(id)) try show(text)
   }
 
   effect function people() {
