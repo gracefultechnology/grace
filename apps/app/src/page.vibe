@@ -241,8 +241,8 @@ effect function changed(workspace: Workspaces.Shape, page: Page, tab: number, ev
   if (goesElsewhere(page, event.url)) try moved(workspace, page, tab, event.url)
   const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
   if (now === undefined || event.loading || now.load !== "Loading" || page.load !== now.loadVersion) return
-  const endedAt = now.manualSignIn ? tabUrl(now) : event.url ?? tabUrl(now)
-  const secure = URL.parse(endedAt)?.protocol === "https:"
+  const endedAt = now.manualSignIn ? tabUrl(now) : event.url || tabUrl(now)
+  const secure = event.secure && event.url === endedAt
   try report(workspace, { type: "receiveLoad", loadReport: { id: tab, version: now.loadVersion, result: event.result, secure, endedAt } })
 }
 
