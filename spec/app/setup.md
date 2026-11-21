@@ -512,8 +512,9 @@ her earlier confirmation still holds, as after a sign-in that did not
 finish. She can cancel while Grace checks the account or waits for a sign-in
 code. The tablet must then ask again before she can confirm. The model records
 her confirmation. Just before it opens the tablet callback, the browser
-checks that the same request still has her confirmation. This runtime check
-prevents a late reply from reopening a cancelled request.
+checks that the same request still has her confirmation. This runtime check,
+which no rule here makes, prevents a late reply from reopening a cancelled
+request.
 
 A tablet signed in with its own session never offers checkout or the payment
 provider: it opens Grace's web account to manage the subscription. That
@@ -753,10 +754,16 @@ appointment change run in the shell through these checks. They do not go
 through the [Email](./email.md) or [Calendar view](./calendarView.md)
 machines, whose rules hold Undo after confirmation, the read-back, the
 one-or-all choice and the evidence before success for the local mailbox and
-calendar only. Until those machines govern the managed path, Undo only after
-the provider's confirmation, the read-back with a new series' frequency and
-time zone, skipped months and the one-or-all choice are promises of this
-heading that no rule checks.
+calendar only. The two laws below check who may change and that only the
+selected ID and version may be changed. The shell makes the rest of this
+heading's checks, and no rule here makes them: the second check of the ID
+and version before sending, a series lookup opening a review only while its
+selection is on screen, a new item for each created appointment, Undo
+naming the confirmed Trash operation, and the provider's receipt naming the
+same account, item and operation. Until the Email and Calendar view machines
+govern the managed path, Undo only after the provider's confirmation, the
+read-back with a new series' frequency and time zone, skipped months and the
+one-or-all choice are also promises of this heading that no rule checks.
 
 ```quint
 type ManagedChange = ManagedTrash | ManagedAppointmentChange
@@ -817,8 +824,10 @@ checks the current account and sign-in freshness when it receives the action
 and shown account together. The browser accepts only the registered callback
 with the request's own state and exactly one code. The request carries
 neither the recovery key nor a password. The service and tablet bind the
-code to the original native request and enforce its single use. The browser,
-service and tablet enforce these checks at runtime. The two approval laws
+code to the original native request and enforce its single use. Only the
+native recovery operation's own check that the exchange completed and was
+verified lets browser approval reach it. The browser, service and tablet
+enforce these checks at runtime, and no rule here checks them. The two approval laws
 below cover the decision given registration, freshness, account match and
 confirmation.
 
