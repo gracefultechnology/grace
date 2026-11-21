@@ -288,6 +288,8 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const grant = link?.tag === "GoogleLinkConnected" ? link.grant : "";
   const accountId = signedIn?.accountId ?? "";
   const projection = JSON.stringify([view, accountId, grant]);
+  const selectedMail = snapshot.kind === "mail" ? snapshot.selected : undefined;
+  const mailProjection = JSON.stringify([projection, selectedMail?.message.externalId, selectedMail?.historyId]);
   const notice = writeNotice?.key === projection ? writeNotice : undefined;
   const exact = editor?.key === projection ? editor : undefined;
   const canTrash = signedIn && link && mayChangeManaged(signedIn, link, accountId, grant, "ManagedTrash");
@@ -358,14 +360,14 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const more = snapshot.next === null ? null :
     <Button variant="capsule" size="pill" loading={pending} onClick={() => run({ kind: "more" })}>Load more</Button>;
   const retry = failed?.retry;
-  const problem = failed?.key === projection && <RetryNotice role="alert" retrying={pending} onRetry={retry && (() => run(retry))}>{failed.text}</RetryNotice>;
+  const problem = failed && (failed.key === projection || failed.key === mailProjection) && <RetryNotice role="alert" retrying={pending} onRetry={retry && (() => run(retry))}>{failed.text}</RetryNotice>;
 
   if (snapshot.kind === "mail") {
     const selected = snapshot.selected;
     const follow = (href: string, choice: "open" | "confirm" | "cancel") => startTransition(async () => {
       setFailed(undefined);
       const opened = await runtime.runPromise(Effect.flatMap(ManagedReads, (reads) => reads.chooseLink(snapshot, href, choice)));
-      if (!opened) setFailed("This link couldn’t open. Reopen the email to check its current contents.");
+      if (!opened) setFailed({ key: mailProjection, text: "This link couldn’t open. Reopen the email to check its current contents." });
     });
     const reviewLink = snapshot.linkReview?.link;
     const canFollow = actionableMailBody(selected) && !snapshot.replying && !snapshot.attachment && !snapshot.proposed;
