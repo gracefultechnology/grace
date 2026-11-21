@@ -73,7 +73,7 @@ describe('spec/app/notices.md, "Story: See one message at a time, in the order t
   });
 });
 
-it('Show an owned due reminder on Home and elsewhere (spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background")', async () => {
+it('Due reminder (spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background")', async () => {
   const id = "owned-calendar-" + "a".repeat(24) + "-" + "b".repeat(48);
   const reminders = [{ id, title: "Library visit", eventAt: Date.now() + 3600000 }];
   const actions: string[] = [];
@@ -83,18 +83,18 @@ it('Show an owned due reminder on Home and elsewhere (spec/app/notices.md, "A du
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     reminders: {
-      enableManagedReminders: async () => undefined,
-      managedDue: async () => ({ reminders: entries }),
-      openManagedDue: async ({ id: selected }) => { actions.push("open:" + selected); },
-      dismissManagedDue: async ({ id: selected }) => {
+      enableManagedReminders: () => Promise.resolve(),
+      managedDue: () => Promise.resolve({ reminders: entries }),
+      openManagedDue: ({ id: selected }) => { actions.push("open:" + selected); return Promise.resolve(); },
+      dismissManagedDue: ({ id: selected }) => {
         actions.push("dismiss:" + selected);
-        if (!accept) throw new Error("Calendar could not save dismissal");
+        if (!accept) return Promise.reject(new Error("Calendar could not save dismissal"));
         entries = [];
-        return { id: selected };
+        return Promise.resolve({ id: selected });
       },
-      addListener: async (_event, listener) => {
+      addListener: (_event, listener) => {
         changed = listener;
-        return { remove: async () => { changed = undefined; } };
+        return Promise.resolve({ remove: () => { changed = undefined; return Promise.resolve(); } });
       },
     },
   }));
@@ -103,7 +103,7 @@ it('Show an owned due reminder on Home and elsewhere (spec/app/notices.md, "A du
   const click = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   await click("Settings");
   entries = reminders;
-  await act(() => changed?.());
+  await act(() => Promise.resolve(changed?.()));
   const toast = page.getByText(/^Reminder: Library visit/);
   await expect.element(toast).toBeVisible();
   await click("See details");

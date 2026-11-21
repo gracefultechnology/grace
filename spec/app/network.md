@@ -32,7 +32,9 @@ this model.
 Nearby networks remain available beyond the first visible rows through Show
 more and Show fewer. The adapter sorts remembered networks first, then signal
 strength, and supplies stable network identities; display names alone cannot
-identify a security context. The displayed four-row preview is not a limit
+identify a security context. Android lets no app read its saved networks, so
+on Android the adapter reports as remembered only the network the tablet is
+on once Android has validated it. The displayed four-row preview is not a limit
 on discovery or supported networks. A network can be chosen only from a
 list the OS reported. A remembered or open network joins at once, a
 password network asks for its password, and a network that asks for an
@@ -46,7 +48,7 @@ type Network = { id: str, authentication: Authentication, remembered: bool }
 type JoinPhase = Selecting | PrivateEntry | Joining | AndroidPanel | CertificateDecision | PortalEntry | JoinComplete | JoinUnconfirmed | JoinFailed
 type JoinResult = Joined | RejectedCredentials | Unavailable | Declined | Unverified | CertificateRequired | PortalRequired
 type JoinReport = { network: str, version: int, result: JoinResult, certificate: str, explanation: str }
-type Discovery = Scanning | WifiOff | LocationAccessNeeded | ExplainingLocation | LocationRefused | LocationOff | NoNetworks | NetworksFound
+type Discovery = Scanning | WifiOff | LocationAccessNeeded | ExplainingLocation | LocationRefused | LocationOff | NoNetworks | NetworksFound({ networks: List[Network] })
 type NetworkJoin = {
   selected: Network, phase: JoinPhase, version: int, errors: int,
   entryReady: bool, privateVisible: bool, certificate: str, explanation: str,
@@ -65,8 +67,12 @@ pure def attemptPhase(network: Network): JoinPhase =
   if (network.remembered or network.authentication == OpenNetwork) Joining
   else if (network.authentication == AccountPassword) AndroidPanel
   else PrivateEntry
+pure def reportedNetwork(d: Discovery, network: Network): bool = match d {
+  | NetworksFound(listed) => listed.networks.includes(network)
+  | _ => false
+}
 pure def canChoose(n: NetworkJoin, network: Network, by: NetworkActor): bool =
-  by == Person and network.id != "" and n.phase != Joining and n.discovery == NetworksFound
+  by == Person and network.id != "" and n.phase != Joining and reportedNetwork(n.discovery, network)
 pure def choose(n: NetworkJoin, network: Network, by: NetworkActor): NetworkJoin = {
   ...cleared(n.version + 1, n), selected: network, phase: attemptPhase(network)
 }
@@ -127,6 +133,17 @@ join says the tablet is online but could not confirm which network. A
 sign-in page opens in Android's panel; Grace never fills it in or accepts
 its terms. While Android's panel is open, the result Android reports when
 Grace is shown again completes, fails or keeps waiting on the join.
+If Android later validates the selected network after an unavailable or
+unverified result, Grace clears that result and shows the connected network.
+Android may name its current connection even when it has no nearby scan
+results. Grace shows that name and shows signal strength only when measured.
+To confirm the choice, Grace matches Android's current access point and its
+security to the scan. If the scan is empty, the access point observed when the
+person chose the network can still identify it. A shared name or a hidden
+access-point address alone cannot confirm the selected network.
+An observation belongs to the selection and attempt in progress when the
+read started. An undisclosed name, a different network, a cancelled attempt
+or loss of permission cannot complete it.
 
 ```quint
 pure def answers(phase: JoinPhase, result: JoinResult): bool =
@@ -156,6 +173,15 @@ pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJ
   explanation: report.explanation, entryReady: false, privateVisible: false
   }
 }
+pure def canConfirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
+  val discovery = n.discovery
+  by == OperatingSystem and (match discovery { | NetworksFound(_) => true | NoNetworks => true | _ => false }) and
+  (n.phase == JoinFailed or n.phase == JoinUnconfirmed) and
+  networkId != "" and networkId == n.selected.id and version == n.version
+pure def confirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): NetworkJoin =
+  { ...n, phase: JoinComplete, explanation: "" }
+pure def lawOnlyCurrentObservedNetworkConfirms(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
+  canConfirmConnection(n, networkId, version, by) implies (version == n.version and networkId == n.selected.id and by == OperatingSystem)
 pure def helpOffered(n: NetworkJoin): bool = n.errors >= 2 or n.phase == JoinFailed or n.phase == CertificateDecision
 pure def alwaysCertificateIsScoped(n: NetworkJoin): bool =
   (n.phase == CertificateDecision iff n.certificate != "")
@@ -196,6 +222,7 @@ pure val networkValues = Set(
   { id: "network", authentication: SharedPassword, remembered: false },
   { id: "network", authentication: AccountPassword, remembered: false },
   { id: "network", authentication: OpenNetwork, remembered: false })
+pure val networkIdValues = Set("network", "other", "")
 pure val versionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val weight_reportEntry = 4
 pure val weight_join = 4
@@ -223,14 +250,18 @@ location, and Location is on; the plugin says which is missing. Wi-Fi off
 and Location off offer Android's internet panel, because an app can switch
 neither on. No networks nearby offers a fresh search. Each report of the
 OS replaces the reason, except while the person reads why location is
-needed.
+needed. When a scan lists no networks, Grace clears the previous list.
+Turning off the radio or losing location access retires the selection, any
+join under way and its result. An empty scan closes only a password entry
+and keeps a join already under way and its result. An Android reply for the
+old selection cannot restore it.
 
 ```quint
-type ScanResult = RadioOff | NoLocationAccess | LocationDisabled | NoneNearby | Found
+type ScanResult = RadioOff | NoLocationAccess | LocationDisabled | NoneNearby | Found({ networks: List[Network] })
 type ListAction = NoAction | OpenPanel | Explain | Allow | Rescan
 pure def listAction(d: Discovery): ListAction = match d {
   | Scanning => NoAction
-  | NetworksFound => NoAction
+  | NetworksFound(_) => NoAction
   | WifiOff => OpenPanel
   | LocationOff => OpenPanel
   | LocationRefused => OpenPanel
@@ -238,16 +269,23 @@ pure def listAction(d: Discovery): ListAction = match d {
   | ExplainingLocation => Allow
   | NoNetworks => Rescan
 }
-pure def canReportScan(n: NetworkJoin, by: NetworkActor): bool =
-  by == OperatingSystem and n.discovery != ExplainingLocation
+pure def canReportScan(n: NetworkJoin, found: ScanResult, by: NetworkActor): bool =
+  by == OperatingSystem and n.discovery != ExplainingLocation and match found {
+    | Found(listed) => listed.networks.length() > 0 and listed.networks.every(a =>
+        a.id != "" and listed.networks.every(b => a.id == b.id implies a == b))
+    | _ => true
+  }
 pure def reportScan(n: NetworkJoin, found: ScanResult, by: NetworkActor): NetworkJoin = {
   val refused = if (n.locationAsked) LocationRefused else LocationAccessNeeded
-  { ...n, discovery: match found {
+  val retired = found == RadioOff or found == NoLocationAccess or found == LocationDisabled or
+    (found == NoneNearby and n.phase == PrivateEntry)
+  val selection = if (retired and n.phase != Selecting) cleared(n.version + 1, n) else n
+  { ...selection, discovery: match found {
     | RadioOff => WifiOff
     | NoLocationAccess => refused
     | LocationDisabled => LocationOff
     | NoneNearby => NoNetworks
-    | Found => NetworksFound
+    | Found(listed) => NetworksFound({ networks: listed.networks })
   } }
 }
 pure def canOpenPanel(n: NetworkJoin, by: NetworkActor): bool = by == Person and listAction(n.discovery) == OpenPanel
@@ -255,7 +293,13 @@ pure def openPanel(n: NetworkJoin, by: NetworkActor): NetworkJoin = { ...n, disc
 pure def canRescan(n: NetworkJoin, by: NetworkActor): bool = by == Person and listAction(n.discovery) == Rescan
 pure def rescan(n: NetworkJoin, by: NetworkActor): NetworkJoin = { ...n, discovery: Scanning }
 pure def lawEveryEmptyListOffersAnAction(d: Discovery): bool =
-  (d != Scanning and d != NetworksFound) iff listAction(d) != NoAction
+  (match d { | Scanning => false | NetworksFound(_) => false | _ => true }) iff listAction(d) != NoAction
+pure val dValues: Set[Discovery] = Set(Scanning, WifiOff, LocationAccessNeeded, ExplainingLocation, LocationRefused, LocationOff, NoNetworks).union(
+  networkValues.map(network => NetworksFound({ networks: List(network) }))
+)
+pure val foundValues: Set[ScanResult] = Set(RadioOff, NoLocationAccess, LocationDisabled, NoneNearby).union(
+  networkValues.map(network => Found({ networks: List(network) }))
+)
 pure def sometimesWifiOff(n: NetworkJoin): bool = n.discovery == WifiOff
 pure def sometimesLocationOff(n: NetworkJoin): bool = n.discovery == LocationOff
 pure def sometimesNoNetworksNearby(n: NetworkJoin): bool = n.discovery == NoNetworks

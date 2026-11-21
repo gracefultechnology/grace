@@ -3,6 +3,9 @@ package technology.graceful.grace;
 import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Display;
@@ -25,6 +28,16 @@ public class MainActivity extends ElizaBridgeActivity {
  private static final String HARDWARE_BACK = "window.dispatchEvent(new Event('hardware-back',{cancelable:true}))";
  private static final String LAUNCHER_HOME = "window.dispatchEvent(new Event('launcher-home'))";
 
+ private final ConnectivityManager.NetworkCallback defaultNetwork = new ConnectivityManager.NetworkCallback() {
+  @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+   getBridge().triggerWindowJSEvent("android-network-changed");
+  }
+
+  @Override public void onLost(Network network) {
+   getBridge().triggerWindowJSEvent("android-network-changed");
+  }
+ };
+
  @Override public void onCreate(Bundle state) {
   Intent launch = getIntent();
   Uri accountCallback = accountCallback(launch);
@@ -36,7 +49,6 @@ public class MainActivity extends ElizaBridgeActivity {
   registerPlugin(GraceFiles.class);
   registerPlugin(ElizaSurfaceManagerPlugin.class);
   registerPlugin(PasswordsPlugin.class);
-  registerPlugin(GraceGuideSpeechPlugin.class);
   registerPlugin(PrivateViewPlugin.class);
   registerPlugin(GraceDevicePlugin.class);
   if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
@@ -68,8 +80,14 @@ public class MainActivity extends ElizaBridgeActivity {
 
  @Override public void onStart() {
   super.onStart();
+  if (BuildConfig.IS_LAUNCHER) getSystemService(ConnectivityManager.class).registerDefaultNetworkCallback(defaultNetwork);
   GraceAgentService.resume(this);
   ManagedCalendarReminders.reconcile(this);
+ }
+
+ @Override public void onStop() {
+  if (BuildConfig.IS_LAUNCHER) getSystemService(ConnectivityManager.class).unregisterNetworkCallback(defaultNetwork);
+  super.onStop();
  }
 
  private void leave(OnBackPressedCallback callback) {
@@ -112,7 +130,7 @@ public class MainActivity extends ElizaBridgeActivity {
  private Uri accountCallback(Intent intent) {
   if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())) return null;
   Uri data = intent.getData();
-  return GraceAccount.account(this).handles(data) ? data : null;
+  return GraceAccount.handles(this, data) ? data : null;
  }
 
  private void acceptAccountCallback(Uri data) {

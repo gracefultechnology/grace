@@ -1,14 +1,16 @@
-// spec/app/browser.md, "Story: Sign in privately on a website"
+// spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open their mail app from the current private tab"
 // spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"
-import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, Button, GuideRing, NewTabPage } from "@repo/ui";
-import { LockKeyhole } from "lucide-react";
+import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, Button, NewTabPage } from "@repo/ui";
+import { Mail } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
-import type { BrowserInput } from "../gen/app__browserControls.ts";
+import { canStepPrivate, type HistoryDirection } from "../gen/app__deviceKeys.ts";
+import { historyFor } from "../gen/app__surface.ts";
+import { type BrowserInput, canCheckPrivateEmail } from "../gen/app__browserControls.ts";
 import { type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, tabUrl, visibleTabs } from "../gen/app__browser.ts";
 import { parseBrowserAddressInput } from "@elizaos/os/browser/address";
 import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
 import { Part } from "./page.vibe";
-import { useDraft, usePasswordGuide, useWorkspace } from "./useApp.ts";
+import { useDraft, usePasswordGuide, usePageLayer, useWorkspace } from "./useApp.ts";
 import { WebsiteRequests, site } from "./WebsiteRequests.tsx";
 
 const tabStrip = Part.Strip();
@@ -51,14 +53,17 @@ function secureOrigin(address: string): string {
 type PrivateToolbarProps = {
   active: Tab;
   edit: (input: BrowserInput) => void;
-  offered: (input: BrowserInput) => boolean;
+  offered: (direction: HistoryDirection) => boolean;
+  step: (direction: HistoryDirection) => void;
   navigate: (tab: number, address: string) => Promise<boolean>;
+  checkEmail: (() => Promise<boolean>) | undefined;
 };
 
-function PrivateToolbar({ active, edit, offered, navigate }: PrivateToolbarProps) {
+function PrivateToolbar({ active, edit, offered, step, navigate, checkEmail }: PrivateToolbarProps) {
   const fieldRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | undefined>(undefined);
+  const [emailNotice, setEmailNotice] = useState<{ loadVersion: number; words: string }>();
   const go = () => {
     if (draft === null || secureOrigin(draft) === "") {
       setNotice("Enter a secure website address beginning with https://.");
@@ -74,20 +79,37 @@ function PrivateToolbar({ active, edit, offered, navigate }: PrivateToolbarProps
     );
   };
   return (
-    <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={draft !== null}
-      reloadable onReload={() => edit({ tag: "Reload" })} onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })}
-      onGo={go} trailing={<span className="flex items-center gap-2 whitespace-nowrap text-body"><LockKeyhole aria-hidden /> Private sign-in</span>}>
-      <AddressBar ref={fieldRef} value={draft ?? tabUrl(active)} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
-        notice={notice} onValueChange={(text) => { setDraft(text); setNotice(undefined); }} onSubmit={go} />
-    </BrowserToolbar>
+    <>
+      <BrowserToolbar className="pointer-events-auto" canGoBack={offered("HistoryBack")} canGoForward={offered("HistoryForward")} canGo={draft !== null}
+        reloadable onReload={() => edit({ tag: "Reload" })} onBack={() => step("HistoryBack")} onForward={() => step("HistoryForward")}
+        onGo={go} trailing={checkEmail ? (
+          <Button variant="capsule" size="pill" title="Use when this website asks for an email code" onClick={() => {
+            const loadVersion = active.loadVersion;
+            setEmailNotice({ loadVersion, words: "Check the mailbox the website named, then return here. Enter a code only on the website where you requested it." });
+            void checkEmail().catch(() => false).then((opened) => {
+              if (!opened) setEmailNotice({ loadVersion, words: "Your mail app couldn’t open. Check that mailbox on another device, then return to the website that asked for the code." });
+            });
+          }}><Mail aria-hidden /> Check email</Button>
+        ) : undefined}>
+        <AddressBar ref={fieldRef} value={draft ?? tabUrl(active)} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
+          notice={notice} onValueChange={(text) => { setDraft(text); setNotice(undefined); setEmailNotice(undefined); }} onSubmit={go} />
+      </BrowserToolbar>
+      {emailNotice?.loadVersion === active.loadVersion && (
+        <div className="pointer-events-auto flex items-center gap-2 bg-card px-4 py-2 text-body text-label-ink">
+          <span className="flex-1" role="status">{emailNotice.words}</span>
+          <Button variant="capsule" size="pill" onClick={() => setEmailNotice(undefined)}>Dismiss</Button>
+        </div>
+      )}
+    </>
   );
 }
 
 /** @model spec/app/browserControls.md */
 export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert" | "aria-hidden">) {
   const strip = useWatch(tabStrip);
-  const { guide, finish } = usePasswordGuide();
-  const { workspace, can, send, closeBrowser, navigatePrivate, supportsPrivateSignIn } = useWorkspace();
+  const { guide } = usePasswordGuide();
+  const { workspace, can, send, closeBrowser, navigatePrivate, stepPrivate, checkPrivateEmail } = useWorkspace();
+  const layer = usePageLayer();
   const browser = workspace?.browser;
   const active = browser && activeTab(browser);
   const [address, setAddress] = useDraft(browser?.editingAddress ? browser.addressDraft : active ? tabUrl(active) : "", browser?.editingAddress ?? false);
@@ -109,7 +131,9 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
   const fixWifi = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
   const failure = failures[active.load];
   const privateFailure = active.manualSignIn && active.load === "LoadFailed";
-  const privateInput = { tag: "OpenPrivateSignIn", url: secureOrigin(tabUrl(active)) } as const;
+  const fillNotice = guide === "FillPasswordGuide"
+    ? secureOrigin(tabUrl(active)) === "" ? "Open a secure website first." : "Ask Grace to use a saved password."
+    : undefined;
 
   return (
     <BrowserWindow aria-label="Internet" className="bg-transparent" {...props}
@@ -119,17 +143,14 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
           onSelectTab={(id) => edit({ tag: "SelectTab", id })} onCloseTab={(id) => edit({ tag: "CloseTab", id })}
           onNewTab={() => edit({ tag: "NewTab" })} onCloseBrowser={() => { if (can({ type: "closeBrowser" })) void closeBrowser(); }} />
       }
-      toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} edit={edit} offered={offered} navigate={navigatePrivate} /> : (
+      toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} edit={edit} navigate={navigatePrivate}
+        offered={(direction) => !!layer && canStepPrivate(workspace.device, browser, historyFor(layer, active.id), direction)}
+        step={(direction) => void stepPrivate(active.id, direction)}
+        checkEmail={canCheckPrivateEmail(browser, active.id, browser.revision, "BrowserControlUser") ? () => checkPrivateEmail(active.id, browser.revision) : undefined} /> : (
         <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
-          onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}
-          trailing={supportsPrivateSignIn() && offered(privateInput) ? (
-            <div className="relative">
-              {guide === "FillPasswordGuide" && <GuideRing motion="tap" tight />}
-              <Button variant="capsule" size="pill" onClick={() => { finish(); edit(privateInput); }}><LockKeyhole aria-hidden /> Private sign-in</Button>
-            </div>
-          ) : undefined}>
-          <AddressBar ref={fieldRef} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : guide === "FillPasswordGuide" && !offered(privateInput) ? "Open a secure website first." : undefined}
+          onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}>
+          <AddressBar ref={fieldRef} value={address} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : fillNotice}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
             onSubmit={go} onBlur={(event) => { if (event.relatedTarget?.textContent !== goWord) edit({ tag: "DismissAddress" }); }} />
         </BrowserToolbar>

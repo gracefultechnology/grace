@@ -21,6 +21,7 @@
     "@repo/ui": "workspace:*",
     "effect": "4.1.1",
     "lucide-react": "catalog:",
+    "pdf-lib": "1.17.1",
     "react": "catalog:",
     "react-dom": "catalog:"
   },

@@ -5,16 +5,17 @@ import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calen
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
-import { ContactList, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored, WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
+import { AttachmentContent, ContactList, DraftList, DraftRead, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, Refusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
+import type { WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
 import type { CloudLink } from "./conversation.vibe"
 import { google } from "./google.vibe"
 import { providers } from "./providers.vibe"
 
 export type Routes = { readonly slug: string; readonly accounts: string; readonly mail: string; readonly calendar: string }
 export type SecretPassword = Brand.Branded<Redacted.Redacted<string>, "SecretPassword">
-type WireMessage = typeof WireMessage.Type
-type WireEvent = typeof WireEvent.Type
-type WireAttachment = typeof WireAttachment.Type
+type Message = typeof WireMessage.Type
+type ProviderEvent = typeof WireEvent.Type
+type Attachment = typeof WireAttachment.Type
 const branded = Brand.nominal<SecretPassword>()
 export const secretPassword = (typed: string): SecretPassword => branded(Redacted.make(typed))
 
@@ -22,19 +23,21 @@ export type AccountRef = { readonly provider: Provider; readonly address: string
 export type SignInRequest = { readonly provider: Provider; readonly attempt: number; readonly renewing: string }
 export type OtherForm = { readonly attempt: number; readonly address: string; readonly password: SecretPassword }
 export type ServersForm = OtherForm & { readonly incoming: string; readonly outgoing: string }
-export type MailContent = {
+export schema MailContent {
   readonly ref: string; readonly from: string; readonly fromAddress: string; readonly subject: string
   readonly receivedAt: number; readonly snippet: string; readonly body: string; readonly version: string
-  readonly to: readonly string[]
+  readonly to: readonly string[]; readonly attachment?: boolean; readonly replied?: string
 }
 export type Listed = { readonly receipt: MetadataReceipt; readonly content: MailContent }
 export type Opened = { readonly receipt: ReadReceipt; readonly content: MailContent }
 export type Contact = { readonly name: string; readonly address: string }
+export type Attached = { readonly mimeType: string; readonly data: string }
+export type Restored = { readonly snapshot: DraftSnapshot; readonly verified: boolean }
 export type ChangeOp = { readonly identity: MessageIdentity; readonly change: Exclude<MessageChange, "NoMessageChange">; readonly revision: number; readonly version: string }
 export type DraftStored = { readonly draftId: string; readonly persisted: boolean }
 export type SendOutcome = { readonly resultStatus: Extract<SendStatus, "Sent" | "SendFailed" | "SendUnknown">; readonly evidence: string }
 export type Published = { readonly incoming: Calendar; readonly seriesVersion: number; readonly scheduleVerified: boolean }
-export type StoreReceipt = { readonly revision: number; readonly succeeded: boolean; readonly published: readonly Published[] }
+export type StoreReceipt = { readonly revision: number; readonly succeeded: boolean; readonly providerId?: string; readonly published: readonly Published[] }
 export type DeletionReceipt = { readonly succeeded: boolean; readonly evidence: string }
 
 export error NeedsSignIn
@@ -47,10 +50,14 @@ export service SignInPage {
   close(url: string): void!!
 }
 
+export type ShownPage = { readonly url: string; readonly host: string; readonly inSheet: boolean }
+
 export type MailConnection = {
   readonly list: (scope: ListingScope, revisionOf: (ref: string) => number) => Stream.Stream<Listed, ConnectorFailure>
   readonly read: (ref: string, generation: number) => Opened!ConnectorFailure
   readonly header: (ref: string, generation: number) => ReplyHeader!ConnectorFailure
+  readonly attachment: (file: SavedFile, version: string) => Attached!ConnectorFailure
+  readonly draft: (ref: string, version: number) => Restored!ConnectorFailure
   readonly resolve: (contact: string) => Recipient!ConnectorFailure
   readonly contacts: () => readonly Contact[]!ConnectorFailure
   readonly change: (op: ChangeOp) => ChangeReceipt!NeedsSignIn
@@ -71,6 +78,7 @@ export service Connector {
   signIn(request: SignInRequest): SheetReport!!
   connectOther(form: OtherForm): OtherReport!Unreachable
   connectServers(form: ServersForm): OtherReport!Unreachable
+  readonly shown: Stream.Stream<ShownPage | undefined>
   readonly mail: (account: AccountRef) => MailConnection
   readonly calendar: (account: AccountRef) => CalendarConnection
 }
@@ -84,32 +92,39 @@ const checked: Record<typeof OtherCheck.Type["outcome"], OtherReport["outcome"]>
   allowed: "OtherAllowed", passwordRefused: "OtherPasswordRefused", needsServers: "OtherNeedsServers", refused: "OtherRefused"
 }
 const ended: Record<typeof SessionOutcome.Type["status"], SheetReport["outcome"]> = { allowed: "Allowed", cancelled: "Cancelled", refused: "Refused" }
-const minute = 60 * 1000
 
 function folderOf(labels: readonly string[]): Folder {
   return labels.includes("TRASH") ? "TrashFolder" : labels.includes("DRAFT") ? "DraftsFolder" : labels.includes("SENT") ? "SentFolder" : "InboxFolder"
 }
 
-function receivedOf(m: WireMessage) {
+function receivedOf(m: Message) {
   const at = Date.parse(m.receivedAt)
   return Number.isNaN(at) ? undefined : at
 }
 
-function content(m: WireMessage, receivedAt: number, body: string): MailContent {
-  return { ref: m.externalId, from: m.from, fromAddress: m.fromEmail ?? "", subject: m.subject, receivedAt, snippet: m.snippet, body, version: m.metadata.historyId ?? "", to: m.to }
+function content(m: Message, receivedAt: number, body: string, replied = ""): MailContent {
+  return {
+    ref: m.externalId, from: m.from, fromAddress: m.fromEmail ?? "", subject: m.subject, receivedAt, snippet: m.snippet, body, version: m.metadata.historyId ?? "", to: m.to,
+    attachment: m.hasAttachments ?? false, replied
+  }
 }
 
-function repliedTo(sent: readonly WireMessage[]): ReadonlySet<string> {
-  return new Set(sent.filter((s) => s.labels.includes("SENT")).flatMap((s) => (s.metadata.referencesHeader ?? "").trim().split(/\s+/).slice(-1).filter((id) => id !== "")))
+function repliesTo(sent: readonly Message[]): ReadonlyMap<string, string> {
+  const replies = new Map<string, string>()
+  for (const s of sent.filter((s) => s.labels.includes("SENT"))) {
+    const parent = (s.metadata.referencesHeader ?? "").trim().split(/\s+/).at(-1) ?? ""
+    if (parent !== "" && !replies.has(parent)) replies.set(parent, s.snippet)
+  }
+  return replies
 }
 
-function listed(scope: ListingScope, m: WireMessage, revision: number, replied: ReadonlySet<string>): Listed[] {
+function listed(scope: ListingScope, m: Message, revision: number, replies: ReadonlyMap<string, string>): Listed[] {
   const identity = { owner: scope.owner, provider: scope.provider, account: scope.account, ref: m.externalId }
   const receivedAt = receivedOf(m)
-  const answered = replied.has(m.metadata.messageIdHeader ?? "")
+  const replied = replies.get(m.metadata.messageIdHeader ?? "")
   return receivedAt === undefined ? [] : [{
-    receipt: { seed: { identity, folder: folderOf(m.labels), unread: m.isUnread, answered }, revision, evidence: `history:${m.metadata.historyId ?? ""}` },
-    content: content(m, receivedAt, "")
+    receipt: { seed: { identity, folder: folderOf(m.labels), unread: m.isUnread, answered: replied !== undefined }, revision, evidence: `history:${m.metadata.historyId ?? ""}` },
+    content: content(m, receivedAt, "", replied)
   }]
 }
 
@@ -117,16 +132,27 @@ function searchOf(folder: string, text: string) {
   return [folder, ...text.split(/\s+/).map((w) => w.replace(/"/g, "")).filter((w) => w !== "").map((w) => `"${w}"`)].join(" ")
 }
 
-function asset(account: AccountRef, m: WireMessage, savedAt: number, a: WireAttachment): SavedFile[] {
-  const kind = a.mimeType === "application/pdf" ? "Pdf" : a.mimeType.startsWith("image/") ? "Photo" : undefined
+const served: Record<string, { readonly kind: "Photo" | "Pdf"; readonly name: RegExp; readonly magic: string }> = {
+  "application/pdf": { kind: "Pdf", name: /\.pdf$/i, magic: "JVBERi0" },
+  "image/png": { kind: "Photo", name: /\.png$/i, magic: "iVBORw0KGgo" },
+  "image/jpeg": { kind: "Photo", name: /\.jpe?g$/i, magic: "/9j/" },
+  "image/webp": { kind: "Photo", name: /\.webp$/i, magic: "UklGR" }
+}
+const attachmentLimit = 5 * 1024 * 1024
+const byteLength = (base64: string) => Math.floor(base64.length * 3 / 4) - (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0)
+const bare = (address: string) => /<([^>]+)>/.exec(address)?.[1] ?? address.trim()
+
+function asset(account: AccountRef, m: Message, savedAt: number, a: Attachment): SavedFile[] {
+  const type = served[a.mimeType]
+  const kind = type !== undefined && type.name.test(a.filename) && a.size <= attachmentLimit ? type.kind : undefined
   const pages = kind === "Pdf" ? a.pages ?? 0 : 0
   return kind === undefined || a.filename === "" || (kind === "Pdf" && pages < 1) ? [] : [{
-    id: `${m.externalId}/${a.partId}`, kind, name: a.filename, origin: account.provider, account: account.address, container: m.externalId,
-    sourceRef: m.externalId, contentRef: a.partId, group: m.externalId, savedAt, pages
+    id: JSON.stringify([account.provider, account.address, m.externalId, a.partId]), kind, name: a.filename, origin: account.provider, account: account.address, container: m.externalId,
+    sourceRef: `${m.externalId}/${a.partId}`, contentRef: a.partId, group: m.externalId, savedAt, pages
   }]
 }
 
-function manifest(account: AccountRef, ref: string, m: WireMessage, all: readonly WireAttachment[] | undefined): SavedFile[] | undefined {
+function manifest(account: AccountRef, ref: string, m: Message, all: readonly Attachment[] | undefined): SavedFile[] | undefined {
   const savedAt = receivedOf(m)
   const kept = savedAt === undefined ? [] : (all ?? []).flatMap((a) => asset(account, m, savedAt, a))
   return all === undefined || savedAt === undefined || m.externalId !== ref || kept.length !== all.length ? undefined : kept
@@ -159,19 +185,19 @@ function exactly(zones: ReadonlySet<string>, text: string, allDay: boolean, time
   return allDay && !(zones.has(timeZone) && midnight(dateIn(at, timeZone), timeZone) === at) ? undefined : at
 }
 
-function schedule(zones: ReadonlySet<string>, e: WireEvent, timeZone: string) {
+function schedule(zones: ReadonlySet<string>, e: ProviderEvent, timeZone: string) {
   const exact = [exactly(zones, e.startAt, e.isAllDay, timeZone), exactly(zones, e.endAt, e.isAllDay, timeZone)]
   const loose = [Date.parse(e.startAt), Date.parse(e.endAt)]
   const [startAt, endAt] = exact.every((t) => t !== undefined) ? exact : loose
   return { startAt: startAt ?? Number.NaN, endAt: endAt ?? Number.NaN, verified: exact.every((t) => t !== undefined) }
 }
 
-function participantOf(e: WireEvent) {
+function participantOf(e: ProviderEvent) {
   const other = e.attendees.find((a) => !a.self)
   return other?.displayName ?? other?.email ?? ""
 }
 
-function details(e: WireEvent, startAt: number, endAt: number, timezone: string, known: EntryDetails | undefined): EntryDetails {
+function details(e: ProviderEvent, startAt: number, endAt: number, timezone: string, known: EntryDetails | undefined): EntryDetails {
   const kept = known ?? { participant: participantOf(e), seriesId: "", recurrence: "Once" as const, reminderEnabled: false, leadTime: 0, important: false }
   return {
     title: e.title, location: e.location, notes: e.description, startAt, endAt, timezone, allDay: e.isAllDay,
@@ -185,9 +211,9 @@ function sameDetails(a: EntryDetails, b: EntryDetails) {
 
 const seriesVersionOf = (view: CalendarView, seriesId: string) => seriesId === "" ? 0 : Math.max(0, seriesAt(view, seriesId).version)
 
-function refreshed(known: Calendar | undefined, view: CalendarView, e: WireEvent, entry: EntryDetails): Calendar | undefined {
+function refreshed(known: Calendar | undefined, view: CalendarView, e: ProviderEvent, entry: EntryDetails, source: Calendar | undefined): Calendar | undefined {
   if (known === undefined) {
-    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: "", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+    const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: source?.identity.sourceRef ?? "", sourceAccount: source?.identity.sourceAccount ?? 0, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
     return validIdentity(identity) ? save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore") : undefined
   }
   if (known.phase !== "Saved" || sameDetails(known.committed, entry)) return undefined
@@ -197,17 +223,27 @@ function refreshed(known: Calendar | undefined, view: CalendarView, e: WireEvent
 
 const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(known, "CalendarUser"), "CalendarUser"), true, "CalendarStore")
 
-function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly WireEvent[]): Published[] {
+function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[]): Published[] {
   const own = view.entries.filter((c) => c.identity.owner === view.owner && c.identity.calendarId === view.calendarId)
+  const listed = (c: Calendar) => events.some((e) => e.externalId === c.identity.occurrenceId)
+  const unlisted = own.filter((c) => c.phase === "Saved" && c.identity.kind === "Appointment" && c.committed.seriesId === "" && !listed(c))
+  const writing = own.filter((c) => c.phase === "Editing" && !c.hasSaved && c.approvedRevision === c.revision)
+  const taken = new Set<Calendar>()
+  const kept = new Set<Calendar>()
   const changed = events.flatMap((e) => {
     const known = own.find((c) => c.identity.occurrenceId === e.externalId)
     const timezone = e.timezone ?? view.timezone
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
-    const entry = details(e, startAt, endAt, timezone, known?.committed)
-    const incoming = validDetails(entry) ? refreshed(known, view, e, entry) : undefined
+    const copies = (d: EntryDetails) => d.title.trim() === e.title.trim() && d.startAt === startAt && d.endAt === endAt && d.allDay === e.isAllDay
+    if (known === undefined && writing.some((c) => copies(c.draft))) return []
+    const created = known !== undefined ? undefined : unlisted.find((c) => !taken.has(c) && copies(c.committed))
+    if (created !== undefined) taken.add(created)
+    const entry = details(e, startAt, endAt, timezone, (known ?? created)?.committed)
+    const incoming = validDetails(entry) ? refreshed(known, view, e, entry, created) : undefined
+    if (incoming === undefined && created !== undefined) kept.add(created)
     return incoming === undefined ? [] : [{ incoming, seriesVersion: seriesVersionOf(view, entry.seriesId), scheduleVerified: verified }]
   })
-  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !events.some((e) => e.externalId === c.identity.occurrenceId))
+  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !listed(c) && !kept.has(c))
   return [...changed, ...gone.map((c) => ({ incoming: deleted(c), seriesVersion: seriesVersionOf(view, c.committed.seriesId), scheduleVerified: true }))]
 }
 
@@ -216,20 +252,6 @@ function event({ draft: d, committed: c, hasSaved }: Calendar) {
   const fields = { title: d.title, description: d.notes, location: d.location }
   if (!moved) return fields
   return d.allDay || (hasSaved && c.allDay) ? undefined : { ...fields, startAt: iso(d.startAt), endAt: iso(d.endAt), timeZone: d.timezone }
-}
-
-function adopted(zones: ReadonlySet<string>, view: CalendarView, entry: Calendar, saved: WireEvent): Published[] {
-  const identity = { ...entry.identity, occurrenceId: saved.externalId }
-  const timezone = saved.timezone ?? entry.draft.timezone
-  const { startAt, endAt, verified } = schedule(zones, saved, timezone)
-  const stored = details(saved, startAt, endAt, timezone, entry.draft)
-  if (saved.externalId === entry.identity.occurrenceId || !validIdentity(identity) || !validDetails(stored)) return []
-  const seriesVersion = seriesVersionOf(view, entry.draft.seriesId)
-  const placed = save(approveSave(create(noEntry, identity, stored, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore")
-  return [
-    { incoming: deleted(save(entry, entry.revision, true, "CalendarStore")), seriesVersion, scheduleVerified: true },
-    { incoming: placed, seriesVersion, scheduleVerified: verified && startAt === entry.draft.startAt && endAt === entry.draft.endAt }
-  ]
 }
 
 function requestIdOf(text: string) {
@@ -257,10 +279,8 @@ function sendOutcome(r: Receipt): SendOutcome {
   }
 }
 
-export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
+effect function connectorTransport(link: CloudLink) {
   const http = try HttpClient.HttpClient
-  const page = try SignInPage
-  const zones = new Set([...try orDie(Effect.try(() => Intl.supportedValuesOf("timeZone"))), "UTC"])
 
   effect function reconnects(sent: HttpClientRequest.HttpClientRequest, response: HttpClientResponse.HttpClientResponse) {
     if (!sent.url.includes("/inbox-v1/")) return true
@@ -286,6 +306,24 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
 
   const get = (url: string, params: Record<string, string>) => Effect.succeed(HttpClientRequest.setUrlParams(HttpClientRequest.get(`${link.url}${url}`), params))
   const post = (url: string, body: object) => Effect.succeed(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}${url}`), body))
+  return { call, fetched, get, post }
+}
+
+export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
+  const { call, fetched, get, post } = try connectorTransport(link)
+  const page = try SignInPage
+  const shown = try SubscriptionRef.make<ShownPage | undefined>(undefined)
+  const showing = (url: string, inSheet: boolean) => SubscriptionRef.set(shown, { url, host: URL.parse(url)?.host ?? "", inSheet })
+  const inSheet: SignInPage.Shape = { open: (url) => showing(url, true), close: () => SubscriptionRef.set(shown, undefined) }
+  const handedOff: SignInPage.Shape = {
+    open: (url) => Effect.andThen(showing(url, false), page.open(url)),
+    close: (url) => ensuring(page.close(url), SubscriptionRef.set(shown, undefined))
+  }
+  const framable = (url: string) => {
+    const at = URL.parse(url)
+    return at?.protocol === "https:" || at?.origin === URL.parse(link.url)?.origin
+  }
+  const zones = new Set([...try orDie(Effect.try(() => Intl.supportedValuesOf("timeZone"))), "UTC"])
 
   effect function grantOf(account: AccountRef) {
     const address = account.address.toLowerCase()
@@ -296,10 +334,11 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
 
   effect function visit({ provider, attempt, renewing }: SignInRequest) {
     const session = try fetched(post(`/api/v1/eliza/connections/${routes[provider].slug}/sessions`, { loginHint: renewing }), Session)
+    const where = session.embeddable === true && framable(session.pageUrl) ? inSheet : handedOff
     const waited = ensuring(effect {
-      try page.open(session.pageUrl)
+      try where.open(session.pageUrl)
       return try fetched(get(`/api/v1/eliza/connections/sessions/${session.sessionId}`, {}), SessionOutcome)
-    }, page.close(session.pageUrl))
+    }, where.close(session.pageUrl))
     const answer = try onInterrupt(waited, () => Effect.ignore(call(Effect.succeed(HttpClientRequest.make("DELETE")(`${link.url}/api/v1/eliza/connections/sessions/${session.sessionId}`)))))
     const address = answer.address ?? ""
     const result = answer.status === "allowed" && address === "" ? "Refused" : ended[answer.status]
@@ -323,6 +362,14 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       return try fetched(asked("/read", { messageId: ref }), ReadResponse)
     }
 
+    effect function draftOf(ref: string, pageToken: string | undefined): string!ConnectorFailure {
+      const page = try fetched(asked("/inbox-v1/drafts", pageToken === undefined ? {} : { pageToken }), DraftList)
+      const found = page.drafts.find((d) => d.messageId === ref)
+      if (found !== undefined) return found.draftId
+      if (page.nextPageToken === null) throw new ProviderRefused({ status: 404 })
+      return try draftOf(ref, page.nextPageToken)
+    }
+
     effect function contacts(query: string) {
       return (try fetched(asked("/contacts", { query }), ContactList)).contacts.map((c): Contact => ({ name: c.name, address: c.email }))
     }
@@ -334,7 +381,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
 
     effect function outgoing({ content: c, replyTo, attachments }: DraftSnapshot) {
       const recipients = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body }
-      const sources = [...new Set(attachments.map((f) => f.sourceRef))]
+      const sources = [...new Set(attachments.map((f) => f.container))]
       if (attachments.length > 0) {
         if (sources.length !== 1 || attachments.some((f) => f.origin !== account.provider || f.account !== account.address)) throw new ProviderRefused({ status: 422 })
         const { message } = try read(sources[0])
@@ -365,8 +412,8 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         return folder === undefined ? Stream.empty : Stream.unwrap(effect {
           const { messages } = try fetched(asked("/search", { query: searchOf(folder, scope.query), maxResults: "50" }), Listing)
           const sent = scope.folder === "SentFolder" ? messages : (try fetched(asked("/search", { query: sentMail, maxResults: "50" }), Listing)).messages
-          const replied = repliedTo(sent)
-          return Stream.fromIterable(messages.flatMap((m) => listed(scope, m, revisionOf(m.externalId), replied)))
+          const replies = repliesTo(sent)
+          return Stream.fromIterable(messages.flatMap((m) => listed(scope, m, revisionOf(m.externalId), replies)))
         })
       },
       read: effect (ref, generation) => {
@@ -376,8 +423,24 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
       },
       header: effect (ref, generation) => {
         const { message } = try read(ref)
-        const address = [message.replyTo, message.fromEmail].find((a) => a?.includes("@"))
+        const sent = message.labels.includes("SENT")
+        const address = (sent ? (message.to.length === 1 ? [bare(message.to[0])] : []) : [message.replyTo, message.fromEmail]).find((a) => a?.includes("@"))
         return { ref, generation, address: address ?? "", subject: /^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`, verified: address !== undefined && message.externalId === ref }
+      },
+      attachment: effect (file, version) => {
+        const got = try fetched(asked("/inbox-v1/attachment", { messageId: file.container, partId: file.contentRef, historyId: version }), AttachmentContent)
+        const type = served[got.mimeType]
+        if (type?.kind !== file.kind || !got.dataBase64.startsWith(type.magic) || byteLength(got.dataBase64) !== got.size) throw new ProviderRefused({ status: 502 })
+        return { mimeType: got.mimeType, data: got.dataBase64 }
+      },
+      draft: effect (ref, version) => {
+        const draftId = try draftOf(ref, undefined)
+        const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId, content: "1" }), DraftRead)
+        const opened = d.attachmentCount === 0 ? undefined : try read(messageId)
+        const files = opened === undefined ? [] : manifest(account, messageId, opened.message, opened.attachments)
+        const content = { to: d.to.join(", "), cc: [...d.cc], bcc: [...d.bcc], subject: d.subject, body: d.bodyText }
+        const verified = id === draftId && messageId === ref && d.plainText && !d.threaded && files !== undefined && files.length === d.attachmentCount
+        return { snapshot: { id: ref, version, content, attachments: files ?? [], replyTo: "" }, verified }
       },
       resolve: effect (contact) => {
         const named = (try contacts(contact)).filter((c) => c.name.toLowerCase() === contact.trim().toLowerCase())
@@ -443,7 +506,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
     const removal = effect (id: string, calendarId: string) =>
       HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
 
-    effect function stored(entry: Calendar, view: CalendarView) {
+    effect function stored(entry: Calendar) {
       const { calendarId, occurrenceId: id } = entry.identity
       const fields = event(entry)
       if (fields === undefined) throw new ProviderRefused({ status: 422 })
@@ -452,7 +515,8 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         ? HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), body)
         : HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url("/events")), body)
       const { event: saved } = try fetched(Effect.succeed(request), Stored)
-      return entry.hasSaved ? [] : adopted(zones, view, entry, saved)
+      if (saved.calendarId !== calendarId || (entry.hasSaved && saved.externalId !== id)) throw new ProviderRefused({ status: 409 })
+      return saved
     }
 
     effect function readEvents(view: CalendarView, from: number, until: number) {
@@ -473,9 +537,12 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
         const { startAt, endAt, verified } = schedule(zones, saved, timezone)
         return verified && sameDetails(details(saved, startAt, endAt, timezone, expected), expected)
       },
-      write: effect (entry, view) => {
+      write: effect (entry) => {
         const revision = entry.revision
-        return Effect.map(stored(entry, view), (published): StoreReceipt => ({ revision, succeeded: true, published })) catch effect (e) => match (e) {
+        return Effect.map(stored(entry), (saved): StoreReceipt => ({
+          revision, succeeded: true, published: [],
+          ...entry.hasSaved ? {} : { providerId: saved.externalId }
+        })) catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
           default: { revision, succeeded: false, published: [] };
         }
@@ -498,6 +565,7 @@ export const connector = (link: CloudLink) => Layer.effect(Connector, effect {
     },
     connectOther: (form) => check(form.attempt, { address: form.address, password: Redacted.value(form.password) }),
     connectServers: (form) => check(form.attempt, { address: form.address, password: Redacted.value(form.password), incoming: form.incoming, outgoing: form.outgoing }),
+    shown: SubscriptionRef.changes(shown),
     mail,
     calendar
   }

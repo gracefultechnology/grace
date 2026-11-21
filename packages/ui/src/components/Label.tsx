@@ -8,7 +8,7 @@ export type LabelProps = ComponentProps<typeof LabelPrimitive.Root>;
 export function Label({ className, ...props }: LabelProps) {
   return (
     <LabelPrimitive.Root
-      className={cn("flex items-center gap-3 text-[19px] leading-6 font-bold text-muted-foreground has-disabled:opacity-40 peer-disabled:opacity-40", className)}
+      className={cn("flex items-center gap-3 text-control leading-6 font-bold text-muted-foreground has-disabled:opacity-40 peer-disabled:opacity-40", className)}
       {...props}
     />
   );

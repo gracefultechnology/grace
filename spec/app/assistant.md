@@ -439,10 +439,10 @@ pure def canBargeIn(a: Assistant, token: int, spoken: int, owner: C::AudioOwner,
   isVisible(a) and C::canBargeIn(a.conversation, token, spoken, owner, by)
 pure def bargeIn(a: Assistant, token: int, spoken: int, owner: C::AudioOwner, by: C::ConversationActor): Assistant =
   { ...a, conversation: C::bargeIn(a.conversation, token, spoken, owner, by) }
-pure def canFinishSpeech(a: Assistant, token: int, by: C::ConversationActor): bool =
-  isVisible(a) and C::canFinishSpeech(a.conversation, token, by)
-pure def finishSpeech(a: Assistant, token: int, by: C::ConversationActor): Assistant =
-  { ...a, conversation: C::finishSpeech(a.conversation, token, by) }
+pure def canFinishSpeech(a: Assistant, token: int, played: bool, by: C::ConversationActor): bool =
+  isVisible(a) and C::canFinishSpeech(a.conversation, token, played, by)
+pure def finishSpeech(a: Assistant, token: int, played: bool, by: C::ConversationActor): Assistant =
+  { ...a, conversation: C::finishSpeech(a.conversation, token, played, by) }
 pure def canQuiet(a: Assistant, by: C::ConversationActor): bool = isVisible(a)
 pure def quiet(a: Assistant, by: C::ConversationActor): Assistant =
   { ...a, conversation: C::quiet(a.conversation, by) }
@@ -484,11 +484,13 @@ pure def newConversation(a: Assistant, by: C::ConversationActor): Assistant =
 
 ### Hidden assistance is quiet and every task status has its necessary context
 
+Pausing a spoken reply turns the microphone off while the reply stays available to resume.
+
 ```quint
 pure def alwaysConversationRules(a: Assistant): bool =
   C::alwaysListeningHasAnActiveExchange(a.conversation) and C::alwaysRecognitionRetriesAreBounded(a.conversation) and
   C::alwaysReadingPositionExists(a.conversation) and C::alwaysGenerationsAreNonnegative(a.conversation) and
-  C::alwaysMessagesHaveContent(a.conversation)
+  C::alwaysMessagesHaveContent(a.conversation) and C::alwaysPausedMicrophoneIsOff(a.conversation)
 pure def alwaysHiddenIsQuiet(a: Assistant): bool =
   a.presentation == Closed implies not(a.conversation.voice) and a.conversation.turn == C::Ready and
     (a.activity == NoTask or a.activity == Paused or a.activity == Finished)

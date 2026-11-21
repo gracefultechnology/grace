@@ -1,4 +1,4 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"; spec/app/conversation.md, "Each turn sends a bounded window of the transcript"
 import character from "../agent/character.json" with { type: "json" }
 import policy from "../agent/policy.json" with { type: "json" }
 import { Digest } from "effect/crypto"
@@ -7,41 +7,39 @@ import { Machine as Accounts, type Accounts as Registry } from "../gen/app__acco
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { openSelected, sourceAt } from "../gen/app__calendars.effect.vibe"
 import { entryAt } from "../gen/app__calendarView.effect.vibe"
+import { sentHistory } from "../gen/app__conversation.effect.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
 import type { Interaction } from "../gen/app__interaction.effect.vibe"
-import { openSource, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
+import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, privateSurfaceActive, replyControlContext, replyControlsCurrent, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
-import { Agent, type Applied } from "./agent.vibe"
+import { Agent } from "./agent.vibe"
 import { CalendarNews } from "./calendar.vibe"
-import { looker, render, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail } from "./context.vibe"
+import { type Help, helpWith, type Last, looker, render, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
 import { Instances, tablet } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
 import { withhold } from "./private.ts"
-import { Reply } from "./reply.schema.ts"
+import { Reply, unreadable } from "./reply.schema.ts"
 import { ManagedReads, guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
-import { NativePage } from "./nativePage.vibe"
+import { NativePage, guidedPageState } from "./nativePage.vibe"
 import { PageId } from "./nativePage.schema.ts"
 import { statementFacts } from "./statement.vibe"
 
-/** Where Grace's agent answers, and the tablet's credential for it. */
 export type CloudLink = { readonly url: string; readonly key: string }
-/** A turn the person takes: typed, or one of the answers Grace offered. */
 export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer" }>
 
 export service Conversation {
-  /** Takes the person's turn when the workspace allows it; Grace then answers it. */
   say(input: PersonTurn): boolean!!
   turnOrigin(generation: number): Origin!!
-  checkGuidedRead(): boolean!!
+  checkGuidedRead(): (boolean | "PrivateForm")!!
+  help(need: Help): void!!
   startReadReview(revision: number): boolean!!
   resumeReadPlan(): boolean!!
 }
 
 const origins: Record<PersonTurn["tag"], Origin> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
 const apology = "Sorry, I didn’t catch that. Could you say it again?"
-const remembered = 12
 
 schema Delta { content?: string }
 schema Choice { delta: Delta }
@@ -50,8 +48,6 @@ schema Chunk { choices: Choice[] }
 error Unanswered { status: number }
 
 const client = Layer.mergeAll(FetchHttpClient.layer, Layer.succeed(HttpClient.TracerPropagationEnabled, false))
-
-/** One streamed chat completion, as the cloud's agent sends it, collected into what Grace said. */
 effect function ask(link: CloudLink, messages: readonly { role: string; content: string }[]) {
   const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), { model: policy.model, messages, stream: true })
   const response = try HttpClient.execute(HttpClientRequest.bearerToken(request, link.key))
@@ -64,7 +60,7 @@ effect function ask(link: CloudLink, messages: readonly { role: string; content:
 type GuidedReadSource =
   | { tag: "ManagedMail" | "ManagedAppointment"; grant: string; version: string }
   | ({ tag: "CurrentMessage" } & GuidedMail)
-  | { tag: "CurrentDocument"; tab: number; loadVersion: number }
+  | { tag: "CurrentDocument"; tab: number; loadVersion: number; documentId: string }
   | { tag: "NamedDocument"; tab: number; loadVersion: number; documentId: string; url: string; heading: string }
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string; revision: number }
   | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
@@ -74,14 +70,14 @@ function normalizedHeading(value: string | null | undefined): string {
   return value && value.length <= 200 ? value.normalize("NFC").trim().replace(/\s+/gu, " ") : ""
 }
 
-function namedReadScope(w: Scene["workspace"]): string {
+function browserReadScope(w: Scene["workspace"]): string {
   const { assistant, browser, plan } = w
   const tab = activeTab(browser)
   return JSON.stringify([plan.owner, assistant.taskId, assistant.workVersion, plan.receipts.length,
     nextOutcome(plan), plan.linkStep, plan.linkUrl, tab.id, tab.loadVersion, tabUrl(tab)])
 }
 
-effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage.Shape, managed: ManagedReads.Shape, expectedDocument?: string): (GuidedReadReceipt | undefined)!! {
+effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage.Shape, managed: ManagedReads.Shape, expectedDocument?: string): (GuidedReadReceipt | "PrivateForm" | undefined)!! {
   const { registry, workspace } = scene
   if (privateSurfaceActive(workspace)) return undefined
   function receipt(source: GuidedReadSource, identity: readonly string[], text: string): GuidedReadReceipt { return { source, identity, text } }
@@ -121,7 +117,9 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       if (!mayGuideReadLink(workspace)) return undefined
       const tab = activeTab(workspace.browser)
       const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
-      const facts = snapshot === undefined ? undefined : statementFacts(snapshot, tabUrl(tab))
+      const state = guidedPageState(snapshot, tabUrl(tab))
+      if (state === "PrivateForm") return state
+      const facts = snapshot === undefined || state !== "Ordinary" ? undefined : statementFacts(snapshot, tabUrl(tab))
       if (facts === undefined) return undefined
       return receipt({ tag: "CurrentStatement", tab: tab.id, loadVersion: tab.loadVersion, document: facts.document, revision: facts.revision },
         [tabUrl(tab).replace(/#.*$/u, "")], "Statement amount due: " + facts.amount + ". Due date: " + facts.due + ".")
@@ -129,29 +127,37 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
-          tab.load !== "Loaded" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+          tab.load !== "Loaded") return undefined
       const url = tabUrl(tab)
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
-      if (!before || (expectedDocument !== undefined && before.documentId !== expectedDocument) ||
-          before.result.url !== url || before.result.readyState !== "complete" ||
-          before.result.blockers.some((item) => item.covers !== "partial")) return undefined
+      if (!before || (expectedDocument !== undefined && before.documentId !== expectedDocument)) return undefined
+      const state = guidedPageState(before, url)
+      if (state === "PrivateForm") return state
+      if (state !== "Ordinary" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
       const primary = native.readPrimaryHeading(id) catch () => undefined
       const observed = normalizedHeading(primary?.text)
       if (!primary || primary.url !== url || observed === "" || observed !== normalizedHeading(step.subject)) return undefined
       const after = native.observeLinks(id) catch () => undefined
-      if (!after || after.documentId !== before.documentId || after.result.url !== url || after.result.readyState !== "complete" ||
-          after.result.blockers.some((item) => item.covers !== "partial")) return undefined
+      if (!after || after.documentId !== before.documentId) return undefined
+      const afterState = guidedPageState(after, url)
+      if (afterState === "PrivateForm") return afterState
+      if (afterState !== "Ordinary") return undefined
       return receipt({ tag: "NamedDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: after.documentId, url, heading: step.subject },
         [url.replace(/#.*$/u, "")], "Open page: " + observed)
     }
     case "ReadBrowser":
     case "ReadChangedBrowser": {
       const tab = activeTab(workspace.browser)
-      if (tab.load !== "Loaded" || (read === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
+      if (tab.load !== "Loaded") return undefined
       const url = try Effect.option(Effect.try(() => new URL(tabUrl(tab))))
       if (Option.isNone(url) || (url.value.protocol !== "https:" && url.value.protocol !== "http:")) return undefined
-      return receipt({ tag: "CurrentDocument", tab: tab.id, loadVersion: tab.loadVersion }, [url.value.origin + url.value.pathname + url.value.search], "Open page: " + url.value.origin + url.value.pathname)
+      const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
+      const state = guidedPageState(snapshot, url.value.href)
+      if (state === "PrivateForm") return state
+      if (snapshot === undefined || state !== "Ordinary" || (read === "ReadChangedBrowser" && tab.loadVersion <= workspace.plan.openingBrowser)) return undefined
+      return receipt({ tag: "CurrentDocument", tab: tab.id, loadVersion: tab.loadVersion, documentId: snapshot.documentId },
+        [snapshot.documentId, url.value.origin + url.value.pathname], "Open page: " + url.value.origin + url.value.pathname)
     }
     case "ReadCalendar": {
       const key = openSelected(registry, scene.calendars)
@@ -174,7 +180,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const { committed, identity, revision, hasSaved, phase } = entryAt(view, savedOccurrence)
       if (!view.opened || !hasSaved || phase !== "Saved" || identity.kind !== "Appointment" || identity.owner !== account.address ||
           view.owner !== account.address || identity.calendarId !== calendarApproval.calendar || identity.calendarId !== view.calendarId ||
-          identity.occurrenceId !== savedOccurrence || identity.sourceRef !== calendarApproval.sourceRef ||
+          identity.occurrenceId !== savedOccurrence || identity.sourceAccount !== calendarApproval.account || identity.sourceRef !== calendarApproval.sourceRef ||
           committed.title !== calendarApproval.title || committed.startAt !== calendarApproval.starts || committed.endAt !== calendarApproval.ends ||
           committed.timezone !== calendarApproval.timezone || committed.location !== calendarApproval.location || committed.notes !== calendarApproval.notes) return undefined
       return receipt({ tag: "CurrentAppointment", key: account.id, owner: identity.owner, calendarId: identity.calendarId,
@@ -184,14 +190,13 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
   }
 }
 
-/** The person's turns go to Grace's agent over `link`; without one, Grace is not available and no turn starts. */
 export const conversation = (link: CloudLink | undefined) => Layer.effect(Conversation, effect {
   const workspace = try Workspaces
   const agent = try Agent
   const native = try NativePage
   const managed = try ManagedReads
   const asked = try Ref.make<{ readonly generation: number; readonly origin: Origin }>({ generation: -1, origin: "FromDevice" })
-  const notDone = try Ref.make<readonly Applied[]>([])
+  const last = try Ref.make<Last>({ notDone: [], unread: [] })
   const told = try Ref.make<readonly string[]>([])
   const look = try looker()
   const registry = try Accounts
@@ -201,13 +206,13 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const digest = try Digest.Digest
   const setup = try Setup
 
-  effect function namedAccount() {
+  effect function browserReadAccount() {
     const { graceAccount } = try setup.get()
     return JSON.stringify(graceAccount.tag === "GraceSignedIn" ? [graceAccount.tag, graceAccount.accountId] : [graceAccount.tag])
   }
 
   effect function tell(words: string) {
-    if (words !== "") try Ref.update(told, (all) => [...all, words])
+    if (words !== "" && link !== undefined) try Ref.update(told, (all) => [...all, words])
   }
 
   effect function following<S>(changes: Stream.Stream<S>, words: (before: S, after: S) => string!!) {
@@ -219,59 +224,91 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   }
 
   const watched = new Set<number>()
-  try following(registry.changes, effect (before: Registry, after: Registry) => {
-    for (const { id } of after.accounts) {
+  try fork.in(scope) Stream.runForEach(registry.changes, effect (now: Registry) => {
+    for (const { id } of now.accounts) {
       const box = watched.has(id) ? undefined : shelf.mail(id) catch () => undefined
       if (box === undefined) continue
       watched.add(id)
-      try following(box.changes, effect (was, now) => toldOfMail(try look(), mailTold(id, was, now)))
+      try following(box.changes, effect (was, after) => {
+        const s = try look()
+        return showsMail(s.registry, id) ? toldOfMail(s, mailTold(id, was, after)) : ""
+      })
     }
-    return toldOfAccounts(before, after)
   })
+  try following(registry.changes, effect (before: Registry, after: Registry) => toldOfAccounts(before, after))
   try fork.scoped Stream.runForEach(news.reports, effect (report) => tell(toldOfCalendar(try look(), report)))
 
-  effect function fail(token: number) {
+  effect function turnOrigin(generation: number): Origin!! {
+    const turn = try Ref.get(asked)
+    return turn.generation === generation ? turn.origin : "FromDevice"
+  }
+
+  effect function request(token: number, workVersion: number) {
+    return { generation: token, workVersion, origin: try turnOrigin(token) } as const
+  }
+
+  effect function fail(token: number, workVersion: number) {
+    try agent.apply([], try request(token, workVersion))
     workspace.send({ type: "interact", input: { tag: "ServiceFailure", token, text: apology } }, "Host") catch () => undefined
+  }
+
+  effect function decoded(said: string | undefined) {
+    return said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
   }
 
   effect function answer(link: CloudLink, token: number) {
     const scene = try look()
     const w = scene.workspace
     if (privateSurfaceActive(w)) return
-    const { messages } = w.assistant.conversation
+    const { conversation } = w.assistant
+    const { messages } = conversation
     const latest = messages.length - 1
-    const outgoing = try Effect.orDie(Effect.try(() => messages.slice(-remembered).map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: withhold({ text, passwords: [] }) }))))
+    const outgoing = try Effect.orDie(Effect.try(() => sentHistory(conversation).map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: withhold({ text, passwords: [] }) }))))
     if (outgoing.at(-1)?.content !== messages[latest]?.text) {
       workspace.send({ type: "purgePrivate", token, messageIndex: latest, purgeDraft: false }, "Host") catch () => undefined
       return
     }
     const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
-    const shown = render(scene, try Clock.currentTimeMillis, try Ref.get(notDone), try Ref.getAndSet(told, []), try managed.guidedSelection())
-    const said = ask(link, [{ role: "system", content: `${character.system}\n\n${shown.text}` }, ...outgoing]) catch () => undefined
-    const reply = said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
-    if (reply === undefined) return try fail(token)
-    try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply, authority))
+    const news = try Ref.get(told)
+    const system = { role: "system", content: `${character.system}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(last), news, try managed.guidedSelection()).text}` }
+    const said = ask(link, [system, ...outgoing]) catch () => undefined
+    const reply = try decoded(said)
+    if (said === undefined || reply === undefined) return try fail(token, w.assistant.workVersion)
+    const unread = try Effect.orDie(Effect.try(() => unreadable(said)))
+    try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply, unread, news.length, authority))
   }
 
-  effect function turnOrigin(generation: number): Origin!! {
-    const last = try Ref.get(asked)
-    return last.generation === generation ? last.origin : "FromDevice"
-  }
-
-  effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type, authority: GuidedAuthority) {
+  effect function respond(token: number, workVersion: number, { text, isQuestion, answers, actions }: typeof Reply.Type, unread: readonly string[], seen: number, authority: GuidedAuthority) {
+    const before = try workspace.get()
+    if (privateSurfaceActive(before) || before.assistant.conversation.generation !== token ||
+        before.assistant.conversation.turn !== "Thinking") return
+    const requested = { ...try request(token, workVersion), authority }
     const offeredRead = actions.some((action) => action.kind === "proposeReadPlan")
     const unavailableSave = actions.some((action) => action.kind === "proposeReadPlan" && action.steps.includes("SaveMailAppointment")) &&
       (try managed.ownsSurfaces())
+    const planned = offeredRead && !unavailableSave ? try agent.apply(actions, requested) : undefined
+    const current = try workspace.get()
+    const { review } = current
+    const offered = planned?.some((result) => result.outcome === "Applied") &&
+      current.assistant.workVersion === workVersion && review.generation === token && review.workVersion === workVersion &&
+      review.request.owner === guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), review.request.steps)
     const response = unavailableSave
       ? { text: "I can check your mail and calendar, but I can’t save an appointment from that plan.", isQuestion: false, answers: [] }
       : offeredRead
-      ? { text: actions.length === 1 ? "Review the selected-item checks before starting." : "I could not prepare that read plan.", isQuestion: false, answers: [] }
+      ? { text: offered ? "Review the selected-item checks before starting." : "I could not prepare that read plan.", isQuestion: false, answers: [] }
       : { text, isQuestion, answers: [...answers] }
     const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, ...response, audible: false } }, "Host") catch () => undefined
     if (responded === undefined || unavailableSave) return
-    const origin = try turnOrigin(token)
-    const applied = try agent.apply(actions, { generation: token, workVersion, origin, authority })
-    try Ref.set(notDone, applied.filter((a) => a.outcome !== "Applied"))
+    try Ref.update(told, (all) => all.slice(seen))
+    const applied = planned ?? (try agent.apply(actions, requested))
+    try Ref.set(last, { notDone: applied.filter((a) => a.outcome !== "Applied"), unread })
+  }
+
+  effect function take(input: PersonTurn, origin: Origin) {
+    const taken = workspace.send({ type: "interact", input }, "Person") catch () => undefined
+    if (taken === undefined) return false
+    try Ref.set(asked, { generation: taken.state.assistant.conversation.generation, origin })
+    return true
   }
 
   if (link !== undefined) {
@@ -307,20 +344,21 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
           current.assistant.conversation.turn !== "Ready" ||
           (current.assistant.activity !== "ReadyForStep" && current.assistant.activity !== "Rechecking")) return false
       const read = step.tag
-      const namedScope = read === "ReachNamedPage" ? namedReadScope(current) : undefined
-      const account = namedScope === undefined ? undefined : try namedAccount()
+      const browserScope = surface === "Browser" ? browserReadScope(current) : undefined
+      const account = browserScope === undefined ? undefined : try browserReadAccount()
       const context = replyControlContext(current)
-      effect function ownsNamedRead() {
+      effect function ownsBrowserRead() {
         const w = try workspace.get()
         return replyControlsCurrent(w, context) && !privateSurfaceActive(w) &&
           w.device.surface === "Browser" && w.device.observationAllowed && activeTab(w.browser).load === "Loaded" &&
           w.assistant.activity === current.assistant.activity && w.assistant.conversation.turn === "Ready" &&
           !w.assistant.conversation.question && w.assistant.replacementId === "" &&
           w.execution.phase === "Idle" && w.commitmentTask === "" &&
-          namedReadScope(w) === namedScope && (try namedAccount()) === account
+          browserReadScope(w) === browserScope && (try browserReadAccount()) === account
       }
       const found = try guidedReceipt(scene, step, native, managed)
       if (found === undefined) return false
+      if (found === "PrivateForm") return (try ownsBrowserRead()) ? found : false
       if (read === "SaveMailAppointment") {
         if (found.source.tag !== "CurrentAppointment") return false
         const { key, occurrence } = found.source
@@ -331,10 +369,11 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const sourceKey = try Effect.catchDefect(digest.digestHex(Digest.sha256, keyBytes), () => Effect.succeed(""))
       if (sourceKey === "") return false
       const confirmed = try look()
-      if (found.source.tag === "NamedDocument" && !(try ownsNamedRead())) return false
+      if (browserScope !== undefined && !(try ownsBrowserRead())) return false
       const rechecked = try guidedReceipt(confirmed, step, native, managed, found.source.tag === "NamedDocument" ? found.source.documentId : undefined)
+      if (rechecked === "PrivateForm") return (try ownsBrowserRead()) ? rechecked : false
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
-      if (!sameRecord || !(try ownsPlan(current.plan))) return false
+      if (!sameRecord || !(try ownsPlan(current.plan)) || (browserScope !== undefined && !(try ownsBrowserRead()))) return false
       const evidence = try Effect.orDie(Effect.try(() => withhold({ text: found.text, passwords: [] })))
       const report = {
         owner: current.plan.owner,
@@ -347,7 +386,6 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         evidence
       }
       if (found.source.tag === "NamedDocument") {
-        if (!(try ownsNamedRead())) return false
         const { documentId, loadVersion, url, heading } = found.source
         const accepted = workspace.send({ type: "confirmGuidedNamedPage", pageCheck: { report, documentId, loadVersion, url, heading } }, "Host") catch () => undefined
         return accepted !== undefined
@@ -368,11 +406,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const accepted = workspace.send({ type: "confirmGuided", report }, "Host") catch () => undefined
       return accepted !== undefined
     },
-    say: effect (input) => {
-      const taken = workspace.send({ type: "interact", input }, "Person") catch () => undefined
-      if (taken === undefined) return false
-      try Ref.set(asked, { generation: taken.state.assistant.conversation.generation, origin: origins[input.tag] })
-      return true
-    }
+    say: (input) => take(input, origins[input.tag]),
+    help: effect (need) => { try tell(helpWith(need, try registry.get())) }
   }
 }).pipe(Layer.provide(Layer.merge(client, Digest.layerWebCrypto)))

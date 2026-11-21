@@ -1,5 +1,6 @@
 package technology.graceful.grace;
 
+import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import android.Manifest;
 import android.app.Activity;
 import android.content.ClipData;
@@ -38,26 +39,42 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 @CapacitorPlugin(name = "GraceFiles", permissions = { @Permission(alias = "camera", strings = { Manifest.permission.CAMERA }) })
 public final class GraceFiles extends Plugin {
  private static final long MAX_BYTES = 20L * 1024 * 1024;
  private static final int MAX_FILES = 250;
  private static final Pattern ID = Pattern.compile("[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}");
- private final ExecutorService disk = Executors.newSingleThreadExecutor();
+ private static final ExecutorService disk = Executors.newSingleThreadExecutor();
  private volatile Lease active;
  private static final String SOURCE_FILE = ".attachment-source";
  private static final long IMPORT_TTL = 5 * 60_000L;
  private Stage staged;
+ private record Lease(String token, String owner, CloudDeviceAccount.Session session) {}
+ private record Source(String origin, String account, String container, String reference, String content) {
+  static Source from(JSONObject value) throws JSONException {
+   return new Source(text(value, "origin"), text(value, "account"), text(value, "container"), text(value, "sourceRef"), text(value, "contentRef"));
+  }
+ }
+ private record Attachment(JSONObject source, Source key, String version, String name, byte[] bytes) {}
+ private static final String SOURCE = ".mail-source.json";
  private PendingImport pendingImport;
- private record Lease(String token, String owner) {}
  private record PendingImport(String id, String ticket, CloudDeviceAccount.Session owner, long deadline) {}
  private record AttachmentSource(String identity, String sha, PendingImport request) {}
  private record Stage(Lease lease, String id, File temporary, JSObject entry, AttachmentSource source) {}
@@ -71,10 +88,16 @@ public final class GraceFiles extends Plugin {
   });
  }
 
- private String owner() throws Exception {
-  var account = GraceAccount.account(getContext()).session();
-  if (account == null) throw new SecurityException();
-  byte[] digest = MessageDigest.getInstance("SHA-256").digest(("grace-files\u0000" + account.accountId()).getBytes(StandardCharsets.UTF_8));
+ private CloudDeviceAccount.Session session() throws Exception {
+  try {
+   var session = GracePasswordsOwner.stableSession(getContext());
+   if (session == null) throw new SecurityException();
+   return session;
+  } catch (IllegalStateException changing) { throw new SecurityException(changing); }
+ }
+
+ private static String owner(CloudDeviceAccount.Session account) throws Exception {
+  byte[] digest = MessageDigest.getInstance("SHA-256").digest(("grace-files\u0000" + GracePasswordsOwner.storageOwner(account)).getBytes(StandardCharsets.UTF_8));
   StringBuilder name = new StringBuilder();
   for (byte value : digest) name.append(String.format(Locale.ROOT, "%02x", value & 0xff));
   return name.toString();
@@ -82,7 +105,7 @@ public final class GraceFiles extends Plugin {
 
  private Lease current(PluginCall call) throws Exception {
   Lease lease = active;
-  if (lease == null || !lease.token().equals(call.getString("lease")) || !lease.owner().equals(owner())) throw new SecurityException();
+  if (lease == null || !lease.token().equals(call.getString("lease")) || !lease.session().equals(session())) throw new SecurityException();
   return lease;
  }
 
@@ -90,6 +113,37 @@ public final class GraceFiles extends Plugin {
   File folder = new File(getContext().getNoBackupFilesDir(), "grace-files/" + lease.owner());
   if (!folder.isDirectory() && !folder.mkdirs()) throw new IOException("Library unavailable");
   return folder;
+ }
+
+ private File batches(Lease lease) throws IOException {
+  return new File(library(lease), "mail-" + lease.session().organizationId());
+ }
+
+ private static List<File> rows(File parent) throws IOException {
+  File[] rows = parent.listFiles(f -> f.isDirectory() && ID.matcher(f.getName()).matches());
+  if (rows == null) throw new IOException("Catalog unavailable");
+  return Arrays.asList(rows);
+ }
+
+ private List<File> catalog(Lease lease) throws IOException {
+  List<File> files = new ArrayList<>(rows(library(lease)));
+  File groups = batches(lease);
+  if (groups.exists()) for (File batch : rows(groups)) files.addAll(rows(batch));
+  return files;
+ }
+
+ private File folder(Lease lease, String id) throws IOException {
+  if (!ID.matcher(id).matches()) throw new IllegalArgumentException();
+  for (File folder : catalog(lease)) if (folder.getName().equals(id)) return folder;
+  return null;
+ }
+
+ private static void discardDirectory(File folder) {
+  File[] children = folder.listFiles();
+  if (children != null) for (File child : children) {
+   if (child.isDirectory()) discardDirectory(child); else child.delete();
+  }
+  folder.delete();
  }
 
  private static String kind(String name) {
@@ -121,15 +175,24 @@ public final class GraceFiles extends Plugin {
  }
 
  private static JSObject entry(String id, File file) throws IOException {
-  JSObject result = new JSObject().put("id", id).put("name", file.getName()).put("kind", kind(file.getName()))
+  JSObject entry = new JSObject().put("id", id).put("name", file.getName()).put("kind", kind(file.getName()))
     .put("savedAt", file.lastModified()).put("pages", pages(file));
+  try {
+   JSONObject metadata = metadata(file.getParentFile());
+   if (metadata != null) entry.put("source", metadata.getJSONObject("source")).put("version", metadata.getString("version"));
+  } catch (JSONException invalid) { throw new IOException("Invalid attachment metadata", invalid); }
   File binding = new File(file.getParentFile(), SOURCE_FILE);
   if (binding.isFile()) {
    String[] parts = new String(Files.readAllBytes(binding.toPath()), StandardCharsets.UTF_8).split("\n", -1);
    if (parts.length != 2 || !parts[0].matches("[0-9a-f]{64}") || !parts[1].matches("[0-9a-f]{64}")) throw new IOException("Attachment identity unavailable");
-   result.put("attachmentSource", parts[0]).put("attachmentSha256", parts[1]);
+   entry.put("attachmentSource", parts[0]).put("attachmentSha256", parts[1]);
   }
-  return result;
+  return entry;
+ }
+
+ private static JSONObject metadata(File folder) throws IOException, JSONException {
+  File file = new File(folder, SOURCE);
+  return file.isFile() ? new JSONObject(new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8)) : null;
  }
 
  private void discard() {
@@ -148,10 +211,12 @@ public final class GraceFiles extends Plugin {
 
  @PluginMethod public void open(PluginCall call) {
   perform(call, () -> {
-   String owner = owner();
+   var session = session();
    discard();
-   Lease lease = new Lease(UUID.randomUUID().toString(), owner);
+   Lease lease = new Lease(UUID.randomUUID().toString(), owner(session), session);
    library(lease);
+   File[] abandoned = batches(lease).listFiles(f -> f.isDirectory() && f.getName().startsWith(".pending-"));
+   if (abandoned != null) for (File f : abandoned) discardDirectory(f);
    active = lease;
    call.resolve(new JSObject().put("lease", lease.token()));
   });
@@ -172,10 +237,9 @@ public final class GraceFiles extends Plugin {
  @PluginMethod public void list(PluginCall call) {
   perform(call, () -> {
    Lease lease = current(call);
-   File[] files = library(lease).listFiles(file -> file.isDirectory() && ID.matcher(file.getName()).matches());
-   if (files == null) throw new IOException("Catalog unavailable");
+   List<File> files = catalog(lease);
    JSArray catalog = new JSArray();
-   Arrays.sort(files, Comparator.comparingLong(File::lastModified).reversed());
+   files.sort(Comparator.comparingLong(File::lastModified).reversed());
    for (File folder : files) {
     if (catalog.length() >= MAX_FILES) break;
     catalog.put(entry(folder.getName(), item(folder)));
@@ -190,7 +254,9 @@ public final class GraceFiles extends Plugin {
    Lease lease = current(call);
    String id = call.getString("id", "");
    if (!ID.matcher(id).matches()) throw new IllegalArgumentException();
-   File file = item(new File(library(lease), id));
+   File folder = folder(lease, id);
+   if (folder == null) throw new IOException("File unavailable");
+   File file = item(folder);
    int page = call.getInt("page", 0);
    int size = Boolean.TRUE.equals(call.getBoolean("small")) ? 136 : 1300;
    Bitmap bitmap;
@@ -301,9 +367,11 @@ public final class GraceFiles extends Plugin {
   Lease lease = current(call);
   if (content == null) throw new IOException("File unavailable");
   File owned = library(lease);
-  File[] existing = owned.listFiles(file -> file.isDirectory() && ID.matcher(file.getName()).matches());
-  if (existing == null || existing.length >= MAX_FILES) throw new IOException("Library is full");
-  File folder = new File(owned, ".stage-" + UUID.randomUUID());
+  if (catalog(lease).size() >= MAX_FILES) throw new IOException("Library is full");
+  return stage(call, lease, new File(owned, ".stage-" + UUID.randomUUID()), id, name, content, source);
+ }
+
+ private Stage stage(PluginCall call, Lease lease, File folder, String id, String name, InputStream content, AttachmentSource source) throws Exception {
   if (!folder.mkdir()) throw new IOException("Cannot stage");
   File file = new File(folder, name);
   try {
@@ -427,15 +495,13 @@ public final class GraceFiles extends Plugin {
    Lease lease = current(call);
    String id = call.getString("id", "");
    if (!ID.matcher(id).matches()) throw new IllegalArgumentException();
-   File folder = new File(library(lease), id);
-   if (folder.exists()) {
-    File file = item(folder);
-    current(call);
-    File removed = new File(folder.getParentFile(), ".removed-" + id);
-    Files.move(folder.toPath(), removed.toPath(), StandardCopyOption.ATOMIC_MOVE);
-    Files.delete(new File(removed, file.getName()).toPath());
-    Files.deleteIfExists(new File(removed, SOURCE_FILE).toPath());
-    Files.delete(removed.toPath());
+   File folder = folder(lease, id);
+   if (folder != null) {
+    File removed = new File(library(lease), ".removed-" + id);
+    moveCurrent(call, lease, folder, removed);
+    discardDirectory(removed);
+    File group = folder.getParentFile();
+    if (!group.equals(library(lease))) group.delete();
    }
    call.resolve();
   });
@@ -457,7 +523,7 @@ public final class GraceFiles extends Plugin {
   if (!candidate.lease().equals(lease)) throw new SecurityException();
   File destination = new File(library(lease), candidate.id());
   synchronized (GracePasswordsOwner.class) {
-   current(call);
+   if (!lease.equals(current(call))) throw new SecurityException();
    if (candidate.source() != null && currentImport() != candidate.source().request()) throw new SecurityException();
    if (destination.exists()) {
     if (candidate.source() == null) throw new IOException("Already saved");
@@ -470,4 +536,86 @@ public final class GraceFiles extends Plugin {
   if (candidate.source() != null) pendingImport = null;
   discard(candidate);
  }
+ private void moveCurrent(PluginCall call, Lease lease, File from, File to) throws Exception {
+  synchronized (GracePasswordsOwner.class) {
+   if (!lease.equals(current(call))) throw new SecurityException();
+   Files.move(from.toPath(), to.toPath(), StandardCopyOption.ATOMIC_MOVE);
+  }
+ }
+
+ private static String text(JSONObject object, String field) throws JSONException {
+  Object value = object.get(field);
+  if (!(value instanceof String result) || result.isEmpty()) throw new IllegalArgumentException();
+  return result;
+ }
+
+ private static Attachment attachment(JSONObject input) throws Exception {
+  JSONObject raw = input.getJSONObject("file");
+  String name = text(raw, "name");
+  String kind = kind(name);
+  String declared = text(raw, "kind");
+  if (!(kind.equals("photo") && declared.equals("Photo") || kind.equals("pdf") && declared.equals("Pdf"))
+      || !name.equals(displayName(name, kind))) throw new IllegalArgumentException();
+  JSONObject source = new JSONObject();
+  for (String field : new String[]{"id","kind","name","origin","account","container","sourceRef","contentRef"}) source.put(field, text(raw, field));
+  Object group = raw.get("group"), savedAt = raw.get("savedAt"), pages = raw.get("pages");
+  if (!(group instanceof String) || !(savedAt instanceof Integer || savedAt instanceof Long) || ((Number) savedAt).longValue() < 0
+      || !(pages instanceof Integer) || (int) pages < 0) throw new IllegalArgumentException();
+  source.put("group", group).put("savedAt", savedAt).put("pages", pages);
+  String encoded = text(input, "data");
+  if (encoded.length() > 4 * ((MAX_BYTES + 2) / 3)) throw new IOException("File too large");
+  return new Attachment(source, Source.from(source), text(input, "version"), name, Base64.decode(encoded, Base64.DEFAULT));
+ }
+
+ @PluginMethod public void saveAttachments(PluginCall call) {
+  perform(call, () -> {
+   Lease lease = current(call);
+   JSONArray attachments = call.getArray("attachments");
+   if (attachments == null || attachments.length() == 0 || attachments.length() > MAX_FILES) throw new IllegalArgumentException();
+   List<File> files = catalog(lease);
+   Map<Source, File> stored = new HashMap<>();
+   for (File folder : files) {
+    JSONObject metadata = metadata(folder);
+    if (metadata == null) continue;
+    Source key = Source.from(metadata.getJSONObject("source"));
+    if (stored.put(key, item(folder)) != null) throw new IOException("Duplicate attachment source");
+   }
+   File groups = batches(lease);
+   if (!groups.isDirectory() && !groups.mkdir()) throw new IOException("Library unavailable");
+   String batchId = UUID.randomUUID().toString();
+   File pending = new File(groups, ".pending-" + batchId);
+   if (!pending.mkdir()) throw new IOException("Cannot stage attachments");
+   JSArray entries = new JSArray();
+   Set<Source> returned = new HashSet<>();
+   int count = files.size();
+   try {
+    for (int index = 0; index < attachments.length(); index++) {
+     Attachment a = attachment(attachments.getJSONObject(index));
+     File file = stored.get(a.key());
+     if (file != null) {
+      if (!Arrays.equals(a.bytes(), Files.readAllBytes(file.toPath()))) throw new IOException("Attachment content changed");
+     } else {
+      if (++count > MAX_FILES) throw new IOException("Library is full");
+      String id = UUID.randomUUID().toString();
+      Stage staged = stage(call, lease, new File(pending, id), id, a.name(), new ByteArrayInputStream(a.bytes()), null);
+      if (staged.entry().getInt("pages") != a.source().getInt("pages")) throw new IOException("Document page count changed");
+      file = staged.temporary();
+      JSONObject metadata = new JSONObject().put("source", a.source()).put("version", a.version());
+      try (FileOutputStream out = new FileOutputStream(new File(file.getParentFile(), SOURCE))) {
+       out.write(metadata.toString().getBytes(StandardCharsets.UTF_8));
+       out.getFD().sync();
+      }
+      stored.put(a.key(), file);
+     }
+     if (returned.add(a.key())) entries.put(entry(file.getParentFile().getName(), file));
+    }
+    if (count != files.size()) moveCurrent(call, lease, pending, new File(groups, batchId));
+    else current(call);
+    call.resolve(new JSObject().put("entries", entries));
+   } finally {
+    if (pending.exists()) discardDirectory(pending);
+   }
+  });
+ }
+
 }

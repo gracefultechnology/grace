@@ -455,6 +455,9 @@ declare module "vitest/browser" {
 }
 declare module "vitest" {
   interface ProvidedContext {
+    site: string;
+    cloud: string;
+    groundProxy: string;
     browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { gradeWholeCohort: boolean })[];
     billworldStatements: readonly { label: string; billerId?: string }[];
   }
@@ -466,7 +469,7 @@ export default defineConfig(async (env) => {
     typeof entry === "object" && "test" in entry && entry.test?.browser
       ? {
           ...entry,
-          optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto"] },
+          optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto", "pdf-lib"] },
           test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement } } },
         }
       : entry);

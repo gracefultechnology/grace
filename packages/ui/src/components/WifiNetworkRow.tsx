@@ -7,8 +7,8 @@ import { WifiSignal } from "./WifiSignal.tsx";
 export type WifiNetworkRowProps = Omit<ListRowProps, "title" | "subtitle" | "leading" | "trailing" | "chevron" | "time" | "unread"> & {
   /** The network's name. */
   name: string;
-  /** Bars of signal, 0 to 3. */
-  signal: number;
+  /** Measured signal strength, from 0 to 3 bars. */
+  signal?: number;
   /** The network asks for a password: a lock shows before the chevron. */
   locked?: boolean;
   /** The tablet is joined to this network: a raised white row with a check, and no chevron. */
@@ -53,13 +53,14 @@ export function WifiNetworkRow({
   className,
   ...props
 }: WifiNetworkRowProps) {
+  const signalIcon = signal === undefined ? undefined : <WifiSignal strength={signal} />;
   if (connected)
     return (
       <ListRow
         title={name}
         subtitle={connectedLabel}
         leading={<Check aria-hidden size={30} strokeWidth={2.6} className="flex-none text-ok" />}
-        trailing={<WifiSignal strength={signal} />}
+        trailing={signalIcon}
         className={cn("bg-card shadow-raised", className)}
         {...props}
       />
@@ -68,7 +69,7 @@ export function WifiNetworkRow({
     <ListRow
       title={name}
       subtitle={connecting ? connectingLabel : failed ? <span className="text-destructive">{failedLabel}</span> : undefined}
-      leading={<WifiSignal strength={signal} />}
+      leading={signalIcon}
       trailing={
         <>
           {locked && (

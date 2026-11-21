@@ -68,6 +68,136 @@ lemma CloseQuietWorkspace(w: Workspace)
   assert closed.activity == w.assistant.activity;
 }
 
+lemma CompactRailInvariant(w: Workspace, revealControls: bool)
+  requires inv(w)
+  ensures inv(makeRoomForRail(revealControls, w))
+{
+  if revealControls && w.assistant.presentation.Expanded? {
+    ComponentInvariants(w);
+    app__assistant_resize_ensures(w.assistant, false, app__conversation_ConversationActor.ConversationUser);
+    assert app__assistant_resize(w.assistant, false, app__conversation_ConversationActor.ConversationUser) ==
+      w.assistant.(presentation := app__assistant_Presentation.Compact);
+  }
+}
+
+lemma VisitInvariant(w: Workspace, destination: app__shell_Surface, by_: WorkspaceActor)
+  requires inv(w)
+  requires canVisit(w, destination, by_)
+  ensures inv(visit(w, destination, by_))
+{
+  ComponentInvariants(w);
+  var device := if app__shell_isTaskSurface(destination) then app__shell_openSurface(w.device, destination) else app__shell_openNative(w.device, destination);
+  if app__shell_isTaskSurface(destination) {
+    app__shell_openSurface_ensures(w.device, destination);
+  } else {
+    app__shell_openNative_ensures(w.device, destination);
+  }
+  InterruptedInvariant(device, w.browser, w);
+  CompactRailInvariant(interrupted(device, w.browser, w), destination.Home? || destination.DeviceSettings?);
+}
+
+lemma VisitTransitionFacts(w: Workspace, destination: app__shell_Surface, by_: WorkspaceActor)
+  requires inv(w)
+  requires canVisit(w, destination, by_)
+  ensures stepInterruptionsKeepTask(w, "visit", visit(w, destination, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "visit", visit(w, destination, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, visit(w, destination, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "visit", visit(w, destination, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "visit", visit(w, destination, by_))
+{
+}
+
+lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: WorkspaceActor)
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysExecutionRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentRegistryIsCanonical(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentAssociation(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPausedCommitmentCannotSubmit(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysOneTask(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPausedTogether(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysRecordingHasPermission(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysOperationHasVisibleTask(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysEvidenceVersionsAreNonnegative(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysWakeRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysActiveWakePausesWebsiteWork(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysPreferencesRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysDeviceRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysBrowserRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysAssistantRules(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentUsesCanonicalIdentity(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCurrentBeforeAction(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> alwaysCommitmentReviewUsesCurrentContext(visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepInterruptionsKeepTask(w, "visit", visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepWakeNeverDispatchesWebsite(w, "visit", visit(w, destination, by_), []))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepEffectsRequireCurrentContext(w, visit(w, destination, by_), []))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "visit", visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepCommitmentSwitchRetainsRecords(w, "visit", visit(w, destination, by_)))
+{
+  hide *;
+  reveal inv;
+  if inv(w) && canVisit(w, destination, by_) {
+    VisitInvariant(w, destination, by_);
+    VisitTransitionFacts(w, destination, by_);
+  }
+}
+
+lemma PopoverInvariant(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
+  requires inv(w)
+  requires canTogglePopover(w, popover, by_)
+  ensures inv(togglePopover(w, popover, by_))
+{
+  ComponentInvariants(w);
+  app__shell_togglePopover_ensures(w.device, popover);
+  var device := app__shell_togglePopover(w.device, popover);
+  InterruptedInvariant(device, w.browser, w);
+  CompactRailInvariant(interrupted(device, w.browser, w), popover.WifiPopover?);
+}
+
+lemma PopoverTransitionFacts(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
+  requires inv(w)
+  requires canTogglePopover(w, popover, by_)
+  ensures stepInterruptionsKeepTask(w, "togglePopover", togglePopover(w, popover, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "togglePopover", togglePopover(w, popover, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, togglePopover(w, popover, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "togglePopover", togglePopover(w, popover, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "togglePopover", togglePopover(w, popover, by_))
+{
+}
+
+lemma togglePopover_ensures(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysExecutionRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentRegistryIsCanonical(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentAssociation(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPausedCommitmentCannotSubmit(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysOneTask(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPausedTogether(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysRecordingHasPermission(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysOperationHasVisibleTask(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysEvidenceVersionsAreNonnegative(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysWakeRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysActiveWakePausesWebsiteWork(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysPreferencesRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysDeviceRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysBrowserRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysAssistantRules(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentUsesCanonicalIdentity(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCurrentBeforeAction(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> alwaysCommitmentReviewUsesCurrentContext(togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepInterruptionsKeepTask(w, "togglePopover", togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepWakeNeverDispatchesWebsite(w, "togglePopover", togglePopover(w, popover, by_), []))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepEffectsRequireCurrentContext(w, togglePopover(w, popover, by_), []))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "togglePopover", togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepCommitmentSwitchRetainsRecords(w, "togglePopover", togglePopover(w, popover, by_)))
+{
+  hide *;
+  reveal inv;
+  if inv(w) && canTogglePopover(w, popover, by_) {
+    PopoverInvariant(w, popover, by_);
+    PopoverTransitionFacts(w, popover, by_);
+  }
+}
+
 lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysExecutionRules(openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> alwaysCommitmentRules(openGrace(w, by_)))
@@ -837,7 +967,7 @@ lemma approveSpokenCommitment_ensures(w: Workspace, commitmentTokens: Commitment
 {
   if inv(w) && canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) {
     ComponentInvariants(w);
-    app__assistant_hear_ensures(w.assistant, spoken.token, spoken.text, spoken.owner, app__conversation_ConversationActor.ConversationRuntime);
+    app__conversation_hear_ensures(w.assistant.conversation, spoken.token, spoken.text, spoken.owner, app__conversation_ConversationActor.ConversationRuntime);
     app__commitment_authorize_ensures(w.commitment, commitmentTokens.revision, spoken.correction, app__task_TaskActor.Person);
     app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeUser);
   }
@@ -909,6 +1039,26 @@ lemma bindCommitment_ensures(w: Workspace, key: app__task_Subject, by_: Workspac
   }
 }
 
+lemma SaveCommitmentInvariant(w: Workspace, saveReport: SaveReport, by_: WorkspaceActor)
+  requires inv(w)
+  requires canSaveCommitment(w, saveReport, by_)
+  ensures inv(saveCommitment(w, saveReport, by_))
+{
+  ComponentInvariants(w);
+  RegistrySave(w, saveReport, by_);
+  if !w.commitment.stage.Empty? && saveReport.key == w.commitment.key {
+    var saved := app__commitment_saveOutcome(w.commitment, saveReport.revision, saveReport.succeeded, app__task_TaskActor.Store);
+    app__commitment_saveOutcome_ensures(w.commitment, saveReport.revision, saveReport.succeeded, app__task_TaskActor.Store);
+    if terminalCommitment(saved.result) && !app__commitment_outcomeNeedsSave(saved) &&
+        w.commitmentTask == w.assistant.taskId && app__assistant_unfinished(w.assistant) && !w.assistant.activity.Paused? {
+      app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
+      app__assistant_finishTask_ensures(w.assistant, w.assistant.taskId, w.assistant.workVersion,
+        if app__commitment_positiveOutcome(saved.result) then app__assistant_TaskOutcome.Completed else app__assistant_TaskOutcome.VerifiedFailure,
+        saved.evidence, app__conversation_ConversationActor.ConversationRuntime);
+    }
+  }
+}
+
 lemma saveCommitment_ensures(w: Workspace, saveReport: SaveReport, by_: WorkspaceActor)
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysExecutionRules(saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> alwaysCommitmentRules(saveCommitment(w, saveReport, by_)))
@@ -936,20 +1086,18 @@ lemma saveCommitment_ensures(w: Workspace, saveReport: SaveReport, by_: Workspac
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> stepCommitmentSwitchRetainsRecords(w, "saveCommitment", saveCommitment(w, saveReport, by_)))
 {
   if inv(w) && canSaveCommitment(w, saveReport, by_) {
-    ComponentInvariants(w);
-    RegistrySave(w, saveReport, by_);
+    SaveCommitmentInvariant(w, saveReport, by_);
   }
 }
 
-lemma AfterInteractionInvariant(changed: app__assistant_Assistant, geometry: bool, content: bool, w: Workspace)
+lemma AfterInteractionComponents(changed: app__assistant_Assistant, geometry: bool, content: bool, w: Workspace)
   requires inv(w)
   requires app__assistant_inv(changed)
-  requires changed.taskId == w.assistant.taskId
-  requires app__assistant_unfinished(changed) == app__assistant_unfinished(w.assistant)
-  requires changed.activity.Paused? == w.assistant.activity.Paused?
-  requires !(geometry || content) ==> changed.activity.DoingWork? == w.assistant.activity.DoingWork?
-  requires changed.conversation.voice ==> w.device.readiness.Ready? && w.device.microphoneAllowed && app__shell_mayRequestReasoning(w.device) && app__assistant_isVisible(changed)
-  ensures inv(afterInteraction(changed, geometry, content, w))
+  ensures alwaysBrowserRules(afterInteraction(changed, geometry, content, w))
+  ensures alwaysExecutionRules(afterInteraction(changed, geometry, content, w))
+  ensures alwaysCommitmentRules(afterInteraction(changed, geometry, content, w))
+  ensures alwaysWakeRules(afterInteraction(changed, geometry, content, w))
+  ensures alwaysAssistantRules(afterInteraction(changed, geometry, content, w))
 {
   assert app__browser_inv(w.browser);
   assert app__execution_inv(w.execution);
@@ -971,6 +1119,19 @@ lemma AfterInteractionInvariant(changed: app__assistant_Assistant, geometry: boo
   app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
   var after := afterInteraction(changed, geometry, content, w);
   assert app__assistant_inv(after.assistant);
+}
+
+lemma AfterInteractionInvariant(changed: app__assistant_Assistant, geometry: bool, content: bool, w: Workspace)
+  requires inv(w)
+  requires app__assistant_inv(changed)
+  requires changed.taskId == w.assistant.taskId
+  requires app__assistant_unfinished(changed) == app__assistant_unfinished(w.assistant)
+  requires changed.activity.Paused? == w.assistant.activity.Paused?
+  requires !(geometry || content) ==> changed.activity.DoingWork? == w.assistant.activity.DoingWork?
+  requires changed.conversation.voice ==> w.device.readiness.Ready? && w.device.microphoneAllowed && app__shell_mayRequestReasoning(w.device) && app__assistant_isVisible(changed)
+  ensures inv(afterInteraction(changed, geometry, content, w))
+{
+  AfterInteractionComponents(changed, geometry, content, w);
 }
 
 lemma InteractionFrame(a: app__assistant_Assistant, input: app__interaction_Interaction, by_: app__conversation_ConversationActor)
@@ -1249,6 +1410,50 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
   }
 }
 
+lemma ChangePageInvariant(w: Workspace, browserInput: app__browserControls_BrowserInput, by_: WorkspaceActor)
+  requires inv(w)
+  requires canChangePage(w, browserInput, by_)
+  ensures inv(changePage(w, browserInput, by_))
+{
+  ComponentInvariants(w);
+  var actor := if by_ == WorkspaceActor.Person then app__browserControls_BrowserControlActor.BrowserControlUser else app__browserControls_BrowserControlActor.BrowserControlHost;
+  app__browserControls_lawControlsPreserveBrowser_ensures(w.browser, browserInput, actor);
+  app__browserControls_lawRecentEditsKeepPage_ensures(w.browser, browserInput, actor);
+  var browser := app__browserControls_control(w.browser, browserInput, actor);
+  if browser.revision != w.browser.revision {
+    InterruptedInvariant(w.device, browser, w);
+  } else {
+    BrowserControlKeepsPage(w.browser, browserInput, actor);
+  }
+  var updated := if browser.revision != w.browser.revision then interrupted(w.device, browser, w) else w.(browser := browser, wake := app__wake_cancel(w.wake, app__wake_WakeActor.WakeHost));
+  app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
+  assert inv(updated);
+  var keyboard := if browser.editingAddress && app__assistant_canFocusWebsite(updated.assistant, app__conversation_ConversationActor.ConversationUser)
+    then app__assistant_KeyboardOwner.WebsiteKeyboard
+    else if w.browser.editingAddress && !browser.editingAddress && updated.assistant.keyboard == app__assistant_KeyboardOwner.WebsiteKeyboard
+    then app__assistant_KeyboardOwner.NoKeyboard else updated.assistant.keyboard;
+  KeyboardInvariant(updated, keyboard);
+  assert changePage(w, browserInput, by_) == updated.(assistant := updated.assistant.(keyboard := keyboard));
+}
+
+lemma ChangePageTransitionFacts(w: Workspace, browserInput: app__browserControls_BrowserInput, by_: WorkspaceActor)
+  requires inv(w)
+  requires canChangePage(w, browserInput, by_)
+  ensures stepInterruptionsKeepTask(w, "changePage", changePage(w, browserInput, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "changePage", changePage(w, browserInput, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, changePage(w, browserInput, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "changePage", changePage(w, browserInput, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "changePage", changePage(w, browserInput, by_))
+{
+  var actor := if by_ == WorkspaceActor.Person then app__browserControls_BrowserControlActor.BrowserControlUser else app__browserControls_BrowserControlActor.BrowserControlHost;
+  var browser := app__browserControls_control(w.browser, browserInput, actor);
+  if browser.revision != w.browser.revision {
+    assert changePage(w, browserInput, by_).commitment == quietCommitment(w.commitment);
+  } else {
+    assert changePage(w, browserInput, by_).commitment == w.commitment;
+  }
+}
+
 lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_BrowserInput, by_: WorkspaceActor)
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysExecutionRules(changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> alwaysCommitmentRules(changePage(w, browserInput, by_)))
@@ -1275,27 +1480,12 @@ lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_Browse
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "changePage", changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepCommitmentSwitchRetainsRecords(w, "changePage", changePage(w, browserInput, by_)))
 {
-if inv(w) && canChangePage(w, browserInput, by_) {
-  ComponentInvariants(w);
-  var actor := if by_ == WorkspaceActor.Person then app__browserControls_BrowserControlActor.BrowserControlUser else app__browserControls_BrowserControlActor.BrowserControlHost;
-  app__browserControls_lawControlsPreserveBrowser_ensures(w.browser, browserInput, actor);
-  app__browserControls_lawRecentEditsKeepPage_ensures(w.browser, browserInput, actor);
-  var browser := app__browserControls_control(w.browser, browserInput, actor);
-  if browser.revision != w.browser.revision {
-    InterruptedInvariant(w.device, browser, w);
-  } else {
-    BrowserControlKeepsPage(w.browser, browserInput, actor);
+  hide *;
+  reveal inv;
+  if inv(w) && canChangePage(w, browserInput, by_) {
+    ChangePageInvariant(w, browserInput, by_);
+    ChangePageTransitionFacts(w, browserInput, by_);
   }
-  var updated := if browser.revision != w.browser.revision then interrupted(w.device, browser, w) else w.(browser := browser, wake := app__wake_cancel(w.wake, app__wake_WakeActor.WakeHost));
-  app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
-  assert inv(updated);
-  var keyboard := if browser.editingAddress && app__assistant_canFocusWebsite(updated.assistant, app__conversation_ConversationActor.ConversationUser)
-    then app__assistant_KeyboardOwner.WebsiteKeyboard
-    else if w.browser.editingAddress && !browser.editingAddress && updated.assistant.keyboard == app__assistant_KeyboardOwner.WebsiteKeyboard
-    then app__assistant_KeyboardOwner.NoKeyboard else updated.assistant.keyboard;
-  KeyboardInvariant(updated, keyboard);
-  assert changePage(w, browserInput, by_) == updated.(assistant := updated.assistant.(keyboard := keyboard));
-}
 }
 
 lemma initialHolds_ensures()
@@ -1390,6 +1580,72 @@ lemma lawRestartKeepsCommitmentRecords_ensures(w: Workspace, by_: WorkspaceActor
   }
 }
 
+lemma LifecycleRestartPreservation(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
+  requires inv(w) && canChangeLifecycle(w, lifecycle, by_)
+  requires lifecycle.RestartDevice?
+  ensures inv(changeLifecycle(w, lifecycle, by_))
+  ensures stepInterruptionsKeepTask(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, changeLifecycle(w, lifecycle, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+{
+  ComponentInvariants(w);
+  app__shell_restart_ensures(w.device);
+  app__browser_closeBrowser_ensures(w.browser);
+  RestartedAssistantInvariant(w.assistant);
+  if app__execution_canRetire(w.execution, app__execution_ExecutionActor.BrowserBridge) {
+    app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
+  }
+  app__preferences_restart_ensures(w.preferences, app__preferences_PreferenceActor.PreferenceStore);
+  app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
+  RegistryRestart(w, lifecycle, by_);
+  if w.commitment.stage.Empty? && w.commitment.fresh_ {
+    assert currentCommitmentContext(w);
+    assert app__assistant_unfinished(w.assistant);
+    assert w.assistant.taskId != "";
+    assert w.commitmentTask != "";
+    assert false;
+  }
+  var after := changeLifecycle(w, lifecycle, by_);
+  assert inv(after);
+}
+
+lemma LifecycleAdvancePreservation(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
+  requires inv(w) && canChangeLifecycle(w, lifecycle, by_)
+  requires !lifecycle.RestartDevice?
+  ensures inv(changeLifecycle(w, lifecycle, by_))
+  ensures stepInterruptionsKeepTask(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+  ensures stepWakeNeverDispatchesWebsite(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_), [])
+  ensures stepEffectsRequireCurrentContext(w, changeLifecycle(w, lifecycle, by_), [])
+  ensures stepDepartureKeepsCommitmentAttempt(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+  ensures stepCommitmentSwitchRetainsRecords(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_))
+{
+  ComponentInvariants(w);
+  match lifecycle {
+    case StartupSucceeded => app__shell_finishStartup_ensures(w.device, true);
+    case StartupFailed => app__shell_finishStartup_ensures(w.device, false);
+    case RetryStartup => app__shell_retryStartup_ensures(w.device);
+    case SleepDevice => app__shell_sleep_ensures(w.device);
+    case WakeDevice => app__shell_wake_ensures(w.device);
+    case RestartDevice => assert false;
+  }
+  var device := if lifecycle.StartupSucceeded? then app__shell_finishStartup(w.device, true)
+    else if lifecycle.StartupFailed? then app__shell_finishStartup(w.device, false)
+    else if lifecycle.RetryStartup? then app__shell_retryStartup(w.device)
+    else if lifecycle.SleepDevice? then app__shell_sleep(w.device)
+    else if lifecycle.WakeDevice? then app__shell_wake(w.device)
+    else app__shell_restart(w.device);
+  InterruptedInvariant(device, w.browser, w);
+  var stopped := interrupted(device, w.browser, w);
+  if lifecycle.SleepDevice? && app__assistant_isVisible(stopped.assistant) {
+    assert !app__assistant_unfinished(stopped.assistant) || stopped.assistant.activity.Paused?;
+    CloseQuietWorkspace(stopped);
+  }
+  var after := changeLifecycle(w, lifecycle, by_);
+  assert inv(after);
+}
+
 lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: WorkspaceActor)
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysExecutionRules(changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> alwaysCommitmentRules(changeLifecycle(w, lifecycle, by_)))
@@ -1417,49 +1673,10 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepCommitmentSwitchRetainsRecords(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
 {
   if inv(w) && canChangeLifecycle(w, lifecycle, by_) {
-    ComponentInvariants(w);
     if lifecycle.RestartDevice? {
-      app__shell_restart_ensures(w.device);
-      app__browser_closeBrowser_ensures(w.browser);
-      RestartedAssistantInvariant(w.assistant);
-      if app__execution_canRetire(w.execution, app__execution_ExecutionActor.BrowserBridge) {
-        app__execution_retire_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
-      }
-      app__preferences_restart_ensures(w.preferences, app__preferences_PreferenceActor.PreferenceStore);
-      app__wake_cancel_ensures(w.wake, app__wake_WakeActor.WakeHost);
-      RegistryRestart(w, lifecycle, by_);
-      if w.commitment.stage.Empty? && w.commitment.fresh_ {
-        assert currentCommitmentContext(w);
-        assert app__assistant_unfinished(w.assistant);
-        assert w.assistant.taskId != "";
-        assert w.commitmentTask != "";
-        assert false;
-      }
-      var after := changeLifecycle(w, lifecycle, by_);
-      assert inv(after);
+      LifecycleRestartPreservation(w, lifecycle, by_);
     } else {
-      match lifecycle {
-        case StartupSucceeded => app__shell_finishStartup_ensures(w.device, true);
-        case StartupFailed => app__shell_finishStartup_ensures(w.device, false);
-        case RetryStartup => app__shell_retryStartup_ensures(w.device);
-        case SleepDevice => app__shell_sleep_ensures(w.device);
-        case WakeDevice => app__shell_wake_ensures(w.device);
-        case RestartDevice => assert false;
-      }
-      var device := if lifecycle.StartupSucceeded? then app__shell_finishStartup(w.device, true)
-        else if lifecycle.StartupFailed? then app__shell_finishStartup(w.device, false)
-        else if lifecycle.RetryStartup? then app__shell_retryStartup(w.device)
-        else if lifecycle.SleepDevice? then app__shell_sleep(w.device)
-        else if lifecycle.WakeDevice? then app__shell_wake(w.device)
-        else app__shell_restart(w.device);
-      InterruptedInvariant(device, w.browser, w);
-      var stopped := interrupted(device, w.browser, w);
-      if lifecycle.SleepDevice? && app__assistant_isVisible(stopped.assistant) {
-        assert !app__assistant_unfinished(stopped.assistant) || stopped.assistant.activity.Paused?;
-        CloseQuietWorkspace(stopped);
-      }
-      var after := changeLifecycle(w, lifecycle, by_);
-      assert inv(after);
+      LifecycleAdvancePreservation(w, lifecycle, by_);
     }
   }
 }

@@ -16,8 +16,6 @@
  <uses-feature android:name="android.hardware.location" android:required="false" />
  <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" tools:node="remove" />
  <queries>
-  <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
-  <intent><action android:name="android.speech.RecognitionService" /></intent>
   <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="mailto" /></intent>
   <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="sms" /></intent>
   <intent><action android:name="android.intent.action.SENDTO" /><data android:scheme="smsto" /></intent>
@@ -41,13 +39,13 @@
     <action android:name="android.intent.action.VIEW" />
     <category android:name="android.intent.category.DEFAULT" />
     <category android:name="android.intent.category.BROWSABLE" />
-    <data android:scheme="https" android:host="app.graceforseniors.com" android:path="/android/auth/callback" />
+    <data android:scheme="https" android:host="${graceCloudCallbackHost}" android:path="${graceCloudCallbackPath}" />
    </intent-filter>
    <intent-filter android:autoVerify="true">
     <action android:name="android.intent.action.VIEW" />
     <category android:name="android.intent.category.DEFAULT" />
     <category android:name="android.intent.category.BROWSABLE" />
-    <data android:scheme="https" android:host="app.graceforseniors.com" android:path="/android/files/import" />
+    <data android:scheme="https" android:host="${graceCloudCallbackHost}" android:path="/android/files/import" />
    </intent-filter>
   </activity>
   <receiver android:name=".GraceRemindersPlugin$Receiver" android:exported="false">

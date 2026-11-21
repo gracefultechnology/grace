@@ -12,7 +12,7 @@ and traces (SPEC.md, "One spec tree").
 | `src/useApp.ts`, `src/PageLayer.tsx` | React hooks over both machines; what the interface measures (`PageArea`, `OverPage`) |
 | `src/App.tsx`, `src/Browser.tsx`, `src/Grace.tsx` | Home, the browser window and Grace's window, on `@repo/ui` |
 | `test/app.browser.test.tsx` | the journey "Use the website under Grace's controls", with the plugin faked at its boundary (`pnpm test:browser`) |
-| `scripts/android.ts`, `scripts/aosp.ts` | the Android and AOSP runners, checked by `pnpm typecheck` against upstream's Android tools read from their source. Strict mode cannot use two of them, so `scripts/toolchain.d.ts` and `scripts/build-consumer.d.ts` declare what the runners call: `toolchain.ts` leaves its parameters untyped, and the defaults of `build-consumer.mjs` infer `null` and `never[]`; a change to those two shows only when a runner runs |
+| `scripts/android.ts`, `scripts/aosp.ts` | the Android and AOSP runners, checked by `pnpm typecheck` against upstream's Android tools read from their source. That needs `allowJs`, which also lets `src/` and `test/` import untyped JavaScript with loosely inferred types. `scripts/build-consumer.ts` derives the options of `buildAndroidConsumer` from `build-consumer.mjs` and retypes the five whose defaults infer `any`, `null` or `never[]`, so a renamed or removed export or option fails the typecheck. `toolchain.ts` leaves its parameters untyped, so `scripts/toolchain.d.ts` declares its two functions by hand, and a change to them shows only when a runner runs |
 
 | Command | Does |
 |---|---|
@@ -105,6 +105,14 @@ in `artifacts/agent-runtime/<pinned-commit>/<abi>`.
 JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and `JAVA_HOME`, or their
 usual install paths) writes `artifacts/{launcher,standalone}-debug.apk` for one processor type,
 `--abi arm64-v8a` (the default: the tablet and an Apple silicon emulator) or `--abi x86_64`.
+Choose the cloud deployment at build time with `--cloud-profile`. The default
+is `standalone-production` for Grace Cloud. `shared-production` uses Eliza Cloud
+production. `shared-staging` uses Eliza Cloud staging and builds debug APKs only.
+The choice applies to both flavors and fixes the account registration and callback,
+the web bundle's cloud origins, and the embedded agent's inference endpoint.
+Shared builds write their APKs, verification manifest and intermediate files under
+`artifacts/cloud-profiles/<profile>/`. Use the same `--cloud-profile` with `--verify`.
+
 `--release` adds each flavor's release APK: `<flavor>-release.apk`, signed, when `GRACE_KEYSTORE`
 (absolute, or relative to the directory you ran the command from: `INIT_CWD` under pnpm, otherwise
 the working directory), `GRACE_KEYSTORE_PASSWORD`,
@@ -209,7 +217,9 @@ her uninstalled, data and all, before the install.
 socket: an array of steps, each `{ "tap": "<accessible name>" }`, `{ "type": "<text>", "into":
 "<accessible name>" }`, `{ "press": "Enter" }` or `{ "expect": "<text on screen>" }`, each given two
 minutes; a step with any other key or an empty name is refused before the build, and a tap fails
-when no visible thing or more than one has that name. `{ "call": "<Plugin>.<method>", "with": {
+when no visible thing or more than one has that name. `{ "homeCard": "Email" }` selects a Home
+button by its title, including when its accessible name also announces a changing status.
+`{ "call": "<Plugin>.<method>", "with": {
 … }, "returns": { … } }` calls that native plugin's method in the page and fails unless it resolves
 with a value holding everything `returns` names (nested objects compared the same way, other values
 exactly); with `"refuses": "<message>"` in place of `returns` it fails unless the call rejects with
@@ -224,17 +234,35 @@ another cause; the state is one of upstream's `unavailable`, `stopped`, `startin
 for `dumpsys activity services` to show that service of Grace's in the foreground; `{ "leaveFor":
 "android.settings.<ACTION>" }` opens that Android settings page over Grace, asks Android to kill her
 background processes (`am kill`), fails unless her process is the same one, and opens her again.
-Five steps reach the host directly: `{ "evaluate": "<expression>", "returns": <JSON> }` awaits the
+Seven steps reach the host directly: `{ "evaluate": "<expression>", "returns": <JSON> }` awaits the
 expression in Grace's page and fails unless its value is that JSON, and `{ "evaluate": "<expression>",
 "rejects": "<code>" }` unless it rejects with that code; `{ "grant": "android.permission.<NAME>" }`
-grants Grace that permission, as the person's Allow would; `{ "notification": "<title>" }` opens
+grants Grace that permission, as the person's Allow would; `{ "forget": "<SSID>" }` forgets that
+saved Wi-Fi network (`cmd wifi forget-network`); `{ "approve": "<label>" }` waits up to three
+minutes for a button with that label shown by Android's Settings (`com.android.settings`) or System
+UI (`com.android.systemui`), such as Save in Settings' "Save this network?" dialog, and taps it, as
+the person would, first acknowledging System UI's first-use "Viewing full screen" notice and
+Android's "Wait" on a slow app, as the BillWorld walk does; `{ "notification": "<title>" }` opens
 Android's settings over Grace, waits up to five minutes for a notification of hers with that title, and
 opens her again; `{ "restart": "force-stop" }` force-stops Grace, opens Home and walks on in her new
 process. A
 failed wait or step names the page's address, visibility, current rail item, opening text and the
 agent's status, and fails at once when Grace's WebView has closed its debugging socket. Each feature
 adds its own file; `home.json` walks `spec/app/shell.md`, "Story: Reach everyday tasks from Home",
-`agent.json` walks the agent service, `device-controls.json` speech and the device controls, `signin-status.json` sign-in, and `records.json` the record store, reminders and signed-out Files refusal. On a disposable emulator signed in to its own QA account, `files.json` saves a PDF, reopens it after a process restart, renders its page and removes the file by its returned ID.
+`agent.json` walks the agent service, `device-controls.json` speech and the device controls,
+`signin-status.json` sign-in, `wifi.json` the Wi-Fi page forgetting the emulator's open AndroidWifi
+and joining it again through Android's Save dialog, `wifi-password.json` the page joining a WPA2
+network with its password, and `records.json` the record store, reminders and signed-out Files
+refusal. On a disposable emulator signed in to its own QA account, `files.json` saves a PDF, reopens
+it after a process restart, renders its page and removes the file by its returned ID.
+
+`wifi-password.json` needs an emulator whose only access point is that WPA2 network. Boot it first,
+with an empty `TMPDIR` of its own so that it starts its own netsimd rather than sharing one another
+emulator started:
+`TMPDIR=<empty directory> emulator -avd <avd> -no-window -netsim-args "--wifi-ssid GraceWifiPage --wifi-password garden-fixture-2026"`,
+then run `--install emulator-<port> --exercise wifi-password`. Both Wi-Fi walks expect Grace without
+location access and, for `wifi.json`, AndroidWifi saved. A walk that stops after `forget` leaves the
+AVD's quickboot snapshot without either, so boot it once with `-wipe-data` before walking it again.
 
 A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
 average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
@@ -248,7 +276,8 @@ Grace killed between two steps failed it in 19 seconds, the next step saying her
 debugging socket. Interrupted with SIGTERM while booting, the command exited 143 and stopped the
 emulator it had started; a plain build has no handler and dies on the signal.
 
-`scripts/android.ts` generates the Gradle host in `android/generated/` (git-ignored) from
+`scripts/android.ts` generates the standalone Grace Cloud Gradle host in `android/generated/`
+and shared Eliza Cloud Gradle hosts in `artifacts/cloud-profiles/<profile>/gradle/` from
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
 AGP 8.13), then upstream's `buildAndroidConsumer` builds the web UI with Vite, copies it in with
 `cap copy android`, runs Gradle and copies the APKs out. The host's inputs are in `android/`: the
@@ -274,7 +303,7 @@ agent over an authenticated private Unix socket. The native service publishes a 
 the child credential and loopback token on stdin. Startup waits for an authenticated health response
 with the current launch epoch.
 
-On devices with Google Play services and native Google enabled in Grace Cloud, Grace opens the
+On standalone Grace Cloud devices with Google Play services and native Google enabled, Grace opens the
 Android Google account picker. Cloud issues a one-time nonce tied to the device PKCE challenge.
 Android sends the Google result directly to Cloud and exchanges the returned device code. The
 Google ID token and PKCE verifier stay in the Android host.
@@ -293,11 +322,23 @@ Android's encrypted, no-backup store. A Cloud acknowledgement activates the toke
 Grace puts it into use. The app bridge reports only whether the device is signed in.
 Signing out stops the device agent, removes the credential and requests revocation. The hosted app
 must publish Android Digital Asset Links for the release signer to validate the callback. Device
-sessions expire after seven days, when the person signs in again.
+sessions expire after seven days, when the person signs in again. Standalone
+password recovery uses a fresh approval on Grace Cloud's registered browser page.
 
-`android/agent.json` names the Grace Cloud origin and admitted agent routes, `agent/character.json`
+Shared Eliza Cloud uses the selected deployment's registered App Link at
+`/auth/grace/callback`. Password backup and recovery ask for fresh native Google
+verification through Steward and a separate native choice for the action.
+Each deployment accepts grants for its own acknowledged account and request.
+Shared profiles compile Eliza’s shared Android authentication client from
+`packages/auth/android`. It exchanges a fresh Steward session at
+`POST /api/v1/app-auth/mobile/password-backup` and checks the returned account
+and organization before recovery. The standalone profile uses Grace Cloud’s
+browser approval and the native secure-store client. Each APK registers one
+`GraceAccount` implementation.
+
+`android/agent.json` names the admitted agent routes, `agent/character.json`
 supplies the character, and `agent/policy.json` owns the action allowlist. The upstream agent
-provides storage, Cloud models and the message service. The APK check rejects
+provides storage, the selected Cloud deployment's models and the message service. The APK check rejects
 declared actions outside the allowed or refused list and rejects bundled on-device inference models.
 
 ### Records, reminders and files

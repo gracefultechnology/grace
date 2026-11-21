@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { House, Settings, Volume2, Wifi } from "lucide-react";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, type queries, userEvent, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { AskGraceButton } from "./AskGraceButton.tsx";
 import { susan as susanPhoto } from "./Avatar.meta.tsx";
@@ -10,6 +10,11 @@ import type { MailContact } from "./MailMessageRow.tsx";
 import { Rail, RailButton } from "./Rail.tsx";
 import { ScreenSlot, TabletScreen } from "./TabletScreen.tsx";
 import { Toast } from "./Toast.tsx";
+
+export const onMailScreen = (interact: (canvas: ReturnType<typeof within<typeof queries>>) => Promise<void>) => async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+  await interact(within(canvasElement));
+  unfocus();
+};
 
 const railIcon = { size: 28, strokeWidth: 1.9 };
 
@@ -90,9 +95,8 @@ export const meta: ComponentMeta<MailAppProps> = {
   args: { folder: "inbox", counts: { inbox: 2 }, messages: inbox, onOpen: open, onSelectFolder: folder, onWrite: write, onClose: fn() },
   examples: {
     Sent: { folder: "sent", messages: sent },
-    Search: { query: "book", messages: inbox.filter((m) => m.id === "book") },
+    "Grace points at what she found": { query: "book", messages: inbox.filter((m) => m.id === "book"), guide: { targetId: "book", kind: "instruction", title: "Tap Riverside Book Club", onClose: fn() } },
     "Nothing found": { query: "Thanksgiving", messages: [] },
-    Drafts: { folder: "drafts", messages: [] },
     Trash: { folder: "trash", messages: [{ ...inbox[2], id: "book" }] },
     "Two accounts": { counts: { inbox: 3 }, accounts: mailAccounts, messages: tagged },
     "With banners": {
@@ -107,7 +111,15 @@ export const meta: ComponentMeta<MailAppProps> = {
     },
     Outbox: { folder: "outbox", counts: { inbox: 2, outbox: 1 }, messages: [{ id: "o1", from: people.susan, subject: "Sunday", time: "Just now" }] },
     "No account": { noAccount: true, messages: [], onConnect: connect, onAskGrace: fn() },
-    Loading: { status: "loading", messages: [] },
+    "No account, refused": { noAccount: true, messages: [], onConnect: undefined, onAskGrace: undefined },
+    Refused: {
+      onWrite: undefined,
+      onFixWifi: undefined,
+      status: "offline",
+      accounts: [mailAccounts[0], { ...mailAccounts[1], needsSignIn: true }],
+      messages: tagged,
+      banners: <MailSignInBanner name="Outlook" others />,
+    },
     "Load failed": { status: "failed", onRetry: retry },
     Offline: { status: "offline", onFixWifi: fn() },
     "Moved to Trash": {
@@ -121,22 +133,33 @@ export const meta: ComponentMeta<MailAppProps> = {
   },
   decorator: mailScreen,
   play: {
-    Default: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
-      const canvas = within(canvasElement);
+    Default: onMailScreen(async (canvas) => {
       await userEvent.click(canvas.getByRole("button", { name: /Riverside Book Club/ }));
       await expect(open).toHaveBeenCalledWith("book");
       await userEvent.click(canvas.getByRole("button", { name: /Sent/ }));
       await expect(folder).toHaveBeenCalledWith("sent");
       await userEvent.click(canvas.getByRole("button", { name: "Write" }));
       await expect(write).toHaveBeenCalled();
-      unfocus();
-    },
+    }),
     "No account": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await expect(canvas.queryByRole("button", { name: "Write" })).toBeNull();
       await userEvent.click(canvas.getByRole("button", { name: "Connect your email" }));
       await expect(connect).toHaveBeenCalled();
       unfocus();
+    },
+    "No account, refused": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByRole("button", { name: "Connect your email" })).toBeDisabled();
+      await expect(canvas.queryByRole("button", { name: "Ask Grace to help" })).toBeNull();
+    },
+    Refused: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.getByRole("button", { name: "Write" })).toBeDisabled();
+      await expect(canvas.getByText("No internet right now")).toBeTruthy();
+      await expect(canvas.getByText("Outlook needs you to sign in again")).toBeTruthy();
+      await expect(canvas.queryByRole("button", { name: "Fix Wi-Fi" })).toBeNull();
+      await expect(canvas.queryByRole("button", { name: "Sign in again" })).toBeNull();
     },
     "With banners": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Sign in again" }));

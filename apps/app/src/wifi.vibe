@@ -1,0 +1,195 @@
+// spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"; spec/app/network.md, "The password goes from Grace's field to Android only, and Show never shares it with Grace"
+import { type Authentication, type JoinResult, type Network, type NetworkJoin, type ScanResult, Machine, canAllowLocation, listAction, machine } from "../gen/app__network.effect.vibe"
+import type { JoinableWiFiSecurity, WiFiSecurity } from "@elizaos/os/bridges/definitions/wifi"
+import { type WiFiPlugin, webView } from "./surfacePlugin.ts"
+
+export type Offer = { readonly network: Network; readonly name: string; readonly bssid: string; readonly signal: number; readonly security: WiFiSecurity }
+type Listing = { readonly nearby: readonly Offer[]; readonly connected?: { readonly name: string; readonly id?: string; readonly signal?: number } }
+export type Offers = { readonly subscribe: (listener: () => void) => () => void; readonly current: () => Listing }
+
+export service WifiPage {
+  readonly offers: Offers
+  choose(offer: Offer): void!!
+  join(password: string): void!!
+  retry(): void!!
+  openPanel(): void!!
+  reopenPanel(): void!!
+  allowLocation(): void!!
+}
+
+error Refused { code: string }
+
+schema Permission { location: "granted" | "denied" | "prompt" | "prompt-with-rationale" }
+schema Radio { enabled: boolean }
+schema Found { ssid: string; bssid: string; rssi: number; security: "open" | "owe" | "wpa2" | "wpa3" | "eap" | "wep" }
+schema Scan { networks: Found[] }
+schema Connectivity { validated: boolean; online: boolean; captivePortal: boolean; ssid: string | null }
+schema AccessPoint { ssid: string; bssid: string; secured: boolean }
+schema Current { network: AccessPoint | null }
+schema Join { status: "connected" | "captivePortal" | "declined" | "unverified" | "notConnected" | "wrongPassword" }
+
+const authentication: Readonly<Record<WiFiSecurity, Authentication>> = {
+  open: "OpenNetwork", owe: "OpenNetwork", wpa2: "SharedPassword", wpa3: "SharedPassword", eap: "AccountPassword", wep: "AccountPassword",
+}
+const outcomes: Readonly<Record<Join["status"], JoinResult>> = {
+  connected: "Joined", captivePortal: "PortalRequired", declined: "Declined", unverified: "Unverified", notConnected: "Unavailable", wrongPassword: "RejectedCredentials",
+}
+const unlisted: Readonly<Partial<Record<string, ScanResult>>> = {
+  LOCATION_PERMISSION_REQUIRED: { tag: "NoLocationAccess" }, LOCATION_DISABLED: { tag: "LocationDisabled" },
+}
+
+const bars = (rssi: number) => rssi >= -55 ? 3 : rssi >= -67 ? 2 : rssi >= -80 ? 1 : 0
+const joinable = (security: WiFiSecurity): JoinableWiFiSecurity | undefined => security === "eap" || security === "wep" ? undefined : security
+export const ssidOf = (n: NetworkJoin) => n.selected.id.slice(n.selected.id.indexOf(":") + 1)
+const refusals: Readonly<Record<string, string>> = { UNSUPPORTED: "This tablet’s Android can’t join from Grace. Use Android’s Wi-Fi instead." }
+const codeOf = (cause: unknown) => new Refused({ code: typeof cause === "object" && cause !== null && "code" in cause ? String(cause.code) : "" })
+
+effect function ask<A>(decode: (input: unknown) => A!Schema.SchemaError, run: () => Promise<unknown>): A!Refused {
+  const reply = try tryPromise({ try: run, catch: codeOf })
+  return decode(reply) catch effect () => { throw new Refused({ code: "MALFORMED" }) }
+}
+
+const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
+  const networks = try Machine
+  const scanning = try Semaphore.make(1)
+  const listeners = new Set<() => void>()
+  let shown: Listing = { nearby: [] }
+  let requested: { version: number; offer: Offer } | undefined
+
+  const offerOf = (n: NetworkJoin) => shown.nearby.find((offer) => offer.network.id === n.selected.id)
+
+  effect function panel() {
+    tryPromise(() => wifi.openInternetPanel()) catch () => undefined
+  }
+
+  effect function report(found: ScanResult, listing: Listing = { nearby: [] }) {
+    const next = networks.send({ type: "reportScan", found }, "OperatingSystem") catch () => undefined
+    if (next === undefined) return
+    if (next.selected.id === "") requested = undefined
+    shown = listing
+    for (const listener of listeners) listener()
+  }
+
+  effect function list() {
+    const attempt = try networks.get()
+    const permission = ask(Schema.decodeUnknownEffect(Permission), () => wifi.checkPermissions()) catch () => undefined
+    if (permission?.location !== "granted") return try report({ tag: "NoLocationAccess" })
+    const radio = ask(Schema.decodeUnknownEffect(Radio), () => wifi.getWifiState()) catch () => undefined
+    if (radio?.enabled === false) return try report({ tag: "RadioOff" })
+    const scan = ask(Schema.decodeUnknownEffect(Scan), () => wifi.listAvailableNetworks()) catch (refused) => unlisted[refused.code] ?? { networks: [] }
+    if ("tag" in scan) return try report(scan)
+    const active = ask(Schema.decodeUnknownEffect(Connectivity), () => wifi.getConnectivity()) catch () => undefined
+    const name = active?.validated && !active.captivePortal ? active.ssid : null
+    const current = name ? (ask(Schema.decodeUnknownEffect(Current), () => wifi.getConnectedNetwork()) catch () => undefined)?.network : undefined
+    const address = current?.ssid === name ? current?.bssid.toLowerCase() : undefined
+    const bssid = address && address !== "02:00:00:00:00:00" && address !== "00:00:00:00:00:00" ? address : undefined
+    const foundNetworks = scan.networks
+    const observed = bssid ? foundNetworks.find((found) => found.ssid === name && found.bssid.toLowerCase() === bssid) : undefined
+    const prior = requested?.version === attempt.version ? requested.offer : undefined
+    const security = observed?.security ?? (bssid && prior?.name === name && prior.bssid.toLowerCase() === bssid ? prior.security : undefined)
+    const id = security && current?.secured === (authentication[security] !== "OpenNetwork") ? security + ":" + name : undefined
+    const strongest = new Map<string, Found>()
+    for (const found of foundNetworks) {
+      const id = found.security + ":" + found.ssid
+      const previous = strongest.get(id)
+      if (found.ssid !== "" && (!previous || found.rssi > previous.rssi)) strongest.set(id, found)
+    }
+    const named = [...strongest.entries()].sort(([first, a], [second, b]) =>
+      Number(second === id) - Number(first === id) || b.rssi - a.rssi).map(([key, found]): Offer => ({
+      network: { id: key, authentication: authentication[found.security], remembered: key === id },
+      name: found.ssid, bssid: found.bssid, signal: bars(found.rssi), security: found.security,
+    }))
+    const connected = name ? { name, id, signal: observed && id ? bars(observed.rssi) : undefined } : undefined
+    try report(named.length === 0 ? { tag: "NoneNearby" } : { tag: "Found", networks: named.map((offer) => offer.network) }, { nearby: named, connected })
+    if (id === attempt.selected.id) {
+      networks.send({ type: "confirmConnection", networkId: attempt.selected.id, version: attempt.version }, "OperatingSystem") catch () => undefined
+    }
+  }
+
+  const look = scanning.withPermits(1)(list())
+
+  effect function answer(n: NetworkJoin, result: JoinResult, explanation: string) {
+    if (result === "Joined") try look
+    const confirmed = result === "Joined" && shown.connected?.id !== n.selected.id ? "Unverified" : result
+    const report = { network: n.selected.id, version: n.version, result: confirmed, certificate: "", explanation }
+    const next = networks.send({ type: "receive", report }, "OperatingSystem") catch () => undefined
+    if (next?.phase === "PortalEntry") try panel()
+    if (result !== "Joined" && (next?.phase === "JoinUnconfirmed" || next?.phase === "JoinFailed")) try look
+  }
+
+  effect function attempt(n: NetworkJoin | undefined, password: string | undefined) {
+    if (!n) return
+    const offer = offerOf(n)
+    requested = offer ? { version: n.version, offer } : undefined
+    if (n.phase === "AndroidPanel") return try panel()
+    if (n.phase !== "Joining") return
+    if (offer === undefined) return try answer(n, "Unavailable", "The tablet can’t see this network now.")
+    if (offer.network.remembered) return try answer(n, "Joined", "")
+    const joined = ask(Schema.decodeUnknownEffect(Join), () => wifi.addNetworkWithApproval({ ssid: offer.name, security: joinable(offer.security), ...(password === undefined ? {} : { password }) })) catch (refused) => refused.code
+    if (typeof joined === "string") {
+      if (joined === "INVALID_ARGUMENT" && n.selected.authentication === "SharedPassword") return try answer(n, "RejectedCredentials", "Android won’t take that password. Wi-Fi passwords have 8 to 63 characters.")
+      return try answer(n, "Unavailable", refusals[joined] ?? "The tablet couldn’t join " + offer.name + ".")
+    }
+    const result = joined.status === "wrongPassword" && n.selected.authentication !== "SharedPassword" ? "Unavailable" : outcomes[joined.status]
+    try answer(n, result, result === "RejectedCredentials" ? "That password didn’t work." : result === "Unavailable" ? "The tablet couldn’t join " + offer.name + "." : "")
+  }
+
+  effect function returned() {
+    const n = try networks.get()
+    if (n.phase !== "AndroidPanel" && n.phase !== "PortalEntry") {
+      if (n.discovery.tag === "NetworksFound" || listAction(n.discovery) === "OpenPanel") try look
+      return
+    }
+    const name = ssidOf(n)
+    const read = ask(Schema.decodeUnknownEffect(Connectivity), () => wifi.getConnectivity()) catch () => undefined
+    if (read === undefined || (read.captivePortal && n.phase === "PortalEntry")) return
+    const elsewhere = read.online && read.ssid !== null && read.ssid !== name
+    const result = elsewhere || !read.online ? "Unavailable" : read.captivePortal ? "PortalRequired" : !read.validated ? "Unavailable" : read.ssid === null ? "Unverified" : "Joined"
+    const explanation = elsewhere ? "The tablet is still on " + read.ssid + ", not " + name + "." : "The tablet didn’t join " + name + "."
+    try answer(n, result, result === "Unavailable" ? explanation : "")
+  }
+
+  const searches = Stream.filter(Stream.changes(Stream.map(networks.changes, (n) => n.discovery.tag === "Scanning")), (searching) => searching)
+  try fork.scoped Stream.runForEach(searches, () => look)
+  const shownAgain = Stream.filter(Stream.fromEventListener(webView.document, "visibilitychange"), () => !webView.hidden())
+  try fork.scoped Stream.runForEach(shownAgain, () => returned())
+  const changed = Stream.filter(Stream.fromEventListener(webView.window, "android-network-changed"), () => !webView.hidden())
+  try fork.scoped Stream.runForEach(changed, effect () => {
+    const { discovery } = try networks.get()
+    if (discovery.tag === "NetworksFound" || discovery.tag === "NoNetworks") try look
+  })
+
+  return {
+    offers: {
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+      current: () => shown,
+    },
+    effect choose(offer: Offer) {
+      try attempt(networks.send({ type: "choose", network: offer.network }, "Person") catch () => undefined, undefined)
+    },
+    effect join(password: string) {
+      try attempt(networks.send({ type: "join" }, "Person") catch () => undefined, password)
+    },
+    effect retry() {
+      try attempt(networks.send({ type: "retry" }, "Person") catch () => undefined, undefined)
+    },
+    effect openPanel() {
+      const opened = networks.send({ type: "openPanel" }, "Person") catch () => undefined
+      if (opened !== undefined) try panel()
+    },
+    effect reopenPanel() {
+      const n = try networks.get()
+      if (n.phase === "AndroidPanel" || n.phase === "PortalEntry") try panel()
+    },
+    effect allowLocation() {
+      if (!canAllowLocation(try networks.get(), "Person")) return
+      tryPromise(() => wifi.requestPermissions({ permissions: ["location"] })) catch () => undefined
+      networks.send({ type: "allowLocation" }, "Person") catch () => undefined
+    },
+  }
+})
+
+export const wifiPage = (wifi: WiFiPlugin) => Layer.provideMerge(host(wifi), machine())

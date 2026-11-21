@@ -1,12 +1,12 @@
 # Paying a bill, as one kind of task
 
-What makes a task a bill payment: the facts read from the provider's website, when they are whole, where the bill stands, which payment fits it, what Grace may type for it and which payment she may suggest. The [registry of kinds](./taskKinds.md) is the only reader of this library; the [bill preparation](./billpay.md) and the [commitment](./commitment.md) never read a bill's own fields.
+What makes a task a bill payment: the facts read from the provider's website, when they are whole, where the bill stands, which payment fits it, what Grace may type for it and which payment she may suggest. The [registry of kinds](./taskKinds.md) is the only reader of a bill's own fields; the [bill preparation](./prep.md) and the [commitment](./commitment.md) never read them. The preparation and its [review](./taskBridge.md) import this library only so that the bill's types can be named.
 
 ## Story: Read a bill and judge a payment against it
 
 > As a person paying a bill, I want what Grace read from the provider kept exactly, unknown amounts never taken for zero, and a payment accepted only if it fits that bill.
 
-### A bill's facts keep unknown amounts apart from zero and never hold a negative fee
+### A bill's facts keep unknown amounts apart from zero, and whole facts never hold a negative fee
 
 Each balance is known or unknown, so an unknown balance or fee is never zero. Credit balances may be negative; an observed fee is not. The facts name the currency, the due day, whether a payment is already scheduled, whether the provider says nothing is due, whether online payment is allowed and the funding methods it offers, each named. Whole facts have a currency, a due day that is not negative, no unnamed funding method and no negative observed fee.
 

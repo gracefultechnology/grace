@@ -69,3 +69,6 @@ peerDependencyRules:
 allowBuilds:
   esbuild: true
   protobufjs: false
+
+patchedDependencies:
+  lemmascript@0.6.10: patches/lemmascript-0.6.10-8c2a339.patch

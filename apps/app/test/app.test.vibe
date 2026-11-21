@@ -2,14 +2,20 @@
 import { assert, it } from "@effect/vitest"
 import { inject } from "vitest"
 import { approveSave, beginEdit, create, edit, initial as noEntry, save, type Calendar } from "../gen/app__calendar.effect.vibe"
-import { initial as noView } from "../gen/app__calendarView.effect.vibe"
+import { canStoreCreated, initial as noView, storeCreated } from "../gen/app__calendarView.effect.vibe"
 import type { Folder } from "../gen/app__emailItem.effect.vibe"
 import { type AccountRef, Connector, connector, NeedsSignIn, secretPassword, SignInPage } from "../src/connector.vibe"
 import { client, expire, otherPassword, outage, parts, reply, script, sentMail, sessions, signIn, turns, unending, type Visit, visiting } from "./cloud.vibe"
 
 const cloud = inject("cloud")
 const site = inject("site")
-const connectorAt = (key: string, visits: readonly Visit[] = [], opened?: Deferred.Deferred<string>) => Layer.provide(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits, opened)))
+const framedVisits = Layer.effectDiscard(effect {
+  const page = try SignInPage
+  const { shown } = try Connector
+  try fork.scoped Stream.runForEach(shown, (at) => at?.inSheet === true ? page.open(at.url) : Effect.void)
+})
+const connectorAt = (key: string, visits: readonly Visit[] = [], opened?: Deferred.Deferred<string>) =>
+  Layer.provideMerge(framedVisits, Layer.provideMerge(connector({ url: cloud, key }), Layer.effect(SignInPage, visiting(visits, opened))))
 
 schema Payment { amount: string; to: string }
 schema Booking { time: string }
@@ -241,16 +247,18 @@ it.live("Read an email and its original attachment, and find and open the email 
       const found = try listed(gmail, "InboxFolder", "clinic")
       const opened = try mail.read("clinic", 4)
       const header = try mail.header("clinic", 4)
+      const form = try mail.attachment(opened.receipt.assets[0], opened.content.version)
       try Effect.try(() => assert.deepStrictEqual({
-        inbox, found, header, receipt: opened.receipt, from: [opened.content.from, opened.content.fromAddress], body: opened.content.body.startsWith("Dear Margaret")
+        inbox, found, header, receipt: opened.receipt, attached: opened.content.attachment, form: [form.mimeType, form.data.startsWith("JVBERi")], from: [opened.content.from, opened.content.fromAddress], body: opened.content.body.startsWith("Dear Margaret")
       }, {
         inbox: ["Your Riverside Power bill is ready", "A message for Grace", "Lunch on Sunday?", "Reminder: your appointment tomorrow at 10 am"],
         found: ["Reminder: your appointment tomorrow at 10 am"],
         header: { ref: "clinic", generation: 4, address: "frontdesk@mainst-clinic.test", subject: "Re: Reminder: your appointment tomorrow at 10 am", verified: true },
         receipt: { generation: 4, succeeded: true, suspicion: "", assets: [{
-          id: "clinic/2", kind: "Pdf", name: "Visit form.pdf", origin: "Gmail", account: gmail.address, container: "clinic",
-          sourceRef: "clinic", contentRef: "2", group: "clinic", savedAt: opened.content.receivedAt, pages: 2
+          id: JSON.stringify(["Gmail", gmail.address, "clinic", "2"]), kind: "Pdf", name: "Visit form.pdf", origin: "Gmail", account: gmail.address, container: "clinic",
+          sourceRef: "clinic/2", contentRef: "2", group: "clinic", savedAt: opened.content.receivedAt, pages: 2
         }] },
+        attached: true, form: ["application/pdf", true],
         from: ["Main St Clinic", "frontdesk@mainst-clinic.test"],
         body: true
       }))
@@ -307,10 +315,11 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
       const saved = try mail.saveDraft(draft)
       const drafts = try listed(gmail, "DraftsFolder")
       const reopened = (try mail.read("draft-sunday", 5)).receipt.assets.map((a) => a.name)
+      const restored = try mail.draft("draft-sunday", 2)
       const removed = try mail.deleteDraft("draft-sunday")
       const sends = [try mail.send("operation-1", reply), try mail.send("operation-1", reply)]
       const sent = try listed(gmail, "SentFolder")
-      const answered = (try Stream.runCollect(mail.list(scope(gmail, "InboxFolder"), () => 0))).filter((m) => m.receipt.seed.answered).map((m) => m.content.ref)
+      const answered = (try Stream.runCollect(mail.list(scope(gmail, "InboxFolder"), () => 0))).filter((m) => m.receipt.seed.answered).map((m) => [m.content.ref, m.content.replied, m.content.attachment])
       const looked = [try mail.lookup("operation-1"), try mail.lookup("operation-never")]
       try outage(cloud, secret, true)
       const offline = try mail.send("operation-2", draft)
@@ -321,15 +330,17 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
       const carried = (try sentMail(cloud, secret)).filter((m) => m.labels.includes("SENT")).map((m) => [m.subject, m.bcc, m.attachments.map((a) => a.filename)])
       const evidence = (s: { readonly evidence: string }) => s.evidence.startsWith("message:")
       try Effect.try(() => assert.deepStrictEqual({
-        people, resolved, saved, drafts, reopened, removed, sends: sends.map((s) => [s.resultStatus, evidence(s)]), same: sends[0].evidence === sends[1].evidence && looked[0].evidence === sends[0].evidence,
+        people, resolved, saved, drafts, reopened, removed,
+        restored: [restored.verified, restored.snapshot.content, restored.snapshot.attachments.map((a) => [a.name, a.sourceRef]), restored.snapshot.version], sends: sends.map((s) => [s.resultStatus, evidence(s)]), same: sends[0].evidence === sends[1].evidence && looked[0].evidence === sends[0].evidence,
         sent, answered, looked: looked.map((s) => s.resultStatus), never: looked[1], offline, later: later.map((s) => s.resultStatus), again: later[1].evidence === later[2].evidence,
         copied: copied.resultStatus, unsendable, carried
       }, {
         people: 6,
         resolved: [{ address: "susan@family.test", verified: true }, { address: "", verified: false }],
         saved: { draftId: "draft-sunday", persisted: true }, drafts: ["Sunday"], reopened: ["Visit form.pdf"], removed: true,
+        restored: [true, content, [["Visit form.pdf", "draft-sunday/1"]], 2],
         sends: [["Sent", true], ["Sent", true]], same: true,
-        sent: ["Re: Lunch on Sunday?"], answered: ["family"],
+        sent: ["Re: Lunch on Sunday?"], answered: [["family", "Yes please.", true]],
         looked: ["Sent", "SendUnknown"], never: { resultStatus: "SendUnknown", evidence: "" },
         offline: { resultStatus: "SendFailed", evidence: "preflight-unreachable" },
         later: ["SendUnknown", "Sent", "Sent"], again: true,
@@ -341,7 +352,7 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
   }
 })
 
-it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment from an email under the company's own id, a refresh that keeps what only the tablet knows, a change, an all-day day that stays one date in every zone and is never turned into a timed one, and a deletion the company cannot confirm twice", () => effect {
+it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment whose provider receipt binds its reminder, person and source email to the saved occurrence, and, when no receipt arrived, the feed brings the company's copy with the reminder, person and email the tablet's entry held and the tablet's entry leaves, a refresh that keeps what only the tablet knows, a change, an all-day day that stays one date in every zone and is never turned into a timed one, and a deletion the company cannot confirm twice", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
     provide connectorAt(secret) {
@@ -355,11 +366,16 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const found = (id: string) => imported.find((p) => p.incoming.identity.occurrenceId === id)
       const eyeCheck = found("eye-check")?.incoming ?? noEntry
       const start = now + day
-      const identity = { owner: gmail.address, calendarId: "primary", occurrenceId: "clinic-visit", sourceRef: "clinic", kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+      const identity = { owner: gmail.address, calendarId: "primary", occurrenceId: "clinic-visit", sourceRef: "clinic", sourceAccount: 1, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
       const details = { ...eyeCheck.committed, title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached", startAt: start, endAt: start + hour, reminderEnabled: true, leadTime: day }
       const fresh = approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser")
       const added = try calendar.write(fresh, view([eyeCheck]))
-      const visit = added.published.find((p) => p.incoming.phase === "Saved")?.incoming ?? noEntry
+      const created = { owner: identity.owner, calendarId: identity.calendarId, localId: identity.occurrenceId, providerId: added.providerId ?? "", revision: added.revision }
+      const pending = view([eyeCheck, fresh])
+      try Effect.try(() => assert.isTrue(canStoreCreated(pending, created, "ViewStore")))
+      const settled = storeCreated(pending, created, "ViewStore")
+      const visit = settled.entries.find((e) => e.identity.occurrenceId === created.providerId) ?? noEntry
+      const copied = (try feed([eyeCheck, save(fresh, 1, true, "CalendarStore")])).filter((p) => p.incoming.committed.title === details.title)
       const unchanged = (try feed([eyeCheck, visit])).map((p) => p.incoming.identity.occurrenceId)
       const elsewhere = effect {
         provide connectorAt(secret) {
@@ -376,7 +392,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const birthday = seen?.incoming ?? noEntry
       const renamed = try calendar.write(edit(beginEdit(birthday, "CalendarUser"), { ...birthday.committed, title: "Joan’s 80th birthday" }, "CalendarUser"), view([birthday], "Asia/Tokyo"))
       const shifted = try calendar.write(edit(beginEdit(birthday, "CalendarUser"), { ...birthday.committed, startAt: birthday.committed.startAt + day, endAt: birthday.committed.endAt + day }, "CalendarUser"), view([birthday], "Asia/Tokyo"))
-      const newAllDay = try calendar.write(approveSave(create(noEntry, { ...identity, occurrenceId: "picnic", sourceRef: "" }, { ...birthday.committed, title: "Picnic" }, "CalendarUser"), 1, "CalendarUser"), view([], "Asia/Tokyo"))
+      const newAllDay = try calendar.write(approveSave(create(noEntry, { ...identity, occurrenceId: "picnic", sourceRef: "", sourceAccount: 0 }, { ...birthday.committed, title: "Picnic" }, "CalendarUser"), 1, "CalendarUser"), view([], "Asia/Tokyo"))
       const afterRename = (try birthdayIn("Asia/Tokyo", [birthday]))?.incoming.committed
       const removed = [try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(eyeCheck.identity, "EntireSeries")]
       const gone = (try feed([eyeCheck, visit])).filter((p) => p.incoming.identity.occurrenceId === visit.identity.occurrenceId).map((p) => p.incoming.phase)
@@ -384,8 +400,9 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const tokyoMidnight = Date.parse(`${new Date(Math.floor(now / day) * day + 3 * day).toISOString().slice(0, 10)}T00:00:00+09:00`)
       try Effect.try(() => assert.deepStrictEqual({
         eyeCheck: [eyeCheck.phase, eyeCheck.committed.participant, found("eye-check")?.scheduleVerified],
-        added: [added.revision, added.succeeded, added.published.map((p) => [p.incoming.identity.occurrenceId === "clinic-visit", p.incoming.phase, p.scheduleVerified])],
-        visit: [visit.identity.sourceRef, visit.committed.participant, visit.committed.reminderEnabled],
+        added, localRemoved: settled.entries.every((e) => e.identity.occurrenceId !== identity.occurrenceId),
+        copied: copied.map((p) => [p.incoming.identity.occurrenceId === identity.occurrenceId, p.incoming.phase, p.incoming.committed.participant, p.incoming.identity.sourceRef, p.incoming.identity.sourceAccount, p.incoming.committed.reminderEnabled, p.scheduleVerified]),
+        visit: [visit.phase, visit.identity.sourceAccount, visit.identity.sourceRef, visit.committed.participant, visit.committed.reminderEnabled, visit.committed.leadTime],
         unchanged, elsewhere: otherTablet.succeeded,
         refreshed: [r.title, r.participant, r.reminderEnabled, r.leadTime, refreshed.identity.sourceRef, refreshed.revision > visit.revision], changed,
         allDay: [seen?.incoming.committed.allDay, seen?.incoming.committed.startAt === tokyoMidnight, seen?.incoming.committed.timezone, seen?.scheduleVerified],
@@ -394,8 +411,10 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         removed, gone
       }, {
         eyeCheck: ["Saved", "Dr. Patel", true],
-        added: [1, true, [[true, "Deleted", true], [false, "Saved", true]]],
-        visit: ["clinic", "Dr. Patel", true],
+        added: { revision: 1, succeeded: true, published: [], providerId: visit.identity.occurrenceId },
+        localRemoved: true,
+        copied: [[false, "Saved", "Dr. Patel", "clinic", 1, true, true], [true, "Deleted", "Dr. Patel", "clinic", 1, true, true]],
+        visit: ["Saved", 1, "clinic", "Dr. Patel", true, day],
         unchanged: ["birthday"],
         elsewhere: true,
         refreshed: ["Check-up at 11", "Dr. Patel", true, day, "clinic", true],

@@ -38,7 +38,7 @@ export function Rail({ battery, batteryLabel, time, period, date, status, footer
       {battery !== undefined && <Battery level={battery} label={batteryLabel} className="mt-3.5" />}
       <div className={cn(battery !== undefined ? "mt-3" : "mt-7", "text-title-lg leading-[34px] font-medium")}>{time}</div>
       {period && <div className="text-label leading-[22px] font-medium">{period}</div>}
-      <div className="mt-2 text-center text-lg leading-[22px] font-semibold text-muted-foreground">{date}</div>
+      <div className="mt-2 text-center text-control leading-[22px] font-semibold text-muted-foreground">{date}</div>
       {status ? <div className="mt-3 flex flex-col gap-3">{status}</div> : null}
       <RailDivider className="my-4" />
       <div className="flex flex-col gap-3">{children}</div>

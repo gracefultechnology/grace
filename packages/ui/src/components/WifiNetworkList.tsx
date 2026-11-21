@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
 import { EmptyState } from "./EmptyState.tsx";
@@ -10,8 +10,10 @@ import { Spinner } from "./Spinner.tsx";
 import { WifiNetworkRow } from "./WifiNetworkRow.tsx";
 
 export interface WifiNetwork {
+  /** Tells apart networks that share a name, such as an open look-alike of a locked one; the name when absent. */
+  id?: string;
   name: string;
-  signal: number;
+  signal?: number;
   locked?: boolean;
 }
 
@@ -30,18 +32,20 @@ export type WifiNetworkListProps = Omit<ComponentProps<"section">, "onSelect"> &
   expanded?: boolean;
   /** Called by "Show more" and "Show fewer". */
   onExpandedChange?: (expanded: boolean) => void;
-  /** The network being joined now. */
+  /** The id of the network being joined now. */
   connecting?: string;
-  /** The network whose last join failed: its row says so and offers Try again. */
+  /** The id of the network whose last join failed: its row says so and offers Try again. */
   failed?: string;
   /** Called by Try again on the `failed` network. */
   onRetry?: () => void;
   /** Called by Turn on while Wi-Fi is off. */
   onTurnOn?: () => void;
-  /** Called with the network a person taps. */
-  onSelect?: (name: string) => void;
+  /** Called with the id of the network a person taps. */
+  onSelect?: (id: string) => void;
   /** Called by Fix Wi-Fi, offline: Grace helps reconnect. */
   onFix?: () => void;
+  /** The one control under an empty list, such as Look again. */
+  action?: ReactNode;
   /** The page's title. */
   title?: string;
   /** The label over the other networks. */
@@ -85,6 +89,7 @@ export function WifiNetworkList({
   onTurnOn,
   onSelect,
   onFix,
+  action,
   title = "Wi-Fi",
   othersLabel = "Other networks nearby",
   offlineLabel = "Not connected",
@@ -138,20 +143,20 @@ export function WifiNetworkList({
               <PageText tone="secondary">{scanningLabel}</PageText>
             </div>
           )}
-          {status === "none" && <EmptyState title={noneLabel} className="py-2" />}
+          {status === "none" && <EmptyState title={noneLabel} className="py-2">{action}</EmptyState>}
           {status === "ready" && (
             <>
               <div className="flex flex-col gap-2.5">
-                {shown.map((network) => (
+                {shown.map(({ id, name, signal, locked }) => (
                   <WifiNetworkRow
-                    key={network.name}
-                    name={network.name}
-                    signal={network.signal}
-                    locked={network.locked}
-                    connecting={connecting === network.name}
-                    failed={failed === network.name}
+                    key={id ?? name}
+                    name={name}
+                    signal={signal}
+                    locked={locked}
+                    connecting={connecting === (id ?? name)}
+                    failed={failed === (id ?? name)}
                     onRetry={onRetry}
-                    onClick={() => onSelect?.(network.name)}
+                    onClick={() => onSelect?.(id ?? name)}
                   />
                 ))}
               </div>

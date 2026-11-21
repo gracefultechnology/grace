@@ -3,6 +3,7 @@
   "globalDependencies": [
     ".nvmrc",
     "pnpm-workspace.yaml",
+    "patches/**",
     "tsconfig.base.json",
     "vibestack/*.ts",
     "vibestack/gen/**",
@@ -62,6 +63,21 @@
       ],
       "outputs": [
         ".cache/test-result-*.json"
+      ]
+    },
+    "@repo/app#typecheck": {
+      "dependsOn": [
+        "gen",
+        "//#gen",
+        "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/vendor/eliza/packages/{os,cloud}/package.json",
+        "$TURBO_ROOT$/vendor/eliza/packages/{os,cloud}/{src,gen,android,aosp}/**/*.{ts,tsx,mjs,js,vibe}"
+      ],
+      "outputs": [
+        ".vibe/declarations/**"
       ]
     },
     "test:browser": {

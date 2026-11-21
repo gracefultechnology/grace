@@ -4,6 +4,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { cn, focusRing } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
+import { guided, type Guide } from "./GuideAnchor.tsx";
 import { Menu, MenuLabel, MenuOption } from "./Menu.tsx";
 import { appButton, appProminent, headerPill, pendingMark } from "./MailActionStatus.tsx";
 import { MailContactAvatar, mailIcons, type MailContact } from "./MailMessageRow.tsx";
@@ -15,6 +16,9 @@ export type MailRecipientField = "to" | "cc" | "bcc";
 export type MailSendStatus = "idle" | "sending" | "failed" | "unknown" | "saveFailed";
 
 export type MailAttachSource = "camera" | "photos" | "file";
+
+/** What Grace can point at while an email is written (prototype `data-t`): the From line, the words and Send. */
+export type MailComposeTarget = "from" | "body" | "send";
 
 export type MailRecipientChipProps = ComponentProps<"span"> & {
   /** Who it is to. */
@@ -104,7 +108,7 @@ export function MailFromMenu({ accounts, selected, onSelect, open, onOpenChange,
         <MenuOption key={account.id} selected={account.id === selected} className="h-auto min-h-[76px] justify-start rounded-row py-2.5" onSelect={() => onSelect?.(account.id)}>
           <span className="flex min-w-0 flex-col items-start">
             <span className="truncate">{account.address}</span>
-            <span className="text-lg leading-6 font-medium text-muted-foreground">{account.name}</span>
+            <span className="text-control leading-6 font-medium text-muted-foreground">{account.name}</span>
           </span>
         </MenuOption>
       ))}
@@ -206,6 +210,8 @@ export type MailComposeProps = Omit<AppWindowProps, "icon" | "nav" | "actions" |
   onRetryDraft?: () => void;
   /** The form's words, for another language. */
   labels?: Partial<MailComposeLabels>;
+  /** Grace pointing at the From line, the words or Send. */
+  guide?: Guide<MailComposeTarget>;
 };
 
 /**
@@ -241,6 +247,7 @@ export function MailCompose({
   draftError,
   onRetryDraft,
   labels,
+  guide,
   backLabel = "Inbox",
   onBack,
   ...props
@@ -287,7 +294,7 @@ export function MailCompose({
         )}
         {from && from.accounts.length > 1 && (
           <Line label={l.from}>
-            <MailFromMenu {...from} />
+            {guided(guide, "from", <MailFromMenu {...from} />, { radius: 999 })}
           </Line>
         )}
         {recipients("to", to)}
@@ -314,14 +321,21 @@ export function MailCompose({
             className="min-w-0 flex-1 bg-transparent px-0.5 py-px text-body-lg leading-[30px] text-foreground outline-none placeholder:text-field-placeholder"
           />
         </Line>
-        <textarea
-          aria-label={l.bodyPlaceholder}
-          value={body}
-          placeholder={l.bodyPlaceholder}
-          readOnly={!onBodyChange}
-          onChange={(event) => onBodyChange?.(event.target.value)}
-          className={cn("mt-[18px] box-border block w-full", notice || draftError != null ? "min-h-0" : "min-h-[154px]", "resize-none bg-transparent pt-1 pb-2 text-body-lg leading-8 text-foreground outline-none placeholder:text-field-placeholder")}
-        />
+        <div className="mt-[18px] flex">
+          {guided(
+            guide,
+            "body",
+            <textarea
+              aria-label={l.bodyPlaceholder}
+              value={body}
+              placeholder={l.bodyPlaceholder}
+              readOnly={!onBodyChange}
+              onChange={(event) => onBodyChange?.(event.target.value)}
+              className={cn("box-border block w-full", notice || draftError != null ? "min-h-0" : "min-h-[154px]", "resize-none bg-transparent pt-1 pb-2 text-body-lg leading-8 text-foreground outline-none placeholder:text-field-placeholder")}
+            />,
+            { radius: 12, placement: "below", className: "flex flex-1" },
+          )}
+        </div>
         {attachments.length > 0 && (
           <ul className="m-0 mt-2.5 flex list-none gap-3 p-0">
             {attachments.map((photo, i) => (
@@ -342,10 +356,15 @@ export function MailCompose({
           </MailNotice>
         )}
         <div className="mt-[18px] flex gap-3">
-          <Button type="submit" variant="prominent" size="pill" className={appProminent} aria-busy={sending || undefined} disabled={!onSend || sending || sendStatus === "unknown" || sendStatus === "saveFailed"}>
-            {pendingMark(sending, <ArrowUp size={22} strokeWidth={2.4} aria-hidden />)}
-            {l.send}
-          </Button>
+          {guided(
+            guide,
+            "send",
+            <Button type="submit" variant="prominent" size="pill" className={appProminent} aria-busy={sending || undefined} disabled={!onSend || sending || sendStatus === "unknown" || sendStatus === "saveFailed"}>
+              {pendingMark(sending, <ArrowUp size={22} strokeWidth={2.4} aria-hidden />)}
+              {l.send}
+            </Button>,
+            { radius: 999 },
+          )}
           {onAttach && (
             <Menu
               open={attachOpen}
