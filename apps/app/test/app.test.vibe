@@ -1,6 +1,7 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/emailItem.md, "Story: Find and open the email I intend"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"
 import { assert, it } from "@effect/vitest"
 import { Digest } from "effect/crypto"
+import { ExperimentalNodeLocks } from "vibelang-runtime/experimental/platform-node"
 import { inject } from "vitest"
 import { approveSave, beginEdit, create, edit, initial as noEntry, save, saveFailed, type Calendar } from "../gen/app__calendar.effect.vibe"
 import { canStoreCreated, initial as noView, storeCreated } from "../gen/app__calendarView.effect.vibe"
@@ -16,7 +17,7 @@ const framedVisits = Layer.effectDiscard(effect {
   try fork.scoped Stream.runForEach(shown, (at) => at?.inSheet === true ? page.open(at.url) : Effect.void)
 })
 const connectorAt = (key: string, visits: readonly Visit[] = [], opened?: Deferred.Deferred<string>) =>
-  Layer.provideMerge(framedVisits, Layer.provideMerge(connector({ url: cloud, key }, navigator), Layer.effect(SignInPage, visiting(visits, opened))))
+  Layer.provideMerge(framedVisits, Layer.provideMerge(connector({ url: cloud, key }, Effect.provide(Experimental.Locks.Locks, ExperimentalNodeLocks.layer)), Layer.effect(SignInPage, visiting(visits, opened))))
 
 schema Payment { amount: string; to: string }
 schema Booking { time: string }
