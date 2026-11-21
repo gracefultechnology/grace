@@ -16,7 +16,7 @@ import { NoticeHost } from "./notices.vibe"
 import { Digest } from "effect/crypto"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { day, dayOf, instant, midnight, navigation, windowOf } from "./calendarWindow.vibe"
-import { usesManagedSurfaces } from "./managedReads.vibe"
+import { surfaceOwner } from "./managedReads.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 export { day, dayOf, instant, midnight, navigation, shownDays } from "./calendarWindow.vibe"
@@ -501,8 +501,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   const noticeReminders = Effect.ignore(reminding.withPermits(1)(effect {
     const a = try registry.get()
     const sources = try sourcesOf(a)
-    const managed = usesManagedSurfaces(try setup.get(), webView.window.location.hash)
-    const due = managed ? [] : shownReminders(a, sources).sort((x, y) => x.details.startAt - y.details.startAt)
+    const due = surfaceOwner(try setup.get(), webView.window.location.hash) === "Ours" ? shownReminders(a, sources).sort((x, y) => x.details.startAt - y.details.startAt) : []
     const same = (r: CalRow, at: Reminded) => r.key === at.key && r.identity.occurrenceId === at.id
     for (const [subject, at] of [...known]) {
       if (due.some((r) => same(r, at))) continue
