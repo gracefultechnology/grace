@@ -1,13 +1,13 @@
 // spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/workspace.md, "Only a current observation of the next outcome advances the plan"
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 import type { Rect } from "../gen/app__surface.effect.vibe"
 import { allowsLimitedGuidedEvidence, ordinaryGuidedPage, type GuidedEvidenceUse, type GuidedPageField } from "../gen/app__workspace.effect.vibe"
 import type { Load } from "../gen/app__browser.effect.vibe"
 import type { AndroidOutcome, Answer, AppHandoff, Ask, MessageKind } from "../gen/app__websiteRequests.effect.vibe"
 import { type SurfacePlugin, identity } from "./surfacePlugin.ts"
 import {
-  DialogRequested, DownloadFinished, DownloadRequested, ExternalLinkRequested, FileChooserRequested, IdentityProviderRequested,
-  LinkObservation, VisibleTextRead, NavigationChanged, PageStarted, type PageId, PermissionClosed, PointResult, PurgeResult, RequestKey, SitePermissionAnswer, SitePermissionRequested,
+  AppUnavailable, DialogRequested, DownloadFinished, DownloadRequested, ExternalLinkRequested, FileChooserRequested, IdentityProviderRequested,
+  LinkObservation, VisibleTextRead, NavigationChanged, PageStarted, type PageId, PermissionClosed, PointResult, PurgeResult, RequestKey, SecurePage, SitePermissionAnswer, SitePermissionRequested,
   SitePermissionWithdrawn, SurfaceCrashed, type Url
 } from "./nativePage.schema.ts"
 import { webPage } from "./webPage.vibe"
@@ -83,7 +83,7 @@ export function guidedPageState(observation: LinkObservation | undefined, url: s
 export error PageFailed { cause: unknown }
 
 export data PageEvent {
-  Changed { id: PageId; url: Url | undefined; loading: boolean; result: Load; back: boolean; forward: boolean }
+  Changed { id: PageId; url: Url | undefined; loading: boolean; result: Load; secure: boolean; back: boolean; forward: boolean }
   Crashed { id: PageId }
   Started { id: PageId; url: Url | undefined }
   Asked { id: PageId; key: RequestKey; ask: Ask; topFrame: boolean; said: string }
@@ -109,6 +109,7 @@ export function comparableName(value: string): string {
 
 export service NativePage {
   readonly privateSignIn: boolean
+  readonly opensWebsites: boolean
   observeLinks(id: PageId): LinkObservation!PageFailed
   readPrimaryHeading(id: PageId): (typeof VisibleTextRead.Type)!PageFailed
   hasNavigationMenu(id: PageId, selector: string, url: string): boolean!!
@@ -126,6 +127,7 @@ export service NativePage {
   back(id: PageId): void!PageFailed
   forward(id: PageId): void!PageFailed
   reload(id: PageId): void!PageFailed
+  stop(id: PageId): void!PageFailed
   destroy(id: PageId): void!PageFailed
   reply(reply: Reply): void!PageFailed
   grant(id: PageId, key: RequestKey): AndroidOutcome!PageFailed
@@ -150,7 +152,8 @@ function answerPage(p: SurfacePlugin, surface: Surface, { key, ask, answer, text
     }
     case "SitePermission": return key === "" ? Promise.resolve() : p.answerSitePermission({ ...surface, requestId: key, grant: answer === "Allowed" })
     case "DownloadOffer": return answer === "SaveDownload" ? p.saveDownload({ ...surface, requestId: key }) : Promise.resolve()
-    case "OtherApp": return answer === "OpenOtherApp" ? p.openExternalLink({ ...surface, url: key }) : Promise.resolve()
+    case "OtherApp": return answer !== "OpenOtherApp" ? Promise.resolve() : p.openExternalLink({ ...surface, url: key }).catch((cause: unknown) =>
+      ask.fallback !== "" && Schema.is(AppUnavailable)(cause) ? p.navigate({ ...surface, url: ask.fallback }) : Promise.reject(cause))
     case "BlockedSignIn": return answer === "OpenSystemBrowser" ? p.openIdentityProvider({ ...surface, requestId: key }) : Promise.resolve()
   }
 }
@@ -180,7 +183,7 @@ function surfaceEvents(plugin: SurfacePlugin) {
     Effect.orDie(tryPromise(() => Promise.all([
       plugin.addListener("navigationChanged", hear(queue, NavigationChanged, (e) => e.exists === false ? undefined : PageEvent.Changed({
         id: e.id, url: e.currentUrl ?? undefined, back: e.canGoBack === true, forward: e.canGoForward === true, loading: e.progress !== undefined && e.progress < 100,
-        result: e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded"
+        result: e.securityBlocked === true ? "SecurityBlocked" : e.pageError ? "LoadFailed" : "Loaded", secure: Schema.is(SecurePage)(e.currentUrl)
       }))),
       plugin.addListener("surfaceCrashed", hear(queue, SurfaceCrashed, (e) => PageEvent.Crashed({ id: e.id }))),
       plugin.addListener("pageStarted", hear(queue, PageStarted, (e) => PageEvent.Started({ id: e.id, url: e.url }))),
@@ -196,8 +199,10 @@ function surfaceEvents(plugin: SurfacePlugin) {
         ask: { tag: "SitePermission", origin: e.origin ?? "", kinds: { camera: e.kinds.includes("camera"), microphone: e.kinds.includes("microphone"), location: e.kinds.includes("location") } }
       }))),
       plugin.addListener("sitePermissionWithdrawn", hear(queue, SitePermissionWithdrawn, (e) => PageEvent.Withdrawn({ id: e.id, key: e.requestId }))),
-      plugin.addListener("externalLinkRequested", hear(queue, ExternalLinkRequested, (e) =>
-        PageEvent.Asked({ id: e.id, key: RequestKey.make(e.url), ask: { tag: "OtherApp", handoff: handoffs[e.handoff] }, topFrame: true, said: e.url }))),
+      plugin.addListener("externalLinkRequested", hear(queue, ExternalLinkRequested, (e) => PageEvent.Asked({
+        id: e.id, key: RequestKey.make(e.url), topFrame: true, said: e.url,
+        ask: { tag: "OtherApp", handoff: handoffs[e.handoff], fallback: Schema.is(SecurePage)(e.fallbackUrl) ? e.fallbackUrl : "" }
+      }))),
       plugin.addListener("identityProviderRequested", hear(queue, IdentityProviderRequested, (e) =>
         PageEvent.Asked({ id: e.id, key: e.requestId, ask: { tag: "BlockedSignIn", provider: providers[e.provider] }, topFrame: true, said: "" })))
     ]))),
@@ -217,6 +222,7 @@ function devicePage(plugin: SurfacePlugin) {
     observablePages.has(id) ? run() : Effect.fail(new PageFailed({ cause: "This page does not permit website observation." })))
   return Layer.succeed(NativePage, {
     privateSignIn: true,
+    opensWebsites: true,
     observeLinks: (id) => observe(id, () => ask(LinkObservation, (p) => p.controlPage({ ...own(id), command: { subaction: "snapshot" } }))),
     readPrimaryHeading: (id) => observe(id, () => {
       const heading = (selector: string) => ask(VisibleTextRead, (p) => p.readPage({ ...own(id), selector }))
@@ -256,6 +262,7 @@ function devicePage(plugin: SurfacePlugin) {
     back: (id) => call((p) => p.goBack(own(id))),
     forward: (id) => call((p) => p.goForward(own(id))),
     reload: (id) => call((p) => p.reloadSurface(own(id))),
+    stop: (id) => call((p) => p.stopLoading(own(id))),
     destroy: effect (id) => {
       observablePages.delete(id)
       try call((p) => p.destroySurface(own(id)))

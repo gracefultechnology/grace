@@ -144,7 +144,8 @@ type Availability = {
 }
 type Lifecycle = StartupSucceeded | StartupFailed | RetryStartup | SleepDevice | WakeDevice | RestartDevice
 type TaskRequest = { owner: str, task: str, goal: str, origin: str }
-type LoadReport = { id: int, version: int, result: B::Load }
+type LoadReport = { id: int, version: int, result: B::Load, secure: bool, endedAt: str }
+type StayedLoad = { id: int, version: int }
 type UnexpectedNavigation = { id: int, revision: int, loadVersion: int, destination: str }
 type CurrentObservation = {
   deviceVersion: int, browserRevision: int, taskVersion: int,
@@ -838,7 +839,15 @@ The resulting browser is stored here. Recent-list edits leave website work
 alone; changes to the actual page or keyboard geometry interrupt it. Current
 host reports cover form/account changes and measured layout; stale reports
 cannot rewrite a newer page. A background load can complete without disturbing
-the selected page. A selected-page change invalidates prior observations.
+the selected page. The host's report of a load says where the load ended and
+whether its connection was secure, and the tab records both: a page that a
+website sent on while it loaded, such as from its bare name to `www`, is
+named by where it really is, and the padlock follows the connection
+([browser](./browser.md)). A report that names no address is refused, and a
+private sign-in tab's report must name the tab's own address. When the
+person answers Stay to a leave-page warning that her own navigation raised,
+the host reports that load as stayed, and the tab returns to the page she
+stayed on. A selected-page change invalidates prior observations.
 An address keyboard hides the visible Grace window using its existing website
 keyboard presentation. Dismissal, navigation, Talk, Type and Show chat synchronize
 that presentation with the actual address focus without opening hidden Grace.
@@ -869,14 +878,24 @@ pure def changePage(w: Workspace, browserInput: BC::BrowserInput, by: WorkspaceA
     else updated.assistant
   { ...updated, assistant: assistant }
 pure def canReceiveLoad(w: Workspace, loadReport: LoadReport, by: WorkspaceActor): bool =
-  by == Host and B::canFinishLoad(w.browser, loadReport.id, loadReport.version, loadReport.result)
+  by == Host and B::canFinishPageLoad(w.browser, loadReport.id, loadReport.version, loadReport.result, loadReport.endedAt)
 pure def receiveLoad(w: Workspace, loadReport: LoadReport, by: WorkspaceActor): Workspace =
-  val browser = B::finishLoad(w.browser, loadReport.id, loadReport.version, loadReport.result)
-  if (loadReport.id == w.browser.selected and
+  val browser = B::finishPageLoad(w.browser, loadReport.id, loadReport.version, loadReport.result,
+    loadReport.secure, loadReport.endedAt)
+  val received = if (loadReport.id == w.browser.selected and
       ((loadReport.result != B::Loaded and A::unfinished(w.assistant)) or
        w.execution.phase == X::Observed or w.execution.phase == X::Queued or w.execution.phase == X::InFlight))
     interrupted(w.device, browser, w)
   else { ...w, browser: browser }
+  { ...received, plan: followedLink(w, loadReport) }
+pure def lawATabIsWhereItsLoadEnded(w: Workspace, loadReport: LoadReport, by: WorkspaceActor): bool =
+  B::alwaysTabsAreWellFormed(w.browser) and canReceiveLoad(w, loadReport, by) implies
+    B::tabUrl(B::tabById(receiveLoad(w, loadReport, by).browser, loadReport.id)) == loadReport.endedAt
+pure def canStayOnPage(w: Workspace, stayed: StayedLoad, by: WorkspaceActor): bool =
+  by == Host and B::canStayOnPage(w.browser, stayed.id, stayed.version)
+pure def stayOnPage(w: Workspace, stayed: StayedLoad, by: WorkspaceActor): Workspace =
+  val browser = B::stayOnPage(w.browser, stayed.id, stayed.version)
+  if (stayed.id == w.browser.selected) interrupted(w.device, browser, w) else { ...w, browser: browser }
 ```
 
 ### Correlated website progress is observed without asking the person to resume
@@ -912,7 +931,7 @@ pure def receiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceAc
 pure def canUnexpectedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
   by == Host and w.device.readiness == S::Ready and w.device.surface == S::Browser and
   unexpected.id == w.browser.selected and unexpected.revision == w.browser.revision and
-  B::canNavigate(w.browser, unexpected.destination)
+  B::canTabMoved(w.browser, unexpected.id, unexpected.destination)
 pure def unexpectedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): Workspace =
   interrupted(w.device, B::pageMoved(w.browser, unexpected.destination), w)
 pure def lawLateNavigationCannotReplaceCurrentTab(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
@@ -1295,7 +1314,10 @@ With permission and an active compact Browser step, the person can ask
 Grace to highlight a link on the loaded page. The host binds the
 highlighted destination to this step and its current page context. A
 highlight does not record a read or navigate the page. Visiting a
-different destination does not finish the pointed step. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. Grace asks its Cloud decision service under the signed-in Grace account. For a statement read it asks the service to prefer a page that shows the bill, statement or account activity, and to avoid a link that only starts a payment. The service receives the reviewed goal and bounded visible labels with temporary candidate identifiers. A signed-out session cannot ask for a choice. A choice can guide only while that account, task and document are current. The highlight uses an observation of that document taken after the choice, and one more if the page moved in between, so a clock the page counts by itself does not stop it. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
+different destination does not finish the pointed step. A highlighted link
+whose page sends her on while it loads, such as from "Sign in" to the
+website's sign-in address, is followed where that load ends: the step's
+destination moves with the load that started at it. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. Grace asks its Cloud decision service under the signed-in Grace account. For a statement read it asks the service to prefer a page that shows the bill, statement or account activity, and to avoid a link that only starts a payment. The service receives the reviewed goal and bounded visible labels with temporary candidate identifiers. A signed-out session cannot ask for a choice. A choice can guide only while that account, task and document are current. The highlight uses an observation of that document taken after the choice, and one more if the page moved in between, so a clock the page counts by itself does not stop it. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
 
 When the person permits observation and a secure site is loaded, the chat planner can see that the current tab already has a website open and the public hostname. The browser keeps the full address and document contents local when reporting that context.
 
@@ -1344,6 +1366,16 @@ pure def canSetGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): b
   ((w.plan.nameOverride.stepIndex == link.stepIndex and w.plan.nameOverride.label != "") implies link.url == w.plan.linkUrl)
 pure def setGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, linkStep: link.stepIndex, linkUrl: link.url, nameCorrection: NoGuidedNameCorrection } }
+pure def followedLink(w: Workspace, loadReport: LoadReport): GuidedPlan =
+  if (w.plan.linkStep == w.plan.receipts.length() and w.plan.linkUrl != "" and loadReport.id == w.browser.selected and
+      B::tabUrl(B::tabById(w.browser, loadReport.id)) == w.plan.linkUrl)
+    { ...w.plan, linkUrl: loadReport.endedAt }
+  else w.plan
+pure def lawAHighlightedLinkFollowsItsLoad(w: Workspace, loadReport: LoadReport, by: WorkspaceActor): bool =
+  (B::alwaysTabsAreWellFormed(w.browser) and canReceiveLoad(w, loadReport, by) and loadReport.id == w.browser.selected and
+   w.plan.linkStep == w.plan.receipts.length() and w.plan.linkUrl != "" and
+   B::tabUrl(B::activeTab(w.browser)) == w.plan.linkUrl) implies
+    receiveLoad(w, loadReport, by).plan.linkUrl == B::tabUrl(B::activeTab(receiveLoad(w, loadReport, by).browser))
 pure def guidedLinkObserved(w: Workspace): bool =
   (w.plan.linkStep == w.plan.receipts.length() and w.plan.linkUrl != "") implies
     (w.device.surface == S::Browser and B::activeTab(w.browser).load == B::Loaded and
@@ -1949,9 +1981,13 @@ pure val unexpectedValues = Set(
   { id: 1, revision: 2, loadVersion: 1, destination: "https://utility.example/updated" },
   { id: 2, revision: 2, loadVersion: 0, destination: "https://credit.example" },
   { id: 1, revision: 0, loadVersion: 0, destination: "https://utility.example/updated" })
+pure val stayedValues = Set({ id: 1, version: 1 }, { id: 1, version: 2 }, { id: 2, version: 1 })
 pure val loadReportValues = Set(
-  { id: 1, version: 1, result: B::Loaded }, { id: 1, version: 1, result: B::LoadFailed },
-  { id: 1, version: 2, result: B::Loaded }, { id: 1, version: 3, result: B::Loaded })
+  { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
+  { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: B::redirectedTo },
+  { id: 1, version: 1, result: B::LoadFailed, secure: true, endedAt: "https://utility.example" },
+  { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
+  { id: 1, version: 3, result: B::Loaded, secure: false, endedAt: "https://utility.example" })
 pure val observed: CurrentObservation = {
   deviceVersion: 7, browserRevision: 3, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
 }

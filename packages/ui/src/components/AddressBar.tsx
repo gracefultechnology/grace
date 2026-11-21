@@ -18,11 +18,13 @@ export type AddressBarProps = Omit<
   notice?: string;
   /** The accessible name of the field. */
   label?: string;
+  /** The page shown loaded over a secure connection: the padlock goes before the address. */
+  secure?: boolean;
 };
 
 /**
- * The browser's address capsule, with a lock before the address. Empty, it shows its placeholder; a `notice`
- * under it explains a Go that could not go.
+ * The browser's address capsule, with a padlock before the address of a page that loaded securely. Empty, it shows
+ * its placeholder; a `notice` under it explains a Go that could not go.
  * @model spec/app/browser.md
  * @design packages/design-system/design.md#guidance
  */
@@ -33,6 +35,7 @@ export function AddressBar({
   guided = false,
   notice,
   label = "Address",
+  secure = false,
   placeholder = "Search or type a website",
   disabled,
   className,
@@ -47,21 +50,24 @@ export function AddressBar({
         className,
       )}
     >
-      <svg
-        aria-hidden
-        width={22}
-        height={22}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="shrink-0 text-chrome-muted"
-      >
-        <rect x={5} y={11} width={14} height={10} rx={2} />
-        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-      </svg>
+      {secure && (
+        <svg
+          role="img"
+          aria-label="Secure connection"
+          width={22}
+          height={22}
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="shrink-0 text-chrome-muted"
+        >
+          <rect x={5} y={11} width={14} height={10} rx={2} />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </svg>
+      )}
       <span className="relative flex min-w-0 flex-1 text-lead font-normal">
         <input
           type="text"

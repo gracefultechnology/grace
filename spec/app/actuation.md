@@ -93,7 +93,8 @@ pure def observedSample(starting: WS::Workspace): WS::Workspace = {
   val allowed = WS::setBrowserObservation(opened, { allowed: true, deviceVersion: opened.device.contextVersion, browserRevision: opened.browser.revision }, WS::Person)
   val compact = WS::interact(allowed, I::Resize({ expanded: false }), WS::Person)
   val task = WS::begin(compact, { owner: "owner", task: "task", goal: "Read the account", origin: CM::exampleKey.origin }, WS::Person)
-  val page = WS::receiveLoad(task, { id: task.browser.selected, version: B::activeTab(task.browser).loadVersion, result: B::Loaded }, WS::Host)
+  val page = WS::receiveLoad(task, { id: task.browser.selected, version: B::activeTab(task.browser).loadVersion, result: B::Loaded,
+    secure: true, endedAt: B::tabUrl(B::activeTab(task.browser)) }, WS::Host)
   WS::observe(page, { deviceVersion: page.device.contextVersion, browserRevision: page.browser.revision, taskVersion: page.assistant.workVersion,
     website: { ...X::goodObservation, generation: page.execution.generation }, checkpoint: "Read the current account" }, WS::Host)
 }

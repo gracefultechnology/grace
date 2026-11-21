@@ -143,7 +143,8 @@ pure val wValues = {
   val begun = W::begin(compact,
     { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, W::Person)
   val loaded = W::receiveLoad(begun, { id: begun.browser.selected,
-    version: B::tabById(begun.browser, begun.browser.selected).loadVersion, result: B::Loaded }, W::Host)
+    version: B::tabById(begun.browser, begun.browser.selected).loadVersion, result: B::Loaded,
+    secure: true, endedAt: B::tabUrl(B::tabById(begun.browser, begun.browser.selected)) }, W::Host)
   val observed = W::observe(loaded, { deviceVersion: loaded.device.contextVersion,
     browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
     website: X::goodObservation, checkpoint: "Read the current account" }, W::Host)

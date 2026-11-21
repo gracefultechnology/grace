@@ -26,12 +26,15 @@ and open page-panel state belong to the tab rather than to its position in
 the tab strip. `capacity` is supplied from measured readable tab width, never
 used to cap the number of tabs. `secure` records whether the tab's last load
 ended on a connection the adapter reported secure; a fresh tab's is not.
+`left` keeps the history, entry and padlock the tab had when its current load
+began, which Stay on a leave-page warning returns it to.
 
 ```quint
 type Load = Blank | Loading | Loaded | LoadFailed | SecurityBlocked
+type LeftPage = { history: List[str], cursor: int, secure: bool }
 type Tab = {
   id: int, history: List[str], cursor: int, scroll: int,
-  pagePanel: str, load: Load, recency: int, loadVersion: int, zoomPercent: int, secure: bool, manualSignIn: bool
+  pagePanel: str, load: Load, recency: int, loadVersion: int, zoomPercent: int, secure: bool, left: LeftPage, manualSignIn: bool
 }
 type Browser = {
   tabs: List[Tab], selected: int, serial: int, nextId: int,
@@ -41,8 +44,10 @@ type Browser = {
 }
 pure def blankTab(id: int, recency: int): Tab = {
   id: id, history: List(""), cursor: 0, scroll: 0,
-  pagePanel: "", load: Blank, recency: recency, loadVersion: 0, zoomPercent: 100, secure: false, manualSignIn: false
+  pagePanel: "", load: Blank, recency: recency, loadVersion: 0, zoomPercent: 100, secure: false,
+  left: { history: List(""), cursor: 0, secure: false }, manualSignIn: false
 }
+pure def leftOf(t: Tab): LeftPage = { history: t.history, cursor: t.cursor, secure: t.secure }
 pure val initial: Browser = {
   tabs: List(blankTab(1, 0)), selected: 1, serial: 0, nextId: 2,
   capacity: 1, revision: 0, addressDraft: "", editingAddress: false,
@@ -170,9 +175,9 @@ pure def lawPrivateLoadsRefuseOtherAddresses(b: Browser, id: int, loadVersion: i
     not(canFinishPageLoad(b, id, loadVersion, result, endedAt))
 pure def lawPrivateTabsCannotOpenOrdinaryWindows(b: Browser, url: str): bool =
   activeTab(b).manualSignIn implies not(canOpenWindow(b, url))
-pure def lawPrivateVisitsStayOutOfRecent(b: Browser, id: int, loadVersion: int, result: Load): bool =
-  (canFinishLoad(b, id, loadVersion, result) and tabById(b, id).manualSignIn) implies
-    finishLoad(b, id, loadVersion, result).recent == b.recent
+pure def lawPrivateVisitsStayOutOfRecent(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: str): bool =
+  (canFinishPageLoad(b, id, loadVersion, result, endedAt) and tabById(b, id).manualSignIn) implies
+    finishPageLoad(b, id, loadVersion, result, secure, endedAt).recent == b.recent
 ~~~
 
 ## Story: Keep every tab reachable when the window changes
@@ -238,7 +243,8 @@ pure def navigated(browserTab: Tab, url: str, loadVersion: int): Tab = {
   ...browserTab,
   history: browserTab.history.foldl(List(), (kept, visit) =>
     if (kept.length() <= browserTab.cursor) kept.append(visit) else kept).append(url),
-  cursor: browserTab.cursor + 1, scroll: 0, pagePanel: "", load: Loading, loadVersion: loadVersion, secure: false
+  cursor: browserTab.cursor + 1, scroll: 0, pagePanel: "", load: Loading, loadVersion: loadVersion, secure: false,
+  left: leftOf(browserTab)
 }
 pure def canNavigate(b: Browser, url: str): bool = url != ""
 pure def navigate(b: Browser, url: str): Browser =
@@ -285,16 +291,21 @@ pure val typedValues = Set(WebAddress({ url: "https://utility.example" }), WebAd
 
 ### A page that moves by itself keeps the address the person is typing
 
-When the selected tab's page goes to another address by itself, such as a
-website's redirect or a link it follows on its own, the tab records it as a
-navigation: its history, load and revision change as they do for Go. The
+When the selected tab's page goes to another address by itself once its
+load has ended, such as a link it follows on its own or a website sending it
+on after it loaded, the tab records it as a navigation: its history, load
+and revision change as they do for Go. While the tab's own load is under
+way, a move is part of that load, even one the page makes after it starts:
+the load reports where it ended and the entry it started records it (a load
+that ends at another address, below), so no entry is added and Back still
+returns to the page before. The
 person's address edit is left as it was: an address being typed stays open
 with its draft and any empty-address notice, so the person's typing is never
 thrown away, and the address bar keeps editing until the person submits it
 or dismisses it.
 
 ```quint
-pure def canPageMoved(b: Browser, url: str): bool = canNavigate(b, url)
+pure def canPageMoved(b: Browser, url: str): bool = canNavigate(b, url) and activeTab(b).load != Loading
 pure def pageMoved(b: Browser, url: str): Browser = {
   ...navigate(b, url),
   editingAddress: b.editingAddress, addressDraft: b.addressDraft, emptyAddressNotice: b.emptyAddressNotice
@@ -314,14 +325,14 @@ moving by itself does, so every tab says where its page really is. A
 selected tab's page records it exactly as above. Any other tab's page is
 already there: it keeps its load and load version, and the browser's
 revision, the selected tab and the person's address edit stay as they were.
-Such a tab records a move only once its own load has ended: while it is
-loading, the move is refused and the load under way reports its result with
-the address it ended at, which the entry it started then records (a load
-that ends at another address, below).
+Every tab, selected or not, records a move only once its own load has ended:
+while it is loading, the move is refused and the load under way reports its
+result with the address it ended at, which the entry it started then records
+(a load that ends at another address, below).
 
 ```quint
 pure def canTabMoved(b: Browser, id: int, url: str): bool =
-  hasTab(b, id) and canPageMoved(b, url) and (id == b.selected or tabById(b, id).load != Loading)
+  hasTab(b, id) and canNavigate(b, url) and tabById(b, id).load != Loading
 pure def tabMoved(b: Browser, id: int, url: str): Browser =
   if (id == b.selected) pageMoved(b, url) else {
     ...b, tabs: b.tabs.listMap(t => if (t.id == id) { ...navigated(t, url, t.loadVersion), load: t.load } else t)
@@ -331,7 +342,7 @@ pure def lawABackgroundTabMovingKeepsTheSelectedPage(b: Browser, id: int, url: s
     (activeTab(tabMoved(b, id, url)) == activeTab(b) and tabMoved(b, id, url).revision == b.revision and
      tabMoved(b, id, url).selected == b.selected)
 pure def lawNoLoadFinishesOnABackgroundTabsMove(b: Browser, id: int, url: str, loadVersion: int, result: Load): bool =
-  canTabMoved(b, id, url) and id != b.selected implies not(canFinishLoad(tabMoved(b, id, url), id, loadVersion, result))
+  canTabMoved(b, id, url) and id != b.selected implies not(loadIsCurrent(tabMoved(b, id, url), id, loadVersion, result))
 ```
 
 ### Back and Forward stay within the selected tab's history
@@ -347,7 +358,7 @@ pure def moveInHistory(offset: int, b: Browser): Browser = {
   ...b, tabs: b.tabs.listMap(t => if (t.id == b.selected)
     { ...t, cursor: t.cursor + offset, scroll: 0, pagePanel: "",
       load: if (t.history.nthOr(t.cursor + offset, "") == "") Blank else Loading,
-      loadVersion: b.revision + 1, secure: false } else t),
+      loadVersion: b.revision + 1, secure: false, left: leftOf(t) } else t),
   revision: b.revision + 1, editingAddress: false
 }
 pure def canGoBack(b: Browser): bool = activeTab(b).cursor > 0
@@ -357,7 +368,7 @@ pure def goForward(b: Browser): Browser = moveInHistory(1, b)
 pure def canReload(b: Browser): bool = tabUrl(activeTab(b)) != ""
 pure def reload(b: Browser): Browser = {
   ...b, tabs: b.tabs.listMap(t => if (t.id == b.selected)
-    { ...t, load: Loading, loadVersion: b.revision + 1, secure: false } else t),
+    { ...t, load: Loading, loadVersion: b.revision + 1, secure: false, left: leftOf(t) } else t),
   revision: b.revision + 1
 }
 ```
@@ -371,12 +382,8 @@ distinct result and does not authorize a bypass. Recent websites are recorded
 only for an actually loaded nonempty destination. The adapter reports with
 each result whether the connection was secure, and the address the load
 ended at (`endedAt`, next rule); only a page that loaded keeps the
-connection's security. `finishLoad` is the same report from a host that says
-neither: it keeps the address the load started at and counts the page as not
-secure, so a page finished that way never shows the padlock and never
-records where it ended. Only `finishPageLoad` carries the adapter's whole
-report, so the padlock and a followed redirect reach the person only where
-the [workspace](./workspace.md) finishes its loads with it. A website that asks for a user name
+connection's security. The [workspace](./workspace.md) finishes every load
+with this whole report (`finishPageLoad`). A website that asks for a user name
 and password in the browser's own sign-in box (HTTP authentication) is not
 supported: the box is cancelled and the website's own refusal page loads as
 any page does.
@@ -386,13 +393,11 @@ pure def tabById(b: Browser, id: int): Tab = {
   val matches = b.tabs.select(t => t.id == id)
   matches.nthOr(matches.length() - 1, blankTab(0, 0))
 }
-pure def canFinishLoad(b: Browser, id: int, loadVersion: int, result: Load): bool =
+pure def loadIsCurrent(b: Browser, id: int, loadVersion: int, result: Load): bool =
   hasTab(b, id) and loadVersion == tabById(b, id).loadVersion and tabById(b, id).load == Loading
   and (result == Loaded or result == LoadFailed or result == SecurityBlocked)
-pure def finishLoad(b: Browser, id: int, loadVersion: int, result: Load): Browser =
-  finishPageLoad(b, id, loadVersion, result, false, "")
 pure def canFinishPageLoad(b: Browser, id: int, loadVersion: int, result: Load, endedAt: str): bool =
-  canFinishLoad(b, id, loadVersion, result) and endedAt != "" and
+  loadIsCurrent(b, id, loadVersion, result) and endedAt != "" and
   (not(tabById(b, id).manualSignIn) or endedAt == tabUrl(tabById(b, id)))
 pure def finishPageLoad(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: str): Browser = {
   val tab = tabById(b, id)
@@ -420,7 +425,8 @@ A website often sends a page on while it loads, such as from its bare name
 to `www` or to its sign-in page, and the person can tap a link before a load
 has finished. The adapter reports the address the page is at when its load
 ends, and the tab records it in the same history entry the load started
-(an empty address is a report that names none, which changes no entry):
+(a report always names where its load ended: a host that cannot tell
+reports the tab's own address, and a report naming none is refused):
 the address bar, the tab's label and the recent websites then name where the
 page is, no history entry is added, and Back still returns to the page
 before. A tab's other entries are kept as they were.
@@ -450,14 +456,19 @@ pure val endedAtValues = Set("", redirectedTo)
 
 ### A load that never starts or never ends becomes the failure view with Reload
 
-A load can fail to end: the person answers Stay on a website's leave-page
-warning, so the surface drops the navigation and no page starts; the page's
-surface cannot be created; or the website never finishes. The host then
-reports the load as failed once `loadWaitSeconds` have passed since it
-started without its end, as it reports any failed load, so nothing spins for
-ever: the tab shows "This page didn't open." with Reload, which loads its
-address again. There is no Stop: Reload, another address, Back and closing
-the tab are the ways on.
+A load can fail to end: the page's surface cannot be created, the website
+never answers, or it never finishes. The host then reports the load as
+failed once `loadWaitSeconds` have passed since it started without its end,
+as it reports any failed load, so nothing spins for ever: the tab shows
+"This page didn't open." with Reload. The wait counts only while the page is
+free to load: while it holds a website message for the person, the page is
+paused, so the wait starts again from the beginning once she has answered.
+When the wait ends, the host stops the load, so nothing goes on loading under
+the failure view. Reload then opens the tab's address again, even when the
+page never reached it, and Back and Forward go from the page actually shown.
+There is no Stop: Reload, another address, Back and closing the tab are the
+ways on. Stay on a leave-page warning is not a load that fails to end (next
+rule).
 
 ```quint
 pure val loadWaitSeconds: int = 30
@@ -468,24 +479,61 @@ pure def lawAFailedLoadOffersReload(b: Browser, loadVersion: int, endedAt: str):
 pure def sometimesAHungLoadOffersReload(b: Browser): bool = activeTab(b).load == LoadFailed and canReload(b)
 ```
 
+### Stay on a leave-page warning keeps the page she was on
+
+A website can ask before its page is left. When the person answers Stay to
+that warning raised by her own navigation, Back, Forward or reload, the
+surface drops the navigation: the page she was on stays, and no page start
+follows. The host reports this at once, and the tab returns to the history,
+entry and padlock it had when that load began, loaded, so she keeps using
+the page, such as a half-filled form, and Back, Forward and Reload act on
+it. A warning raised by the website's own navigation, before anything moved
+the tab, leaves the tab as it was.
+
+```quint
+pure def canStayOnPage(b: Browser, id: int, loadVersion: int): bool =
+  hasTab(b, id) and tabById(b, id).load == Loading and tabById(b, id).loadVersion == loadVersion and
+  tabById(b, id).left.cursor >= 0 and tabById(b, id).left.cursor < tabById(b, id).left.history.length() and
+  tabById(b, id).left.history.nthOr(tabById(b, id).left.cursor, "") != ""
+pure def stayOnPage(b: Browser, id: int, loadVersion: int): Browser = {
+  ...b, tabs: b.tabs.listMap(t => if (t.id == id)
+    { ...t, history: t.left.history, cursor: t.left.cursor, load: Loaded, secure: t.left.secure } else t),
+  revision: if (id == b.selected) b.revision + 1 else b.revision
+}
+pure def lawStayingKeepsThePageSheWasOn(b: Browser, id: int, loadVersion: int): bool =
+  canStayOnPage(b, id, loadVersion) implies
+    (tabUrl(tabById(stayOnPage(b, id, loadVersion), id)) == tabById(b, id).left.history.nthOr(tabById(b, id).left.cursor, "") and
+     tabById(stayOnPage(b, id, loadVersion), id).load == Loaded and
+     tabById(stayOnPage(b, id, loadVersion), id).secure == tabById(b, id).left.secure)
+```
+
 ### The padlock shows only on a page that loaded over a secure connection
 
 The address bar shows the padlock for the selected tab only once its load
 ended Loaded and the adapter reported the connection secure. A blank tab, a
 page still loading, one that failed and one blocked for security never show
 it, and every new load, Back, Forward and reload takes it away until that
-load ends. An `http://` address, typed or followed from a page, opens as any
+load ends. While the person types an address the bar shows her draft, not
+the page's address, so the padlock is hidden until she submits or dismisses
+it. The private sign-in bar keeps her draft to itself, out of the browser's
+record (a private sign-in tab, above), so it says whether she is typing
+there (`typingPrivately`), and the padlock hides the same way. An `http://` address, typed or followed from a page, opens as any
 other: the adapter reports its connection as not secure, so the page loads
-without the padlock. Decision: the prototype draws the padlock in every address bar,
+without the padlock. On the tablet the surface refuses every certificate
+error and all mixed content, so the adapter reports a page that loaded at an
+`https://` address as secure. Decision: the prototype draws the padlock in every address bar,
 even on an empty new tab (`prototype/Grace Prototype.html`, line 829); that is
 a drawing shortcut, not product behavior, since an origin is never itself
 proof that a website is safe.
 
 ```quint
-pure def showsSecureIndicator(b: Browser): bool = activeTab(b).load == Loaded and activeTab(b).secure
+pure def showsSecureIndicator(b: Browser, typingPrivately: bool): bool =
+  not(b.editingAddress or (typingPrivately and activeTab(b).manualSignIn)) and activeTab(b).load == Loaded and activeTab(b).secure
 pure def alwaysOnlyALoadedPageIsSecure(b: Browser): bool = b.tabs.every(t => t.secure implies t.load == Loaded)
-pure def sometimesASecurePageShowsThePadlock(b: Browser): bool = showsSecureIndicator(b)
-pure def sometimesALoadedPageIsNotSecure(b: Browser): bool = activeTab(b).load == Loaded and not(showsSecureIndicator(b))
+pure def sometimesASecurePageShowsThePadlock(b: Browser): bool = showsSecureIndicator(b, false)
+pure def sometimesALoadedPageIsNotSecure(b: Browser): bool = activeTab(b).load == Loaded and not(activeTab(b).secure)
+pure def sometimesTypingHidesThePadlock(b: Browser): bool =
+  b.editingAddress and activeTab(b).load == Loaded and activeTab(b).secure
 ```
 
 ## Story: Adjust the page without stale assistance
