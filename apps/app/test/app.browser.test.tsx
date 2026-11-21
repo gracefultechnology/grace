@@ -785,9 +785,11 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   });
   expect(native.calls("createSurface")[1]).not.toHaveProperty("profileKey");
   await native.route();
-  await native.report("tab-2", "https://utility.example", 100);
+  await native.report("tab-2", "https://utility.example", 100, { pageError: null, securityBlocked: false });
   const address = page.getByRole("textbox", { name: "Private website address" });
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
   await enter(address, "https://utility.example/enter/sample?ref=one-time");
+  await expect.element(address).toHaveAccessibleDescription("");
   await act(() => userEvent.keyboard("{Enter}"));
   await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
     url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
