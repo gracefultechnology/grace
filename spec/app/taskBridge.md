@@ -125,21 +125,24 @@ that workspace holds. Other examples retain those transfers while their
 preparation pauses, or with a payload field or captured token that is stale. The examples are simulation inputs and do not restrict runtime values.
 
 ```quint
-pure val preparationValues = {
+pure val sampleChosenPreparation = {
   val begun = P::begin(P::initial, CM::exampleKey, "source", T::Person)
   val signed = P::inspectAccess(begun, { key: CM::exampleKey, version: 1, access: P::SignedIn }, T::Host)
   val facts = P::readFacts(signed, { key: CM::exampleKey, version: 2, evidence: "source", facts: K::sampleBillFacts }, T::Host)
-  val chosen = P::choose(P::confirmFacts(facts, T::Person), CM::exampleTerms, T::Person)
+  P::choose(P::confirmFacts(facts, T::Person), CM::exampleTerms, T::Person)
+}
+pure val preparationValues = {
+  val chosen = sampleChosenPreparation
+  val yes = P::decideFill(chosen, P::GraceFills, chosen.version, T::Person)
+  val no = P::decideFill(yes, P::PersonFills, yes.version, T::Person)
   val verified = P::verifyForm(chosen, { ...CM::exampleReview, revision: 4 }, T::Host)
   val handed = P::handOff(verified, T::Actuator).state
   val paused = P::pause(handed, T::Person)
   Set(P::initial, chosen, verified, handed, paused, P::resume(paused, T::Person))
-    .union(Set(P::decideFill(chosen, P::GraceFills, T::Person)))
-    .union(Set(P::decideFill(chosen, P::PersonFills, T::Person)))
-    .union(Set(P::pause(P::decideFill(chosen, P::GraceFills, T::Person), T::Host)))
-    .union(Set(P::retire(handed, T::Host)))
+    .union(Set(yes, no, P::decideFill(no, P::GraceFills, no.version, T::Person)))
+    .union(Set(P::pause(yes, T::Host), P::retire(handed, handed.version, T::Host)))
 }
-pure val wValues = {
+pure val sampleLoadedTask = {
   val started = W::changeLifecycle(W::initial, W::StartupSucceeded, W::Host)
   val opened = W::openGrace(W::visit(started, S::Browser, W::Person), W::Person)
   val allowed = W::setBrowserObservation(opened, { allowed: true,
@@ -149,9 +152,12 @@ pure val wValues = {
   val compact = W::interact(available, I::Resize({ expanded: false }), W::Person)
   val begun = W::begin(compact,
     { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, W::Person)
-  val loaded = W::receiveLoad(begun, { id: begun.browser.selected,
+  W::receiveLoad(begun, { id: begun.browser.selected,
     version: B::tabById(begun.browser, begun.browser.selected).loadVersion, result: B::Loaded,
     secure: false, endedAt: "https://utility.example" }, W::Host)
+}
+pure val wValues = {
+  val loaded = sampleLoadedTask
   val observed = W::observe(loaded, { deviceVersion: loaded.device.contextVersion,
     browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
     website: X::goodObservation, checkpoint: "Read the current account" }, W::Host)
@@ -194,40 +200,123 @@ pure val byValues = Set(W::Host, W::Person, W::Store, W::Actuator)
 
 ### A fill of a task's form needs the person's yes to the fill offer for the task being prepared
 
-The actuator checks this gate beside the [current command check](./actuation.md)
-before Grace's fill reaches the page. While a task is being prepared, Grace's
-fill of a form is permitted only while the form is being prepared, the
-preparation is live, the person answered "Yes, fill it in" to the fill offer,
-and the fill is for the task's own owner and website. After "No, I'll do it",
-before any answer, once the form has been checked or handed off, and while the
-task is paused, no fill of the task's form goes through. A fill outside any
-task, with no preparation begun or after the task has ended, is an ordinary
-website command, which the current command check alone decides. Other kinds of
-website command are not fills and this gate leaves them alone.
+When the host queues a website command it keeps the complete emitted Workspace
+effect, the current preparation version and where the write came from. A fill
+issued outside a task keeps that origin. A task fill carries the identity of
+the assistant task that owns this preparation, the full verified provider
+subject (including account and bill or appointment reference), and the typed
+values for that form. The host captures this once from the owning task and
+page. It must not assign a new origin or version when it claims the entry.
+
+At the page, the actuator must still have the [current Workspace command](./actuation.md).
+For a task fill it independently resolves that command's target and value
+reference on the current verified form. The read names the exact command,
+provider subject and typed values the actuator would write. A field written
+individually must resolve to the corresponding field and value of that form
+fill. A missing or ambiguous mapping, account, or subject cannot produce a
+verified read. The actuator checks the result immediately before writing,
+without an intervening navigation, account change or edit.
+
+Only a live preparation with the person's current “Yes, fill it in” can supply
+those exact values. A changed answer, choice, pause, retirement or replacement
+withdraws the old write even if the person later chooses the same values.
+An ordinary fill may proceed outside a task only at the version where it was
+queued. Other commands keep their existing Workspace checks. This rule defines
+the actuator's contract; the host supplies and verifies the page evidence.
 
 ```quint
-pure def fillPermitted(preparation: P::Prep, operation: X::WebsiteEffect): bool = match operation {
-  | Operate(details) => details.kind != X::FillOrdinary or preparation.phase == P::NoTask or
-      (preparation.phase == P::Preparing and preparation.live and preparation.fillBy == P::GraceFills and
-       details.owner == preparation.key.owner and details.origin == preparation.key.origin)
+import actuation as AC from "./actuation"
+
+type FillSource = OutsidePreparation | TaskForm({ task: str, key: T::Subject, fill: K::Fill })
+type QueuedWebsiteCommand = { command: W::WorkspaceEffect, prepVersion: int, source: FillSource }
+type FormRead = NoTaskForm | VerifiedForm({ command: W::WorkspaceEffect, key: T::Subject, fill: K::Fill })
+
+pure def captureWebsiteCommand(preparation: P::Prep, command: W::WorkspaceEffect, preparedTask: str): QueuedWebsiteCommand =
+  { command: command, prepVersion: preparation.version,
+    source: if (preparation.phase == P::NoTask) OutsidePreparation
+      else TaskForm({ task: preparedTask, key: preparation.key, fill: K::fillOf(preparation.choice) }) }
+
+pure def formFillCommand(command: W::WorkspaceEffect): bool = match command {
+  | Execute(details) => {
+    val operation = details.effect
+    match operation { | Operate(action) => action.kind == X::FillOrdinary }
+  }
+  | _ => false
 }
-pure def lawNoFillWithoutTheirYes(preparation: P::Prep, operation: X::WebsiteEffect): bool = match operation {
-  | Operate(details) => (details.kind == X::FillOrdinary and preparation.phase != P::NoTask and
-      preparation.fillBy != P::GraceFills) implies not(fillPermitted(preparation, operation))
+pure def fillPermitted(
+  preparation: P::Prep, fillWorkspace: W::Workspace, queued: QueuedWebsiteCommand, read: FormRead, by: W::WorkspaceActor
+): bool = {
+  val source = queued.source
+  AC::currentEffect(fillWorkspace, queued.command, by) and
+    (not(formFillCommand(queued.command)) or (
+      queued.prepVersion == preparation.version and match source {
+        | OutsidePreparation => preparation.phase == P::NoTask and read == NoTaskForm
+        | TaskForm(taskForm) => match read {
+          | NoTaskForm => false
+          | VerifiedForm(verified) => verified.command == queued.command and verified.key == taskForm.key and
+              taskForm.key == preparation.key and taskForm.task == fillWorkspace.execution.task and
+              taskForm.key.owner == fillWorkspace.execution.owner and taskForm.key.origin == fillWorkspace.execution.origin and
+              taskForm.key.account == fillWorkspace.execution.matchedAccount and verified.fill == taskForm.fill and
+              P::graceMayFill(preparation, verified.fill)
+        }
+      }))
 }
-pure def lawPausedOrCheckedFormIsNotFilled(preparation: P::Prep, operation: X::WebsiteEffect): bool = match operation {
-  | Operate(details) => (details.kind == X::FillOrdinary and preparation.phase != P::NoTask and
-      (not(preparation.live) or preparation.phase != P::Preparing)) implies not(fillPermitted(preparation, operation))
+pure def lawNoFillWithoutTheirYes(
+  preparation: P::Prep, fillWorkspace: W::Workspace, queued: QueuedWebsiteCommand, read: FormRead
+): bool =
+  (formFillCommand(queued.command) and (preparation.phase != P::NoTask or queued.source != OutsidePreparation) and
+    preparation.fillBy != P::GraceFills)
+    implies not(fillPermitted(preparation, fillWorkspace, queued, read, W::Actuator))
+pure def lawPausedOrCheckedFormIsNotFilled(
+  preparation: P::Prep, fillWorkspace: W::Workspace, queued: QueuedWebsiteCommand, read: FormRead
+): bool =
+  (formFillCommand(queued.command) and (preparation.phase != P::NoTask or queued.source != OutsidePreparation) and
+    (not(preparation.live) or preparation.phase != P::Preparing))
+    implies not(fillPermitted(preparation, fillWorkspace, queued, read, W::Actuator))
+pure def lawAnOldFillCannotGainFreshConsent(
+  preparation: P::Prep, fillWorkspace: W::Workspace, queued: QueuedWebsiteCommand, read: FormRead
+): bool =
+  (formFillCommand(queued.command) and queued.prepVersion != preparation.version)
+    implies not(fillPermitted(preparation, fillWorkspace, queued, read, W::Actuator))
+pure def lawATaskFillUsesItsOwnVerifiedForm(
+  preparation: P::Prep, fillWorkspace: W::Workspace, queued: QueuedWebsiteCommand, read: FormRead
+): bool = {
+  val source = queued.source
+  (formFillCommand(queued.command) and fillPermitted(preparation, fillWorkspace, queued, read, W::Actuator))
+    implies match source {
+      | OutsidePreparation => preparation.phase == P::NoTask and read == NoTaskForm
+      | TaskForm(taskForm) => taskForm.key == preparation.key and taskForm.task == fillWorkspace.assistant.taskId and
+          taskForm.key.account == fillWorkspace.execution.matchedAccount and
+          read == VerifiedForm({ command: queued.command, key: taskForm.key, fill: taskForm.fill }) and
+          P::graceMayFill(preparation, taskForm.fill)
+    }
 }
-pure val operationValues = Set(
-  X::Operate({ owner: CM::exampleKey.owner, task: "task", origin: CM::exampleKey.origin, generation: 1, observation: 1,
-    target: "control", valueRef: "value", kind: X::FillOrdinary }),
-  X::Operate({ owner: CM::exampleKey.owner, task: "task", origin: "https://credit.example", generation: 1, observation: 1,
-    target: "control", valueRef: "value", kind: X::FillOrdinary }),
-  X::Operate({ owner: "other-owner", task: "task", origin: CM::exampleKey.origin, generation: 1, observation: 1,
-    target: "control", valueRef: "value", kind: X::FillOrdinary }),
-  X::Operate({ owner: CM::exampleKey.owner, task: "task", origin: CM::exampleKey.origin, generation: 1, observation: 1,
-    target: "control", valueRef: "", kind: X::Choose }))
+
+pure val sampleFieldWrite = {
+  val loaded = sampleLoadedTask
+  val observed = W::observe(loaded, { deviceVersion: loaded.device.contextVersion, browserRevision: loaded.browser.revision,
+    taskVersion: loaded.assistant.workVersion, checkpoint: "Read the payment form", website: { ...X::goodObservation,
+      generation: loaded.execution.generation, targets: List({ id: "bill-amount", consequence: X::AskFirst, inReach: true }) } }, W::Host)
+  val queued = W::prepare(observed, AC::sampleOperationRequest(observed, "bill-amount", "chosen-payment", X::FillOrdinary), W::Host)
+  W::dispatch(queued, AC::sampleOperationTokens(queued), W::Actuator)
+}
+pure val fillWorkspaceValues = Set(sampleFieldWrite.state, W::initial, AC::ordinarySample(AC::observedSample(W::initial)).state)
+pure val sampleQueuedFill = {
+  val yes = P::decideFill(sampleChosenPreparation, P::GraceFills, sampleChosenPreparation.version, T::Person)
+  captureWebsiteCommand(yes, sampleFieldWrite.out.nth(0), "task")
+}
+pure val queuedValues = Set(sampleQueuedFill,
+  captureWebsiteCommand(P::initial, sampleFieldWrite.out.nth(0), ""),
+  { ...sampleQueuedFill, source: TaskForm({ task: "other-task", key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }) },
+  { ...sampleQueuedFill, command: AC::ordinarySample(AC::observedSample(W::initial)).out.nth(0) })
+pure val readValues = {
+  val original = { command: sampleQueuedFill.command, key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }
+  Set(NoTaskForm, VerifiedForm(original),
+    VerifiedForm({ ...original, key: { ...CM::exampleKey, account: "other-account" } }),
+    VerifiedForm({ ...original, key: { ...CM::exampleKey, ref: "other-bill" } }),
+    VerifiedForm({ ...original, fill: K::fillOf(T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } })) }),
+    VerifiedForm({ ...original, command: AC::ordinarySample(AC::observedSample(W::initial)).out.nth(0) }))
+}
 ```
 
 ## Story: See where my task stands
