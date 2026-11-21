@@ -8,6 +8,7 @@ import type { SavedFile } from "../gen/app__files.effect.vibe"
 import { Library } from "./files.vibe"
 import { accountPlugin, reminderPlugin } from "./accountPlugin.ts"
 import { AccountActions, apiOrigin } from "./graceAccount.vibe"
+import { namesCode, withholdMail } from "./private.ts"
 import { type GoogleChange, type GoogleRead, googleRoute } from "./cloudRequests.vibe"
 import { webView } from "./surfacePlugin.ts"
 
@@ -40,7 +41,7 @@ const partIdField = Schema.String.check(Schema.isPattern(/^[0-9.]{1,32}$/))
 const historyField = Schema.String.check(Schema.isPattern(/^[0-9]{1,20}$/))
 const supportedMedia = Schema.Literals(["application/pdf", "text/plain", "image/png", "image/jpeg", "image/webp"])
 schema AttachmentDescriptor { partId: string; name: attachmentName; mimeType: idField; size: Schema.Int; supported: boolean }
-const MailBody = Schema.Struct({ accountId: idField, message: MailRow, historyId: Schema.NullOr(historyField),
+const MailBody = Schema.Struct({ accountId: idField, message: Schema.Struct({ ...MailRow.fields, snippet: Schema.optionalKey(Schema.String) }), historyId: Schema.NullOr(historyField),
   attachments: Schema.Array(AttachmentDescriptor), reply: Schema.optional(Schema.NullOr(MailReply)), bodyText: Schema.String, bodyTextAvailable: Schema.Boolean })
 const transferTicket = Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{2}){1,4096}$/))
 const AttachmentReceipt = Schema.Struct({ version: Schema.Literal(1), accountId: idField, messageId: idField, historyId: historyField,
@@ -108,7 +109,7 @@ type Command = (({ kind: "mailFolder"; folder: ManagedFolder; search: string } |
 
 export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | (
   { accountId: string; googleEmail: string; grant: string; id: string; version: string } &
-  ({ kind: "mail"; subject: string } | { kind: "calendar"; title: string; startAt: string })
+  ({ kind: "mail"; subjectForGrace: string } | { kind: "calendar"; title: string; startAt: string })
 )
 
 export type SurfaceOwner = "Hosted" | "Ours" | "Undecided"
@@ -587,7 +588,13 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       const selected = shown.selected
       const version = selected?.message.metadata?.historyId
       if (!selected || !version || selected.accountId !== scope.accountId) return { kind: "unavailable" }
-      return { ...ownership, kind: "mail", id: selected.message.externalId, version, subject: selected.message.subject }
+      const { message, bodyText, bodyTextAvailable } = selected
+      const subjectForGrace = Effect.try(() => {
+        const coded = !bodyTextAvailable || namesCode([message.from, message.subject, message.snippet ?? "", bodyText].join("\n"))
+        return withholdMail({ text: message.subject, passwords: [] }, coded)
+      }) catch () => undefined
+      if (subjectForGrace === undefined) return { kind: "unavailable" }
+      return { ...ownership, kind: "mail", id: message.externalId, version, subjectForGrace }
     }
     const selected = shown.selected
     if (!selected?.etag) return { kind: "unavailable" }

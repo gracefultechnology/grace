@@ -123,7 +123,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const { grant, version } = selected
       if (read === "ReadMail" && selected.kind === "mail")
         return receipt({ tag: "ManagedMail", grant, version }, identity,
-          selected.subject === "" ? "The open message has no subject." : "Open message: " + selected.subject)
+          selected.subjectForGrace === "" ? "The open message has no subject." : "Open message: " + selected.subjectForGrace)
       if (read === "ReadCalendar" && selected.kind === "calendar") {
         const time = try Effect.option(Effect.try(() => new Date(selected.startAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })))
         if (Option.isSome(time)) return receipt({ tag: "ManagedAppointment", grant, version }, identity, selected.title + " · " + time.value)

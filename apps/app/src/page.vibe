@@ -1,4 +1,4 @@
-// spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open their mail app from the current private tab"
+// spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open their mail app from the current private tab"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "Story: Keep the page still while Grace covers it"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/surface.md, "A new page waits for its first routing before it takes any touch"; spec/app/surface.md, "The page is paused while Grace's window is in the background"; spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"; spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved"; spec/app/websiteRequests.md, "Only the website I am on can ask, and my answer holds for that website and those devices until Close browser"; spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"; spec/app/surface.md, "The page fills the rect the interface measured for it"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"
 import { type PrivateHistory, type Rect, Machine as PageLayers, canReportHistory, historyFor, canDraw, canPlace, canRecreate, canRequestRouting, canSetHostVisible, canShow, noRect, pageRuns, pageShows, within } from "../gen/app__surface.effect.vibe"
 import { type HistoryDirection, canStepPrivate } from "../gen/app__deviceKeys.effect.vibe"
@@ -200,7 +200,7 @@ effect function watchPage(layer: PageLayers.Shape, onMeasured: () => void!!) {
 }
 
 effect function report(workspace: Workspaces.Shape, event: Event) {
-  workspace.send(event, "Host") catch effect (error) => match (error) {
+  return workspace.send(event, "Host") catch effect (error) => match (error) {
     when Rejected: undefined;
   }
 }
@@ -214,17 +214,18 @@ effect function resizeTabs(workspace: Workspaces.Shape, w: Workspace, stripWidth
 const goesElsewhere = (page: Page, url: string | undefined): url is string => url !== undefined && url !== "" && url !== page.url
 
 effect function moved(workspace: Workspaces.Shape, page: Page, tab: number, url: string) {
-  page.url = url
+  if (url !== "") page.url = url
   const before = try workspace.get()
   const shown = before.browser.tabs.find((t) => t.id === tab)
   const superseded = shown?.load === "Loading" && shown.loadVersion === page.own
-  if (shown !== undefined && (shown.load !== "Loading" || superseded) && url !== tabUrl(shown)) {
+  if (shown !== undefined && (shown.load !== "Loading" || (superseded && url !== "")) && url !== tabUrl(shown)) {
     const unexpected = { id: tab, revision: before.browser.revision, loadVersion: page.load ?? -1, destination: url }
-    try report(workspace, canUnexpectedPage(before, unexpected, "Host") ? { type: "unexpectedPage", unexpected } : { type: "unwatchedPage", unexpected })
-    const after = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
+    const updated = try report(workspace, canUnexpectedPage(before, unexpected, "Host") ? { type: "unexpectedPage", unexpected } : { type: "unwatchedPage", unexpected })
+    const after = updated?.state.browser.tabs.find((t) => t.id === tab)
     if (after !== undefined && after.loadVersion !== shown.loadVersion) {
       page.own = after.loadVersion
-      if (superseded) {
+      if (url === "") page.load = after.loadVersion
+      else if (superseded) {
         page.tab = after
         page.held = { from: after.cursor, to: after.cursor }
       }
@@ -238,10 +239,14 @@ effect function moved(workspace: Workspaces.Shape, page: Page, tab: number, url:
 }
 
 effect function changed(workspace: Workspaces.Shape, page: Page, tab: number, event: Extract<PageEvent, { _tag: "Changed" }>) {
-  if (goesElsewhere(page, event.url)) try moved(workspace, page, tab, event.url)
+  if (goesElsewhere(page, event.url) && (!page.tab.manualSignIn || event.url === tabUrl(page.tab))) {
+    try moved(workspace, page, tab, event.url)
+  }
   const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
-  if (now !== undefined && !event.loading && now.load === "Loading" && page.load === now.loadVersion)
-    try report(workspace, { type: "receiveLoad", loadReport: { id: tab, version: now.loadVersion, result: event.result } })
+  if (now === undefined || event.loading || now.load !== "Loading" || page.load !== now.loadVersion) return
+  const endedAt = now.manualSignIn ? tabUrl(now) : event.url || tabUrl(now)
+  const secure = event.secure && event.url === endedAt
+  try report(workspace, { type: "receiveLoad", loadReport: { id: tab, version: now.loadVersion, result: event.result, secure, endedAt } })
 }
 
 effect function step(native: NativePage.Shape, page: Page, tab: Tab, close: (tab: number) => void!!) {
@@ -429,7 +434,7 @@ effect function makePageHost(openEmail: (() => Promise<void>) | undefined) {
     if (!made) {
       if (tab.load !== "Loading") return
       unmade.set(tab.id, tab.loadVersion)
-      try report(workspace, { type: "receiveLoad", loadReport: { id: tab.id, version: tab.loadVersion, result: "LoadFailed" } })
+      try report(workspace, { type: "receiveLoad", loadReport: { id: tab.id, version: tab.loadVersion, result: "LoadFailed", secure: false, endedAt: tabUrl(tab) } })
       return
     }
     unmade.delete(tab.id)
@@ -504,7 +509,8 @@ effect function makePageHost(openEmail: (() => Promise<void>) | undefined) {
     const unasked = page.asked.length === 0
     const at = page.asked.findLastIndex((a) => a.url === url)
     page.load = page.asked.splice(0, at + 1 || 1).at(-1)?.version ?? page.load
-    if (unasked && goesElsewhere(page, url)) try moved(workspace, page, tab, url)
+    const destination = page.tab.manualSignIn || url === tabUrl(page.tab) ? "" : url ?? ""
+    if (unasked && (destination === "" || goesElsewhere(page, destination))) try moved(workspace, page, tab, destination)
     const now = (try workspace.get()).browser.tabs.find((t) => t.id === tab)
     if (now !== undefined && now.loadVersion !== page.tab.loadVersion) try step(native, page, now, close)
     try website({ type: "pageStarted", tab }, "WebsiteHost")
