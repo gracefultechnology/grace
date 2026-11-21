@@ -1254,10 +1254,10 @@ pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrect
   correction.label != correction.original
 }
 pure def currentGuidedNameCorrection(w: Workspace): GuidedNameCorrectionState = {
-  val offeredName = w.plan.nameCorrection
-  match offeredName {
+  val offeredCorrection = w.plan.nameCorrection
+  match offeredCorrection {
     | PendingGuidedNameCorrection(pending) => if (guidedNameCorrectionCurrent(w, pending.value))
-        offeredName else NoGuidedNameCorrection
+        offeredCorrection else NoGuidedNameCorrection
     | NoGuidedNameCorrection => NoGuidedNameCorrection
   }
 }
