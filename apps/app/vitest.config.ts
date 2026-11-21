@@ -176,7 +176,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const grade = await fleet?.grade(definition.taskId, run.site?.page, guided);
       const webArenaGrade = await officialGrades.get(definition.taskId)?.(action.outcome, {
         guided, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
-      }).catch((error: unknown) => ({ failure: error instanceof Error ? error.message : String(error) }));
+      }).catch(() => ({ failure: "The official WebArena evaluation failed" }));
       const receipt = { ...observation, grade, webArena: webArenaGrade };
       if (fleet) fleet.record(definition.taskId, receipt);
       else writeFileSync(definition.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
