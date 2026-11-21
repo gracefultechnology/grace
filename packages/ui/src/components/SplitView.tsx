@@ -63,7 +63,7 @@ export function SideNavItem({ icon, count, selected = false, type = "button", cl
       aria-current={selected ? "page" : undefined}
       className={cn(
         focusRing,
-        "flex h-[72px] w-full shrink-0 items-center gap-3.5 rounded-row px-5 text-left font-sans text-[21px] leading-[26px] font-bold text-chrome [&_svg]:size-[26px] [&_svg]:shrink-0 [&_svg]:text-primary",
+        "flex h-[72px] w-full shrink-0 items-center gap-3.5 rounded-row px-5 text-left font-sans text-body-lg leading-[26px] font-bold text-chrome [&_svg]:size-[26px] [&_svg]:shrink-0 [&_svg]:text-primary",
         selected && "bg-card text-primary shadow-raised",
         className,
       )}
@@ -71,7 +71,7 @@ export function SideNavItem({ icon, count, selected = false, type = "button", cl
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{children}</span>
-      {count != null && <span className="text-lg leading-none font-bold text-muted-foreground">{count}</span>}
+      {count != null && <span className="text-control leading-none font-bold text-muted-foreground">{count}</span>}
     </button>
   );
 }

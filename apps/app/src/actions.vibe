@@ -64,9 +64,9 @@ function details(a: Appointment, recurrence: Recurrence, seriesId: string, timez
   }
 }
 
-function seed(s: Scene, key: number, id: string, sourceRef: string, details: EntryDetails): EntrySeed {
+function seed(s: Scene, key: number, id: string, source: MailSource | undefined, details: EntryDetails): EntrySeed {
   const view = sourceAt(s.calendars, key).view
-  return { identity: { owner: view.owner, calendarId: view.calendarId, occurrenceId: id, sourceRef, kind: "Appointment", billRef: "", billOrigin: "", billAccount: "" }, details }
+  return { identity: { owner: view.owner, calendarId: view.calendarId, occurrenceId: id, sourceRef: source?.mailbox.messageRef ?? "", sourceAccount: source?.account ?? 0, kind: "Appointment", billRef: "", billOrigin: "", billAccount: "" }, details }
 }
 
 function message(s: Scene, words: string): { readonly account: number; readonly ref: string } | undefined {
@@ -110,13 +110,13 @@ function listing(source: MailSource, query: string | undefined): AgentAction[] {
 function fromMessage(s: Scene, a: Appointment, fresh: string): Planned {
   const open = openOf(s)
   const id = `grace-${fresh}`
-  if (open === undefined) return plain([{ tag: "ProposeFromMessage", account: accountOf(undefined, s), seed: seed(s, tablet, id, "", details(a, "Once", "", zone(), "")) }])
+  if (open === undefined) return plain([{ tag: "ProposeFromMessage", account: accountOf(undefined, s), seed: seed(s, tablet, id, undefined, details(a, "Once", "", zone(), "")) }])
   const key = targetCalendar(s.registry, open.account)
   const c = s.content(open.account, open.mailbox.messageRef)
   const files = open.mailbox.assets.filter((f) => f.kind === "Pdf").map((f) => f.name.replace(/\.pdf$/i, ""))
   const note = `From ${c === undefined ? "an email" : `${c.from}’s email`}${files.length === 0 ? "" : ` · ${files.join(", ")} attached`}`
   const timezone = sourceAt(s.calendars, key).view.timezone || zone()
-  return plain([{ tag: "ProposeFromMessage", account: open.account, seed: seed(s, key, id, open.mailbox.messageRef, details(a, "Once", "", timezone, note)) }])
+  return plain([{ tag: "ProposeFromMessage", account: open.account, seed: seed(s, key, id, open, details(a, "Once", "", timezone, note)) }])
 }
 
 function changed(s: Scene, action: Extract<GraceAction, { kind: "proposeChange" }>, now: number): Plan {
@@ -185,7 +185,7 @@ effect function plan(action: GraceAction, s: Scene, request: Request, stamp: num
       if (action.entry !== undefined) return "NotYetAvailable"
       const id = `grace-${fresh}`
       const timezone = sourceAt(s.calendars, tablet).view.timezone || zone()
-      return plain([{ tag: "ProposeAppointment", key: tablet, seed: seed(s, tablet, id, "", details(action, action.repeat, action.repeat === "Once" ? "" : id, timezone, "")) }])
+      return plain([{ tag: "ProposeAppointment", key: tablet, seed: seed(s, tablet, id, undefined, details(action, action.repeat, action.repeat === "Once" ? "" : id, timezone, "")) }])
     }
     case "proposeFromMessage": return fromMessage(s, action, fresh)
     case "proposeChange": return changed(s, action, stamp)

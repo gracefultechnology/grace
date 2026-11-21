@@ -50,7 +50,7 @@ export function CalendarPickerField({ label, value, icon, choices, selected, ope
           <span className="flex shrink-0">{icon}</span>
           <span className="min-w-0 flex-1 truncate py-1 leading-none">{value}</span>
           <Popover.Trigger asChild>
-            <Button variant="capsule" size="compact" className="-mr-[18px] h-12 px-[18px] text-label leading-none transition-none disabled:text-grace-ink" aria-label={`${changeLabel} ${label}`} disabled={disabled}>
+            <Button variant="capsule" size="compact" className="-mr-[18px] h-12 px-[18px] text-control leading-none transition-none disabled:text-grace-ink" aria-label={`${changeLabel} ${label}`} disabled={disabled}>
               {changeLabel}
             </Button>
           </Popover.Trigger>
@@ -143,7 +143,7 @@ function ChoiceField({ label, options, value, onChange, disabled }: Choices & { 
       </Label>
       <SegmentedControl
         aria-labelledby={id}
-        className="p-1.5 [&>button]:px-2.5 [&>button]:text-body [&>button]:leading-[normal]"
+        className="p-1.5 [&>button]:px-2.5 [&>button]:text-control [&>button]:leading-[normal]"
         value={value}
         disabled={disabled}
         onValueChange={(v) => v && onChange?.(v)}

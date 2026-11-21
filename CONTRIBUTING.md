@@ -81,6 +81,10 @@ Pull requests go to `develop`, and `develop` to `main`; what CI runs on each is 
 
 Node runs all of it directly; `pnpm build` compiles it for the packaged `spec` command.
 
+The pinned LemmaScript compiler includes the upstream fix for tagged union comparisons.
+It preserves the union type when Dafny checks a record literal against a value of that type.
+[LemmaScript change 8c2a339](https://github.com/lalalune/LemmaScript/commit/8c2a33990bd55f63daa643a7be708db579541884).
+
 `check(root)` returns `{ ok, results, next }`, and `spec check --json` prints each result as one line of JSON as soon as
 it is reported, then that object as its last line. Each result has `ok`, `stage` (a stage, or `skipped`), `summary`,
 `detail` and, when it concerns them, `where` and `rules` (each rule as `{ file, key }`); `next` is the line the command

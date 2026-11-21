@@ -83,18 +83,18 @@ it('Show an owned due reminder on Home and elsewhere (spec/app/notices.md, "A du
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     reminders: {
-      enableManagedReminders: async () => undefined,
-      managedDue: async () => ({ reminders: entries }),
-      openManagedDue: async ({ id: selected }) => { actions.push("open:" + selected); },
-      dismissManagedDue: async ({ id: selected }) => {
+      enableManagedReminders: () => Promise.resolve(),
+      managedDue: () => Promise.resolve({ reminders: entries }),
+      openManagedDue: ({ id: selected }) => { actions.push("open:" + selected); return Promise.resolve(); },
+      dismissManagedDue: ({ id: selected }) => {
         actions.push("dismiss:" + selected);
-        if (!accept) throw new Error("Calendar could not save dismissal");
+        if (!accept) return Promise.reject(new Error("Calendar could not save dismissal"));
         entries = [];
-        return { id: selected };
+        return Promise.resolve({ id: selected });
       },
-      addListener: async (_event, listener) => {
+      addListener: (_event, listener) => {
         changed = listener;
-        return { remove: async () => { changed = undefined; } };
+        return Promise.resolve({ remove: () => { changed = undefined; return Promise.resolve(); } });
       },
     },
   }));
@@ -103,7 +103,7 @@ it('Show an owned due reminder on Home and elsewhere (spec/app/notices.md, "A du
   const click = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   await click("Settings");
   entries = reminders;
-  await act(() => changed?.());
+  await act(() => Promise.resolve(changed?.()));
   const toast = page.getByText(/^Reminder: Library visit/);
   await expect.element(toast).toBeVisible();
   await click("See details");

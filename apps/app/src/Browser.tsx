@@ -3,12 +3,14 @@
 import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, Button, NewTabPage } from "@repo/ui";
 import { Mail } from "lucide-react";
 import { type ComponentProps, useRef, useState } from "react";
+import { canStepPrivate, type HistoryDirection } from "../gen/app__deviceKeys.ts";
+import { historyFor } from "../gen/app__surface.ts";
 import { type BrowserInput, canCheckPrivateEmail } from "../gen/app__browserControls.ts";
 import { type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, tabUrl, visibleTabs } from "../gen/app__browser.ts";
 import { parseBrowserAddressInput } from "@elizaos/os/browser/address";
 import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
 import { Part } from "./page.vibe";
-import { useDraft, usePasswordGuide, useWorkspace } from "./useApp.ts";
+import { useDraft, usePasswordGuide, usePageLayer, useWorkspace } from "./useApp.ts";
 import { WebsiteRequests, site } from "./WebsiteRequests.tsx";
 
 const tabStrip = Part.Strip();
@@ -51,12 +53,13 @@ function secureOrigin(address: string): string {
 type PrivateToolbarProps = {
   active: Tab;
   edit: (input: BrowserInput) => void;
-  offered: (input: BrowserInput) => boolean;
+  offered: (direction: HistoryDirection) => boolean;
+  step: (direction: HistoryDirection) => void;
   navigate: (tab: number, address: string) => Promise<boolean>;
   checkEmail: (() => Promise<boolean>) | undefined;
 };
 
-function PrivateToolbar({ active, edit, offered, navigate, checkEmail }: PrivateToolbarProps) {
+function PrivateToolbar({ active, edit, offered, step, navigate, checkEmail }: PrivateToolbarProps) {
   const fieldRef = useRef<HTMLInputElement>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | undefined>(undefined);
@@ -77,8 +80,8 @@ function PrivateToolbar({ active, edit, offered, navigate, checkEmail }: Private
   };
   return (
     <>
-      <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={draft !== null}
-        reloadable onReload={() => edit({ tag: "Reload" })} onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })}
+      <BrowserToolbar className="pointer-events-auto" canGoBack={offered("HistoryBack")} canGoForward={offered("HistoryForward")} canGo={draft !== null}
+        reloadable onReload={() => edit({ tag: "Reload" })} onBack={() => step("HistoryBack")} onForward={() => step("HistoryForward")}
         onGo={go} trailing={checkEmail ? (
           <Button variant="capsule" size="pill" title="Use when this website asks for an email code" onClick={() => {
             const loadVersion = active.loadVersion;
@@ -105,7 +108,8 @@ function PrivateToolbar({ active, edit, offered, navigate, checkEmail }: Private
 export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert" | "aria-hidden">) {
   const strip = useWatch(tabStrip);
   const { guide } = usePasswordGuide();
-  const { workspace, can, send, closeBrowser, navigatePrivate, checkPrivateEmail } = useWorkspace();
+  const { workspace, can, send, closeBrowser, navigatePrivate, stepPrivate, checkPrivateEmail } = useWorkspace();
+  const layer = usePageLayer();
   const browser = workspace?.browser;
   const active = browser && activeTab(browser);
   const [address, setAddress] = useDraft(browser?.editingAddress ? browser.addressDraft : active ? tabUrl(active) : "", browser?.editingAddress ?? false);
@@ -139,7 +143,9 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
           onSelectTab={(id) => edit({ tag: "SelectTab", id })} onCloseTab={(id) => edit({ tag: "CloseTab", id })}
           onNewTab={() => edit({ tag: "NewTab" })} onCloseBrowser={() => { if (can({ type: "closeBrowser" })) void closeBrowser(); }} />
       }
-      toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} edit={edit} offered={offered} navigate={navigatePrivate}
+      toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} edit={edit} navigate={navigatePrivate}
+        offered={(direction) => !!layer && canStepPrivate(workspace.device, browser, historyFor(layer, active.id), direction)}
+        step={(direction) => void stepPrivate(active.id, direction)}
         checkEmail={canCheckPrivateEmail(browser, active.id, browser.revision, "BrowserControlUser") ? () => checkPrivateEmail(active.id, browser.revision) : undefined} /> : (
         <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}

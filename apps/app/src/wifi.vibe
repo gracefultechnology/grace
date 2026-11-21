@@ -34,7 +34,9 @@ const authentication: Readonly<Record<WiFiSecurity, Authentication>> = {
 const outcomes: Readonly<Record<Join["status"], JoinResult>> = {
   connected: "Joined", captivePortal: "PortalRequired", declined: "Declined", unverified: "Unverified", notConnected: "Unavailable", wrongPassword: "RejectedCredentials",
 }
-const unlisted: Readonly<Record<string, ScanResult>> = { LOCATION_PERMISSION_REQUIRED: "NoLocationAccess", LOCATION_DISABLED: "LocationDisabled" }
+const unlisted: Readonly<Partial<Record<string, ScanResult>>> = {
+  LOCATION_PERMISSION_REQUIRED: { tag: "NoLocationAccess" }, LOCATION_DISABLED: { tag: "LocationDisabled" },
+}
 
 const bars = (rssi: number) => rssi >= -55 ? 3 : rssi >= -67 ? 2 : rssi >= -80 ? 1 : 0
 const joinable = (security: WiFiSecurity): JoinableWiFiSecurity | undefined => security === "eap" || security === "wep" ? undefined : security
@@ -71,17 +73,17 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
   effect function list() {
     const attempt = try networks.get()
     const permission = ask(Schema.decodeUnknownEffect(Permission), () => wifi.checkPermissions()) catch () => undefined
-    if (permission?.location !== "granted") return try report("NoLocationAccess")
+    if (permission?.location !== "granted") return try report({ tag: "NoLocationAccess" })
     const radio = ask(Schema.decodeUnknownEffect(Radio), () => wifi.getWifiState()) catch () => undefined
-    if (radio?.enabled === false) return try report("RadioOff")
-    const scan = ask(Schema.decodeUnknownEffect(Scan), () => wifi.listAvailableNetworks()) catch (refused) => unlisted[refused.code] ?? "NoneNearby"
-    if (typeof scan === "string" && scan !== "NoneNearby") return try report(scan)
+    if (radio?.enabled === false) return try report({ tag: "RadioOff" })
+    const scan = ask(Schema.decodeUnknownEffect(Scan), () => wifi.listAvailableNetworks()) catch (refused) => unlisted[refused.code] ?? { networks: [] }
+    if ("tag" in scan) return try report(scan)
     const active = ask(Schema.decodeUnknownEffect(Connectivity), () => wifi.getConnectivity()) catch () => undefined
     const name = active?.validated && !active.captivePortal ? active.ssid : null
     const current = name ? (ask(Schema.decodeUnknownEffect(Current), () => wifi.getConnectedNetwork()) catch () => undefined)?.network : undefined
     const address = current?.ssid === name ? current?.bssid.toLowerCase() : undefined
     const bssid = address && address !== "02:00:00:00:00:00" && address !== "00:00:00:00:00:00" ? address : undefined
-    const foundNetworks = typeof scan === "string" ? [] : scan.networks
+    const foundNetworks = scan.networks
     const observed = bssid ? foundNetworks.find((found) => found.ssid === name && found.bssid.toLowerCase() === bssid) : undefined
     const prior = requested?.version === attempt.version ? requested.offer : undefined
     const security = observed?.security ?? (bssid && prior?.name === name && prior.bssid.toLowerCase() === bssid ? prior.security : undefined)
@@ -92,12 +94,13 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
       const previous = strongest.get(id)
       if (found.ssid !== "" && (!previous || found.rssi > previous.rssi)) strongest.set(id, found)
     }
-    const named = [...strongest.values()].sort((a, b) => b.rssi - a.rssi).map((found): Offer => ({
-      network: { id: found.security + ":" + found.ssid, authentication: authentication[found.security], remembered: found.security + ":" + found.ssid === id },
+    const named = [...strongest.entries()].sort(([first, a], [second, b]) =>
+      Number(second === id) - Number(first === id) || b.rssi - a.rssi).map(([key, found]): Offer => ({
+      network: { id: key, authentication: authentication[found.security], remembered: key === id },
       name: found.ssid, bssid: found.bssid, signal: bars(found.rssi), security: found.security,
     }))
     const connected = name ? { name, id, signal: observed && id ? bars(observed.rssi) : undefined } : undefined
-    try report(named.length === 0 ? "NoneNearby" : "Found", { nearby: named, connected })
+    try report(named.length === 0 ? { tag: "NoneNearby" } : { tag: "Found", networks: named.map((offer) => offer.network) }, { nearby: named, connected })
     if (id === attempt.selected.id) {
       networks.send({ type: "confirmConnection", networkId: attempt.selected.id, version: attempt.version }, "OperatingSystem") catch () => undefined
     }
@@ -134,7 +137,7 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
   effect function returned() {
     const n = try networks.get()
     if (n.phase !== "AndroidPanel" && n.phase !== "PortalEntry") {
-      if (n.discovery === "NetworksFound" || listAction(n.discovery) === "OpenPanel") try look
+      if (n.discovery.tag === "NetworksFound" || listAction(n.discovery) === "OpenPanel") try look
       return
     }
     const name = ssidOf(n)
@@ -146,14 +149,14 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
     try answer(n, result, result === "Unavailable" ? explanation : "")
   }
 
-  const searches = Stream.filter(Stream.changes(Stream.map(networks.changes, (n) => n.discovery === "Scanning")), (searching) => searching)
+  const searches = Stream.filter(Stream.changes(Stream.map(networks.changes, (n) => n.discovery.tag === "Scanning")), (searching) => searching)
   try fork.scoped Stream.runForEach(searches, () => look)
   const shownAgain = Stream.filter(Stream.fromEventListener(webView.document, "visibilitychange"), () => !webView.hidden())
   try fork.scoped Stream.runForEach(shownAgain, () => returned())
   const changed = Stream.filter(Stream.fromEventListener(webView.window, "android-network-changed"), () => !webView.hidden())
   try fork.scoped Stream.runForEach(changed, effect () => {
     const { discovery } = try networks.get()
-    if (discovery === "NetworksFound" || discovery === "NoNetworks") try look
+    if (discovery.tag === "NetworksFound" || discovery.tag === "NoNetworks") try look
   })
 
   return {

@@ -178,22 +178,29 @@ pure val latestValues = Set(exampleLogin, { ...exampleLogin, revision: 2 })
 
 ### Grace can describe private sign-in without operating the vault
 
-Grace uses the request text to point to a control. Guidance receives no
-vault state, account text or website form values. Recognized
-requests from the current typed draft or a current complete human utterance
-work while Cloud reasoning is unavailable. They select only the general Passwords screen or Browser and a cue for the
-named control. Guidance never chooses or reveals an entry, copies a
+The regular Ask Grace field and microphone accept requests for password help.
+Grace uses the current typed request or a complete human utterance to point
+to a control. Guidance receives no vault state, account data or website form
+values.
+Typed commands work when Cloud speech or Cloud reasoning is unavailable. Known commands select
+the general Passwords screen or Browser and a cue for the named control.
+Guidance never chooses or reveals an entry, copies a
 password, opens a private page or presses a website button. An explicit
 sign-in command has a separate [browser admission rule](./browserControls.md).
 
-The regular Ask Grace message field and microphone both accept password
-requests. During a voice conversation, a recognized password request goes
+During a voice conversation, a recognized password request goes
 directly from the final human utterance to password guidance. The request
-stays out of the conversation history and the reasoning agent. When conversational voice is unavailable,
-the same microphone starts one local Android recognition request for guidance.
-Unmatched local speech is discarded. Leaving Grace, typing, opening a
-protected surface or cancelling stops the request. An unavailable local
-recognizer leaves Type available.
+stays out of the conversation history and the reasoning agent.
+
+On the Passwords Home card the person may type a local command or explicitly
+start Cloud speech under their signed-in Grace account. The person sees the
+disclosure before first use. Cloud speech receives the microphone audio for a
+single command. Only the current complete utterance can select a known guide
+command. An unmatched or retired utterance is discarded. Neither the recording
+nor its transcript is added to the chat or sent to the reasoning agent. Leaving
+the card, changing accounts, typing, going offline or hiding Grace retires
+capture. Entering or leaving this card clears the unsent draft. When speech is
+unavailable the person can still type. The private Passwords screen keeps its microphone off.
 Password guidance recognizes a short list of spoken or typed phrases, such
 as “Open Passwords,” “Where can I find my saved passwords?”, “Show my password,”
 “Copy my password,” and “Use a saved password.” The person chooses the

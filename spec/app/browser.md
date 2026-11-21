@@ -148,7 +148,7 @@ person can paste a full HTTPS address directly into its private address bar;
 paths, query values and fragments stay out of the workspace, recent sites,
 conversation and diagnostics. Its native
 process and storage stay isolated for the tab's lifetime. Browser chrome
-gets origins and load outcomes. Grace cannot read or capture private page
+gets origins, load outcomes and whether the native tab can go Back or Forward. Grace cannot read or capture private page
 content, send website operations, or offer a password through conversation.
 The private tab can confirm a load at its current origin. It never reports a redirect address or opens another window in the ordinary browser. A private visit never enters recent websites. Closing the tab discards its
 native session; no authenticated session is transferred to another tab.

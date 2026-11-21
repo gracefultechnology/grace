@@ -1,5 +1,6 @@
 package technology.graceful.grace;
 
+import ai.eliza.plugins.passwords.PasswordSurfaces;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
 import android.content.Context;
@@ -121,8 +122,7 @@ public final class GraceAccount extends Plugin {
    try {
     CloudDeviceAccount account = account(getContext());
     if (finishAcknowledgment(account)) didSignIn();
-    boolean signedIn = GracePasswordsOwner.stableSession(getContext()) != null;
-    call.resolve(projection(signedIn));
+    call.resolve(projection(GracePasswordsOwner.stableSession(getContext())));
    }
    catch (Exception unavailable) { call.reject("Device account is unavailable"); }
    retryRevocation();
@@ -229,7 +229,13 @@ public final class GraceAccount extends Plugin {
  @PluginMethod public void startSpeech(PluginCall call) {
   ACCOUNT.execute(() -> {
    try {
-    var speech = account(getContext()).startSpeech();
+    if (PasswordSurfaces.visible()) throw new IllegalStateException("Private surface active");
+    var device = account(getContext());
+    var speech = device.startSpeech();
+    if (PasswordSurfaces.visible()) {
+     device.stopSpeech(speech.sessionId());
+     throw new IllegalStateException("Private surface active");
+    }
     call.resolve(new JSObject().put("version", 1).put("sessionId", speech.sessionId()).put("token", speech.token())
        .put("expiresAt", speech.expiresAt()).put("wsUrl", speech.wsUrl()));
    } catch (Exception unavailable) { call.reject("Speech is unavailable"); }
@@ -255,8 +261,9 @@ public final class GraceAccount extends Plugin {
      account.clear();
      return null;
     });
+    JSObject signedOut = projection(null);
     getActivity().runOnUiThread(() -> {
-     notifyListeners("sessionChanged", projection(false));
+     notifyListeners("sessionChanged", signedOut);
      call.resolve();
     });
     retryRevocation();
@@ -302,15 +309,16 @@ public final class GraceAccount extends Plugin {
   }
  }
 
- private void didSignIn() {
+ private void didSignIn() throws Exception {
+  JSObject status = projection(GracePasswordsOwner.stableSession(getContext()));
   getActivity().runOnUiThread(() -> {
    if (getActivity().isFinishing() || getActivity().isDestroyed()) return;
-   notifyListeners("sessionChanged", projection(true));
+   notifyListeners("sessionChanged", status);
   });
  }
 
- private static JSObject projection(boolean signedIn) {
-  return new JSObject().put("kind", signedIn ? "signedIn" : "signedOut");
+ static JSObject projection(CloudDeviceAccount.Session session) {
+  return GracePasswordsOwner.accountStatus(session);
  }
 
  private void open(Uri address, PluginCall call) {
