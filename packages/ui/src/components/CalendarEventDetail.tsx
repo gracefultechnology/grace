@@ -25,9 +25,9 @@ export type CalendarEventDetailProps = ComponentProps<"div"> & {
   repeat: string;
   /** Where it came from: "From the clinic’s email · Visit form attached". */
   note?: string;
-  /** Opens the event in the form. */
+  /** Opens the event in the form; without it Edit is not offered. */
   onEdit?: () => void;
-  /** Asks whether to delete it. */
+  /** Asks whether to delete it; without it Delete is not offered. */
   onDelete?: () => void;
   editLabel?: string;
   deleteLabel?: string;
@@ -36,7 +36,7 @@ export type CalendarEventDetailProps = ComponentProps<"div"> & {
 };
 
 /**
- * One event's details, a line each with its icon, then Edit and Delete (prototype `calView` detail). While its reminder
+ * One event's details, a line each with its icon, then Edit and Delete when offered (prototype `calView` detail). While its reminder
  * is showing, Dismiss and Snooze stand on the reminder's line.
  * @model spec/app/calendarView.md
  * @design packages/design-system/design.md#windows
@@ -102,16 +102,22 @@ export function CalendarEventDetail({
         </ul>
       </Panel>
       {bill && <BillOffer confirmed {...bill} className="mt-3.5 max-w-[880px]" />}
-      <div className="mt-[22px] flex flex-wrap gap-3">
-        <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px] leading-none transition-none" onClick={onEdit}>
-          <CalendarGlyph name="pencil" size={22} />
-          {editLabel}
-        </Button>
-        <Button variant="warn" size="pill" className="pr-[26px] pl-[22px] leading-none transition-none" onClick={onDelete}>
-          <CalendarGlyph name="trash" size={22} />
-          {deleteLabel}
-        </Button>
-      </div>
+      {(onEdit ?? onDelete) && (
+        <div className="mt-[22px] flex flex-wrap gap-3">
+          {onEdit && (
+            <Button variant="capsule" size="pill" className="pr-[26px] pl-[22px] leading-none transition-none" onClick={onEdit}>
+              <CalendarGlyph name="pencil" size={22} />
+              {editLabel}
+            </Button>
+          )}
+          {onDelete && (
+            <Button variant="warn" size="pill" className="pr-[26px] pl-[22px] leading-none transition-none" onClick={onDelete}>
+              <CalendarGlyph name="trash" size={22} />
+              {deleteLabel}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -174,6 +174,12 @@ Being told is a turn of the host, never hers: what Grace is told is only the
 news, the calendar and the appointment, with no consent in it, so it asks
 Grace to do nothing.
 
+What Margaret sees follows the same news. After an appointment was added or
+changed, Calendar says "Saved to your calendar" and the saved row is ringed
+with Grace’s confirm ring; after one was deleted, it says "Deleted" and the
+appointment’s title. Nothing else rings a row this way, and a ring always
+marks an appointment the calendar has just saved.
+
 ```quint
 type CalendarNews = NoCalendarNews | AddedAppointment | ChangedAppointment | DeletedAppointment
 type CalendarTold = { news: CalendarNews, key: int, id: str }
@@ -205,6 +211,13 @@ pure def lawOnlyTheStoreIsNews(key: int, view: V::CalendarView, id: str, publish
   (V::canChangeOccurrence(view, id, V::CancelEditing, V::ViewUser) implies told(key, view, cancelled).news == NoCalendarNews) and
     told(key, view, V::closeCalendar(view, V::ViewUser)).news == NoCalendarNews and
     (V::canPublishOccurrence(view, published, view.generation, true, V::ViewStore) implies told(key, view, fed).news == NoCalendarNews)
+type ConfirmRing = { shown: bool, key: int, id: str }
+pure def confirmRing(news: CalendarTold): ConfirmRing =
+  { shown: news.news == AddedAppointment or news.news == ChangedAppointment, key: news.key, id: news.id }
+pure def lawRingMarksAJustSavedAppointment(key: int, before: V::CalendarView, after: V::CalendarView): bool =
+  val ring = confirmRing(told(key, before, after))
+  ring.shown implies (ring.key == key and
+    after.entries.some(c => c.identity.occurrenceId == ring.id and c.phase == C::Saved and not(before.entries.includes(c))))
 ```
 
 ## Story: Ask Grace to put an email’s appointment in my calendar
@@ -329,6 +342,57 @@ pure def lawDraftRowIsTheQuestion(registry: A::Accounts, calendars: List[Calenda
     }))
 ```
 
+### Calendar turns to the day of Grace’s question and of what was just saved, but never past an edit
+
+While Calendar is open and nothing in any calendar is being edited, a new
+question from Grace to add an appointment selects the day it starts on, in
+Week, so its draft row is in view. Once a calendar has saved an appointment
+added or changed, whether after her yes or by her own Save, the day the saved
+appointment starts on is selected and its row gets Grace’s confirm ring. An
+appointment being edited is never discarded for this: while one is, Calendar
+stays where it is. The host gives the day as a verified report of a
+chosen day whose days hold the appointment’s start, so the turn is one
+Calendar itself would accept from her.
+
+```quint
+type DayToShow = { show: bool, startAt: int }
+pure val stayOnDay: DayToShow = { show: false, startAt: 0 }
+pure def calendarFree(calendars: List[CalendarSource]): bool =
+  val v = lead(calendars).view
+  v.opened and v.deletion != V::DeletionPending and calendars.every(s => not(V::hasEditing(s.view)))
+pure def askedDay(registry: A::Accounts, calendars: List[CalendarSource], earlier: P::Pending, pending: P::Pending): DayToShow =
+  val ask = pending.ask
+  match ask {
+    | AddAsk(x) =>
+        if (ask != earlier.ask and calendarFree(calendars) and showsCalendar(registry, x.target))
+          { show: true, startAt: x.review.entry.details.startAt }
+        else stayOnDay
+    | _ => stayOnDay
+  }
+pure def savedDay(registry: A::Accounts, calendars: List[CalendarSource], news: CalendarTold): DayToShow =
+  val saved = V::entryAt(sourceAt(calendars, news.key).view, news.id)
+  if (confirmRing(news).shown and calendarFree(calendars) and showsCalendar(registry, news.key) and saved.phase == C::Saved)
+    { show: true, startAt: saved.committed.startAt }
+  else stayOnDay
+pure def showsDay(report: V::NavigationReport, day: DayToShow): bool =
+  day.show and report.kind == V::SelectDay and report.verified and report.window.mode == V::WeekView and
+    report.window.anchorDay == report.window.selectedDay and V::validWindow(report.window) and
+    report.window.fromTime <= day.startAt and day.startAt < report.window.untilTime
+pure def lawCalendarTakesTheDayShown(registry: A::Accounts, calendars: List[CalendarSource], earlier: P::Pending,
+    pending: P::Pending, news: CalendarTold, report: V::NavigationReport): bool =
+  (showsDay(report, askedDay(registry, calendars, earlier, pending)) or showsDay(report, savedDay(registry, calendars, news))) implies
+    V::canNavigate(lead(calendars).view, report, V::ViewUser)
+pure def lawAnEditIsNeverDiscarded(registry: A::Accounts, calendars: List[CalendarSource], earlier: P::Pending,
+    pending: P::Pending, news: CalendarTold): bool =
+  calendars.some(s => V::hasEditing(s.view)) implies
+    (not(askedDay(registry, calendars, earlier, pending).show) and not(savedDay(registry, calendars, news).show))
+pure def lawSavedDayIsTheRingedAppointment(registry: A::Accounts, calendars: List[CalendarSource], news: CalendarTold): bool =
+  val day = savedDay(registry, calendars, news)
+  day.show implies (confirmRing(news).shown and confirmRing(news).key == news.key and
+    sourceAt(calendars, news.key).view.entries.some(c => c.identity.occurrenceId == news.id and c.phase == C::Saved and
+      c.committed.startAt == day.startAt))
+```
+
 ### Her yes is applied as the exact question she was asked
 
 After her yes, the host applies to the question’s target calendar exactly
@@ -405,8 +469,8 @@ appointment from the email agreed, stored, changed and deleted, and the
 garden club open on screen; the tablet’s calendar moved to a week that holds
 them all while Gmail’s calendar was moved elsewhere; the clinic email open,
 the same email flagged as a scam, and the clinic email left open behind an
-Outlook email being written; and Grace’s questions asked, agreed and of each
-kind.
+Outlook email being written; Grace’s questions asked, agreed and of each
+kind; news of each kind; and days chosen for Week or Month, verified or not.
 
 ```quint
 pure val zone: str = "America/New_York"
@@ -489,7 +553,9 @@ pure val calendarsValues = Set(List(),
   List({ key: 1, view: gmailOpened }, { key: 0, view: tabletSaved }),
   List({ key: 0, view: tabletDrafted }, { key: 1, view: gmailDeleted }, { key: 2, view: gmailChanged }),
   List({ key: 0, view: tabletWeek }, { key: 1, view: gmailPublished }),
-  List({ key: 0, view: tabletWeek }, { key: 1, view: gmailElsewhere }))
+  List({ key: 0, view: tabletWeek }, { key: 1, view: gmailElsewhere }),
+  List({ key: 0, view: tabletWeek }, { key: 1, view: gmailStored }),
+  List({ key: 0, view: tabletWeek }, { key: 1, view: gmailEditing }))
 pure val sourcesValues = Set(List(), List({ account: 1, mailbox: M::gmailOpen }), List({ account: 1, mailbox: gmailFlagged }),
   List({ account: 1, mailbox: M::gmailListed }), List({ account: 1, mailbox: M::gmailExpired }),
   List({ account: 2, mailbox: M::outlookListed }, { account: 1, mailbox: M::gmailOpen }),
@@ -500,6 +566,16 @@ pure val reviewValues = Set(clinicReview, tabletClinicReview,
   { ...clinicReview, entry: { ...clinicReview.entry, identity: { ...clinicIdentity, sourceRef: "susan" } } })
 pure val pendingValues = Set(P::initial, pendingClinic, pendingAgreed, pendingChange, pendingDeletion,
   P::propose(P::initial, P::AddAsk({ target: 0, review: tabletClinicReview }), spoken, { generation: 1, workVersion: 1 }, P::Grace))
+pure val earlierValues = Set(P::initial, pendingClinic, pendingAgreed)
+pure val newsValues = Set({ news: NoCalendarNews, key: 0, id: "" }, { news: AddedAppointment, key: 1, id: "clinicVisit" },
+  { news: AddedAppointment, key: 0, id: "lunch" }, { news: ChangedAppointment, key: 1, id: "garden" },
+  { news: DeletedAppointment, key: 1, id: "garden" }, { news: AddedAppointment, key: 2, id: "clinicVisit" })
+pure val reportValues = Set(
+  { window: { ...V::emptyWindow, anchorDay: 4, selectedDay: 4, fromTime: 0, untilTime: 10 }, kind: V::SelectDay, verified: true },
+  { window: { ...V::emptyWindow, anchorDay: 5, selectedDay: 5, fromTime: 5, untilTime: 12 }, kind: V::SelectDay, verified: true },
+  { window: { ...V::emptyWindow, anchorDay: 4, selectedDay: 4, fromTime: 0, untilTime: 10 }, kind: V::SelectDay, verified: false },
+  { window: { ...V::emptyWindow, mode: V::MonthView, anchorDay: 4, selectedDay: 4, fromTime: 0, untilTime: 10 }, kind: V::SelectDay, verified: true },
+  { window: { ...V::emptyWindow, anchorDay: 7, selectedDay: 7, fromTime: 0, untilTime: 10 }, kind: V::Later, verified: true })
 pure val keyValues = Set(-1, 0, 1, 2, 3)
 pure val accountValues = Set(0, 1, 2, 3)
 pure val fromTimeValues = Set(0, 3, 4, 6)

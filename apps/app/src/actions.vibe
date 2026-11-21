@@ -37,6 +37,7 @@ const writingOf = (s: Scene) => shownOf(s).find((m) => m.mailbox.composeVisible)
 const accountOf = (source: MailSource | undefined, s: Scene) => source?.account ?? shownOf(s)[0]?.account ?? 0
 const selected = (m: Mailbox) => ({ ref: m.messageRef, revision: messageRecord(m, m.messageRef).revision })
 const mail = (account: number, assist: Extract<AgentAction, { tag: "Mail" }>["assist"]): AgentAction => ({ tag: "Mail", account, assist })
+const emphases = { point: "Look", instruction: "Tap", confirm: "Done" } as const
 const plain = (commands: readonly AgentAction[], showsEmail = false): Planned => ({ commands, showsEmail })
 
 function civil(day: string) {
@@ -196,7 +197,7 @@ effect function plan(action: GraceAction, s: Scene, request: Request, stamp: num
     case "confirmProposal": return plain([{ tag: "ConfirmProposal" }])
     case "cancelProposal": return plain([{ tag: "CancelProposal" }])
     case "showSetting": return plain([{ tag: "ShowSetting", page: action.page }])
-    case "guide": return plain([{ tag: "Guide", target: action.target }])
+    case "guide": return plain([{ tag: "Guide", target: action.target, kind: emphases[action.emphasis], title: action.emphasis === "point" ? "" : action.title }])
     default: return undefined
   }
 }
@@ -239,7 +240,7 @@ export const agent = Layer.effect(Agent, effect {
       when { tag: "ToAnswer", let consent }: try sent(proposals.send({ type: "agree", given: consent, now }, "Person"));
       when { tag: "ToWithdraw" }: try sent(proposals.send({ type: "withdraw", interruption: "Cancellation" }, "Grace"));
       when { tag: "ToSetting", let page }: try run(settingSteps(page, s.workspace));
-      when { tag: "ToGuide", let target }: try run([{ by: "Host", event: { type: "publishGuidance", guidanceReport: {
+      when { tag: "ToGuide", let target, let kind, let title }: try run([{ by: "Host", event: { type: "publishGuidance", guidanceKind: kind, guidanceTitle: title, guidanceReport: {
         target, revision: s.workspace.assistant.guidance.revision, workVersion: s.workspace.assistant.workVersion, conversationVersion: s.workspace.assistant.conversation.generation,
         deviceVersion: s.workspace.device.contextVersion, browserRevision: s.workspace.browser.revision, verified: true
       } } }]);

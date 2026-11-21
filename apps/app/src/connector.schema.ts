@@ -16,11 +16,14 @@ export const WireMessage = Schema.Struct({
   metadata: Schema.Struct({ historyId: NullableText, messageIdHeader: optional(NullableText), referencesHeader: optional(NullableText) }),
 })
 export const Listing = Schema.Struct({ messages: Schema.Array(WireMessage) })
-export const ReadResponse = Schema.Struct({ message: WireMessage, bodyText: Text, attachments: optional(Schema.Array(WireAttachment)) })
+export const ReadResponse = Schema.Struct({ message: WireMessage, bodyText: Text, attachments: optional(Schema.Array(WireAttachment)), suspicion: optional(NullableText) })
 export const Grants = Schema.Array(Schema.Struct({
   connectionId: NullableText, connected: Flag, identity: Schema.NullOr(Schema.Struct({ email: optional(NullableText) })),
 }))
-export const Refusal = Schema.Struct({ code: optional(Text) })
+export const ReconnectRefusal = Schema.Union([
+  Schema.Struct({ code: Schema.Literal("reauth_required") }),
+  Schema.Struct({ error: Schema.Literal("google_reauth_required") }),
+])
 export const Operation = Schema.Struct({
   receipt: Schema.Struct({
     requestId: Text, reviewDigest: Text, state: Schema.Literals(["prepared", "dispatched", "succeeded", "rejected", "outcome-unknown"]),

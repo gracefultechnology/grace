@@ -14,7 +14,7 @@ import { application } from "../src/app.vibe";
 import { Instances } from "../src/instances.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
-import { mount, actOnScreen, browserAccountResponse } from "./screen.tsx";
+import { tabletView, actOnScreen, browserAccountResponse } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -79,8 +79,11 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
     localStorage.setItem("accounts", JSON.stringify(kept()));
   }
   const connectivity = vi.spyOn(window.navigator, "onLine", "get");
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
-  const view = await mount(runtime);
+  const open = () => ManagedRuntime.make(application(undefined, undefined, { url: cloud, key: secret }));
+  let runtime = open();
+  let view = tabletView(runtime);
+  onTestFinished(() => view.dispose());
+  await view.render();
   onTestFinished(async () => {
     connectivity.mockRestore();
     browserSession.mockRestore();
@@ -89,6 +92,19 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
   });
   return {
     secret,
+    restartFromEarlierMailbox: async (account: number) => {
+      await view.dispose();
+      const key = `mail/${account}`;
+      const raw = localStorage.getItem(key);
+      if (raw === null) throw new Error("Missing the saved mailbox");
+      const box = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))(raw);
+      expect(box.draftsTotal).toBeTypeOf("number");
+      const { draftsTotal: _, ...earlier } = box;
+      localStorage.setItem(key, JSON.stringify(earlier));
+      runtime = open();
+      view = tabletView(runtime);
+      await view.render();
+    },
     appointments: (key: number) => runtime.runPromise(Effect.gen(function*() {
       const shelf = yield* Instances;
       const calendar = yield* shelf.calendar(key);
@@ -267,7 +283,7 @@ it("See all my email in one place", async () => {
   await click(card);
   await expect.element(row("All inboxes 5")).toBeVisible();
   await changeSession(true);
-  await expect.element(row("Outlook")).not.toBeInTheDocument();
+  await expect.element(row("Outlook 1")).toBeVisible();
   await providerComponent();
   await expect.element(row("Gmail 4")).toBeVisible();
   await expect.element(row("Outlook 1")).toBeVisible();
@@ -297,22 +313,6 @@ it("See all my email in one place", async () => {
   await expect.element(clinic).toBeVisible();
   await host("Online");
   await expect.element(page.getByText("No internet right now")).not.toBeInTheDocument();
-
-  // spec/app/email.md, "Each search or content read needs current access and the user's choice"
-  await click(clinic);
-  await expect.element(page.getByText(/appointment with Dr\. Patel tomorrow at 10:00 am/)).toBeVisible();
-  await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
-  // spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"
-  await click(page.getByRole("button", { name: "Open" }));
-  await expect.element(page.getByRole("heading", { name: "Visit form.pdf" })).toBeVisible();
-  await expect.poll(() => document.querySelector("object[type='application/pdf']")?.getAttribute("data")).toMatch(/^data:application\/pdf;base64,JVBERi/);
-  await expect.element(page.getByText("Page 1 of 2")).toBeVisible();
-  await click(page.getByRole("button", { name: "Save to Files" }));
-  await expect.element(page.getByText("Saved to Files").first()).toBeVisible();
-  await click(page.getByRole("button", { name: "Back to Main St Clinic’s email" }));
-  await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
-  await click(page.getByRole("button", { name: "Back to Inbox" }));
-  await expect.element(row("Gmail 3")).toBeVisible();
 
   const png = /^data:image\/png;base64,iVBORw0KGgo/;
   const unread = async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "family").map((m) => m.labels.includes("UNREAD")));
@@ -350,6 +350,21 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("button", { name: "Back to Ruth’s email" }));
   await click(page.getByRole("button", { name: "Save all to Files" }));
   await expect.element(page.getByText("3 photos saved to Files")).toBeVisible();
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(row("Gmail 3")).toBeVisible();
+  // spec/app/email.md, "Each search or content read needs current access and the user's choice"
+  await click(clinic);
+  await expect.element(page.getByText(/appointment with Dr\. Patel tomorrow at 10:00 am/)).toBeVisible();
+  await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
+  // spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"
+  await click(page.getByRole("button", { name: "Open" }));
+  await expect.element(page.getByRole("heading", { name: "Visit form.pdf" })).toBeVisible();
+  await expect.poll(() => document.querySelector("object[type='application/pdf']")?.getAttribute("data")).toMatch(/^data:application\/pdf;base64,JVBERi/);
+  await expect.element(page.getByText("Page 1 of 2")).toBeVisible();
+  await click(page.getByRole("button", { name: "Save to Files" }));
+  await expect.element(page.getByText("Saved to Files").first()).toBeVisible();
+  await click(page.getByRole("button", { name: "Back to Main St Clinic’s email" }));
+  await expect.element(page.getByText("Visit form.pdf")).toBeVisible();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(row("Gmail 2")).toBeVisible();
 
@@ -403,7 +418,28 @@ it("See all my email in one place", async () => {
   await expect.element(page.getByRole("img", { name: "Piano.png" })).not.toBeInTheDocument();
   await changeSession(true);
   await expect.element(piano).toBeVisible();
-
+  // spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
+  await expect.element(page.getByText("From Ruth · Lunch on Sunday?")).toBeVisible();
+  await click(page.getByRole("radio", { name: "Documents" }));
+  await expect.element(page.getByText(/^From Main St Clinic · Saved /)).toBeVisible();
+  await click(page.getByRole("radio", { name: "Photos" }));
+  await click(piano);
+  await click(page.getByRole("button", { name: "Share" }));
+  await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Susan" }));
+  await expect.element(subject()).toHaveValue("A photo");
+  await expect.element(page.getByRole("img", { name: "Piano.png" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Attach" }));
+  await click(page.getByRole("menuitem", { name: "Choose from Photos" }));
+  await click(page.getByRole("dialog", { name: "Choose from Photos" }).getByRole("button", { name: "Bow.png" }));
+  await expect.element(page.getByRole("img", { name: "Bow.png" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Add", exact: true }));
+  await click(page.getByRole("button", { name: "Add to Cc" }));
+  await expect.element(page.getByRole("heading", { name: "Who should get a copy?" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Close Email" }));
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await click(row("Drafts"));
+  await expect.element(email(/A photo/)).toBeVisible();
 }, 300_000);
 
 it("Write or reply and confirm before sending", async () => {
@@ -449,14 +485,30 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Forward" }));
   await click(page.getByRole("button", { name: "David" }));
   await expect.element(subject()).toHaveValue("Fwd: Reminder: your appointment tomorrow at 10 am");
-  await expect.element(page.getByRole("button", { name: "Remove Visit form.pdf" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Remove Visit form.pdf" }));
+  await expect.element(page.getByRole("button", { name: "Remove Visit form.pdf" })).not.toBeInTheDocument();
   await click(page.getByRole("button", { name: "Send" }));
   await expect.element(page.getByText("Sent to David", { exact: true })).toBeVisible();
-  await expect.poll(async () => (await sent("Fwd: Reminder: your appointment tomorrow at 10 am")).map((m) => m.attachments)).toEqual([[{ filename: "Visit form.pdf" }]]);
+  await expect.poll(async () => (await sent("Fwd: Reminder: your appointment tomorrow at 10 am")).map((m) => m.attachments)).toEqual([[]]);
+  await opened(/^Ruth.*Has attachments/, "Lunch on Sunday?");
+  await click(page.getByRole("button", { name: "Bow.png" }));
+  await expect.element(page.getByRole("heading", { name: "Photo 1 of 3" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Forward" }));
+  await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
+  await click(page.getByRole("button", { name: "David" }));
+  await expect.element(subject()).toHaveValue("Fwd: Lunch on Sunday?");
+  await expect.element(page.getByRole("button", { name: "Remove Bow.png" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.poll(async () => (await sent("Fwd: Lunch on Sunday?")).map((m) => m.attachments)).toEqual([[{ filename: "Bow.png" }]]);
 
   // spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
   await click(page.getByRole("button", { name: "Write" }));
   await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(page.getByText("Email discarded")).toBeVisible();
+  await click(page.getByRole("button", { name: "Write" }));
+  await click(page.getByRole("button", { name: "Susan" }));
+  await act(() => userEvent.fill(words(), "Never mind."));
+  await click(page.getByRole("button", { name: "Discard" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
 
   // spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"
@@ -475,6 +527,26 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(email(/^To Susan.*Lunch next week/)).toBeVisible();
   await expect.element(row("Drafts 1")).toBeVisible();
+
+  // spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
+  await click(row("All inboxes"));
+  await click(page.getByRole("button", { name: "Write" }));
+  await click(page.getByRole("button", { name: "Susan" }));
+  await act(() => userEvent.fill(subject(), "Tea on Friday"));
+  await act(() => userEvent.fill(words(), "Would you come for tea on Friday?"));
+  await click(page.getByRole("button", { name: "Close Email" }));
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Tea on Friday").map((m) => m.labels))).toEqual([["DRAFT"]]);
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await click(row("Drafts"));
+  await expect.element(email(/^To Susan.*Tea on Friday/)).toBeVisible();
+  await expect.element(row("Drafts 2")).toBeVisible();
+  await expect.element(page.getByText("Saved to Drafts")).not.toBeInTheDocument();
+  await click(email(/^To Susan.*Lunch next week/));
+  await expect.element(subject()).toHaveValue("Lunch next week");
+  await click(page.getByRole("button", { name: "Discard" }));
+  await expect.element(page.getByText("Email discarded")).toBeVisible();
+  await expect.element(email(/^To Susan.*Lunch next week/)).not.toBeInTheDocument();
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week"))).toEqual([]);
 
   // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
   await click(row("All inboxes"));
@@ -501,10 +573,38 @@ it("Write or reply and confirm before sending", async () => {
   const after = (await sends()).filter((id) => !before.includes(id));
   expect(after).toHaveLength(1);
   expect(await sentWith("Re: Lunch on Sunday?")).toEqual([gmail]);
-}, 300_000);
+
+  // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
+  await host("Offline");
+  await click(page.getByRole("button", { name: "Write" }));
+  await act(() => userEvent.type(page.getByRole("searchbox"), "susan@family"));
+  await click(page.getByRole("button", { name: "susan@family", exact: true }));
+  await act(() => userEvent.fill(subject(), "Recital photos"));
+  await act(() => userEvent.fill(words(), "I loved the recital."));
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(row("Outbox 1")).toBeVisible();
+  await host("Online");
+  await click(row("Outbox 1"));
+  const refused = email(/Recital photos/);
+  await expect.poll(async () => {
+    if (refused.query()) await click(refused);
+    return subject().query() !== null;
+  }, { timeout: 15000 }).toBe(true);
+  await host("Offline");
+  await expect.element(subject()).toHaveValue("Recital photos");
+  await expect.element(words()).toHaveValue("I loved the recital.");
+  await click(page.getByRole("button", { name: "Remove susan@family" }));
+  await click(page.getByRole("button", { name: "Add to To" }));
+  await click(page.getByRole("button", { name: "Susan" }));
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(row("Outbox 1")).toBeVisible();
+  await host("Online");
+  await expect.poll(() => sentWith("Recital photos")).toHaveLength(1);
+  await expect.element(row("Outbox")).not.toBeInTheDocument();
+}, 600_000);
 
 it('Review an unsent reply (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
-  const { secret, host, company } = await start();
+  const { secret, host, company, restartFromEarlierMailbox } = await start();
   await replyToClinic();
   await act(() => userEvent.fill(words(), "Please call me tomorrow."));
   const send = page.getByRole("button", { name: "Send", exact: true });
@@ -522,6 +622,10 @@ it('Review an unsent reply (spec/app/email.md, "Only the current approved draft 
   expect((await operations()).slice(previous).map((c) => c.receipt.state)).toEqual(["prepared"]);
   await expect.poll(async () => (await company()).sendLookups.includes("prepared")).toBe(true);
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "lookupMissing"), client));
+  await restartFromEarlierMailbox(1);
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await expect.element(words()).toHaveValue("Please call me this afternoon.");
+  await expect.element(send).toBeDisabled();
   await host("Offline");
   await host("Online");
   await expect.poll(async () => (await company()).sendLookups.includes("missing")).toBe(true);

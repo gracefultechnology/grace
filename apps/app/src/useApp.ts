@@ -8,6 +8,7 @@ import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts"
 import { type Event as CalendarEvent, Machine as CalendarMachine } from "../gen/app__calendarView.effect.vibe";
 import { useMachine as useCalendarMachine } from "../gen/app__calendarView.react.ts";
 import type { Event as MailEvent } from "../gen/app__email.effect.vibe";
+import type { SavedFile } from "../gen/app__files.effect.vibe";
 import { Library } from "./files.vibe";
 
 import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
@@ -18,7 +19,11 @@ import type { HistoryDirection } from "../gen/app__deviceKeys.ts";
 import { useMachine as usePageLayers } from "../gen/app__surface.react.ts";
 import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe";
 import { useMachine as useWebsiteRequestsMachine } from "../gen/app__websiteRequests.react.ts";
-import { type Event, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { type Event, type GuidedNameCorrection, type WorkspaceActor, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { enabled, guidanceVisible, type Workspace } from "../gen/app__workspace.ts";
+import { type GuidanceKind, guidanceLabel, guidanceMayShow } from "../gen/app__assistant.ts";
+import type { Guide, GuidePointing } from "@repo/ui";
+import type { Help } from "./context.vibe";
 import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.ts";
 import type { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import type { FileLibrary } from "./fileLibrary.vibe";
@@ -64,22 +69,46 @@ export function usePasswordGuide() {
   };
 }
 
+const pointings: Record<GuidanceKind, GuidePointing["kind"]> = { Look: "point", Tap: "instruction", Done: "confirm" };
+const compact = { type: "interact", input: { tag: "Resize", expanded: false } } as const;
+
+const hostTurn = { type: "interact", input: { tag: "HostTurn", turnOrigin: "PageEvent" } } as const;
+
+function guideOn<Target extends string>(workspace: Workspace | undefined, idOf: (target: string) => Target | undefined, onClose?: () => void): Guide<Target> | undefined {
+  if (workspace === undefined || !guidanceVisible(workspace) || !guidanceMayShow(workspace.assistant)) return undefined;
+  const { assistant } = workspace;
+  const targetId = idOf(assistant.guidance.target);
+  if (targetId === undefined) return undefined;
+  return { targetId, kind: pointings[assistant.guidance.kind], title: assistant.guidance.kind === "Look" ? undefined : guidanceLabel(assistant), onClose };
+}
+
 /** The workspace, what the rules allow the person, and sending an event; by the person unless the host measured it. */
 export function useWorkspace() {
   const runtime = useRuntime();
   const { state: workspace, can, send } = useWorkspaceMachine(runtime);
+  const offer = (event: Event) => can(event, "Person") ? () => void send(event, "Person") : undefined;
+  const current = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get()));
+  const help = async (need: Help) => {
+    for (const event of [{ type: "openGrace" }, compact] as const)
+      if (enabled(current(), event, "Person")) await send(event, "Person");
+    await runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.help(need)));
+  };
   return {
     workspace,
     can: (event: Event) => can(event, "Person"),
     send: (event: Event, by: WorkspaceActor = "Person") => send(event, by),
+    guide: <Target extends string>(idOf: (target: string) => Target | undefined) =>
+      guideOn(workspace, idOf, workspace && offer({ type: "interact", input: { tag: "DismissGuidance", revision: workspace.assistant.guidance.revision } })),
+    askGrace: (need: Help) => can({ type: "openGrace" }, "Person") || can(compact, "Person") || can(hostTurn, "Host") ? () => void help(need) : undefined,
     /** The workspace as it is now, for an event handler: a render may not have caught up. */
-    current: () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())),
+    current,
     /** The person's turn in the conversation, which Grace then answers; false when the rules refuse it. */
     say: (input: PersonTurn) => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.say(input))),
     startReadReview: (revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.startReadReview(revision))),
     resumeReadPlan: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.resumeReadPlan())),
     checkGuidedRead: () => runtime.runPromise(Effect.flatMap(Effect.service(Conversation), (c) => c.checkGuidedRead())),
     pointAtReadLink: (onMenu: (guidance: BrowserGuidance) => void) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.point(onMenu))),
+    confirmGuidedName: (correction: GuidedNameCorrection) => runtime.runPromise(Effect.flatMap(Effect.service(BrowserGuide), (guide) => guide.confirmName(correction))),
     privateHistory: (tab: number) => runtime.runSync(Effect.flatMap(Effect.service(PageLayers), (layer) => Effect.map(layer.get(), (state) => historyFor(state, tab)))),
     stepPrivate: (tab: number, direction: HistoryDirection) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.stepPrivate(tab, direction))),
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
@@ -208,6 +237,7 @@ export function useMail() {
     moveDraft: (from: number, to: number) => runtime.runPromise(mail.moveDraft(from, to)),
     discarded: () => runtime.runPromise(mail.discarded()),
     save: (id: number, refs: readonly string[]) => runtime.runPromise(mail.save(id, refs)),
+    attach: (id: number, asset: SavedFile) => runtime.runPromise(mail.attach(id, asset)),
     contacts: (sources: string) => {
       const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();
       contactLists.set(mail, lists);

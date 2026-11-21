@@ -59,11 +59,11 @@ export type MailFolderNavProps = Omit<SideNavProps, "onSelect"> & {
   accounts?: MailAccountRow[];
   /** The account whose inbox alone is open; none for every inbox. */
   account?: number;
-  /** Called with the account whose row is tapped. */
+  /** Called with the account whose row is tapped; without it the account rows are inert. */
   onAccount?: (id: number) => void;
   /** The list's words, for another language. */
   labels?: Partial<MailFolderNavLabels>;
-  /** Called with the folder tapped. */
+  /** Called with the folder tapped; without it the folder rows are inert. */
   onSelect?: (folder: MailFolder) => void;
 };
 
@@ -81,32 +81,38 @@ export function MailFolderNav({ folder, counts = {}, accounts = [], account, onA
     <SideNav aria-label={ariaLabel} {...props}>
       {folders
         .filter(([id]) => id !== "outbox" || folder === "outbox" || counts.outbox)
-        .map(([id, Icon]) => (
-          <Fragment key={id}>
-            <SideNavItem
-              icon={<Icon size={26} strokeWidth={2} aria-hidden />}
-              count={counts[id] || undefined}
-              selected={folder === id && one === undefined}
-              onClick={() => onSelect?.(id)}
-            >
-              {id === "inbox" && several ? l.allInboxes : l[id]}
-            </SideNavItem>
-            {id === "inbox" &&
-              several &&
-              accounts.map((row) => (
-                <SideNavItem
-                  key={row.id}
-                  icon={<MailAccountDot colour={row.colour} className="mx-1.5" />}
-                  count={row.needsSignIn ? <TriangleAlert role="img" aria-label={l.needsSignIn} size={22} strokeWidth={2.2} /> : row.unread || undefined}
-                  selected={one === row.id}
-                  className="pl-[30px] text-body"
-                  onClick={() => onAccount?.(row.id)}
-                >
-                  {row.name}
-                </SideNavItem>
-              ))}
-          </Fragment>
-        ))}
+        .map(([id, Icon]) => {
+          const selected = folder === id && one === undefined;
+          return (
+            <Fragment key={id}>
+              <SideNavItem
+                icon={<Icon size={26} strokeWidth={2} aria-hidden />}
+                count={counts[id] || undefined}
+                selected={selected}
+                className={cn(!onSelect && !selected && "opacity-40")}
+                aria-disabled={!onSelect || undefined}
+                onClick={onSelect && (() => onSelect(id))}
+              >
+                {id === "inbox" && several ? l.allInboxes : l[id]}
+              </SideNavItem>
+              {id === "inbox" &&
+                several &&
+                accounts.map((row) => (
+                  <SideNavItem
+                    key={row.id}
+                    icon={<MailAccountDot colour={row.colour} className="mx-1.5" />}
+                    count={row.needsSignIn ? <TriangleAlert role="img" aria-label={l.needsSignIn} size={22} strokeWidth={2.2} /> : row.unread || undefined}
+                    selected={one === row.id}
+                    className={cn("pl-[30px] text-body", !onAccount && one !== row.id && "opacity-40")}
+                    aria-disabled={!onAccount || undefined}
+                    onClick={onAccount && (() => onAccount(row.id))}
+                  >
+                    {row.name}
+                  </SideNavItem>
+                ))}
+            </Fragment>
+          );
+        })}
     </SideNav>
   );
 }

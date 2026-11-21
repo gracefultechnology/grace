@@ -264,3 +264,119 @@ lemma lawMovedDraftIsUnapproved_ensures(drafting: app__email_Mailbox, chosen: ap
     MovedDraftOpened(drafting, chosen);
   }
 }
+
+lemma FilterTwice<T>(p: T -> bool, xs: seq<T>)
+  ensures ProofLib.Filter(p, ProofLib.Filter(p, xs)) == ProofLib.Filter(p, xs)
+  decreases |xs|
+{
+  if |xs| == 0 {
+    ProofLib.FilterNil(p, xs);
+    ProofLib.FilterNil(p, ProofLib.Filter(p, xs));
+  } else {
+    ProofLib.FilterCons(p, xs);
+    FilterTwice(p, xs[1..]);
+    var rest := ProofLib.Filter(p, xs[1..]);
+    if p(xs[0]) {
+      ProofLib.FilterCons(p, [xs[0]] + rest);
+      assert ([xs[0]] + rest)[1..] == rest;
+    } else {
+      assert ProofLib.Filter(p, xs) == rest;
+    }
+  }
+}
+
+lemma ShownTwice(registry: app__accounts_Accounts, sources: seq<MailSource>)
+  ensures shown(registry, shown(registry, sources)) == shown(registry, sources)
+{
+  OpenSourceFilter(registry, sources);
+  OpenSourceFilter(registry, shown(registry, sources));
+  FilterTwice((s: MailSource) => showsMail(registry, s.account), sources);
+}
+
+lemma NoMailAccounts(registry: app__accounts_Accounts)
+  ensures showsConnect(registry) <==> forall x :: x in registry.accounts ==> !x.use.mail
+{
+  MailAccountsFilter(registry);
+  ProofLib.FilterNone((x: app__accounts_Account) => x.use.mail, registry.accounts);
+  if forall i :: 0 <= i < |registry.accounts| ==> !registry.accounts[i].use.mail {
+    forall x | x in registry.accounts ensures !x.use.mail {
+      var i :| 0 <= i < |registry.accounts| && registry.accounts[i] == x;
+    }
+  }
+}
+
+lemma lawConnectShowsExactlyWithoutEmail_ensures(registry: app__accounts_Accounts)
+  ensures (lawConnectShowsExactlyWithoutEmail(registry) == true)
+{
+  NoMailAccounts(registry);
+  var choices := mailChoices(registry);
+  if showsConnect(registry) {
+    assert choices == [MailChoice.ConnectChoice, MailChoice.AskGraceChoice];
+    forall c | c in choices ensures !c.WriteChoice? && !c.SearchChoice? && !c.FolderChoice? {
+      assert c == choices[0] || c == choices[1];
+    }
+  } else {
+    assert choices[0] in choices && choices[0].WriteChoice?;
+  }
+}
+
+lemma lawLastEmailOffShowsConnect_ensures(registry: app__accounts_Accounts, account: int, use: app__accounts_Use)
+  ensures (lawLastEmailOffShowsConnect(registry, account, use) == true)
+{
+  if app__accounts_canSetUse(registry, account, use, app__accounts_AccountActor.AccountPerson) && !use.mail && (forall x :: x in app__accounts_mailAccounts(registry) ==> x.id == account) {
+    var after := app__accounts_setUse(registry, account, use, app__accounts_AccountActor.AccountPerson);
+    forall x | x in after.accounts ensures !x.use.mail {
+      var i :| 0 <= i < |after.accounts| && after.accounts[i] == x;
+      var y := registry.accounts[i];
+      if y.id != account && y.use.mail {
+        MailAccountsFilter(registry);
+        ProofLib.FilterMember((x: app__accounts_Account) => x.use.mail, registry.accounts, y);
+      }
+    }
+    NoMailAccounts(after);
+  }
+}
+
+lemma lawHomeCountsOnlyShownMail_ensures(registry: app__accounts_Accounts, sources: seq<MailSource>, online: bool)
+  ensures (lawHomeCountsOnlyShownMail(registry, sources, online) == true)
+{
+  ShownTwice(registry, sources);
+  var inbox := ProofLib.Filter((r: Row) => r.record.folder.InboxFolder?, mailContext(registry, sources));
+  forall r | r in homeRows(registry, sources) ensures showsMail(registry, r.account) && r.record.folder.InboxFolder? {
+    ProofLib.FilterMember((r: Row) => r.record.unread, inbox, r);
+    ProofLib.FilterMember((r: Row) => r.record.folder.InboxFolder?, mailContext(registry, sources), r);
+    ContextRow(registry, sources, r);
+  }
+}
+
+lemma lawDraftsCountOnlyShownMail_ensures(registry: app__accounts_Accounts, sources: seq<MailSource>)
+  ensures (lawDraftsCountOnlyShownMail(registry, sources) == true)
+{
+  ShownTwice(registry, sources);
+}
+
+lemma lawLastSentEmailLeavesOutbox_ensures(registry: app__accounts_Accounts, sources: seq<MailSource>, account: int, operationId: string)
+  ensures (lawLastSentEmailLeavesOutbox(registry, sources, account, operationId) == true)
+{
+  if forall r :: r in outboxRows(registry, sources) ==> r.account == account && r.queued.operationId == operationId {
+    var after := sentEverywhere(sources, account, operationId);
+    forall i | 0 <= i < |after| ensures |sourceOutbox(registry, after[i])| == 0 {
+      var s := sources[i];
+      if showsMail(registry, s.account) && |after[i].mailbox.outbox| > 0 {
+        var w := after[i].mailbox.outbox[0];
+        if s.account == account {
+          assert after[i].mailbox.outbox == ProofLib.Filter((q: app__email_QueuedSend) => (q.operationId != operationId), s.mailbox.outbox);
+          ProofLib.FilterMember((q: app__email_QueuedSend) => (q.operationId != operationId), s.mailbox.outbox, w);
+          var j :| 0 <= j < |s.mailbox.outbox| && s.mailbox.outbox[j] == w;
+          assert sourceOutbox(registry, s)[j] == OutboxRow(s.account, w);
+          ProofLib.FoldLeftConcatMember((rows: seq<OutboxRow>, s: MailSource) => (rows + sourceOutbox(registry, s)), (s: MailSource) => sourceOutbox(registry, s), [], sources, OutboxRow(s.account, w));
+        } else {
+          assert after[i] == s;
+          assert sourceOutbox(registry, s)[0] == OutboxRow(s.account, w);
+          ProofLib.FoldLeftConcatMember((rows: seq<OutboxRow>, s: MailSource) => (rows + sourceOutbox(registry, s)), (s: MailSource) => sourceOutbox(registry, s), [], sources, OutboxRow(s.account, w));
+        }
+      }
+    }
+    ProofLib.FoldLeftConcatEmpty((rows: seq<OutboxRow>, s: MailSource) => (rows + sourceOutbox(registry, s)), (s: MailSource) => sourceOutbox(registry, s), [], after);
+  }
+}

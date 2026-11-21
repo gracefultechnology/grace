@@ -8,6 +8,7 @@ import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
 import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
+import { usesManagedSurfaces } from "./managedReads.vibe";
 import { retryPreferences } from "./preferences.vibe";
 import { useRuntime, useWebsiteRequests, useWorkspace } from "./useApp.ts";
 import { Wifi } from "./Wifi.tsx";
@@ -16,13 +17,15 @@ const names: Record<SettingsPage, PageName> = {
   TextSizeSettings: "text-size", BrightnessSettings: "brightness", VoiceSettings: "voice", NetworkSettings: "wifi", AccountSettings: "account", EmailCalendarSettings: "email-calendar", AboutSettings: "about",
 };
 const pages = Object.values(names);
+const navTargets = new Map((Object.keys(names) as SettingsPage[]).map((p) => [`nav-${p}`, names[p]]));
+
 const textSizes: Readonly<Record<TextSize, string>> = { Smaller: "Smaller", StandardText: "Normal", Larger: "Larger", Largest: "Largest" };
 const paceOptions: readonly Pace[] = ["Slower", "Normal", "Faster"];
 
 /** @model spec/app/websiteRequests.md
  * @model spec/app/accounts.md */
 export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidden">) {
-  const { workspace, can, send } = useWorkspace();
+  const { workspace, can, send, guide } = useWorkspace();
   const website = useWebsiteRequests();
   const runtime = useRuntime();
   const setup = useSetup(runtime).state;
@@ -41,13 +44,15 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     if (website.can(event)) void website.send(event);
   };
 
-  const frame = { pages, page: names[page], onPageChange: choose, onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props };
+  const frame = {
+    pages, page: names[page], onPageChange: choose, guide: guide((target) => navTargets.get(target)),
+    onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props,
+  };
   if (page === "EmailCalendarSettings") {
-    const account = setup?.graceAccount;
-    if (account?.tag === "GraceSignedOut" || account?.tag === "GraceDeviceSignedOut") return <EmailAccounts {...frame} />;
+    if (!usesManagedSurfaces(setup, window.location.hash)) return <EmailAccounts {...frame} />;
     return <SettingsApp {...frame}>
       <PageHeading>Email &amp; calendar</PageHeading>
-      {account?.tag === "GraceSignedIn" && setup?.googleLink.tag === "GoogleLinkConnected" && <PageText>{setup.googleLink.email}</PageText>}
+      {setup?.graceAccount.tag === "GraceSignedIn" && setup.googleLink.tag === "GoogleLinkConnected" && <PageText>{setup.googleLink.email}</PageText>}
       <Button variant="prominent" size="pill" onClick={() => choose("account")}>Manage connections in Grace account</Button>
     </SettingsApp>;
   }
