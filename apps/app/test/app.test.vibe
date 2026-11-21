@@ -384,6 +384,16 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const corrected = edit(failed, { ...failed.draft, participant: "Another person" }, "CalendarUser")
       const changedDraft = approveSave(corrected, corrected.revision, "CalendarUser")
       const rebound = try calendar.write(changedDraft, view([changedDraft]))
+      const { secret: alternateKey } = try signIn(cloud)
+      const changedGrant = effect {
+        provide connectorAt(alternateKey) {
+          const other = (try Connector).calendar(gmail)
+          const receipt = try other.write(reapproved, view([reapproved]))
+          const remote = Array.from(try Stream.runCollect(other.feed(view([]))))
+          return [receipt.succeeded, remote.some(({ incoming }) => incoming.committed.title === details.title)]
+        }
+      }
+      const grantIsolation = try changedGrant
       try outage(cloud, secret, false, "createResponse")
       const duringOutage = try feed([awaiting])
       const independent = duringOutage.find(({ incoming }) => incoming.identity.occurrenceId === "eye-check")
@@ -466,7 +476,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const tokyoMidnight = Date.parse(`${new Date(Math.floor(now / day) * day + 3 * day).toISOString().slice(0, 10)}T00:00:00+09:00`)
       try Effect.try(() => assert.deepStrictEqual({
         eyeCheck: [eyeCheck.phase, eyeCheck.committed.participant, found("eye-check")?.scheduleVerified],
-        legacyEvidence, added, isolated: [rebound.succeeded, independent?.incoming.committed.title, unbound?.incoming.identity.sourceRef, unbound?.incoming.committed.reminderEnabled,
+        legacyEvidence, added, grantIsolation, isolated: [rebound.succeeded, independent?.incoming.committed.title, unbound?.incoming.identity.sourceRef, unbound?.incoming.committed.reminderEnabled,
           duringOutage.some(({ incoming }) => incoming.identity.occurrenceId === awaiting.identity.occurrenceId && incoming.phase === "Deleted")], recovery: [dropped.succeeded, providerCopies, interrupted.succeeded, retried, otherProvider], localRemoved: settled.entries.every((e) => e.identity.occurrenceId !== identity.occurrenceId),
         copied: copied.map((p) => [p.incoming.identity.occurrenceId === identity.occurrenceId, p.incoming.phase, p.incoming.committed.participant, p.incoming.identity.sourceRef, p.incoming.identity.sourceAccount, p.incoming.committed.reminderEnabled, p.scheduleVerified]),
         visit: [visit.phase, visit.identity.sourceAccount, visit.identity.sourceRef, visit.committed.participant, visit.committed.reminderEnabled, visit.committed.leadTime],
@@ -480,6 +490,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         eyeCheck: ["Saved", "Dr. Patel", true],
         added: { revision: 2, succeeded: true, published: [], providerId: visit.identity.occurrenceId },
         isolated: [false, eyeCheck.committed.title, "", false, false],
+        grantIsolation: [false, false],
         legacyEvidence: [false, [["", false]]],
         recovery: [false, 1, false, [false, true, ["clinic"]], [false, true, true, 1, false, false, 1]],
         localRemoved: true,
