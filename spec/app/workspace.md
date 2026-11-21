@@ -58,9 +58,16 @@ type GuidedCalendarApproval = {
   title: str, starts: int, ends: int, timezone: str, location: str, notes: str
 }
 type GuidedReceipt = { sourceKey: str, evidence: str }
+type GuidedNameCorrection = {
+  owner: str, task: str, version: int, generation: int, deviceVersion: int, browserRevision: int,
+  stepIndex: int, loadVersion: int, documentId: str, url: str, href: str, original: str, label: str
+}
+type GuidedNameCorrectionState = NoGuidedNameCorrection | PendingGuidedNameCorrection({ value: GuidedNameCorrection })
+type GuidedNameOverride = { stepIndex: int, label: str }
 type GuidedPlan = {
   owner: str, steps: List[GuidedStep], receipts: List[GuidedReceipt], openingBrowser: int, originalAsk: str, linkStep: int, linkUrl: str,
-  mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str
+  mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str,
+  nameCorrection: GuidedNameCorrectionState, nameOverride: GuidedNameOverride
 }
 type GuidedRequest = { owner: str, task: str, goal: str, steps: List[GuidedStep] }
 type GuidedObservation = {
@@ -84,9 +91,11 @@ pure val noGuidedApproval: GuidedCalendarApproval = {
   task: "", account: 0, owner: "", calendar: "", sourceRef: "", provisional: "", proposal: -1,
   title: "", starts: 0, ends: 0, timezone: "", location: "", notes: ""
 }
+pure val noGuidedNameOverride: GuidedNameOverride = { stepIndex: -1, label: "" }
 pure val emptyPlan: GuidedPlan = {
   owner: "", steps: List(), receipts: List(), openingBrowser: 0, originalAsk: "", linkStep: -1, linkUrl: "",
-  mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: ""
+  mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: "",
+  nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride
 }
 pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
@@ -100,7 +109,14 @@ pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
 }
 pure val noGuidedStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "", outcome: "" })
 pure def hasNext(plan: GuidedPlan): bool = plan.receipts.length() < plan.steps.length()
-pure def nextOutcome(plan: GuidedPlan): GuidedStep = plan.steps.nthOr(plan.receipts.length(), noGuidedStep)
+pure def nextOutcome(plan: GuidedPlan): GuidedStep = {
+  val index = plan.receipts.length()
+  val step = plan.steps.nthOr(index, noGuidedStep)
+  if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match step {
+    | ReachNamedPage(_) => ReachNamedPage({ subject: plan.nameOverride.label })
+    | _ => step
+  } else step
+}
 type Workspace = {
   device: S::Shell, browser: B::Browser, assistant: A::Assistant,
   execution: X::Execution, commitment: CM::Commitment, otherCommitments: List[CM::Commitment],
@@ -1102,7 +1118,7 @@ pure def sometimesOrdinaryGoalCompletes(w: Workspace): bool =
 
 ## Story: Follow one reviewed plan across apps
 
-> As a person asking Grace to read a message, check the details on a website and put the appointment in my calendar, I want to see what remains and keep my place when I change apps.
+> As a person asking Grace to read a message, check the details on a website and put the appointment in my calendar, I want to see what remains and keep my place when I change apps. When a website uses a different name for my next destination, I want to choose whether to use that name and continue the same plan.
 
 ### The person starts a sequence of outcomes without opening a website
 
@@ -1179,7 +1195,7 @@ pure def canSetGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): b
   link.deviceVersion == w.device.contextVersion and link.browserRevision == w.browser.revision and
   link.stepIndex == w.plan.receipts.length()
 pure def setGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): Workspace =
-  { ...w, plan: { ...w.plan, linkStep: link.stepIndex, linkUrl: link.url } }
+  { ...w, plan: { ...w.plan, linkStep: link.stepIndex, linkUrl: link.url, nameCorrection: NoGuidedNameCorrection } }
 pure def guidedLinkObserved(w: Workspace): bool =
   (w.plan.linkStep == w.plan.receipts.length() and w.plan.linkUrl != "") implies
     (w.device.surface == S::Browser and B::activeTab(w.browser).load == B::Loaded and
@@ -1217,6 +1233,58 @@ pure val offerValues = Set(
 pure val linkValues = Set({ task: "read", version: 1, generation: 2, deviceVersion: 2, browserRevision: 1,
   stepIndex: 0, url: "https://biller.example/help" })
 pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
+```
+
+### Only the person can revise the next named page to an observed public link label
+
+While a named page is the next check, Grace can offer the visible label of a different public link in the current loaded document. The browser adapter witnesses one pointable same-site anchor outside every form. It checks the same document, address, link and label again when the person approves. A private page or a changed account, task, step, permission, browser or conversation makes the offer unavailable. The person can ignore it and keep asking for the original name. Approval replaces only the exact name to check for this step and binds the approved link. The original request, plan owner, remaining steps and all receipts stay in place. Approval does not navigate, record a receipt or authorize a write. Grace must still check the exact approved heading on the loaded destination.
+
+```quint
+pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrection): bool = {
+  val tab = B::activeTab(w.browser)
+  mayGuideReadLink(w) and not(privateSurfaceActive(w)) and w.device.observationAllowed and
+  isNamedDestination(nextOutcome(w.plan)) and correction.original == guidedDetails(nextOutcome(w.plan)).subject and
+  correction.owner != "" and correction.owner == w.plan.owner and correction.task == w.assistant.taskId and
+  correction.version == w.assistant.workVersion and correction.generation == w.assistant.conversation.generation and
+  correction.deviceVersion == w.device.contextVersion and correction.browserRevision == w.browser.revision and
+  correction.stepIndex == w.plan.receipts.length() and correction.loadVersion == tab.loadVersion and
+  correction.documentId != "" and correction.url != "" and correction.url == B::tabUrl(tab) and
+  correction.href != "" and correction.href != correction.url and correction.label != "" and
+  correction.label != correction.original
+}
+pure def currentGuidedNameCorrection(w: Workspace): GuidedNameCorrectionState =
+  match w.plan.nameCorrection {
+    | PendingGuidedNameCorrection(pending) => if (guidedNameCorrectionCurrent(w, pending.value))
+        w.plan.nameCorrection else NoGuidedNameCorrection
+    | NoGuidedNameCorrection => NoGuidedNameCorrection
+  }
+pure def canOfferGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
+  by == Host and guidedNameCorrectionCurrent(w, correction)
+pure def offerGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): Workspace = {
+  ...w, plan: { ...w.plan, nameCorrection: PendingGuidedNameCorrection({ value: correction }) }
+}
+pure def canConfirmGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
+  by == Person and currentGuidedNameCorrection(w) == PendingGuidedNameCorrection({ value: correction })
+pure def confirmGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): Workspace = {
+  ...w, plan: { ...w.plan, nameCorrection: NoGuidedNameCorrection,
+    nameOverride: { stepIndex: correction.stepIndex, label: correction.label },
+    linkStep: correction.stepIndex, linkUrl: correction.href },
+  assistant: { ...w.assistant, workVersion: w.assistant.workVersion + 1 }
+}
+pure def lawNameCorrectionRetainsTheReviewedPlan(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool = {
+  val after = confirmGuidedNameCorrection(w, correction, by)
+  canConfirmGuidedNameCorrection(w, correction, by) implies
+    after.plan.owner == w.plan.owner and after.plan.originalAsk == w.plan.originalAsk and
+    after.plan.steps == w.plan.steps and after.plan.receipts == w.plan.receipts and
+    after.browser == w.browser and nextOutcome(after.plan) == ReachNamedPage({ subject: correction.label }) and
+    after.assistant.workVersion > correction.version
+}
+pure def lawANameCorrectionNeedsItsCurrentPersonOffer(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
+  (by != Person or not(guidedNameCorrectionCurrent(w, correction))) implies not(canConfirmGuidedNameCorrection(w, correction, by))
+pure val correctionValues = Set(
+  { owner: "tablet", task: "read", version: 1, generation: 2, deviceVersion: 2, browserRevision: 1,
+    stepIndex: 0, loadVersion: 1, documentId: "browser-document", url: "https://biller.example/",
+    href: "https://biller.example/help", original: "Support", label: "Help" })
 ```
 
 ### Only a current observation of the next outcome advances the plan
@@ -1259,7 +1327,8 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   not(isNamedDestination(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
-  val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }) }
+  val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
+    nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride }
   val assistant = w.assistant
   { ...w, plan: plan, assistant:
     if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,

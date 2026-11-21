@@ -36,7 +36,7 @@ const graceWindow = () => document.querySelector<HTMLElement>("section[aria-labe
  * answer to a grant, each purge waits until the test says whether it left the profile clean, and while `held.starts`
  * the page starts what Grace asked only when the test says, and only what it asked last.
  */
-function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown, autoRoute = false, readPage?: () => unknown) {
+function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown, autoRoute = false, readPage?: (options: Record<string, unknown>) => unknown) {
   const calls: Call[] = [];
   const android = { allows: true };
   const privateSignIn = { allows: true };
@@ -55,7 +55,7 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
       if (method === "createSurface" && options.purpose === "manual-sign-in" && !privateSignIn.allows) {
         return Promise.reject(new Error("Android private WebView unavailable"));
       }
-      if (method === "readPage" && readPage) return Promise.resolve(readPage());
+      if (method === "readPage" && readPage) return Promise.resolve(readPage(options));
       if (method === "controlPage" && controlPage) return Promise.resolve(controlPage(options));
       if (method === "answerSitePermission") {
         const outcome = options.grant !== true ? "denied" : android.allows ? "granted" : "android-refused";
@@ -2149,7 +2149,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
             { id: "subscribe", tag: "button", type: "submit", label: "Subscribe", sensitive: null,
               form: newsletterEmail.form, focused: false, submits: true, href: null, inViewport: false },
             { id: "form-help", tag: "a", label: "Help center inside a form", form: { index: 3, name: null },
-              href: "https://example.org/form-help", inViewport: true },
+              href: "https://example.org/form-help", inViewport: true, bounds: { x: 100, y: 140, width: 100, height: 32 } },
           ]),
           ...(challengeShown === "code" ? [{ id: "otp", tag: "input", type: "text", label: "Verification code", sensitive: "one-time-code",
             form: { index: 4, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: true }] : []),
@@ -2395,6 +2395,145 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: "Expand", exact: true }));
     await routeTo(plan.getByText("Open page: Help center", { exact: true }));
     await expect.poll(() => plan.getByText(`Open message: ${subject}`, { exact: true }).elements().length).toBe(2);
+  } finally {
+    await dispose();
+    accountNetwork.mockRestore();
+    localStorage.clear();
+  }
+});
+
+it('Approve the website’s exact label for one step (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const requested = "Customer support";
+  const siteLabel = "Service desk";
+  const ask = 'Help me reach the page named "Customer support", then read the appointment email I open.';
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said: ask,
+    answer: JSON.stringify({
+      text: "Review the page and email checks.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target: requested }, "ReadMail"] }],
+    }),
+  }]), client));
+  const subject = "Service desk follow-up appointment";
+  const incoming = await fetch(new URL("/fake/gmail/incoming", cloud), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ to: "owner@grace.test", from: "Harbor Clinic", fromEmail: "desk@harbor.test", subject, body: "Your Thursday appointment is at noon." }),
+  });
+  expect(incoming.ok).toBe(true);
+  const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
+  const account = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector");
+  localStorage.clear();
+  localStorage.setItem("accounts", JSON.stringify(account));
+
+  const home = "https://example.org/";
+  const destination = home + "service-desk";
+  let url = home;
+  let documentId = "directory";
+  let heading = "Example";
+  let domRevision = 1;
+  const native = fakePlugin(({ command }) => {
+    if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
+      return { documentId, frameScope: "main", result: {
+        snapshotId: documentId, domRevision, url, title: heading, text: heading,
+        complete: true, readyState: "complete", blockers: [],
+        viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
+        elements: url === home ? [{
+          id: "service-desk", tag: "a", role: "menuitem", label: siteLabel, form: null, href: destination,
+          targetSelector: "#service-desk", expanded: false, inViewport: true, bounds: { x: 100, y: 80, width: 155, height: 32 },
+        }] : [],
+      } };
+    }
+    return { result: { accepted: true } };
+  }, false, ({ selector }) => ({
+    url: typeof selector === "string" && selector.includes(":focus-within") ? "" : url,
+    title: heading, text: heading, truncated: false,
+  }));
+  const browserFetch = window.fetch.bind(window);
+  const accountNetwork = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
+    const request = new URL(input instanceof Request ? input.url : input, window.location.origin);
+    if (request.origin !== window.location.origin) return browserFetch(input, init);
+    switch (request.pathname) {
+      case "/api/auth/session": return Promise.resolve(Response.json({ account: { id: "guide-owner", email: "owner@grace.test" } }));
+      case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
+      case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
+      case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
+      case "/api/v1/decisions":
+        return browserFetch(new URL(request.pathname, cloud), { ...init, credentials: "omit",
+          headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" } });
+      default: return browserFetch(input, init);
+    }
+  });
+  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  const button = (name: string | RegExp) => page.getByRole("button", { name, exact: true });
+  const status = (name: string) => page.getByRole("status", { name });
+  const plan = page.getByRole("region", { name: "Task plan" });
+  const offer = button(`Use “${siteLabel}” for this step`);
+  const showLink = button("Show me the link");
+  const resume = button("Resume Grace");
+  const pageReceipt = plan.getByText(/^Open page:/);
+  const pending = (label: string) => plan.getByText(`Find and check “${label}”.`, { exact: true });
+  try {
+    await tap(button("Internet"));
+    await visitExampleSite(native);
+    await tap(button("Ask Grace"));
+    const message = page.getByRole("textbox", { name: "Message to Grace" });
+    await routeTo(message);
+    await act(() => message.fill(ask));
+    await act(() => userEvent.keyboard("{Enter}"));
+    await routeTo(page.getByRole("list", { name: "Read plan" }).getByText(requested, { exact: true }));
+    await tap(button("Collapse"));
+    await tap(button("Start read plan"));
+    await tap(button("Allow Grace to read this browser"));
+    await tap(resume);
+    await routeTo(pending(requested));
+    await tap(showLink);
+    await routeTo(status("Open submenu guidance"));
+    await routeTo(offer);
+
+    documentId = "replacement-directory";
+    await tap(offer);
+    await routeTo(status("Link unavailable").getByText("The page or task changed. Ask me again on the page you want."));
+    await expect.element(pending(requested)).toHaveAttribute("aria-current", "step");
+    expect(pageReceipt.query()).toBeNull();
+
+    await tap(showLink);
+    await routeTo(offer);
+    await tap(offer);
+    await routeTo(pending(siteLabel));
+    await expect.element(pending(siteLabel)).toHaveAttribute("aria-current", "step");
+    expect(pending(requested).query()).toBeNull();
+    expect(pageReceipt.query()).toBeNull();
+    expect(button("Check email").query()).toBeNull();
+
+    await tap(showLink);
+    await routeTo(status("Link guide result"));
+    url = destination;
+    documentId = "service-page";
+    heading = requested;
+    await native.report("tab-1", url, 100);
+    await tap(resume);
+    const checkPage = button("Check page");
+    await tap(checkPage);
+    await routeTo(status("Page check result"));
+    await expect.element(pending(siteLabel)).toHaveAttribute("aria-current", "step");
+    expect(pageReceipt.query()).toBeNull();
+
+    heading = siteLabel;
+    domRevision++;
+    await tap(checkPage);
+    await routeTo(plan.getByText(/^Open the email you want me to read/));
+    await tap(button("Home"));
+    await tap(button(/^Email/));
+    await tap(button(/Harbor Clinic/));
+    await routeTo(page.getByText("Your Thursday appointment is at noon."));
+    await tap(resume);
+    await tap(button("Check email"));
+    await routeTo(plan.getByText("Read checks complete"));
+    await tap(button("Expand"));
+    await routeTo(plan.getByText(`Open page: ${siteLabel}`, { exact: true }));
+    await routeTo(plan.getByText(`Open message: ${subject}`, { exact: true }));
   } finally {
     await dispose();
     accountNetwork.mockRestore();
