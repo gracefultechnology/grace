@@ -56,7 +56,7 @@ Only review items may remain after verification. The user reviews the product ru
 
 ## Guided tasks across applications
 
-[Latest qualification](#qualification-on-november-20) · [Remaining verification](#remaining-verification)
+[Latest qualification](#qualification-on-november-21) · [Remaining verification](#remaining-verification)
 
 The prototype gives Grace one visible instruction, a pause control and a way to show what Margaret has already done. Its `buildSteps` implementation chooses controls for its simulated Chase screens. Use those screens to review interaction design. Derive runnable controls from the current app or website. [Prototype](../prototype/Grace%20Prototype.html)
 
@@ -181,6 +181,8 @@ Six offline Chromium journeys passed in GitHub Actions on `45c81f0`. They cover 
 | 3 | Extend app coverage with a source-bound checkpoint and a new adapter. | Recover a paused task after process restart under the same account, reject recovery under a different account and complete a Files or multi-tab task without reusing an earlier observation. Carry a venue read from a webpage into an explicitly approved calendar write. |
 | 4 | Qualify the installed standalone app against its own cloud and finish whole-repository verification. | Record an authenticated hosted decision from an installed device, a completed browser task and the ordinary full `pnpm check` result. Keep the upstream sandbox, native build and installed-device receipts identifiable by revision. |
 
+For device coverage, repeat private sign-in on a supported physical tablet with a synthetic two-mailbox account. Exercise a delayed message, an expired code and a replacement code on the original site. During each interruption the browser step must stay pending. Verify that the website accepts the person’s final input and that Grace can resume the requested task only after the person permits a fresh observation.
+
 ### Tagged capabilities and account ownership
 
 On `47fd9f0` with Eliza `6e3b157`, the official WebArena URL evaluator and Grace’s own completion check each accepted all four declared Shopping attempts. Task 260 reached Video Games once with a fixed plan. Task 261 reached Headphones in three fresh sessions, each with a successful live upstream chat request. All four used hosted Clef for browser decisions. Two infrastructure attempts ended before a task started. [Product source](https://github.com/gracefultechnology/grace-new/tree/47fd9f02cd13f3ee480f6ccced6806b8b0d2e379) · [Official task definitions](https://github.com/web-arena-x/webarena/blob/dce04686a56253aefba7b18a4fa0937cf1dc987b/config_files/test.raw.json)
@@ -230,6 +232,20 @@ Manual offline Google runs use their own concurrency group for each commit. Host
 All six offline Google journeys on `e257715` also passed in GitHub Actions. A disposable Linux runner verified the Grace and Eliza revisions before exercising mock consent, Gmail and Calendar. The saved console receipt names all six journeys. [Google workflow and test output](https://github.com/gracefultechnology/grace-new/actions/runs/44811596817/job/136563566373)
 
 The separate ordinary check on `e257715` recorded 40 passing model entries, four passing invariant entries, 67 reachability entries and four TypeScript replay entries. Its random search for Assistant showing Done reached the one-hour limit. Both that state and the pending typed request were reached in the finite Quint and TypeScript replays. The release owner took over the combined check in the Lenovo release checkout, and the duplicate check was stopped.
+
+### Qualification on November 21
+
+The site-name journey starts with a signed-in account, a connected test inbox and a site whose navigation label differs from the person’s request. It rejects a changed document and a rotated session. After the person approves the site’s wording, a matching heading at the wrong address and the old heading at the approved address both leave the step open. A fresh matching document earns a receipt, followed by a separate receipt for the selected email. All nine selected offline journeys passed on a disposable Linux runner. The shared mock decision service takes its allowed labels from the synthetic account’s test setup. [Cross-app CI](https://github.com/gracefultechnology/grace-new/actions/runs/44878292911/job/136767773654) · [Site-name story and model](../spec/app/workspace.md#story-follow-one-reviewed-plan-across-apps)
+
+On Grace `44a11493`, desktop Chromium reached the expected public support page and received a completed Grace check on the first attempt for all 100 distinct BillWorld billers across 26 portal templates. The test used a fixed chat proposal and 102 successful hosted Clef Flash link decisions. Four separately graded authenticated statement reads passed. The graders rejected four no-action controls and three wrong answers. An earlier run at `2c6a3a2b` needed two individual retries to reach 100. [BillWorld fixture](https://github.com/gracefultechnology/billworld/tree/8320228bccf0759f375b9633592612e0e570a526) · [Tested Grace revision](https://github.com/gracefultechnology/grace-new/tree/44a1149382668ac62c7a231ffaedb2c66963f81d)
+
+Three focused Dafny proofs cover approval of the current offer by the person, preservation of the reviewed plan during that approval, and rejection of a different link after approval. A generated-model journey also exercised stale offers, replay, and continuation to a later step. The repository-wide proof and package checks were still running in the Lenovo release checkout when these results were recorded.
+
+The original Shopping 261 trace showed **Read checks complete** 2.23 seconds after the person’s single **Check page** click returned. The earlier one-second poll had already reported failure. The shipped benchmark waits for a visible result within its existing 15-second browser readiness window and records the wait in each completed hop. It still requires a fresh document, a visible Grace completion receipt and the independent evaluator’s expected URL. Original Shopping tasks 260 and 261 both met those conditions at `08179ca4`. [Shipped benchmark](https://github.com/gracefultechnology/grace-new/blob/08179ca438b49785ab63f1b591c474777aed336f/apps/app/test/browser.browser.test.tsx) · [Site-name change](https://github.com/gracefultechnology/grace-new/pull/177)
+
+In a separate task 260 trial, the live planner returned “Video Game” and the site offered “Video Games.” A scripted person clicked the visible approval. The original plan kept “Video Game,” the current step displayed “Video Games,” and the browser reached the approved category. Grace issued its page receipt and the official evaluator scored the landing 1. This assisted trial is recorded separately from the two original benchmark cases. The unchanged starting page scored 0 for each task.
+
+On the installed ARM64 standalone APK at `2c6a3a2b`, Android 36 with Chromium WebView 160 exercised private sign-in from Ask Grace. With no mail app installed, Grace offered a fallback. With a synthetic mailbox installed, **Check email** opened the mail app and Android Back returned to the same private tab. The task still required the person to finish on the website. [Private sign-in story](../spec/app/browser.md#story-sign-in-privately-on-a-website)
 
 ### How a reviewed step runs
 
