@@ -1637,7 +1637,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     try {
       await Effect.runPromise(seriesRequested.await);
       await tap("Close Calendar");
-      await tap(/^Calendar/);
+      await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true })));
       await expect.element(page.getByRole("button", { name: "Close Calendar", exact: true })).toBeVisible();
       await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
     } finally {
