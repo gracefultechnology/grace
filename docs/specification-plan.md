@@ -439,3 +439,34 @@ need to verify the selected region and reject active forms independently of
 the account check.
 
 To finish this family, let the person grant access to the order list on the active website account. Bind each page and detail to a site-supplied account identifier and isolate the read to the record region. Discard the scan when the account or document changes unexpectedly. Traverse until the observed item count is complete. A site-declared newest-first ordering can shorten this traversal once the newest matching date and its tie boundary have been checked. Where the site supplies only ambiguous short dates, use full dates from account-bound details. Check the selected detail again before completing the task. Measure this with a latest candidate on a later page, equal dates, a changed account, and both official landings and untouched controls. A missing identity or ordering guarantee needs to remain visible in the result.
+
+#### GitLab public project navigation
+
+The original WebArena catalog declares task `258` as a single-site URL
+check with the intent “See all public projects.” It starts on the GitLab
+root and requires a seeded synthetic login. The adapter accepts that exact
+task on a dedicated loopback HTTPS origin and grades the observed
+`/explore` document with the pinned upstream evaluator. The untouched
+root is the no-action control. [Original task catalog](https://github.com/web-arena-x/webarena/blob/dce04686a56253aefba7b18a4fa0937cf1dc987b/config_files/test.raw.json)
+
+The WebArena-Verified GitLab compatibility image is
+`am1n3e/webarena-verified-gitlab@sha256:673ba94d757c5b3f4bb55751ad8b745a33bad2b987349322403cbc41035a92e0`.
+Its Linux x86-64 manifest lists about 22 GB of compressed layers before
+unpacking and database startup. The standard Linux hosted runner lists
+14 GB of SSD storage. Use an existing x86-64 host with Docker, room for the
+compressed and expanded image plus GitLab data, and at least 4 GB of RAM
+available to GitLab. Allow several minutes for startup. Bind the fixture to
+loopback and verify that the public project list opens with the published
+synthetic login. [GitLab container and resource requirements](https://servicenow.github.io/webarena-verified/v1.2.3/environments/gitlab/) · [Hosted runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+
+After signing in, return to the home document and save Chromium's storage
+state in a private directory. Declare task `258` with the fixture root as
+`startUrl`, the original catalog intent, `siteStorageState`, an output
+`receipt` path, `evaluator: "webarena"`, `chat: "upstream"`, and
+`requiredStep: "ReachNamedPage"`. Load the descriptor through
+`GRACE_BROWSER_BENCHMARK_FILE` and run the existing benchmark browser
+journey. Keep the GitLab fixture and synthetic account separate from
+Shopping. Coverage requires a fresh checked `/explore` document accepted
+by the original grader, the rejected root control, and authenticated hosted
+guidance. The adapter's offline URL checks alone do not qualify that browser
+journey.
