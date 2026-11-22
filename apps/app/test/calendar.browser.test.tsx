@@ -2,7 +2,7 @@
 import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { act } from "react";
-import { expect, inject, it, onTestFinished, vi } from "vitest";
+import { expect, inject, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import type { Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { lifetimeMs, type Offer } from "../gen/app__notices.ts";
@@ -457,9 +457,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await click("Close Calendar");
   await expect.element(page.getByRole("button", { name: "See details" })).not.toBeInTheDocument();
   // spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"
-  vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
-  onTestFinished(() => { vi.useRealTimers(); });
-  vi.setSystemTime(Date.now() + 11 * 60 * 1000);
+  await run(TestClock.adjust("11 minutes"));
   await act(() => userEvent.click(card.getByText("Calendar", { exact: true })));
   await click("Close Calendar");
   await click("See details");
