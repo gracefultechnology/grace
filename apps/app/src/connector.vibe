@@ -3,7 +3,7 @@ import type { WebsiteTask } from "./websiteTask.vibe"
 import { Digest } from "effect/crypto"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import type { OtherReport, Provider, SheetReport, Use } from "../gen/app__accounts.effect.vibe"
-import { approveDelete, approveSave, beginEdit, confirmDelete, create, edit, initial as noEntry, requestDelete, save, validDetails, validIdentity, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
+import { approveDelete, approveSave, beginEdit, confirmDelete, create, edit, initial as noEntry, requestDelete, save, validDetails, validIdentity, type Calendar, type EntryDetails, type Recurrence } from "../gen/app__calendar.effect.vibe"
 import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calendarView.effect.vibe"
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
@@ -204,8 +204,37 @@ function participantOf(e: ProviderEvent) {
   return other?.displayName ?? other?.email ?? ""
 }
 
-function details(e: ProviderEvent, startAt: number, endAt: number, timezone: string, known: EntryDetails | undefined): EntryDetails {
-  const kept = known ?? { participant: participantOf(e), seriesId: "", recurrence: "Once" as const, reminderEnabled: false, leadTime: 0, important: false }
+type Reminder = { readonly method: string; readonly minutes: number }
+const weekdays = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+
+function repeatsOf(zones: ReadonlySet<string>, lines: readonly string[], startAt: number, timeZone: string): Recurrence {
+  const rule = lines.length === 1 && zones.has(timeZone) ? /^RRULE:(.+)$/.exec(lines[0]) : null
+  if (rule === null) return "Once"
+  const parts = new Map(rule[1].split(";").map((part) => part.split("=") as [string, string]))
+  const date = dateIn(startAt, timeZone)
+  const allowed: Record<string, string | undefined> = {
+    FREQ: parts.get("FREQ"), INTERVAL: "1", WKST: parts.get("WKST"),
+    BYDAY: parts.get("FREQ") === "WEEKLY" ? weekdays[new Date(`${date}T00:00:00Z`).getUTCDay()] : undefined,
+    BYMONTHDAY: parts.get("FREQ") === "MONTHLY" ? String(Number(date.slice(8))) : undefined
+  }
+  if (![...parts].every(([key, value]) => value !== undefined && allowed[key] === value)) return "Once"
+  return parts.get("FREQ") === "WEEKLY" ? "Weekly" : parts.get("FREQ") === "MONTHLY" ? "Monthly" : "Once"
+}
+
+function reminderOf(e: ProviderEvent, defaults: readonly Reminder[]) {
+  const set = e.reminders === undefined ? [] : e.reminders.useDefault ? defaults : e.reminders.overrides ?? []
+  const lead = Math.max(-1, ...set.filter((r) => r.method === "popup" && r.minutes >= 0).map((r) => r.minutes))
+  return lead < 0 ? { reminderEnabled: false, leadTime: 0 } : { reminderEnabled: true, leadTime: lead * 60_000 }
+}
+
+type Kept = Pick<EntryDetails, "participant" | "seriesId" | "recurrence" | "reminderEnabled" | "leadTime" | "important">
+
+function providerFields(zones: ReadonlySet<string>, e: ProviderEvent, startAt: number, timezone: string, defaults: readonly Reminder[]): Kept {
+  const recurrence = repeatsOf(zones, e.recurrence ?? [], startAt, timezone)
+  return { participant: participantOf(e), seriesId: recurrence === "Once" ? "" : e.externalId, recurrence, ...reminderOf(e, defaults), important: false }
+}
+
+function details(e: ProviderEvent, startAt: number, endAt: number, timezone: string, kept: Kept): EntryDetails {
   return {
     title: e.title, location: e.location, notes: e.description, startAt, endAt, timezone, allDay: e.isAllDay,
     participant: kept.participant, seriesId: kept.seriesId, recurrence: kept.recurrence, reminderEnabled: kept.reminderEnabled, leadTime: kept.leadTime, important: kept.important
@@ -230,7 +259,7 @@ function refreshed(known: Calendar | undefined, view: CalendarView, e: ProviderE
 
 const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(known, "CalendarUser"), "CalendarUser"), true, "CalendarStore")
 
-function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[], bindings: ReadonlyMap<string, Calendar>, waiting: ReadonlySet<Calendar>): Published[] {
+function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[], defaults: readonly Reminder[], bindings: ReadonlyMap<string, Calendar>, waiting: ReadonlySet<Calendar>): Published[] {
   const own = view.entries.filter((c) => c.identity.owner === view.owner && c.identity.calendarId === view.calendarId)
   const listed = (c: Calendar) => events.some((e) => e.externalId === c.identity.occurrenceId)
   const kept = new Set(waiting)
@@ -240,7 +269,7 @@ function published(zones: ReadonlySet<string>, view: CalendarView, events: reado
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
     const created = known === undefined ? bindings.get(e.externalId) : undefined
     if (created?.phase === "Editing") return []
-    const entry = details(e, startAt, endAt, timezone, (known ?? created)?.committed)
+    const entry = details(e, startAt, endAt, timezone, (known ?? created)?.committed ?? providerFields(zones, e, startAt, timezone, defaults))
     const incoming = validDetails(entry) ? refreshed(known, view, e, entry, created) : undefined
     if (incoming === undefined && created !== undefined) kept.add(created)
     return incoming === undefined ? [] : [{ incoming, seriesVersion: seriesVersionOf(view, entry.seriesId), scheduleVerified: verified }]
@@ -450,13 +479,14 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
   effect function readEvents(view: CalendarView, from: number, until: number, grantId: string) {
     const params = { calendarId: view.calendarId, timeZone: view.timezone, timeMin: iso(from), timeMax: iso(until), grantId }
     if (view.owner !== account.address) throw new ProviderRefused({ status: 409 })
-    return (try fetched(get(`${at}/feed`, params), Feed)).events.filter((e) => e.calendarId === view.calendarId)
+    const { events, defaultReminders } = try fetched(get(`${at}/feed`, params), Feed)
+    return { events: events.filter((e) => e.calendarId === view.calendarId), defaults: defaultReminders ?? [] }
   }
 
   return {
     feed: (view) => Stream.unwrap(effect {
       const grantId = try grantOf(account)
-      const feed = try readEvents(view, view.window.fromTime, view.window.untilTime, grantId)
+      const { events: feed, defaults } = try readEvents(view, view.window.fromTime, view.window.untilTime, grantId)
       const bindings = new Map<string, Calendar>()
       const waiting = new Set<Calendar>()
       for (const c of view.entries) {
@@ -470,12 +500,12 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
           if (!feed.some((e) => e.externalId === bound.providerId)) waiting.add(c)
         } else if (bound._tag === "Pending" || (c.phase === "Saved" && legacyCalendarDraft.test(c.identity.occurrenceId))) waiting.add(c)
       }
-      return Stream.fromIterable(published(zones, view, feed, bindings, waiting))
+      return Stream.fromIterable(published(zones, view, feed, defaults, bindings, waiting))
     }),
     isGuidedCreateFenced: (identity, task) => creates.isFenced(account, identity, task),
     fenceGuidedCreate: (identity, task) => creates.fence(account, identity, task),
     verifySaved: effect (view, occurrence, expected) => {
-      const feed = try readEvents(view, expected.startAt, expected.endAt, try grantOf(account))
+      const { events: feed } = try readEvents(view, expected.startAt, expected.endAt, try grantOf(account))
       const saved = feed.find((row) => row.externalId === occurrence)
       if (saved === undefined) return undefined
       const timezone = saved.timezone ?? view.timezone
