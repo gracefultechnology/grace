@@ -432,8 +432,10 @@ site permission she allowed is waiting for Android), it is hers alone to
 answer, as every rule above says, and Grace answers none of it. Holding the
 task while the page holds the person, so that nothing is prepared or done on
 that page until she has answered, is the [workspace](./workspace.md)'s to
-do. Answering a website message that was the only thing the page held
-releases it; an allowed permission still holds her until Android answers.
+do, through the gate in [deviceKeys](./deviceKeys.md) ("A task waits while a
+website's question holds me, and goes on after my answer"). Answering a
+website message that was the only thing the page held releases it; an
+allowed permission still holds her until Android answers.
 
 ```quint
 pure def holdsThePerson(s: WebsiteRequests): bool = presented(s).id > 0 or s.asking.length() > 0

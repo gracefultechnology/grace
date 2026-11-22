@@ -1,4 +1,5 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "A turn may start without her words, marked with where it came from"; spec/app/mailboxes.md, "Grace is told what Margaret did with her email, and being told authorizes nothing"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"; spec/app/conversation.md, "Responses have a written equivalent and only current callbacks change the turn"; spec/app/conversation.md, "A current speech or response failure leaves a usable typed fallback"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"; spec/app/conversation.md, "Each turn sends a bounded window of the transcript"
+import { WebsiteTask } from "./websiteTask.vibe"
 import character from "../agent/character.json" with { type: "json" }
 import policy from "../agent/policy.json" with { type: "json" }
 import { Digest } from "effect/crypto"
@@ -241,7 +242,12 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
   }
 }
 
+effect function decoded(said: string | undefined) {
+  return said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
+}
+
 export const conversation = (link: CloudLink | undefined) => Layer.effect(Conversation, effect {
+  const website = try WebsiteTask
   const workspace = try Workspaces
   const agent = try Agent
   const native = try NativePage
@@ -313,10 +319,6 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   effect function fail(token: number, workVersion: number) {
     try agent.apply([], try request(token, workVersion))
     workspace.send({ type: "interact", input: { tag: "ServiceFailure", token, text: apology } }, "Host") catch () => undefined
-  }
-
-  effect function decoded(said: string | undefined) {
-    return said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
   }
 
   effect function answer(link: CloudLink, token: number) {
@@ -397,6 +399,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       return (workspace.send({ type: "resume" }, "Person") catch () => undefined) !== undefined
     },
     checkGuidedRead: effect () => {
+      if (!(try website.clear)) return "Refused"
       const scene = try look()
       const current = scene.workspace
       const pending = nextOutcome(current.plan)
@@ -414,7 +417,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const context = replyControlContext(current)
       effect function currentBrowserWorkspace() {
         const w = try workspace.get()
-        return replyControlsCurrent(w, context) && !privateSurfaceActive(w) &&
+        return (try website.clear) && replyControlsCurrent(w, context) && !privateSurfaceActive(w) &&
           w.device.surface === "Browser" && w.device.observationAllowed && activeTab(w.browser).load === "Loaded" &&
           w.assistant.activity === current.assistant.activity && w.assistant.conversation.turn === "Ready" &&
           !w.assistant.conversation.question && w.assistant.replacementId === "" &&
