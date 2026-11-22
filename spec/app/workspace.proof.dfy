@@ -1407,6 +1407,30 @@ if inv(w) && canReceiveLoad(w, loadReport, by_) {
 }
 }
 
+lemma lawATabIsWhereItsLoadEnded_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceActor)
+  ensures (lawATabIsWhereItsLoadEnded(w, loadReport, by_) == true)
+{
+  if app__browser_alwaysTabsAreWellFormed(w.browser) && canReceiveLoad(w, loadReport, by_) {
+    var b := w.browser;
+    var id := loadReport.id;
+    var endedAt := loadReport.endedAt;
+    var after := app__browser_finishPageLoad(b, id, loadReport.version, loadReport.result, loadReport.secure, endedAt);
+    ProofLib.FilterPointwise((t: app__browser_Tab) => (t.id == id), (t: app__browser_Tab) => (t.id == id),
+      (x: app__browser_Tab, y: app__browser_Tab) => (x.id == id ==> y == app__browser_endedAtCursor(x, endedAt).(load := loadReport.result, secure := loadReport.secure && loadReport.result == app__browser_Load.Loaded)), b.tabs, after.tabs);
+    var received := receiveLoad(w, loadReport, by_).browser;
+    assert received.tabs == after.tabs;
+    BrowserLookupFilter(b, id);
+    BrowserLookupFilter(after, id);
+    BrowserLookupFilter(received, id);
+    var matches := ProofLib.Filter((t: app__browser_Tab) => (t.id == id), b.tabs);
+    var holder :| holder in b.tabs && holder.id == id;
+    ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, holder);
+    var found := matches[|matches|-1];
+    ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, found);
+    app__browser_lawALoadRecordsWhereItEnded_ensures(found, endedAt);
+  }
+}
+
 lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: WorkspaceActor)
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysDeviceRules(receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> alwaysBrowserRules(receiveProgress(w, progress, by_)))

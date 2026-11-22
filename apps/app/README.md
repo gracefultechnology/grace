@@ -7,7 +7,7 @@ and traces (SPEC.md, "One spec tree").
 | Piece | Is |
 |---|---|
 | `src/app.vibe` | the application's layers: the workspace machine (`spec/app/workspace.md`) as the one app state, the page layer machine (`spec/app/surface.md`) beside it, and the native page |
-| `src/nativePage.vibe`, `src/surfacePlugin.ts` | the native page plugin as an Effect service; with no plugin (Vite in a browser) every command succeeds at once |
+| `src/nativePage.vibe`, `src/surfacePlugin.ts`, `src/webPage.vibe` | the native page plugin as an Effect service; with no plugin (Vite in a browser) a page opens in a frame, and only from a loopback address: any other website's load fails with a note that websites open on the tablet. A link the frame follows on its own page is recorded where it lands, and a move it cannot read restarts the visit at the tab's address |
 | `src/page.vibe` | the page layer's host side: native pages follow the tabs, and a Grace control is drawn over the page only after the host routes its rect |
 | `src/useApp.ts`, `src/PageLayer.tsx` | React hooks over both machines; what the interface measures (`PageArea`, `OverPage`) |
 | `src/App.tsx`, `src/Browser.tsx`, `src/Grace.tsx` | Home, the browser window and Grace's window, on `@repo/ui` |
@@ -428,6 +428,6 @@ Settings show to a device step is the page's work.
   `android.hardware.wifi` is not required (without it Grace's Wi-Fi settings say Wi-Fi is unavailable).
 - The `<queries>` list the apps `openExternalLink` can resolve on API 30+: mail and text compose, the
   dial pad, maps, the store and apps with an https link filter; any other app is refused as
-  `EXTERNAL_APP_UNAVAILABLE`. The camera app (`IMAGE_CAPTURE`) is listed for Take a photo.
+  `EXTERNAL_APP_UNAVAILABLE`, and an `intent:` link's checked https fallback then opens in its tab. The camera app (`IMAGE_CAPTURE`) is listed for Take a photo.
 - `app_icon.xml` is the logotype's G on a paper tile, 60 of 108 tall so the splash screen's circular
   crop keeps the whole letter.
