@@ -2004,7 +2004,8 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
 }, 120_000);
 
 it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
-  const clock = Layer.effectDiscard(TestClock.setTime(new Date(2026, 10, 20, 12).getTime())).pipe(Layer.provideMerge(TestClock.layer()));
+  const noon = new Date(2026, 10, 20, 12);
+  const clock = Layer.effectDiscard(TestClock.setTime(noon.getTime())).pipe(Layer.provideMerge(TestClock.layer()));
   const audio = { step: 0, min: 0, max: 15, muted: false };
   let brightness = 20;
   let denyBrightness = false;
@@ -2022,7 +2023,7 @@ it('Read back brightness and mute (spec/app/preferences.md, "Night dimming and s
   }).pipe(Layer.provideMerge(clock)));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   await mount(runtime);
-  const shown = effectiveBrightness(defaults, new Date().getHours());
+  const shown = effectiveBrightness(defaults, noon.getHours());
   await expect.poll(() => readback.at(-1)).toEqual({ brightness: shown, muted: false, step: 9 });
   await tap("Volume");
   await tap("Mute");
