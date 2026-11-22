@@ -120,8 +120,40 @@ const dafnySaid = (version: string | undefined, stopped?: string, out = "") => {
  * Dafny's files and their stamps, as installed now: read once for each check (`steady`), and on
  * every call outside one.
  */
-interface Check { installation?: { files?: string[]; at: string }; programs: Map<string, Program | undefined>; evaluators: Map<string, string>; changed?: boolean }
+type Check = {
+  installation?: { files?: string[]; at: string };
+  programs: Map<string, Program | undefined>;
+  evaluators: Map<string, string>;
+  pending: Map<string, Buffer>;
+  verify: Set<Program>;
+  bytes: number;
+  lastPublished: number;
+  changed?: boolean;
+  closed?: boolean;
+};
 const checking = new AsyncLocalStorage<Check>();
+
+const MAX_PENDING_ENTRIES = 16;
+const MAX_PENDING_BYTES = 8 * 1024 ** 2;
+const PUBLISH_INTERVAL_MS = 1_000;
+
+export function publishChecked() {
+  const check = checking.getStore();
+  if (!check) return;
+  check.changed ||= [...check.verify].some((program) => !program.unchanged());
+  if (check.changed) {
+    check.pending.clear();
+    check.verify.clear();
+    throw new Error("a tool installation changed during this check; run the check again");
+  }
+  if (!check.pending.size) return;
+  for (const [file, bytes] of check.pending) writeWhole(file, bytes);
+  check.pending.clear();
+  check.verify.clear();
+  check.bytes = 0;
+  check.lastPublished = performance.now();
+}
+
 function installation() {
   const now = () => {
     const files = dafnyFiles();
@@ -136,7 +168,20 @@ function installation() {
   return scope ? (scope.installation ??= now()) : now();
 }
 /** Run a check, which reads Dafny's installation once: a reinstall during it is seen by the next check, and by `verifiedNow`. */
-export const steady = <T>(run: () => Promise<T>) => checking.run({ programs: new Map(), evaluators: new Map() }, run);
+export const steady = <T>(run: () => Promise<T>) => {
+  const check: Check = { programs: new Map(), evaluators: new Map(), pending: new Map(), verify: new Set(), bytes: 0, lastPublished: -Infinity };
+  return checking.run(check, async () => {
+    try {
+      const result = await run();
+      publishChecked();
+      return result;
+    } finally {
+      check.closed = true;
+      check.pending.clear();
+      check.verify.clear();
+    }
+  });
+};
 
 function perCheck<T>(read: () => Promise<T>): () => Promise<T> {
   const known = new WeakMap<Check, Promise<T>>();
@@ -173,8 +218,9 @@ function launcherDigest(exe: string, packageDir: string): string {
 
 function packageGraph(exe: string, name: string) {
   const observations = new Map<string, string>();
-  const state = (file: string) => {
-    const stat = fs.statSync(file, { bigint: true, throwIfNoEntry: false });
+  const links = new Map<string, string>();
+  const state = (file: string, follow = true) => {
+    const stat = (follow ? fs.statSync : fs.lstatSync)(file, { bigint: true, throwIfNoEntry: false });
     return stat ? `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}` : "";
   };
   const observed = (file: string) => {
@@ -192,6 +238,7 @@ function packageGraph(exe: string, name: string) {
         if (entry.name === "node_modules" || entry.name === ".git") continue;
         const file = path.join(dir, entry.name);
         const relative = path.relative(root, file).split(path.sep).join("/");
+        if (entry.isSymbolicLink()) links.set(file, state(file, false));
         if (!observed(file)) entries.push(JSON.stringify([relative, null]));
         else if (entry.isDirectory() || (entry.isSymbolicLink() && fs.statSync(file).isDirectory())) walk(file, parents);
         else entries.push(JSON.stringify([relative, createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
@@ -199,6 +246,11 @@ function packageGraph(exe: string, name: string) {
     };
     walk(root, new Set());
     return sha(...entries.sort());
+  };
+  const observeLocation = (file: string) => {
+    const present = observed(file);
+    if (present && path.basename(file) !== "package.json" && fs.lstatSync(file).isSymbolicLink()) links.set(file, state(file, false));
+    return present;
   };
   const seen = new Map<string, number>();
   const graph: { dir: string; version: string; dependencies: [string, number | null][] }[] = [];
@@ -214,16 +266,19 @@ function packageGraph(exe: string, name: string) {
     const dependencies: [string, number | null][] = [];
     graph.push({ version: `${pkg.name}@${pkg.version}`, dir, dependencies });
     for (const dependency of Object.keys({ ...pkg.dependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies }).sort()) {
-      const at = packageLocation(dependency, dir, observed);
+      const at = packageLocation(dependency, dir, observeLocation);
       dependencies.push([dependency, at ? visit(at) : null]);
     }
     return index;
   };
   observed(exe);
-  const [main, loaded] = packageRoots(exe, name, observed);
+  if (fs.lstatSync(exe).isSymbolicLink()) links.set(exe, state(exe, false));
+  observed(path.dirname(exe));
+  const [main, loaded] = packageRoots(exe, name, observeLocation);
   if (!main) throw new Error(`no ${name} with a version is installed beside ${exe} or these tools; run pnpm install`);
   const roots = [visit(main), loaded && visit(loaded)];
-  return { graph, roots, main, contents, unchanged: () => [...observations].every(([file, at]) => state(file) === at) };
+  return { graph, roots, main, contents, unchanged: () => [...observations].every(([file, at]) => state(file) === at)
+    && [...links].every(([file, at]) => state(file, false) === at) };
 }
 
 export const installedPackages = (exe: string, name: string) => packageGraph(exe, name).graph.map((p) => p.version).sort();
@@ -485,14 +540,15 @@ function use(memory: Memory, name: string) {
 /** What an entry holds, or undefined. An entry that cannot be read, cut short by a kill or a full disk, is deleted and is a miss. */
 export function recall<T>(memory: Memory, { name, file, evaluator }: Entry): T | undefined {
   memory.used.add(name);
-  if (memory.fresh || evaluator === null) return undefined;
+  const check = checking.getStore();
+  if (memory.fresh || evaluator === null || check?.changed || check?.closed) return undefined;
   const fileBase = file.slice(0, -primaryExtension.length);
   const nameBase = name.slice(0, -primaryExtension.length);
   for (const [extension, decompress] of formats) {
     const stored = `${fileBase}.${extension}`;
     let bytes: Buffer;
     try {
-      bytes = fs.readFileSync(stored);
+      bytes = check?.pending.get(stored) ?? fs.readFileSync(stored);
     } catch {
       continue;
     }
@@ -507,12 +563,23 @@ export function recall<T>(memory: Memory, { name, file, evaluator }: Entry): T |
   return undefined;
 }
 /** Remember `value` under an entry, unless this process cannot say which tools computed it: then the next check computes it again. */
-export function store(memory: Memory, { name, file, evaluator }: Entry, value: unknown) {
+export function store(memory: Memory, { name, file, evaluator }: Entry, value: unknown, action?: { program: Program; began: number }) {
   memory.used.add(name);
-  if (!unsure && !checking.getStore()?.changed && evaluator !== null && (evaluator === undefined || stableInstallation(evaluatorIdentity(memory.root) === evaluator))) {
-    writeWhole(file, zstdCompressSync(JSON.stringify(value)));
-    sharedCache(name)?.used.add(name);
+  const check = checking.getStore();
+  if (unsure || check?.changed || check?.closed || evaluator === null) return;
+  if (evaluator !== undefined && !stableInstallation(evaluatorIdentity(memory.root) === evaluator)) return;
+  if (action && !check && !action.program.unchanged()) return;
+  const bytes = zstdCompressSync(JSON.stringify(value));
+  sharedCache(name)?.used.add(name);
+  if (action) check?.verify.add(action.program);
+  if (!check?.verify.size) {
+    writeWhole(file, bytes);
+    return;
   }
+  check.bytes += bytes.length - (check.pending.get(file)?.length ?? 0);
+  check.pending.set(file, bytes);
+  if (!action || check.pending.size >= MAX_PENDING_ENTRIES || check.bytes >= MAX_PENDING_BYTES
+    || performance.now() - Math.min(check.lastPublished, action.began) >= PUBLISH_INTERVAL_MS) publishChecked();
 }
 
 /**
