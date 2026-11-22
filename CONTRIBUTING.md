@@ -337,11 +337,11 @@ and restores pnpm's store, the spec cache of the root, each workspace package
 and each example, and Quint's evaluator. Each tool runner restores its fixture cache from `.cache/selftest/.spec-cache`. The cache keys include the job, commit and run attempt.
 Turborepo shares task results through the private Cloudflare/R2 cache.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
-Studio test tasks so those integration journeys do not compete with it.
+Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
 Pull requests read shared results; only branch pushes receive the publishing
 credential, protected by the `turbo-cache-publish` environment's branch
 policy. A pull request keeps its own Turborepo results in the GitHub cache
-instead, which only that pull request reads, so its next push reuses them. Newer commits replace an older run of the same pull request.
+instead, which only that pull request reads, so its next push reuses them. Branch pushes without a remote cache token also save their local results for later runs. Newer commits replace an older run of the same pull request.
 A pull request from `develop` into `main` waits for the push of the same commit
 to `develop` and replays its published results.
 Every pushed commit can finish. Completed tasks are shared through the cache.

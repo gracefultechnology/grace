@@ -639,7 +639,7 @@ jobs:
     environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
     env:
       TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}
-      TURBO_CACHE: ${{ inputs.cross_app_only && 'local:rw' || (github.event_name == 'push' && 'local:rw,remote:rw' || 'local:rw,remote:r') }}
+      TURBO_CACHE: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN && (github.event_name == 'push' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
     steps:
       # apps/app/scripts import upstream Eliza's Android tools from the vendor/eliza submodule.
       - uses: actions/checkout@v7
@@ -662,7 +662,7 @@ jobs:
       - if: ${{ matrix.lane != 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         env:
           LANE: ${{ matrix.lane }}
-        run: pnpm all "//#selftest:tools:${LANE#selftest-}" --continue --summarize
+        run: pnpm all "//#selftest:tools:${LANE#selftest-}" --only --continue --summarize
       - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != ''
         uses: actions/cache/save@v6
         with:
