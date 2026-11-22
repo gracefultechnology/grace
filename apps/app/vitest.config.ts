@@ -135,10 +135,11 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     await site.page.bringToFront();
     const searchName = /^[\s\p{Co}]*Search\b/iu;
     const roleOptions = { name: searchName };
+    const textInput = site.page.locator('input:is([type="search"],[type="text"],:not([type]))');
     const semanticSearchField = site.page.locator('input:is([type="search"],[role="searchbox"],[role="combobox"])');
     const field = site.page.getByRole("searchbox", roleOptions).or(site.page.getByRole("combobox", roleOptions))
       .or(site.page.getByRole("textbox", roleOptions)).or(site.page.getByLabel(searchName))
-      .or(site.page.getByPlaceholder(searchName).and(semanticSearchField)).filter({ visible: true });
+      .or(site.page.getByPlaceholder(searchName).and(semanticSearchField)).and(textInput).filter({ visible: true });
     if (await field.count() !== 1 || !await field.isVisible() || !await field.isEditable())
       throw new Error("The public website has no unique editable Search field");
     const form = await field.evaluate((input) => {
