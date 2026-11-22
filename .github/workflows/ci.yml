@@ -639,7 +639,7 @@ jobs:
     environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
     env:
       TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}
-      TURBO_CACHE: ${{ inputs.cross_app_only && 'local:rw' || (github.event_name == 'push' && 'local:rw,remote:rw' || 'local:rw,remote:r') }}
+      TURBO_CACHE: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN && (github.event_name == 'push' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
     steps:
       # apps/app/scripts import upstream Eliza's Android tools from the vendor/eliza submodule.
       - uses: actions/checkout@v7
@@ -653,7 +653,7 @@ jobs:
         if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm --filter @repo/app test --project node test/app.test.vibe -t "Google denies missing consent"
       - name: Exercise Google consent and guided tasks across apps with local fixtures
-        if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
+        if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
           -t "Gmail signup to Calendar|Follow one reviewed plan across apps|An authenticated restart restores the reviewed plan paused at its next outcome|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
@@ -662,7 +662,7 @@ jobs:
       - if: ${{ matrix.lane != 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         env:
           LANE: ${{ matrix.lane }}
-        run: pnpm all "//#selftest:tools:${LANE#selftest-}" --continue --summarize
+        run: pnpm all "//#selftest:tools:${LANE#selftest-}" --only --continue --summarize
       - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != ''
         uses: actions/cache/save@v6
         with:

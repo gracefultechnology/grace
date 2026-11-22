@@ -177,7 +177,9 @@ for its time or its output is ended the same way. A run
 of a tool is remembered when it reached its answer, a refusal of its input
 included, never when it was stopped, timed out or failed for want of a file or
 program: an unchanged unit whose proof failed runs neither again, and an edit
-to a proof file only checks and verifies the Dafny it changes. A unit offered
+to a proof file only checks and verifies the Dafny it changes. When several proof units import
+the same module, the check renders that module once for each name prefix and citation setting they use.
+A unit offered
 what the units it imports proved is proved once when their results are
 remembered, and meanwhile, to be proved again if they fail, only while one of
 them is still being proved. A test run
@@ -210,7 +212,9 @@ device, inode, size and modification and change times stay the same, so an
 unchanged toolchain is not read again, nor Z3 asked its version. A check
 reads those times of Dafny's installation once, and reads them again after each
 run of Dafny, so a result is not remembered when the verifier was installed
-again during the run. Generated stories,
+again during the run. The template install generates locally with `gen --if-valid`. On GitHub Actions it uses the same strict root
+`gen` task as verification, so a successful install warms the task cache. A failed generation leaves the
+remaining checks runnable and is retried by verification. Generated stories,
 browser build artifacts, compiler declarations and successful test receipts
 are restored with their owning task. `check` is never skipped whole: its
 `driver:` programs run the real application in `traces` every time. Standalone examples install and check
@@ -234,7 +238,11 @@ receipt matches unless another root document changed, and then `check` runs the
 root's tests itself. Generated code names each rule by its heading, not its line, so
 prose that only moves a rule changes none of these keys. Filtered, exclusive, interrupted
 and failed runs record no complete result. Acceptance and nightly checks
-bypass these receipts and the inner verification cache.
+bypass these receipts and the inner verification cache. A package that declares a `link:`
+dependency, or reaches one through a workspace dependency, runs its inner tests, typecheck and
+drivers afresh. The linked checkout can supply compiled files and resources outside the
+consumer's lockfile. Its project's Turbo tasks can cache those commands when they declare
+the external inputs and outputs they use.
 
 The spec cache retains recent branch and profile results for 30 days within
 256 MiB, evicting the oldest unused results first. A check's own entries are
@@ -333,11 +341,11 @@ and restores pnpm's store, the spec cache of the root, each workspace package
 and each example, and Quint's evaluator. Each tool runner restores its fixture cache from `.cache/selftest/.spec-cache`. The cache keys include the job, commit and run attempt.
 Turborepo shares task results through the private Cloudflare/R2 cache.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
-Studio test tasks so those integration journeys do not compete with it.
+Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
 Pull requests read shared results; only branch pushes receive the publishing
 credential, protected by the `turbo-cache-publish` environment's branch
 policy. A pull request keeps its own Turborepo results in the GitHub cache
-instead, which only that pull request reads, so its next push reuses them. Newer commits replace an older run of the same pull request.
+instead, which only that pull request reads, so its next push reuses them. Branch pushes without a remote cache token also save their local results for later runs. Newer commits replace an older run of the same pull request.
 A pull request from `develop` into `main` waits for the push of the same commit
 to `develop` and replays its published results.
 Every pushed commit can finish. Completed tasks are shared through the cache.
