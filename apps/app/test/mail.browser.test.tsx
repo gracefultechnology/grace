@@ -727,6 +727,7 @@ it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email rele
   const warning = page.getByRole("dialog", { name: "Open this link?" });
   await openEmail();
   await opened(/Account Security/, "Urgent: confirm your password");
+  await expect.element(flagged).toBeVisible();
   await expect.element(page.getByRole("link", { name: /invalid\.example/ })).not.toBeInTheDocument();
   const target = flagged.element().textContent;
   await click(flagged);
@@ -751,6 +752,7 @@ it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email rele
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await opened(/Riverside Power/, "Your Riverside Power bill is ready");
   const ordinary = page.getByRole("link", { name: /bill\// });
+  await expect.element(ordinary).toBeVisible();
   const destination = ordinary.element().textContent;
   await click(ordinary);
   await expect.element(address).toHaveValue(destination ?? "");

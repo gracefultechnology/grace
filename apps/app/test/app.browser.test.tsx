@@ -1395,7 +1395,12 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
       const asked = JSON.stringify({ text: question, isQuestion: true, answers: chips });
       const said = ["Call Anne for me", "Yes, please", "Call Anne again", "Call Anne once more", "Mute the next reply", "Read another question", "Read the last question"];
       const done = "I’ll ring her now.";
-      const talk = () => act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
+      const micOff = page.getByRole("switch", { name: "Mic off" });
+      const talk = async () => {
+        await expect.element(micOff).toBeVisible();
+        await expect.element(micOff).toBeEnabled();
+        await press(micOff);
+      };
 
       replies.push(asked, done);
       nextTranscript = said[0];

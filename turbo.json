@@ -339,6 +339,8 @@
         "vibestack-studio#typecheck"
       ],
       "inputs": [
+        "vendor/eliza/tsconfig.base.json",
+        "vendor/eliza/packages/os/tsconfig*.json",
         "apps/**",
         "packages/**",
         "vibestack/**",
