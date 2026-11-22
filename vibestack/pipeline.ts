@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { evaluatorIdentity } from "./installed.ts";
 // The spec pipeline and command line, which spec.ts runs. Parsing, review, generation, simulation and proof each have one implementation.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -11,9 +13,9 @@ import { explore } from "./explore.ts";
 import { ensuresOf, LIB_FILE, libraryFor, proofPaths, prove, type Offered, type Proof } from "./prove.ts";
 import { bin, run } from "./run.ts";
 import { readSpecs, badSpecName, specFiles, specName, isStd, located, type Spec } from "./parse.ts";
-import { contracts, pending, pendingKey, pendingContracts, acceptAllReviews, pendingSpecs, moved, showPending, ledgerFile, readReviewLock, writeLedger, type Pending, type Accepted, type ReviewLock } from "./review.ts";
-import { cacheCredentials, dafnyVersion, entry, recall, remembered, steady, store, collectGarbage, toolchainFingerprint, type Memory } from "./cache.ts";
-import { generated, mirrorGen, typecheckAll, proofUnits, proofFiles, strayProofFiles } from "./units.ts";
+import { contracts, citationLookup, pending, pendingKey, pendingContracts, acceptAllReviews, pendingSpecs, moved, showPending, ledgerFile, readReviewLock, writeLedger, type Pending, type Accepted, type ReviewLock } from "./review.ts";
+import { cacheCredentials, dafnyVersion, entry, recall, remembered, steady, store, publishChecked, collectGarbage, toolchainFingerprint, type Memory } from "./cache.ts";
+import { generated, mirrorGen, publishGen, typecheckAll, proofUnits, proofFiles, strayProofFiles } from "./units.ts";
 import { simulation, type Simulation } from "./simulate.ts";
 import { sha, digest, indent, packageScripts, pruneSidecars, configured, testInputs, tests, VITEST_CONFIG, readSrc, codeDirs, codeDirOf, projectRoot, allDone, UNREAD, workspacePackages, type Reported, type SrcFile } from "./util.ts";
 import { profile, type TestProfile } from "./testing/profile.ts";
@@ -102,14 +104,14 @@ function lockProject(root: string): () => void {
  * Each spec's module written to gen/: its model as it is generated, or why it has none. The owners' gen/ follows once
  * every module is written (units.ts, `mirrorGen`).
  */
-async function* generating(memory: Memory, specs: Spec[], output = memory.root): AsyncGenerator<{ spec: Spec; model: Model; error?: undefined } | { spec: Spec; model?: undefined; error: Error }> {
+async function* generating(memory: Memory, specs: Spec[], output = memory.root, staged?: Map<string, string>): AsyncGenerator<{ spec: Spec; model: Model; error?: undefined } | { spec: Spec; model?: undefined; error: Error }> {
   const models = new Map<string, Model>();
-  const typed = typecheckAll(memory, specs, output);
+  const typed = typecheckAll(memory, specs, output, staged);
   try {
     for (const spec of specs) {
       const missing = spec.imports.find((i) => !models.has(i));
       yield missing ? { spec, error: new Error(`it imports ${missing}, which is not a valid model`) }
-        : await typed.get(spec.name)!.then((ir) => ({ spec, model: generated(output, spec, ir, models) })).catch((error: Error) => ({ spec, error }));
+        : await typed.get(spec.name)!.then((ir) => ({ spec, model: generated(output, spec, ir, models, staged) })).catch((error: Error) => ({ spec, error }));
     }
   } finally {
     // A caller that stops early must not restore gen/ while a typecheck still writes into it.
@@ -382,9 +384,12 @@ async function checkLocked(root: string, accept: false | "reviews" | "unproved",
     await Promise.allSettled(running);
   }
 
+  publishChecked();
+
   // A spec that is not a valid model has nothing to reconcile yet. Everything is recorded at once, or nothing is.
   const locks = new Map(specs.map((spec) => [spec.file, lock.specs[spec.file] ?? {}]));
-  const todos = valid.filter((spec) => !isStd(spec.file)).map((spec) => ({ spec, todo: pending(root, spec, specs, locks) }));
+  const citedAt = citationLookup(root);
+  const todos = valid.filter((spec) => !isStd(spec.file)).map((spec) => ({ spec, todo: pending(root, spec, specs, locks, citedAt) }));
   const contractsToDo = pendingContracts(root, srcFiles, lock);
   const removedSpecs = pendingSpecs(root, specs, lock);
   const review = (ok: boolean, summary: string, detail = "", where?: string, rules: Result["rules"] = []) =>
@@ -716,16 +721,17 @@ ${error.message}`);
 }
 
 /** The `spec` command, on `process.argv`. */
-export async function main() {
+export async function main(argv = process.argv.slice(2)) {
   let root = process.cwd();
-  let [command, ...args] = process.argv.slice(2);
+  let [command, ...args] = argv;
   const installing = command === "gen" && args.length === 1 && args[0] === "--install";
   if (installing) [command, ...args] = process.env.GITHUB_ACTIONS === "true" ? ["tasks", "//#gen"] : ["gen", "--if-valid"];
   const takes = (...allowed: string[][]) => allowed.some((a) => a.length === args.length && a.every((x, i) => x === "*" || x === args[i]));
   try {
     if (Number(process.versions.node.split(".")[0]) < NODE) throw new Error(`spec needs Node ${NODE} or later; this is Node ${process.versions.node}`);
+    if (installing && process.env.GITHUB_ACTIONS === "true" && process.env.GITHUB_JOB === "vibestack-fixture-selftests") return;
     if (command === "gen" && args[0] === "--owner" && (args.length === 2 || args.length === 3)) {
-      await generateOwner(args[2] === undefined ? root : projectRoot(args[2]), args[1]);
+      await steady(() => generateOwner(args[2] === undefined ? root : projectRoot(args[2]), args[1]));
       return;
     }
     const options: Record<string, string[]> = { check: ["--json", "--nightly"], gen: ["--if-valid"], accept: ["unproved"], watch: [], init: [] };
@@ -742,7 +748,7 @@ export async function main() {
       const text = JSON.stringify(await steady(toolchainFingerprint)) + "\n";
       fs.mkdirSync(path.dirname(fingerprint), { recursive: true });
       if (!fs.existsSync(fingerprint) || fs.readFileSync(fingerprint, "utf8") !== text) fs.writeFileSync(fingerprint, text);
-      let env: NodeJS.ProcessEnv = { ...process.env, TURBO_TELEMETRY_DISABLED: "1" };
+      let env: NodeJS.ProcessEnv = { ...process.env, TURBO_TELEMETRY_DISABLED: "1", VIBESTACK_QUINT_EVALUATOR: evaluatorIdentity(root) ?? randomUUID() };
       const credentials = path.join(os.homedir(), ".config", "vibestack", "turbo-cache.json");
       if (env.TURBO_TOKEN === undefined && fs.existsSync(credentials)) {
         const cache = JSON.parse(fs.readFileSync(credentials, "utf8"));
@@ -760,18 +766,11 @@ export async function main() {
       try {
         release = lockProject(root);
         const specs = readSpecs(root);
-        // gen/ is written as a check writes it, but put back as it was unless every spec is valid.
-        const [gen, before] = [path.join(root, "gen"), path.join(root, ".spec-cache/gen")];
-        fs.rmSync(before, { recursive: true, force: true });
-        if (fs.existsSync(gen)) fs.cpSync(gen, before, { recursive: true, preserveTimestamps: true });
-        try {
-          for await (const { error } of generating({ root, fresh: false, used: new Set() }, specs)) if (error) throw error;
-        } catch (e) {
-          fs.rmSync(gen, { recursive: true, force: true });
-          if (fs.existsSync(before)) fs.renameSync(before, gen);
-          throw e;
-        }
-        fs.rmSync(before, { recursive: true, force: true });
+        const staged = new Map<string, string>();
+        await steady(async () => {
+          for await (const { error } of generating({ root, fresh: false, used: new Set() }, specs, root, staged)) if (error) throw error;
+        });
+        publishGen(root, staged);
         mirrorGen(root, specs);
       } catch (e) {
         if (!args.length) throw e;
