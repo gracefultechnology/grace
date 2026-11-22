@@ -472,6 +472,8 @@ The next shared staging candidate, `2703c497`, deployed its API Worker and Pages
 
 The standalone Grace API returned HTTP 204 for the registered Android client and `environment=production`. On the signed shared-staging APK, Android refused cloud recovery without a screen credential. A disposable native fixture opened the ordinary vault without one. Android stalled before the secure confirmation and legacy migration cases could finish. The local cold restore described above remains the verified credential transfer. A live restore into a second signed-in device still needs qualification. [Standalone recovery registration](https://github.com/gracefultechnology/grace-new/pull/79) · [Shared signed Android build](https://github.com/gracefultechnology/grace-new/pull/104)
 
+On November 22, the shared Eliza Cloud web and API origins in staging and production each returned HTTP 204, Password Backup protocol version 2 and `Cache-Control: no-store` for the Grace Android client. The tenant-scoped Steward response omitted the Grace native Google registration in both environments. An authenticated shared-cloud restore awaits tenant enrollment and qualification. [Shared Eliza production rollout](https://github.com/elizaOS/eliza/actions/runs/45009112234)
+
 ## PRD requirements
 
 ### Always-applicable rules
