@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import type { ComponentMeta } from "vibestack/stories";
 import { Banner, BannerButton } from "./Banner.tsx";
 import type { CalendarAppProps, CalendarEventItem } from "./CalendarApp.tsx";
@@ -260,7 +260,7 @@ export const meta: ComponentMeta<CalendarAppProps> = {
     },
     "Grace points at an appointment": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
-      await expect(canvas.getByText("Tap Doctor’s appointment")).toBeVisible();
+      await waitFor(() => expect(canvas.getByText("Tap Doctor’s appointment")).toBeVisible());
       await expect(canvas.getByRole("button", { name: /Doctor’s appointment/ })).toHaveTextContent("Gmail");
     },
     "Detail, reminder showing": async ({ canvasElement }: { canvasElement: HTMLElement }) => {

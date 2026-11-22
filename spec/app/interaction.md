@@ -13,8 +13,8 @@ while coordinating browser observations, payment and wake timers.
 ### Each interaction uses the existing guarded assistant operation
 
 User controls and trusted service results have distinct variants and retain
-their original actor checks; a turn the host starts, such as an Ask Grace
-button's, is a trusted service variant. Trusted service results come from Grace's cloud
+their original actor checks; a turn the host starts is a trusted service
+variant, and the same variant carries the person's Ask Grace as her own turn. Trusted service results come from Grace's cloud
 agent and her cloud speech service; nothing is recognised or spoken by a model
 on the tablet. Runtime text is never a user choice. A complete
 human utterance keeps its audio provenance and current generation. Open,

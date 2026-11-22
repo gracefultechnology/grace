@@ -279,8 +279,10 @@ export const agent = Layer.effect(Agent, effect {
     const saveAt = action.steps.indexOf("SaveMailAppointment")
     if (saveAt >= 0 && (action.steps.lastIndexOf("SaveMailAppointment") !== saveAt ||
         !action.steps.slice(0, saveAt).includes("ReadMail"))) return "OwnerRefused"
-    const words = s.workspace.assistant.conversation.messages.findLast((message) => message.author === "HumanMessage")?.text
+    const { origin, messages } = s.workspace.assistant.conversation
+    const words = messages.findLast((message) => message.author === "HumanMessage")?.text
     if (words === undefined) return "NotHerTurn"
+    if (origin !== "HerRequest") return "OwnerRefused"
     const eligible = try Effect.orDie(Effect.try(() => withhold({ text: words, passwords: [] }) === words))
     if (!eligible) return "OwnerRefused"
     const named = (target: string): GuidedStep | undefined => {
