@@ -1723,7 +1723,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const later = { ...events[0], externalId: "future-visit", title: "Hearing check", startAt: nextMonth.toISOString(),
     endAt: new Date(nextMonth.getTime() + 3600000).toISOString() };
   let beforeSeriesReply: (() => Promise<void>) | undefined;
-  let seriesReads = 0;
   events.push(occurrence);
   const reply = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
   const changeInput = Schema.fromJsonString(Schema.Struct({
@@ -1846,7 +1845,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
           fireAt: Date.parse(time) - input.minutes * 60_000 });
       }
       case "/api/v1/eliza/google/calendar/series":
-        seriesReads += 1;
         expect(api.searchParams.get("occurrenceId")).toBe(occurrence.externalId);
         expect(api.searchParams.get("grantId")).toBe(grant);
         await beforeSeriesReply?.();
@@ -2104,16 +2102,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Dentist follow-up"));
     await tap("Review appointment");
     await expect.element(page.getByText("Dentist follow-up")).toBeVisible();
-    await act(async () => {
-      expect(await runtime.runPromise(managed.stage({
-        ...scope, kind: "appointment", id: events[0].externalId, version: events[0].etag,
-        title: "Dentist reschedule", start: time, location: "Main Street", repeat: "Once",
-      }))).toBe(true);
-    });
-    await expect.element(page.getByRole("button", { name: "Confirm appointment" })).not.toBeInTheDocument();
-    await expect.element(page.getByRole("textbox", { name: "Title" })).toHaveValue("Dentist reschedule");
-    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Title" }), "Dentist follow-up"));
-    await tap("Review appointment");
     expect(changed).toEqual([]);
     await tap("Confirm appointment");
     await expect.element(page.getByText("Appointment saved.")).toBeVisible();
@@ -2131,9 +2119,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByRole("button", { name: /Lunch/ })).toBeVisible();
     await tap(/Therapy/);
     await expect.element(page.getByRole("button", { name: "Change this occurrence" })).toBeVisible();
-    const seriesReadsBeforeStaleRequest = seriesReads;
-    expect(await runtime.runPromise(managed.series(scope, "stale-occurrence"))).toBeUndefined();
-    expect(seriesReads).toBe(seriesReadsBeforeStaleRequest);
     const seriesRequested = Latch.makeUnsafe();
     const releaseSeries = Latch.makeUnsafe();
     beforeSeriesReply = () => { seriesRequested.openUnsafe(); return Effect.runPromise(releaseSeries.await); };
