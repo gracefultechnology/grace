@@ -68,6 +68,15 @@ jobs:
           packages: platform-tools platforms;android-36 build-tools;36.0.0
       # gen/ and @repo/ui's generated/ are git-ignored; the build imports both.
       - run: pnpm exec turbo run gen --filter=@repo/ui
+      - id: agent-source
+        run: |
+          echo "pin=$(git rev-parse HEAD:vendor/eliza)" >> "$GITHUB_OUTPUT"
+          echo "tools=$(node --version)-pnpm$(pnpm --version)" >> "$GITHUB_OUTPUT"
+      - name: Reuse the pinned agent bundle
+        uses: actions/cache@v6
+        with:
+          path: vendor/eliza/packages/agent/dist/bundle
+          key: android-agent-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.agent-source.outputs.pin }}-${{ steps.agent-source.outputs.tools }}-${{ hashFiles('apps/app/agent/policy.json', 'apps/app/scripts/android.ts', '.github/actions/setup/action.yml') }}
       - run: pnpm --filter @repo/app android --abi ${{ matrix.abi }}
       - name: Stage Cuttlefish launcher with the pinned Chromium APK
         if: matrix.abi == 'x86_64'
