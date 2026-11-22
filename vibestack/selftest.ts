@@ -9,6 +9,7 @@ import { stripTypeScriptTypes } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { gzipSync, zstdDecompressSync } from "node:zlib";
 import { Miniflare } from "miniflare";
@@ -24,10 +25,12 @@ import { BUILTINS, LIST_HELPERS, OPERATORS } from "./gen/print.ts";
 import { mirrorGen } from "./units.ts";
 import { conformance as checkTraces, conformanceFound } from "./conform.ts";
 import { explore, explored, pageInputs } from "./explore.ts";
-import { harnessFiles, search, simulate } from "./simulate.ts";
+import { harnessFiles, search, simulate, simulation } from "./simulate.ts";
 import { acceptContracts, acceptReviews, NODE, check, checkVerifiedSource, danglingCitations, expandListHelpers, generated, init, parseSpec, pending, pendingContracts, readSpecs, replay, show, typecheckAll, type Result, type Spec } from "./pipeline.ts";
 
 const project = path.join(import.meta.dirname, "..");
+for (const name of Object.keys(process.env)) if (name.toLowerCase().replaceAll("-", "_") === "npm_config_package_import_method") delete process.env[name];
+process.env.npm_config_package_import_method = "clone-or-copy";
 const harnessSkillPaths = [".claude/skills", ".codex/skills", ".cursor/skills", ".droid/skills", ".factory/skills", ".gemini/skills", ".grok/skills", ".grokbot/skills", ".muse/skills", ".t3/skills"];
 const scaffoldedIgnores = ["gen/", ".spec-cache/", ".studio/", "dist/", ".vibe/", ".cache/", ".turbo/", "test/__traces__/", "/.claude/", "/CLAUDE.md", ...harnessSkillPaths.filter((alias) => !alias.startsWith(".claude/")).map((alias) => `/${alias}`)];
 const EXAMPLES = "vibestack/examples";
@@ -243,6 +246,24 @@ pure def add(a: int, b: int): int = a + b`);
     assert.throws(() => domain.lazyLookup({}, 1), RangeError);
     assert.throws(() => domain.add(Number.MAX_SAFE_INTEGER, 1), RangeError);
     assert.doesNotMatch(model.render(""), /Number\.isSafeInteger|function exact_/);
+  });
+
+  test("variant set literals keep their element type in conditional unions and local bindings", async () => {
+    const root = oneRule("fields", "Evidence fields", `type Field = First | Second
+pure val common: Set[Field] = Set(First)
+pure def required(includeSecond: bool): Set[Field] = common.union(if (includeSecond) Set(Second) else Set())
+pure def selected(which: bool): Set[Field] = {
+  val choices = if (which) Set(First) else Set(Second)
+  choices.union(Set(Second))
+}`);
+    const model = await gen(root, parseSpec(root, "spec/fields.md"));
+    const checked = await tool("vibelang", ["--noEmit", "--strict", "--target", "es2023", "gen/fields.ts"], root);
+    assert.ok(checked.ok, checked.out);
+    const proof = model.render("");
+    assert.match(proof, /includeSecond \? \["Second"\] : \(\[\] as Field\[\]\)/);
+    const domain = await import(pathToFileURL(path.join(root, "gen", "fields.ts")).href);
+    assert.deepEqual([domain.required(true), domain.required(false)], [["First", "Second"], ["First"]]);
+    assert.deepEqual([domain.selected(true), domain.selected(false)], [["First", "Second"], ["Second"]]);
   });
 
   test("the explore stage finds a page that breaks a property, keeps the trace, replays it first, and drops it once fixed", { skip: !["linux-x64", "linux-arm64", "darwin-arm64"].includes(`${process.platform}-${process.arch}`) }, async () => {
@@ -724,6 +745,64 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
     assert.equal(result.broken, true, result.again);
     assert.match(result.again, /--max-samples 32 --max-steps 40\b/);
     assert.equal(result.traces[0]?.at(-1)?.state, 38);
+  });
+
+  test("simulation and probes preserve guarded transitions and outputs when only the state enables an event", async () => {
+    const root = oneRule("counter", "Open and commit", `type Change = { state: int, out: List[str] }
+pure val initial: int = 0
+pure def canOpen(n: int): bool = n == 0
+pure def open(n: int, label: bool): Change = { state: 1, out: List(if (label) "yes" else "no") }
+pure def canCommit(n: int, approved: bool): bool = n == 1 and approved
+pure def commit(n: int, approved: bool): Change = if (approved) { state: 2, out: List("saved") } else { state: 3, out: List("wrong") }
+pure def alwaysValid(n: int): bool = n <= 2`);
+    const spec = readSpecs(root)[0];
+    const model = await gen(root, spec);
+    const domain = await import(pathToFileURL(path.join(root, "gen", "counter.ts")).href);
+    const harness = { memory: { root, fresh: true, used: new Set<string>() }, model, files: harnessFiles(spec, [spec], model) };
+    const [safety, probe] = await Promise.all(["step", "probe"].map((step) => simulate(harness, "inv", 64, 64, step)));
+    assert.equal(safety.broken, false);
+    assert.equal(probe.broken, false);
+    for (const trace of [...safety.traces, ...probe.traces]) replay(domain, trace, model);
+    const emitted = safety.traces.flat().flatMap((step) => step.out ?? []);
+    assert.deepEqual(new Set(emitted), new Set(["yes", "no", "saved"]));
+    const commits = probe.traces.flat().flatMap(({ evaluated }) => evaluated?.name === "commit" ? [{ picks: evaluated.picks, result: evaluated.result }] : []);
+    assert.ok(commits.length > 0);
+    assert.ok(commits.every(({ picks, result }) => picks.approved === true && JSON.stringify(result) === '{"state":2,"out":["saved"]}'));
+  });
+
+  test("a concrete witness uses the original guards and rules and supplies its steps to replay", async () => {
+    const modelSource = `pure val initial: int = 0
+pure def publish(n: int, amount: int): int = amount
+pure def canPublish(n: int, amount: int): bool = n == 0 and amount > 0
+pure def finish(n: int): int = n + 1
+pure def canFinish(n: int): bool = n > 0 and n < 42
+pure def alwaysSafe(n: int): bool = n <= 42
+pure def sometimesDone(n: int): bool = n == 42
+pure val witnessIndex = 3
+pure val witnessSender = 4
+pure val witness_fixture = 5
+pure val witness_sometimesDone = 6
+pure def witnessStep_sometimesDone(n: int): int = n`;
+    const simulateExample = async (source: string, example: string) => {
+      const root = oneRule("journey", "Publish then finish", `${source}\npure val eval_witness_sometimesDone = ${example}`);
+      const spec = readSpecs(root)[0];
+      const model = await gen(root, spec);
+      const domain = await import(pathToFileURL(path.join(root, "gen", "journey.ts")).href);
+      assert.deepEqual([domain.witnessIndex, domain.witnessSender, domain.witness_fixture, domain.witness_sometimesDone, domain.witnessStep_sometimesDone(7)], [3, 4, 5, 6, 7]);
+      return simulation({ root, fresh: false, used: new Set() }, spec, [spec], model, domain, 1);
+    };
+    const [reached, denied, unsafe, mistyped] = await Promise.all([
+      simulateExample(modelSource, '(("publish", 41), "finish")'),
+      simulateExample(modelSource.replace("n == 42", "n == 1"), '("publish", -1)'),
+      simulateExample(modelSource, '(("publish", 43), "finish")'),
+      simulateExample(modelSource, '("publish", "unknown")'),
+    ]);
+    assert.ok(reached.said.some((r) => r.ok && r.summary === "sometimesDone is reachable"), JSON.stringify(reached.said));
+    assert.ok(reached.said.some((r) => r.ok && r.stage === "replay"), JSON.stringify(reached.said));
+    assert.deepEqual(reached.tested?.journeys[0]?.events, [{ type: "publish", amount: 41 }, { type: "finish" }]);
+    assert.ok(denied.said.some((r) => r.ok && r.summary === "sometimesDone is reachable"), JSON.stringify(denied.said));
+    assert.ok(unsafe.said.some((r) => !r.ok && r.stage === "always" && r.detail.includes('publish{"amount":43}')), JSON.stringify(unsafe.said));
+    assert.ok(mistyped.said.some((r) => !r.ok && /Couldn't unify (?:int and str|str and int)/.test(r.detail)), JSON.stringify(mistyped.said));
   });
 
   test("hand-written code that changes what it is checked against is refused or flagged", async () => {
@@ -2189,6 +2268,22 @@ function eachCheck() {
     await runCli(script, root, "check", "--json");
     assert.equal(unmarked, entries);
     assert.equal(remembered(), unmarked);
+    if (process.platform !== "win32") {
+      const shim = path.join(root, "node_modules/.bin/quint");
+      fs.unlinkSync(shim);
+      fs.copyFileSync(path.join(nodeModules, ".bin/quint"), shim);
+      const retry = await exec(process.execPath, ["--input-type=module", "--eval", `
+        import fs from "node:fs";
+        import { check } from "./vibestack/formal.ts";
+        let models = 0;
+        const result = await check(".", false, (step) => {
+          if (step.stage === "model" && ++models <= 2) fs.linkSync("node_modules/.bin/quint", "concurrent-install-" + models);
+        });
+        console.log(JSON.stringify([models, result.results.filter(s => s.stage === "model").length, result.results.filter(s => !s.ok).map(s => s.stage)]));
+      `], root);
+      assert.equal(retry.status, 0, retry.stderr);
+      assert.deepEqual(JSON.parse(retry.stdout), [3, 1, ["review"]]);
+    }
     fs.writeFileSync(path.join(root, "tsconfig.json"), '{"compilerOptions":{"noEmit":true},"include":["gen/*.ts"]}');
     if (process.platform !== "win32") {
       const compiler = path.join(root, "node_modules/.bin/vibelang");
@@ -2708,7 +2803,15 @@ function eachCheck() {
     for (const directory of ["vibestack/studio", ...fs.readdirSync(path.join(copy, "packages")).map((name) => `packages/${name}`)])
       for (const output of ["gen", "dist", "generated", "node_modules", ".spec-cache", ".cache", ".vibe", ".turbo", "storybook-static"])
         assert.ok(!fs.existsSync(path.join(copy, directory, output)), `${directory}/${output} is produced by the scratch build`);
-    const dependencies = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["install", "--offline", "--frozen-lockfile", "--ignore-scripts"], copy);
+    const modulesManifest = path.join(nodeModules, ".modules.yaml");
+    assert.ok(fs.existsSync(modulesManifest), "The packaged command selftest needs a pnpm workspace install. Run pnpm install.");
+    const { parse: parseYaml } = await import("yaml");
+    const storeDir = (parseYaml(fs.readFileSync(modulesManifest, "utf8")) as { storeDir?: unknown } | null)?.storeDir;
+    assert.ok(typeof storeDir === "string" && path.isAbsolute(storeDir), `Missing absolute pnpm store path in ${modulesManifest}`);
+    const installEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toLowerCase().replaceAll("-", "_") !== "npm_config_store_dir"));
+    installEnv.npm_config_store_dir = storeDir;
+    const dependencies = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+      ["install", "--offline", "--frozen-lockfile", "--ignore-scripts"], copy, installEnv);
     assert.equal(dependencies.status, 0, dependencies.stdout + dependencies.stderr);
     const built = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build"], copy, { ...process.env, TURBO_CACHE: "local:rw" });
     assert.equal(built.status, 0, built.stdout + built.stderr);
@@ -2806,8 +2909,7 @@ function eachCheck() {
   });
 
   test("owner generation mirrors the same artifact as the whole tree and checks its dependency closure", async () => {
-    const script = path.join(project, "vibestack/spec.ts");
-    const root = scratch({
+    const root = toolchain(scratch({
       "package.json": PACKAGE["package.json"],
       "packages/target/package.json": JSON.stringify({ name: "@repo/target" }),
       "packages/other/package.json": JSON.stringify({ name: "@repo/other" }),
@@ -2815,7 +2917,15 @@ function eachCheck() {
       "spec/target/index.md": ruleSpec('import lib.* from "../lib"\npure val targetValue = baseValue'),
       "spec/lib.md": ruleSpec("pure val baseValue = 1"),
       "spec/other/index.md": ruleSpec("pure val otherValue = 2"),
-    });
+    }), "quint", "lsc");
+    const script = path.join(root, "vibestack/spec.ts");
+    const linkDuringGeneration = (phase: string) => {
+      if (process.platform === "win32") return;
+      const shim = path.join(root, "node_modules/.bin/quint");
+      fs.unlinkSync(shim);
+      fs.writeFileSync(shim, `#!/bin/sh\nln "$0" '${path.join(root, phase)}' 2>/dev/null || true\nexec '${path.join(nodeModules, ".bin/quint")}' "$@"\n`, { mode: 0o755 });
+    };
+    linkDuringGeneration("install-during-full-generation");
     const all = await runCli(script, root, "gen");
     assert.equal(all.status, 0, all.stdout + all.stderr);
     const target = path.join(root, "packages/target/gen");
@@ -2825,6 +2935,7 @@ function eachCheck() {
     const before = fs.readFileSync(unrelated, "utf8");
     fs.rmSync(target, { recursive: true });
     fs.appendFileSync(path.join(root, "spec/other/index.md"), "\n[Missing](./missing.md)\n");
+    linkDuringGeneration("install-during-owner-generation");
     const scoped = await runCli(script, root, "gen", "--owner", "target");
     assert.equal(scoped.status, 0, scoped.stdout + scoped.stderr);
     assert.deepEqual(outputs(), expected);
@@ -3273,7 +3384,7 @@ describe("the documents name what exists", () => {
       [["selftest:tools:a", "selftest:tools:b", "selftest:tools:rest"], selftests.map((task) => `//#${task}`), selftests.map((task) => `//#${task}`)], "pnpm selftest and pnpm verify run every selftest task");
     const ci = read(".github/workflows/ci.yml");
     const lanes = [...ci.matchAll(/^ +lane: \[(.+)\]$/gm)].flatMap(([, lane]) => lane.split(", "));
-    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --summarize$/m)?.[1].split(" ") ?? [];
+    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --concurrency=100% --summarize$/m)?.[1].split(" ") ?? [];
     assert.deepEqual(lanes.sort(), ["product", ...shards.map((task) => `selftest-${task.split(":")[2]}`)].sort(), "each hosted tool shard has its own runner");
     assert.deepEqual([...product, ...shards.map((task) => `//#${task}`)].sort(), listed("verify").sort(), "the hosted jobs run each task of pnpm verify once");
     const each = "the tools each check catches its own kind of mistake";
@@ -3287,6 +3398,7 @@ describe("the documents name what exists", () => {
     });
     assert.deepEqual(Object.fromEntries(titles.map((title) => [title, ranBy(title)])), Object.fromEntries(titles.map((title) => [title, [elsewhere[title] ?? "selftest:tools:rest"]])));
     assert.match(ci, /pnpm all "\/\/#selftest:tools:.*?--only --continue=dependencies-successful --summarize/, "a dedicated runner executes only its shard after setup");
+    assert.match(scripts.prepare, /^node vibestack\/spec\.ts gen --install --skip-gen-on-pack \/\/#build(?: |$)/);
     const [first, ...others] = shards.map((task) => JSON.parse(read("turbo.json")).tasks[`//#${task}`].dependsOn);
     assert.deepEqual(others, others.map(() => first), "the shards wait for the same integration prerequisites");
   });
@@ -3356,9 +3468,11 @@ describe("the documents name what exists", () => {
     assert.deepEqual({
       rootUsesElizaModels: reach("//#gen").has("//#gen:eliza"),
       notWaiting: real.filter((id) => !reach(id).has("//#gen")).sort(),
+      analyzeWaitsFor: tasks.get("//#analyze")!.dependencies.toSorted(),
       lintWaitsFor: vibeDeclared.filter((id) => tasks.get("//#lint:js")!.dependencies.includes(id)),
       devWaitsFor: tasks.get("vibestack-studio#dev")!.dependencies.toSorted(),
-      prose: [studio(prose), prose.includes("@repo/app#test")],
+      prose: [studio(prose), prose.includes("@repo/app#test"), prose.includes("//#analyze")],
+      docs: (await changedBy(append("README.md"))).includes("//#analyze"),
       selftest: [studio(selftest), selftest.includes("//#build"), ["a", "b", "rest"].every((shard) => selftest.includes(`//#selftest:tools:${shard}`))],
       fixture: { studio: studio(fixture), build: fixture.includes("//#build"), selftest: fixture.includes("//#selftest:tools:a") },
       frameworkTest: { build: frameworkTest.includes("//#build"), test: frameworkTest.includes("//#test") },
@@ -3374,8 +3488,9 @@ describe("the documents name what exists", () => {
       }),
     }, {
       rootUsesElizaModels: true,
-      notWaiting: ["//#analyze", "//#build", "//#gen:eliza", "//#lint:css", "//#selftest:docs", "//#selftest:examples", "@repo/design-system#build", "@repo/ui#typecheck", "vibestack-studio#build", "vibestack-studio#dev", "vibestack-studio#test", "vibestack-studio#typecheck"],
-      lintWaitsFor: vibeDeclared, devWaitsFor: tasks.get("vibestack-studio#build")!.dependencies.toSorted(), prose: [[], true], selftest: [[], false, true],
+      notWaiting: ["//#build", "//#gen:eliza", "//#lint:css", "//#selftest:docs", "//#selftest:examples", "@repo/design-system#build", "@repo/ui#typecheck", "vibestack-studio#build", "vibestack-studio#dev", "vibestack-studio#test", "vibestack-studio#typecheck"],
+      analyzeWaitsFor: ["//#gen", "@repo/design-system#build", "@repo/ui#gen", "vibestack-studio#gen"],
+      lintWaitsFor: vibeDeclared, devWaitsFor: tasks.get("vibestack-studio#build")!.dependencies.toSorted(), prose: [[], true, true], docs: false, selftest: [[], false, true],
       fixture: { studio: ["vibestack-studio#test"], build: false, selftest: true },
       frameworkTest: { build: false, test: true },
       independentOwner: true, leftovers: [],
@@ -3442,14 +3557,20 @@ function theCommandLine() {
     fs.writeFileSync(path.join(root, "spec/value.md"), ruleSpec("pure val answer = nope", "A value"));
     assert.match((await runCli(script, root, "gen", "--if-valid")).stdout, /gen\/ was not generated/);
     assert.deepEqual(generatedBefore(), stable);
-    fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "install-gen", packageManager: JSON.parse(read("package.json")).packageManager, scripts: { gen: "node vibestack/spec.ts gen" } }));
-    fs.writeFileSync(path.join(root, "turbo.json"), JSON.stringify({ tasks: { "//#gen": { inputs: ["spec/**"], outputs: ["gen/**"] } } }));
+    const build = "node -e \"require('fs').writeFileSync('tools-built', '')\"";
+    const owner = "node -e \"require('fs').copyFileSync('owner-source', 'owner-generated')\"";
+    fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "install-gen", packageManager: JSON.parse(read("package.json")).packageManager,
+      scripts: { gen: "node vibestack/spec.ts gen", build, owner } }));
+    fs.writeFileSync(path.join(root, "turbo.json"), JSON.stringify({ tasks: {
+      "//#gen": { inputs: ["spec/**"], outputs: ["gen/**"] }, "//#build": { inputs: ["package.json"], cache: false },
+      "//#owner": { inputs: ["owner-source", "package.json"], cache: false },
+    } }));
     fs.writeFileSync(path.join(root, "pnpm-workspace.yaml"), "packages: [packages/*]\n");
     fs.mkdirSync(path.join(root, "packages/app"), { recursive: true });
     fs.writeFileSync(path.join(root, "packages/app/package.json"), JSON.stringify({ name: "app" }));
     fs.symlinkSync(nodeModules, path.join(root, "node_modules"), "dir");
     fs.symlinkSync(path.dirname(script), path.join(root, "vibestack"), "dir");
-    const prepare = (hosted: boolean, job = "verify") => exec(process.execPath, [script, "gen", "--install"], root, { ...process.env, GITHUB_ACTIONS: String(hosted), GITHUB_JOB: job, TURBO_CACHE: "local:rw", TURBO_TOKEN: "" });
+    const prepare = (hosted: boolean, job = "verify", ...tasks: string[]) => exec(process.execPath, [script, "gen", "--install", ...tasks], root, { ...process.env, GITHUB_ACTIONS: String(hosted), GITHUB_JOB: job, TURBO_CACHE: "local:rw", TURBO_TOKEN: "" });
     for (const hosted of [false, true]) {
       const invalid = await prepare(hosted);
       assert.equal(invalid.status, 0, invalid.stderr);
@@ -3458,11 +3579,29 @@ function theCommandLine() {
     }
     fs.writeFileSync(path.join(root, "spec/value.md"), ruleSpec("pure val answer = 43", "A value"));
     fs.rmSync(path.join(root, "gen/value.ts"));
-    const fixtures = await prepare(true, "vibestack-fixture-selftests");
+    const prerequisites = ["//#build", "//#owner"];
+    const fixtures = await prepare(true, "vibestack-fixture-selftests", ...prerequisites);
     assert.equal(fixtures.status, 0, fixtures.stderr);
+    assert.ok(fs.existsSync(path.join(root, "tools-built")));
     assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
-    const installed = await prepare(true);
+    for (const hosted of [false, true]) {
+      const missing = await prepare(hosted, "verify", ...prerequisites);
+      assert.notEqual(missing.status, 0, "a failed prerequisite fails ordinary installs");
+      assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
+    }
+    fs.writeFileSync(path.join(root, "owner-source"), "external owner");
+    const packable = ["--skip-gen-on-pack", ...prerequisites];
+    const packed = await exec(process.execPath, [script, "gen", "--install", ...packable], root, {
+      ...process.env, GITHUB_ACTIONS: "true", GITHUB_JOB: "verify",
+      npm_command: "pack", npm_lifecycle_event: "prepare", TURBO_CACHE: "local:rw", TURBO_TOKEN: "",
+    });
+    assert.equal(packed.status, 0, packed.stderr);
+    assert.equal(fs.readFileSync(path.join(root, "owner-generated"), "utf8"), "external owner");
+    assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
+    fs.writeFileSync(path.join(root, "owner-source"), "installed owner");
+    const installed = await prepare(true, "verify", ...packable);
     assert.equal(installed.status, 0, installed.stderr);
+    assert.equal(fs.readFileSync(path.join(root, "owner-generated"), "utf8"), "installed owner");
     assert.doesNotMatch(installed.stdout, /gen\/ was not generated/);
     assert.equal((await import(path.join(root, "gen/value.ts") + "?installed")).answer, 43);
     fs.rmSync(path.join(root, "gen/value.ts"));
@@ -3747,7 +3886,7 @@ describe("the tools", { concurrency: true }, () => {
 });
 
 test("the same installed Quint shares verification results across checkouts and distinct launchers and patches keep their own", { skip: process.platform === "win32" }, async () => {
-  const install = (patch: string) => {
+  const install = (patch: string, fallback?: string) => {
     const root = toolchain(scratch({}));
     const modules = path.join(root, "node_modules");
     const store = path.join(modules, ".pnpm");
@@ -3757,11 +3896,16 @@ test("the same installed Quint shares verification results across checkouts and 
     fs.unlinkSync(path.join(modules, "@informalsystems"));
     fs.mkdirSync(dir, { recursive: true });
     fs.symlinkSync(path.dirname(dir), path.join(modules, "@informalsystems"));
-    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@informalsystems/quint", version: "1.0.0", bin: "cli.js" }));
-    fs.writeFileSync(path.join(dir, "cli.js"), "export {};\n");
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@informalsystems/quint", version: "1.0.0", bin: "cli.cjs", dependencies: { values: "1.0.0" } }));
+    fs.writeFileSync(path.join(dir, "cli.cjs"), 'require("node:fs").writeFileSync("ir.json", JSON.stringify(require("values")));\n');
+    const lookup = fallback ? "secondary/node_modules" : locator;
+    const values = path.join(store, lookup, "values");
+    fs.mkdirSync(values, { recursive: true });
+    fs.writeFileSync(path.join(values, "package.json"), JSON.stringify({ name: "values", version: "1.0.0" }));
+    fs.writeFileSync(path.join(values, "index.js"), `module.exports = ${JSON.stringify(fallback ?? "default")};\n`);
     const shim = path.join(modules, ".bin/quint");
-    fs.writeFileSync(shim, `#!/bin/sh\nexport NODE_PATH="${store}/${locator}:${store}/node_modules:$NODE_PATH"\nexec node "$(dirname "$0")/../.pnpm/${locator}/@informalsystems/quint/cli.js" "$@"\n`, { mode: 0o755 });
-    return { root, shim };
+    fs.writeFileSync(shim, `#!/bin/sh\nexport NODE_PATH="${store}/${lookup}:${store}/node_modules:$NODE_PATH"\nexec node "$(dirname "$0")/../.pnpm/${locator}/@informalsystems/quint/cli.cjs" "$@"\n`, { mode: 0o755 });
+    return { root, shim, values };
   };
   const identity = async (root: string) => {
     const { installedProgram }: { installedProgram: typeof lookupTool } = await import(path.join(root, "vibestack/cache.ts"));
@@ -3798,7 +3942,7 @@ test("the same installed Quint shares verification results across checkouts and 
     });
     await assert.rejects(steady(async () => {
       write(first);
-      const source = "node_modules/@informalsystems/quint/cli.js";
+      const source = "node_modules/@informalsystems/quint/cli.cjs";
       const original = fs.readFileSync(source);
       fs.appendFileSync(source, "export const changed = true;");
       fs.writeFileSync(source, original);
@@ -3806,8 +3950,95 @@ test("the same installed Quint shares verification results across checkouts and 
     }), /tool installation changed/);
     assert.equal(fs.existsSync(tainted.file), false, "an edit and restore cannot publish a stale action");
     assert.equal(recall(memory, first), first.name, "the prior verified action survives");
+    await assert.rejects(steady(async () => {
+      installedProgram(".", "quint");
+      assert.equal(recall(memory, first), first.name);
+      fs.appendFileSync("node_modules/@informalsystems/quint/cli.cjs", " ");
+    }), /tool installation changed/);
   `], left.root);
   assert.equal(publication.status, 0, publication.stderr);
+  const results = [];
+  for (const selection of ["left", "right"]) {
+    const project = install("first", selection);
+    const child = await exec(process.execPath, ["--input-type=module", "--eval", `
+      import fs from "node:fs";
+      import { act } from "./vibestack/action.ts";
+      const run = async () => (await act({ root: ".", fresh: false, used: new Set() }, "quint", ["typecheck"], "run", {})).files["ir.json"];
+      const first = await run();
+      fs.writeFileSync(${JSON.stringify(path.join(project.values, "index.js"))}, 'module.exports = "revised";');
+      console.log(JSON.stringify([first, await run()]));
+    `], project.root);
+    assert.equal(child.status, 0, child.stderr);
+    results.push([...JSON.parse(child.stdout), toolRuns(path.join(project.root, ".spec-cache"))]);
+  }
+  assert.deepEqual(results, [['"left"', '"revised"', []], ['"right"', '"revised"', []]]);
+  const hosted = install("first");
+  const store = path.join(hosted.root, "node_modules/.pnpm");
+  const modules = path.join(store, "runner@1/node_modules");
+  const runner = path.join(modules, "runner");
+  fs.mkdirSync(runner, { recursive: true });
+  fs.writeFileSync(path.join(runner, "package.json"), '{"name":"runner","version":"1.0.0"}');
+  const provided = path.join(modules, "values");
+  fs.renameSync(hosted.values, provided);
+  const checked = await exec(process.execPath, ["--input-type=module", "--eval", `
+    import fs from "node:fs";
+    import { act } from "./vibestack/action.ts";
+    const run = async () => (await act({ root: ".", fresh: false, used: new Set() }, "quint", ["typecheck"], "run", {})).files["ir.json"];
+    const values = [await run(), await run()];
+    fs.writeFileSync(${JSON.stringify(path.join(provided, "index.js"))}, 'module.exports = "from host";');
+    console.log(JSON.stringify([...values, await run()]));
+  `], hosted.root, { ...process.env, NODE_PATH: [path.join(runner, "node_modules"), modules, path.join(store, "node_modules")].join(path.delimiter) });
+  assert.equal(checked.status, 0, checked.stderr);
+  assert.deepEqual([JSON.parse(checked.stdout), toolRuns(path.join(hosted.root, ".spec-cache")).length], [['"default"', '"default"', '"from host"'], 2]);
+
+});
+
+test("check phase timings end a simulation before later definitions finish generating", { skip: process.platform === "win32" }, async () => {
+  const root = toolchain(scratch({
+    "spec/counter.md": ruleSpec("pure val initial: int = 0\npure def bump(n: int): int = n + 1\npure def alwaysPositive(n: int): bool = n > 0"),
+    "spec/definitions.md": ruleSpec("pure val answer: int = 42"),
+  }), "quint");
+  const shim = path.join(root, "node_modules/.bin/quint");
+  fs.renameSync(shim, `${shim}-real`);
+  fs.writeFileSync(shim, `#!/bin/sh
+basedir="$(dirname "$0")"
+if [ "$1:$4" = typecheck:definitions.qnt ]; then node "$basedir/../../wait-for-simulation.mjs" || exit $?; fi
+exec "$basedir/quint-real" "$@"
+`, { mode: 0o755 });
+  fs.writeFileSync(path.join(root, "wait-for-simulation.mjs"), `
+    import fs from "node:fs";
+    import { setTimeout } from "node:timers/promises";
+    const marker = new URL("./simulation-finished", import.meta.url);
+    const deadline = performance.now() + 60_000;
+    while (!fs.existsSync(marker) && performance.now() < deadline) await setTimeout(20);
+    if (!fs.existsSync(marker)) throw new Error("no simulation result was saved");
+    await setTimeout(300);
+  `);
+  const child = await exec(process.execPath, ["--input-type=module", "--eval", `
+    import assert from "node:assert/strict";
+    import { channel } from "node:diagnostics_channel";
+    import fs from "node:fs";
+    import path from "node:path";
+    import { check } from "./vibestack/pipeline.ts";
+    const rename = fs.renameSync;
+    fs.renameSync = (from, to) => {
+      rename(from, to);
+      if (/^simulate-.*\\.json\\./.test(path.basename(to))) fs.writeFileSync("simulation-finished", "");
+    };
+    const events = [];
+    channel("vibestack:check:phase").subscribe(event => events.push(event));
+    const result = await check(process.cwd());
+    assert.ok(result.results.some(r => r.ok && r.stage === "model" && r.where === "spec/definitions.md" && r.summary.includes("definitions only")));
+    assert.ok(result.results.some(r => !r.ok && r.stage === "always" && r.where === "spec/counter.md" && r.summary.includes("fix the model")), JSON.stringify(result.results));
+    const time = (phase, event) => events.find(e => e.phase === phase && e.event === event).elapsedMs;
+    assert.ok(time("simulation", "start") <= time("simulation", "end"));
+    assert.ok(time("generation", "end") - time("simulation", "end") >= 200, JSON.stringify(events));
+    events.length = 0;
+    const interrupted = new Error("ordinary generation failure");
+    await assert.rejects(check(process.cwd(), false, () => { throw interrupted; }), error => error === interrupted);
+    assert.deepEqual(events.map(({ phase, event }) => [phase, event]), [["generation", "start"], ["generation", "end"]]);
+  `], root);
+  assert.equal(child.status, 0, child.stdout + child.stderr);
 });
 
 test("a trace integer of 16 or more digits that Quint wrote as a BigNumber decodes to the same integer", () => {
@@ -3825,9 +4056,10 @@ test("the lint refuses, in a project's own code, a comment that is neither a cit
   const eslint = new ESLint({ cwd: project });
   const found = async (file: string, lines: string[]) => (await eslint.lintText(lines.join("\n"), { filePath: path.join(project, file) }))[0]!.messages
     .filter((m) => m.fatal || m.ruleId === "no-console" || m.ruleId?.startsWith("code/")).map((m) => `${m.line} ${m.ruleId ?? "inline config"}`);
+  const specFile = "spec/app/index.md";
   assert.deepEqual(await found("apps/app/src/probe.vibe", [
-    `// spec/app/index.md, "Story: Manage my saved passwords privately"; spec/app/index.md, "Passwords displays sign-in details only while the vault is available"`,
-    `/* spec/app/index.md, "Story: Manage my saved passwords privately" */`,
+    `// ${specFile}, "Story: Manage my saved passwords privately"; ${specFile}, "Passwords displays sign-in details only while the vault is available"`,
+    `/* ${specFile}, "Story: Manage my saved passwords privately" */`,
     "//@ ghost",
     "/** @model spec/app/index.md */",
     "// a note",
