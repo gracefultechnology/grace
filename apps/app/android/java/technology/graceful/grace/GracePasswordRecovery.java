@@ -55,7 +55,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  static final class Operation {
   final PasswordBackupApproval.Purpose purpose;
   volatile CompletableFuture<?> pending;
-  volatile boolean waitingForBrowser = true;
+  volatile boolean awaitingApproval = true;
   Operation(PasswordBackupApproval.Purpose purpose) { this.purpose = purpose; }
  }
 
@@ -68,7 +68,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  boolean open() {
   if (destroyed || active != null || !deviceReady()) return false;
   if (operation != null) {
-   if (!operation.waitingForBrowser) return false;
+   if (!operation.awaitingApproval) return false;
    accountChanged();
   }
   show(new AlertDialog.Builder(activity)
@@ -95,7 +95,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  boolean isCurrent(Operation expected) { return !destroyed && operation == expected; }
 
  void run(Operation expected, Approval approval) {
-  expected.waitingForBrowser = false;
+  expected.awaitingApproval = false;
   Runnable account = () -> {
    if (!isCurrent(expected) || !approval.current()) throw new IllegalStateException("Password backup approval expired");
   };
@@ -258,6 +258,30 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
    return null;
   }
   return null;
+ }
+
+ boolean confirmNativeApproval(Operation expected) {
+  CompletableFuture<Boolean> answer = new CompletableFuture<>();
+  activity.runOnUiThread(() -> {
+   if (!isCurrent(expected) || !deviceReady() || answer.isDone() || activity.isFinishing() || activity.isDestroyed()) {
+    answer.complete(false);
+    return;
+   }
+   String message = switch (expected.purpose) {
+    case VERIFY -> "Confirm this is the account you use for this tablet’s saved passwords.";
+    case READ -> "Allow Grace to retrieve your encrypted password backup?";
+    case SAVE -> "Allow Grace to save an encrypted copy of your passwords?";
+    case DELETE -> "Remove your cloud backup? Saved passwords on this tablet will stay.";
+   };
+   try {
+    show(new AlertDialog.Builder(activity).setTitle("Confirm password backup")
+     .setMessage(message)
+     .setPositiveButton("Authorize", (dialog, which) -> answer.complete(isCurrent(expected) && deviceReady()))
+     .setNegativeButton("Cancel", null), () -> answer.complete(false));
+   } catch (RuntimeException unavailable) { answer.complete(false); }
+  });
+  try { return await(expected, answer); }
+  catch (Exception unavailable) { return false; }
  }
 
  private boolean confirmLinkExisting(Operation expected) throws Exception {
