@@ -15,7 +15,7 @@ const nearby = (ssid: string, rssi: number, security: NonNullable<WiFiNetwork["s
   ({ ssid, bssid, rssi, frequency: 2412, capabilities: "", secured: security !== "open" && security !== "owe", security });
 
 function android() {
-  const tablet = { location: "prompt" as "prompt" | "granted" | "denied", ssid: null as string | null, joins: [] as ConnectOptions[], panels: 0, delayed: false, validated: true, visible: true, scan: undefined as WiFiNetwork[] | undefined, currentPoint: undefined as WiFiNetwork | undefined };
+  const tablet = { location: "prompt" as "prompt" | "granted" | "denied", ssid: null as string | null, joins: [] as ConnectOptions[], panels: 0, delayed: false, saved: false, validated: true, visible: true, scan: undefined as WiFiNetwork[] | undefined, currentPoint: undefined as WiFiNetwork | undefined };
   const plugin: WiFiPlugin = {
     checkPermissions: () => Promise.resolve({ location: tablet.location }),
     requestPermissions: () => { tablet.location = "granted"; return Promise.resolve({ location: "granted" }); },
@@ -33,6 +33,7 @@ function android() {
       tablet.joins.push(options);
       if (options.password !== undefined && options.password.length < 8) return Promise.reject(Object.assign(new Error("short"), { code: "INVALID_ARGUMENT" }));
       if (options.password === "wrongpass") return Promise.resolve({ status: "wrongPassword" });
+      if (tablet.saved) return Promise.resolve({ status: "savedNetwork" });
       if (tablet.delayed) return Promise.resolve({ status: "notConnected" });
       tablet.ssid = options.ssid;
       return Promise.resolve({ status: "connected" });
@@ -160,5 +161,28 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await tap("NETGEAR-4F2");
     await expect.element(page.getByLabelText("Password")).toHaveValue("");
     expect(tablet.joins).toHaveLength(4);
+
+    tablet.ssid = "Riverside Library Guest";
+    tablet.saved = true;
+    await act(() => userEvent.type(page.getByLabelText("Password"), "garden2024{Enter}"));
+    const openAndroidWifi = button("Open Android’s Wi-Fi");
+    await expect.element(openAndroidWifi).toBeVisible();
+    expect(tablet.panels).toBe(2);
+    await tap("Open Android’s Wi-Fi");
+    await expect.poll(() => tablet.panels).toBe(3);
+    await shown();
+    await joinedTo("Riverside Library Guest");
+    await expect.element(openAndroidWifi).toBeVisible();
+
+    tablet.ssid = "NETGEAR-4F2";
+    tablet.validated = false;
+    await changed();
+    await joinedTo("Internet connection");
+    await expect.element(openAndroidWifi).toBeVisible();
+    tablet.validated = true;
+    await changed();
+    await joinedTo("NETGEAR-4F2");
+    await expect.element(openAndroidWifi).not.toBeInTheDocument();
+    expect(tablet.joins).toHaveLength(5);
   });
 });
