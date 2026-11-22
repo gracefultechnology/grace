@@ -103,7 +103,7 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
     /** The page's website asks something, as the plugin reports it. */
     ask: (event: string, fields: Record<string, unknown>) => emit(event, fields),
     /** The page started its next page, whatever started it. */
-    started: (id: string) => emit("pageStarted", { id, url: "" }),
+    started: (id: string, url = "") => emit("pageStarted", { id, url }),
     /** The page's renderer is gone. */
     crashed: (id: string) => emit("surfaceCrashed", { id }),
     /** The purge sent first ends, clean or not. */
@@ -812,8 +812,13 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
     url: "https://utility.example", purpose: "manual-sign-in", storage: "isolated", process: "isolated",
   });
   expect(native.calls("createSurface")[1]).not.toHaveProperty("profileKey");
+  const verified = { pageError: null, securityBlocked: false };
+  const finishPrivateVisit = async (url: string, canGoBack: boolean, canGoForward: boolean) => {
+    await native.started("tab-2", url);
+    await native.report("tab-2", url, 100, { ...verified, canGoBack, canGoForward });
+  };
   await native.route();
-  await native.report("tab-2", "https://utility.example", 100, { pageError: null, securityBlocked: false });
+  await finishPrivateVisit("https://utility.example", false, false);
   await expect.poll(async () => {
     await native.route();
     return browserState().tabs.find((tab) => tab.id === 2)?.load;
@@ -831,16 +836,17 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
     await native.route();
     return back.query()?.matches(":enabled");
   }).toBe(enabled);
-  await native.report("tab-2", "https://utility.example", 100, { canGoBack: true, canGoForward: false });
+  await finishPrivateVisit("https://utility.example/enter/sample?ref=one-time", true, false);
   await waitForBack(true);
   await expect.element(address).toHaveValue("https://utility.example");
   expect(await pressBack()).toBe(true);
   await expect.poll(() => native.calls("goBack").at(-1)?.id).toBe("tab-2");
-  await native.report("tab-2", "https://utility.example", 100, { canGoBack: false, canGoForward: true });
+  await finishPrivateVisit("https://utility.example", false, true);
   await waitForBack(false);
   await act(() => userEvent.click(page.getByRole("button", { name: "Forward", exact: true })));
   await expect.poll(() => native.calls("goForward").at(-1)?.id).toBe("tab-2");
-  await native.report("tab-2", "https://utility.example/account?ref=one-time", 100, { canGoBack: true, canGoForward: false });
+  await finishPrivateVisit("https://utility.example/account?ref=one-time", true, false);
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
   const state = JSON.stringify(browserState());
   expect(state).not.toContain("one-time");
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
@@ -903,7 +909,7 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   await native.started("tab-2");
   await expect.poll(async () => { await native.route(); return help.query(); }).toBeNull();
   await expect.element(signInHelp).not.toBeInTheDocument();
-  await native.report("tab-2", "https://utility.example", 100);
+  await native.report("tab-2", "https://utility.example", 100, verified);
   await routeTo(signInHelp);
   await expect.element(help).not.toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
