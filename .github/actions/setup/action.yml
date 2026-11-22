@@ -34,6 +34,10 @@ runs:
       with:
         node-version-file: .nvmrc
         cache: pnpm
+        cache-dependency-path: |
+          pnpm-lock.yaml
+          vendor/eliza/pnpm-lock.yaml
+          vibestack/examples/*/pnpm-lock.yaml
     # Turborepo skips a task whose inputs it has seen; spec skips a simulation or proof it has seen, and the selftest's
     # shared projects skip a tool run an earlier selftest made (nightly, fuzz.yml runs it without them).
     # Quint downloads its evaluator to ~/.quint from GitHub's rate-limited API: once per cache, not per run.
