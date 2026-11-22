@@ -835,6 +835,31 @@ pure def lawOnlyApproveOnTheRegisteredPageForTheShownAccountApprovesABackup(regi
   not(mayApprovePasswordBackup(registered, recentSignIn, false, confirmed))
 ```
 
+### Google sign-in can resume only a pending browser approval
+
+The tablet’s browser approval returns from Google to the protected approval
+page. Grace takes the pending request from this browser tab once. If Google
+sign-in fails or the tab has no pending request, Grace cannot resume approval.
+During rollout, a pending request started before the update can finish through
+the previous account return. A new request uses only the protected return.
+
+```quint
+type BrowserBackupSignInReturn = ProtectedGoogleBackupReturn | FailedGoogleBackupReturn | LegacyGoogleAccountReturn
+type PendingBrowserBackupApproval = NoPendingBrowserBackupApproval | LegacyPendingBrowserBackupApproval | ProtectedPendingBrowserBackupApproval
+pure def mayResumeSavedBackupApproval(signInReturn: BrowserBackupSignInReturn, savedApproval: PendingBrowserBackupApproval): bool =
+  match signInReturn {
+    | ProtectedGoogleBackupReturn => savedApproval != NoPendingBrowserBackupApproval
+    | FailedGoogleBackupReturn => false
+    | LegacyGoogleAccountReturn => savedApproval == LegacyPendingBrowserBackupApproval
+  }
+pure def lawGoogleFailureDoesNotResumeBackup(savedApproval: PendingBrowserBackupApproval): bool =
+  not(mayResumeSavedBackupApproval(FailedGoogleBackupReturn, savedApproval))
+pure def lawUsedGoogleBackupReturnCannotResumeAgain(signInReturn: BrowserBackupSignInReturn): bool =
+  not(mayResumeSavedBackupApproval(signInReturn, NoPendingBrowserBackupApproval))
+pure def lawNewBackupCannotResumeOnOrdinaryAccountReturn(savedApproval: PendingBrowserBackupApproval): bool =
+  savedApproval == ProtectedPendingBrowserBackupApproval implies not(mayResumeSavedBackupApproval(LegacyGoogleAccountReturn, savedApproval))
+```
+
 ## Story: Keep my passwords private when the tablet account changes
 
 > I can keep passwords on my own tablet, and I can choose to link them to my verified Grace account. Signing out closes private controls. Another account on this tablet cannot read or adopt the passwords I linked.
