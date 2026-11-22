@@ -106,7 +106,7 @@ The two suites of the tools, the command line and each kind of mistake, run side
 edits copy and a few long checks of fixtures are shared projects: each starts with the tool runs (`action-*` entries)
 earlier selftests kept in `.cache/selftest/.spec-cache` and leaves its own there; entries unused for a week are pruned.
 A test that observes a tool really running uses a scratch project of its own, which starts empty.
-Scratch dependency installs copy package files, so they do not change the shared store's hardlink metadata while parallel checks observe an installed verifier.
+Scratch dependency installs clone package files when the filesystem supports it and copy them otherwise. Both methods leave the shared store's hardlink metadata stable while parallel checks observe an installed verifier.
 `pnpm selftest` runs all five through Turborepo, side by side, as `pnpm verify` does. Each of the three
 `selftest:tools` processes bounds its own tests and tools to the machine and checks the order project once for itself,
 so three at once ask about three times what one does: on a machine too small for that,
@@ -392,6 +392,9 @@ restore their shared fixture runs and the product runner restores verification
 results from the root, workspace packages and standalone examples. The result
 cache keys include the job, commit and run attempt. Nightly verification restores
 only the pinned evaluator and runs fresh checks.
+The default branch’s product job publishes the pnpm store after the frozen install.
+All jobs restore it under Grace, Eliza and example lockfiles. This cache holds public
+packages only because fork pull requests can read it.
 Turborepo shares task results through the private Cloudflare/R2 cache.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
