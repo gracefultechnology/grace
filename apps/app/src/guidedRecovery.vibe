@@ -32,7 +32,8 @@ function safeCheckpoint(checkpoint: GuidedCheckpoint) {
   const { request, receipts, correction, save } = checkpoint
   if (save.tag === "GuidedSaveReconcile" && save.detailsDigest !== "" && !Schema.is(DigestHex)(save.detailsDigest)) return false
   const publicText = (text: string) => text.length <= 32768 && withhold({ text, passwords: [] }) === text
-  if (!publicText(request.goal) || !request.steps.every((step) => publicText(guidedDetails(step).subject)) ||
+  if (!publicText(request.goal) || !request.steps.every((step) => publicText(guidedDetails(step).subject) &&
+      (step.tag !== "ReadLatestRecord" || publicText(step.status))) ||
       !receipts.every((receipt) => publicText(receipt.evidence))) return false
   if (correction.tag === "NoGuidedCheckpointCorrection") return true
   if (!publicText(correction.label) || !URL.canParse(correction.url)) return false

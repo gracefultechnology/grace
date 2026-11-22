@@ -15,6 +15,7 @@ import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type GuidedEvidenceUse, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type GraceAction } from "./agent.vibe"
+import { BrowserGuide } from "./browserGuide.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
 import { type Help, helpWith, type Last, looker, render, sendable, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
@@ -160,6 +161,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       if (statement.tag === "Unread") return statement.reason
       return receipt({ tag: "CurrentStatement", tab: tab.id, loadVersion: tab.loadVersion, document: statement.document }, [address], statement.text)
     }
+    case "ReadLatestRecord": return undefined
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
@@ -251,6 +253,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const workspace = try Workspaces
   const agent = try Agent
   const native = try NativePage
+  const guide = try BrowserGuide
   const managed = try ManagedReads
   const accepting = try Semaphore.make(1)
   const asked = try Ref.make<{ generation: number; source: TurnSource } | undefined>(undefined)
@@ -428,6 +431,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         return (try browserReadAccount()) === account && (try currentBrowserWorkspace())
       }
       if (browserScope !== undefined && !(try currentBrowserWorkspace())) return "Refused"
+      if (read === "ReadLatestRecord") return try guide.checkLatestRecord()
       const found = try guidedReceipt(scene, step, native, managed)
       if (found === undefined) return "NotFound"
       if (found === "PrivateForm") return (try ownsBrowserRead()) ? found : "Refused"
