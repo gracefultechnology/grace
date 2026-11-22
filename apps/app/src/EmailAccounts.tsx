@@ -7,6 +7,7 @@ import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { type Account, type AccountPage, type Accounts, type Event, type Problem, type Provider, providerOf } from "../gen/app__accounts.ts";
 import { accountStatus, unsent } from "../gen/app__mailboxes.ts";
+import { domainOf } from "./accounts.vibe";
 import { secretPassword } from "./connector.vibe";
 import { type MailInstance, useAccounts, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
 
@@ -15,7 +16,6 @@ type Frame = Omit<SettingsAppProps, "children" | "pageTitle" | "backLabel" | "on
 const providers = { Gmail: "gmail", Outlook: "outlook", Yahoo: "yahoo", ICloud: "icloud", Aol: "aol", OtherEmail: "other" } as const satisfies Record<Provider, EmailProvider>;
 const chosen: Record<EmailProvider, Provider> = { gmail: "Gmail", outlook: "Outlook", yahoo: "Yahoo", icloud: "ICloud", aol: "Aol", other: "OtherEmail" };
 const tiles = new Map((Object.keys(providers) as Provider[]).map((p) => [`prov-${p}`, providers[p]]));
-const anyDomain = "example.com";
 const colours = [1, 2, 3, 4, 5] as const satisfies readonly AccountColour[];
 const home = "Email & calendar";
 const add = "Add an email";
@@ -97,7 +97,8 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
           <>
             {problem === "SignInUnfinished" && alert}
             <OtherEmailForm key={renewing} defaultAddress={renewing} problem={otherProblem(registry)} checking={signIn.stage === "CheckingOther"}
-              onNext={can({ type: "submitOther", domain: anyDomain }) ? ({ address, password }) => void flows.other({ address, password: secretPassword(password) }) : undefined}
+              accepts={(address) => can({ type: "submitOther", domain: domainOf(address) })}
+              onNext={({ address, password }) => void flows.other({ address, password: secretPassword(password) })}
               onCancel={offer({ type: "goBack" })} />
           </>
         );

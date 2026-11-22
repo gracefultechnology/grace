@@ -1,5 +1,6 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Story: Save, share and remove the chosen file"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"
-import { Effect, ManagedRuntime, Schema } from "effect";
+import { Effect, Latch, Layer, ManagedRuntime, Schema } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { act } from "react";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
@@ -17,7 +18,7 @@ import { Instances } from "../src/instances.vibe";
 import { chooseMailLink } from "../src/mailLink.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
-import { tabletView, actOnScreen, allowOutlook, browserAccountResponse, connected } from "./screen.tsx";
+import { actOnScreen, allowOutlook, browserAccountResponse, connected, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -444,6 +445,15 @@ it("See all my email in one place", async () => {
   const share = page.getByRole("button", { name: "Share" });
   await expect.element(share).toBeVisible();
   await click(share);
+  // spec/app/mailboxes.md, "Writing starts at Who is it to?, and Cc and Bcc show once opened or used"
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(page.getByText("Email discarded")).toBeVisible();
+  await expect.element(row("Inbox")).toHaveAttribute("aria-current", "page");
+  await click(page.getByRole("button", { name: "Close Email" }));
+  await click(page.getByRole("button", { name: /^Files/ }));
+  await click(piano);
+  await expect.element(share).toBeVisible();
+  await click(share);
   await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
   await click(page.getByRole("button", { name: "Susan" }));
   await expect.element(subject()).toHaveValue("A photo");
@@ -471,6 +481,7 @@ it("Write or reply and confirm before sending", async () => {
   await act(() => userEvent.fill(words(), "Thank you, I’ll be there."));
   // spec/app/email.md, "The visible Send button approves exactly the composer the user sees"
   await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(page.getByText("Sent to Main St Clinic")).toBeVisible();
   await expect.poll(() => sentWith("Re: Reminder: your appointment tomorrow at 10 am")).toEqual([gmail]);
   await click(row("Sent"));
   await opened(/Main St Clinic/, "Re: Reminder: your appointment tomorrow at 10 am");
@@ -569,6 +580,7 @@ it("Write or reply and confirm before sending", async () => {
 
   // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
   await click(row("All inboxes"));
+  await expect.element(row("Drafts 1")).toBeVisible();
   await opened(/Ruth/, "Lunch on Sunday?");
   await host("Offline");
   await expect.element(page.getByRole("button", { name: "Reply" })).toBeVisible();
@@ -621,6 +633,53 @@ it("Write or reply and confirm before sending", async () => {
   await expect.poll(() => sentWith("Recital photos")).toHaveLength(1);
   await expect.element(row("Outbox")).not.toBeInTheDocument();
 }, 600_000);
+
+it(`Keep the latest draft count (spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open")`, async () => {
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const captured = Latch.makeUnsafe();
+  const release = Latch.makeUnsafe();
+  const returned = Latch.makeUnsafe();
+  const fetch = window.fetch.bind(window);
+  let hold = false;
+  const delayed: typeof fetch = async (input, init) => {
+    const path = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+    const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+    const response = await fetch(input, init);
+    if (hold && method === "GET" && path.endsWith("/inbox-v1/drafts")) {
+      hold = false;
+      captured.openUnsafe();
+      await Effect.runPromise(release.await);
+      returned.openUnsafe();
+    }
+    return response;
+  };
+  localStorage.clear();
+  localStorage.setItem("accounts", JSON.stringify(connected(initial, "Gmail", gmail, "Gmail")));
+  const app = application(undefined, undefined, { url: cloud, key: secret });
+  const view = tabletView(ManagedRuntime.make(Layer.provide(app, Layer.succeed(FetchHttpClient.Fetch, delayed))));
+  const save = async (title: string) => {
+    await click(page.getByRole("button", { name: "Write" }));
+    await click(page.getByRole("button", { name: "Susan" }));
+    await act(() => userEvent.fill(subject(), title));
+    await click(page.getByRole("button", { name: "Back to Inbox" }));
+  };
+  try {
+    await view.render();
+    await click(page.getByRole("button", { name: /^Email/ }));
+    await expect.element(email(/Main St Clinic/)).toBeVisible();
+    hold = true;
+    await save("Lunch tomorrow");
+    await Effect.runPromise(captured.await);
+    await save("Tea next week");
+    await expect.element(row("Drafts 2")).toBeVisible();
+    await act(async () => { release.openUnsafe(); await Effect.runPromise(returned.await); });
+    await expect.element(row("Drafts 2")).toBeVisible();
+  } finally {
+    release.openUnsafe();
+    await view.dispose();
+    localStorage.clear();
+  }
+}, 120_000);
 
 it('Review an unsent reply (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
   const { secret, host, company, restartFromEarlierMailbox } = await start();
