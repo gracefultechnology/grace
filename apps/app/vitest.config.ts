@@ -611,7 +611,7 @@ export default defineConfig(async (env) => {
       ? {
           ...entry,
           ...(official && { plugins: [{ name: webArenaPluginName, api: official }] }),
-          optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto", "effect/testing", "pdf-lib"] },
+          optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto", "effect/References", "effect/testing", "pdf-lib"] },
           test: { ...entry.test, ...(official && { globalSetup: ["test/webarena.ts"] }), browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, recordPage, releasedStatement, realModel } } },
         }
       : entry);
