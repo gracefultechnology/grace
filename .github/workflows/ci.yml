@@ -650,7 +650,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: ${{ fromJSON(inputs.cross_app_only && '["product"]' || '["product","selftest-rest"]') }}
+        lane: [product]
     environment: &cache-environment ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
     env: &cache-env
       TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}
@@ -752,7 +752,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [selftest-a, selftest-b]
+        lane: [selftest-a, selftest-b, selftest-rest]
     environment: *cache-environment
     env: *cache-env
     steps: *verification-steps
