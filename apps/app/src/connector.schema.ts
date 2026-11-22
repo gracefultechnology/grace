@@ -38,11 +38,13 @@ export const DraftRead = Schema.Struct({
   content: Schema.Struct({ to: Texts, cc: Texts, bcc: Texts, subject: Text, bodyText: Text, plainText: Flag, threaded: Flag, attachmentCount: Schema.Int }),
 })
 export const ContactList = Schema.Struct({ contacts: Schema.Array(Schema.Struct({ name: Text, email: Text })) })
+const Reminders = Schema.Array(Schema.Struct({ method: Text, minutes: Schema.Int }))
 export const WireEvent = Schema.Struct({
   calendarId: Text, externalId: Schema.NonEmptyString, title: Text, description: Text, location: Text, startAt: Text, endAt: Text, isAllDay: Flag, timezone: NullableText,
   attendees: Schema.Array(Schema.Struct({ email: NullableText, displayName: NullableText, self: Flag })),
+  recurrence: optional(Texts), reminders: optional(Schema.Struct({ useDefault: Flag, overrides: optional(Reminders) })),
 })
-export const Feed = Schema.Struct({ events: Schema.Array(WireEvent) })
+export const Feed = Schema.Struct({ events: Schema.Array(WireEvent), defaultReminders: optional(Reminders) })
 export const Stored = Schema.Struct({ event: WireEvent })
 export const Session = Schema.Struct({ sessionId: Text, pageUrl: Text, embeddable: optional(Flag) })
 export const SessionOutcome = Schema.Struct({

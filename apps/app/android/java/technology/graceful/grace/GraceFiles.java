@@ -290,6 +290,29 @@ public final class GraceFiles extends Plugin {
   });
  }
 
+ @PluginMethod public void content(PluginCall call) {
+  perform(call, () -> {
+   Lease lease = current(call);
+   String id = call.getString("id", "");
+   if (!ID.matcher(id).matches()) throw new IllegalArgumentException();
+   File folder = folder(lease, id);
+   if (folder == null) throw new IOException("File unavailable");
+   File file = item(folder);
+   String data = Base64.encodeToString(Files.readAllBytes(file.toPath()), Base64.NO_WRAP);
+   current(call);
+   call.resolve(new JSObject().put("id", id).put("mimeType", mimeType(file.getName())).put("data", data));
+  });
+ }
+
+ private static String mimeType(String name) {
+  String lower = name.toLowerCase(Locale.ROOT);
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.matches(".*\\.(heic|heif)$")) return "image/heic";
+  return "image/jpeg";
+ }
+
  @PluginMethod public void pick(PluginCall call) {
   perform(call, () -> {
    current(call);

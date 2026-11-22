@@ -16,6 +16,7 @@ export interface FilesPort {
   close(input: { lease: string }): Promise<void>;
   list(input: { lease: string }): Promise<unknown>;
   preview(input: { lease: string; id: string; page: number; small?: boolean }): Promise<unknown>;
+  content(input: { lease: string; id: string }): Promise<unknown>;
   pick?(input: { lease: string; kind: "photo" | "pdf" }): Promise<unknown>;
   capture?(input: { lease: string }): Promise<unknown>;
   saveAttachments(input: { lease: string; attachments: readonly FileAttachment[] }): Promise<unknown>;
