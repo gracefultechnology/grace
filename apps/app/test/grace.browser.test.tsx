@@ -266,6 +266,22 @@ it('Ask Grace about my calendar (spec/app/agentActions.md, "Story: Ask Grace abo
   expect((await saved(0)).map((c) => c.identity.occurrenceId)).toContain(series?.identity.occurrenceId);
 
   // spec/app/proposal.md, "A correction, a No or a new conversation drops a question she has not agreed to"
+  const teaAt = { kind: "proposeAppointment", title: "Tea with Susan", day: dateOf(today + 3), time: "15:00", repeat: "Once" } as const;
+  const tea = async () => (await saved(0)).filter((c) => c.committed.title === "Tea with Susan");
+  await say("Add tea with Susan.", { text: "Tea with Susan at 3 pm. Shall I add it?", isQuestion: true, answers: ["Yes, add it", "No"], actions: [teaAt] });
+  expect((await asked()).ask.tag).toBe("AddAsk");
+  await tap("No", { text: "All right, I won’t add it.", actions: [] });
+  await expect.poll(async () => (await asked()).ask.tag).toBe("NoAsk");
+  await expect.element(page.getByRole("button", { name: "Yes, add it" })).not.toBeInTheDocument();
+  expect(await apply([yes], "Typed")).toEqual(["NothingAsked"]);
+  expect(await tea()).toEqual([]);
+  await say("Add tea with Susan after all.", { text: "Tea with Susan after all, at 3 pm. Shall I add it?", isQuestion: true, answers: ["Yes, add it", "No"], actions: [teaAt] });
+  expect((await asked()).ask.tag).toBe("AddAsk");
+  await say("Never mind.", { text: "All right, I’ve dropped it.", actions: [{ kind: "cancelProposal" }] });
+  await expect.poll(async () => (await asked()).ask.tag).toBe("NoAsk");
+  expect(toldGrace()).not.toContain("cancelProposal was not done");
+  expect(await apply([yes], "Typed")).toEqual(["NothingAsked"]);
+  expect(await tea()).toEqual([]);
   await say("Remove my eye check.", { text: "Remove your eye check? Shall I?", isQuestion: true, answers: ["Yes, remove it", "No"],
     actions: [{ kind: "proposeDeletion", entry: "Eye check", scope: "ThisOccurrence" }] });
   expect((await asked()).ask.tag).toBe("DeleteAsk");
@@ -312,7 +328,7 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   await expect.element(page.getByText("Not sure which?")).toBeVisible();
 
   // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/conversation.md, "A turn may start without her words, marked with where it came from"; spec/app/request.md, "A request records its turn, the work it belongs to and where the turn came from"
-  const which = { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook or Hotmail", "I’m not sure"], actions: [{ kind: "confirmProposal" }, { kind: "showSetting", page: "EmailCalendarSettings" }] };
+  const which = { text: "I can help. Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook or Hotmail", "I’m not sure"], actions: [{ kind: "confirmProposal" }, { kind: "cancelProposal" }, { kind: "showSetting", page: "EmailCalendarSettings" }] };
   await tap(page.getByRole("button", { name: "Close Settings" }));
   await visit("Email");
   await expect.element(page.getByText("Not sure which?")).not.toBeInTheDocument();
@@ -325,6 +341,7 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   expect(await window()).toBe("Compact");
   await expect.element(page.getByText("I can help. Which email do you use?")).toBeVisible();
   await expect.element(page.getByRole("button", { name: "Outlook or Hotmail" })).toBeVisible();
+  expect((await asked()).ask.tag).toBe("AddAsk");
   expect(toldGrace()).toContain("The person tapped Ask Grace for help connecting their email to the tablet.");
   expect(toldGrace()).toContain("The person tapped Ask Grace: what they want help with is what the tablet just told you.");
   expect(toldGrace()).toContain(`The person removed their Gmail email (${gmail}) from the tablet.`);
@@ -345,6 +362,8 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   expect(toldGrace()).toContain("The person tapped Ask Grace while connecting their riverview.net email");
   // spec/app/agentActions.md, "Her yes is taken only for a question waiting on her, and her No drops it"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"
   expect(toldGrace()).toContain("confirmProposal was not done");
+  // spec/app/proposal.md, "A correction, a No or a new conversation drops a question she has not agreed to"
+  expect(toldGrace()).toContain("cancelProposal was not done");
   expect(await tea()).toEqual([]);
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await tap(form("Mail settings").getByRole("button", { name: "Connect" }));
