@@ -468,7 +468,7 @@ it("See all my email in one place", async () => {
     await new Promise<void>((resolve, reject) => {
       const transaction = deviceFiles.transaction("files", "readwrite");
       transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
+      transaction.onerror = () => reject(transaction.error ?? new Error("The photo rows were not written"));
       const store = transaction.objectStore("files");
       const stored = store.getAll();
       stored.onsuccess = () => {
@@ -483,7 +483,7 @@ it("See all my email in one place", async () => {
           }
         } catch (error) {
           transaction.abort();
-          reject(error);
+          reject(error instanceof Error ? error : new Error(String(error)));
         }
       };
     });
