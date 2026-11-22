@@ -131,6 +131,8 @@ A few fixed phrases open it at once, even while Cloud reasoning is unavailable. 
 
 Before showing the control, the tablet checks the person’s complete request. She can ask to sign in here or name the open website by its exact host or HTTPS origin. If she names another website or the destination is unclear, she sees no sign-in button for the open site.
 
+When the conversation has no reply controls, Grace directs her to the website’s own sign-in form.
+
 ```quint
 pure def directSignInRequest(words: str): bool =
   words == "fill my password" or words == "use my saved password" or words == "use a saved password" or

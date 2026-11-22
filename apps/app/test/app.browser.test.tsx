@@ -13,7 +13,7 @@ import { defaults, effectiveBrightness } from "../gen/app__preferences.ts";
 import { Machine as Workspaces, type GuidedCheckpoint } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { agentTextLimit, personSays, tabletShows } from "../src/agentTurn.ts";
-import { PasswordsClientError } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
+import { PasswordsClientError } from "@elizaos/os/bridges/passwords";
 import character from "../agent/character.json" with { type: "json" };
 import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
@@ -46,7 +46,7 @@ const graceWindow = () => document.querySelector<HTMLElement>("section[aria-labe
  */
 function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown, autoRoute = false, readPage?: (options: Record<string, unknown>) => unknown) {
   const calls: Call[] = [];
-  const android = { allows: true };
+  const android: { allows: boolean; verdict?: Promise<void> } = { allows: true };
   const privateSignIn = { allows: true };
   const held = { starts: false };
   const starts: (() => void)[] = [];
@@ -67,7 +67,7 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
       if (method === "controlPage" && controlPage) return Promise.resolve(controlPage(options));
       if (method === "answerSitePermission") {
         const outcome = options.grant !== true ? "denied" : android.allows ? "granted" : "android-refused";
-        return Promise.resolve({ granted: outcome === "granted", outcome });
+        return Promise.resolve(android.verdict).then(() => ({ granted: outcome === "granted", outcome }));
       }
       if (method === "purgeProfiles") return new Promise((resolve) => purges.push((clean) => resolve({ purged: 1, clean })));
       // Grace's own navigation ends what the page holds, then starts its next page (definitions.ts, pageStarted).
@@ -178,9 +178,11 @@ function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
 }
 
 async function cloudReadPlan(native: ReturnType<typeof fakePlugin>, cloud: string, secret: string) {
-  const view = tabletView(ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret })));
+  const runtime = ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret }));
+  const view = tabletView(runtime);
   await view.render();
-  return { ...routedControls(native), dispose: view.dispose };
+  const checkStep = () => runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.checkGuidedRead()));
+  return { ...routedControls(native), dispose: view.dispose, checkStep };
 }
 
 const sentTurn = (body: unknown) => {
@@ -676,7 +678,7 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
     },
     remove: (id, expectedRevision) => {
       expect(id).toBe("phone");
-      if (expectedRevision !== undefined && expectedRevision !== phoneRevision) return Promise.reject(new PasswordsClientError("conflict", "Sign-in changed"));
+      if (expectedRevision !== undefined && expectedRevision !== phoneRevision) return Promise.reject(new PasswordsClientError({ code: "conflict", message: "Sign-in changed" }));
       phoneRevision = undefined;
       return Promise.resolve();
     },
@@ -1010,6 +1012,40 @@ function agentEvents(listeners: Map<string, (input: unknown) => void>): Pick<Emb
     },
   };
 }
+
+it('Ask for email help (spec/app/conversation.md, "A turn may start without her words, marked with where it came from")', async () => {
+  const { agent, requests, answer } = deviceAgent();
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: true, agent }));
+  const view = tabletView(runtime);
+  await view.render();
+  try {
+    const workspace = await runtime.runPromise(Workspaces);
+    const conversation = () => runtime.runSync(workspace.get()).assistant.conversation;
+    await expect.poll(() => runtime.runSync(workspace.get()).device.reasoningAvailable).toBe(true);
+    await act(() => runtime.runPromise(workspace.send({ type: "visit", destination: "Email" }, "Person")));
+    const help = page.getByRole("button", { name: "Ask Grace to help" });
+    await act(() => help.click());
+    await expect.poll(() => sentTurn(requests[0]?.body).text).toContain("help connecting their email");
+    expect(sentTurn(requests[0].body).said).toBeUndefined();
+    expect(conversation().messages).toEqual([]);
+    await answer(0, { text: "Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook"] });
+    await act(() => page.getByRole("button", { name: "Gmail", exact: true }).click());
+    await expect.poll(() => sentTurn(requests[1]?.body).said).toBe("Gmail");
+    await answer(1, { text: "Would you like to open Calendar?", isQuestion: true, answers: ["Yes", "No"] });
+    await expect.element(page.getByRole("button", { name: "Yes", exact: true })).toBeVisible();
+    const before = conversation().messages;
+    await act(() => help.click());
+    await expect.poll(() => sentTurn(requests[2]?.body).text).toContain("help connecting their email");
+    expect(sentTurn(requests[2].body).said).toBeUndefined();
+    expect(conversation().messages).toEqual(before);
+    expect(conversation().answers).toEqual([]);
+    await answer(2, { text: "Let’s connect your email.", isQuestion: false, answers: [], actions: [{ kind: "confirmProposal" }] });
+    await expect.element(page.getByText("Let’s connect your email.", { exact: true })).toBeVisible();
+    expect(runtime.runSync(workspace.get()).device.surface).toBe("Email");
+  } finally {
+    await view.dispose();
+  }
+});
 
 it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
   // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
@@ -2211,10 +2247,10 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
     remove: () => Promise.resolve(),
     reveal: () => { shown = true; return Promise.resolve({ hidesAfterMs: 30_000 }); },
     copy: (_id, revision) => {
-      if (revision === undefined) return Promise.reject(new PasswordsClientError("unavailable", "No displayed revision"));
+      if (revision === undefined) return Promise.reject(new PasswordsClientError({ code: "unavailable", message: "No displayed revision" }));
       return revision === saved.revision
         ? Promise.resolve({ clearsAfterMs: 45_000 })
-        : Promise.reject(new PasswordsClientError("conflict", "The record changed"));
+        : Promise.reject(new PasswordsClientError({ code: "conflict", message: "The record changed" }));
     },
     openAutofillSettings: () => Promise.resolve({ destination: "autofill-picker" }),
   };
@@ -2622,7 +2658,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     .replace("<h1>Usage</h1>", "<h1>Today's usage</h1><p>Updated <span id='clock'>10:41:07</span></p>")) };
   const guideShow = Schema.is(Schema.Struct({ subaction: Schema.Literal("guide"), guidance: Schema.Struct({ kind: Schema.Literal("show"), snapshotId: Schema.String, nodeId: Schema.String }) }));
   let pinned: (typeof card & { url: string }) | undefined;
-  let betweenReads: (() => void) | undefined;
+  let betweenReads: (() => void | Promise<void>) | undefined;
   const blankNewsletterEmail = {
     id: "newsletter-email", tag: "input", type: "email", fieldName: "email", label: "Sign Up for Our Newsletter:",
     sensitive: null, form: { index: 2, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: false,
@@ -2637,8 +2673,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         const result = { ...pinned.frame.snapshot(command), url: pinned.url };
         const change = betweenReads;
         betweenReads = undefined;
-        change?.();
-        return { documentId: pinned.id, frameScope: "main", result };
+        const reply = { documentId: pinned.id, frameScope: "main", result };
+        return change ? Promise.resolve(change()).then(() => reply) : reply;
       }
       return { documentId: currentPage.id, frameScope: "main", result: {
         snapshotId: currentPage.id, domRevision, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
@@ -2959,6 +2995,39 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(readStatement);
     await expect.poll(() => result.query()?.textContent).toBe("This is an earlier statement. Open the current one.");
     card.frame.document.title = "Statements & Documents";
+
+    // spec/app/deviceKeys.md, "A task waits while a website's question holds me, and goes on after my answer"
+    const snapshotRequested = Latch.makeUnsafe();
+    const releaseSnapshot = Latch.makeUnsafe();
+    betweenReads = () => { snapshotRequested.openUnsafe(); return Effect.runPromise(releaseSnapshot.await); };
+    const checking = tablet.checkStep();
+    try {
+      await Effect.runPromise(snapshotRequested.await);
+      await native.ask("dialogRequested", { id: "tab-1", dialogId: "statement-message", kind: "confirm", message: "Keep this statement open?" });
+      const dialog = page.getByRole("alertdialog");
+      await routeTo(dialog);
+      releaseSnapshot.openUnsafe();
+      expect(await checking).toBe("Refused");
+      await tap(dialog.getByRole("button", { name: "Cancel" }));
+    } finally {
+      releaseSnapshot.openUnsafe();
+    }
+
+    const androidVerdict = Latch.makeUnsafe();
+    native.android.verdict = Effect.runPromise(androidVerdict.await);
+    native.android.allows = false;
+    try {
+      await native.ask("sitePermissionRequested", { id: "tab-1", requestId: "statement-microphone", origin,
+        kinds: ["microphone"], topFrame: true, androidPermissions: ["android.permission.RECORD_AUDIO"] });
+      await tap(page.getByRole("button", { name: "Allow", exact: true }));
+      await expect.poll(() => native.calls("answerSitePermission").at(-1)).toMatchObject({ requestId: "statement-microphone", grant: true });
+      expect(await tablet.checkStep()).toBe("Refused");
+    } finally {
+      androidVerdict.openUnsafe();
+      delete native.android.verdict;
+    }
+    await routeTo(page.getByText("Android didn't allow your microphone."));
+    await tap(page.getByRole("button", { name: "Close", exact: true }));
     await tap(readStatement);
     await expect.element(readStatement).toBeEnabled();
     expect(result.query()).toBeNull();
@@ -3302,6 +3371,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   let signedIn = false;
   let grant = "58b549ef-4b49-4210-a3d1-ec31369a9f06";
   let connected = true;
+  let statusAvailable = true;
   let historyId = "one";
   const fetch = window.fetch.bind(window);
   const unserved: string[] = [];
@@ -3330,7 +3400,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       case "/api/auth/refresh": return respond({}, 401);
       case "/api/auth/providers": return respond({ google: false, email: true, sms: false });
       case "/api/v1/billing/subscription": return respond({ status: "inactive", canManage: false, canCheckout: true });
-      case "/api/v1/eliza/google/status": return respond({
+      case "/api/v1/eliza/google/status": return !statusAvailable ? respond({}, 503) : respond({
         accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: connected, connected,
         identity: connected ? { email: person.email } : null, connectionId: connected ? grant : null,
         grantedCapabilities: connected ? ["google.gmail.triage", "google.calendar.read"] : [],
@@ -3489,9 +3559,17 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(await check()).toBe("Used");
     expect(await receipts()).toEqual([mailReceipt]);
 
+    statusAvailable = false;
+    await refresh();
+    const unavailableMail = page.getByText("Google mail isn’t available right now", { exact: true });
+    await routeTo(unavailableMail);
+    expect(await check()).not.toBe("Confirmed");
+    statusAvailable = true;
+    await tap(button("Try again"));
+    await routeTo(button(/Riverview Clinic/));
     connected = false;
     await refresh();
-    await routeTo(page.getByText("Google mail isn’t available right now", { exact: true }));
+    await routeTo(unavailableMail);
     expect(await check()).not.toBe("Confirmed");
     expect(await receipts()).toEqual([mailReceipt]);
     grant = "a356abb1-f5a0-4d82-8b9b-69e4235a4990";

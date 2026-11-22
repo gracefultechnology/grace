@@ -125,7 +125,7 @@
       ],
       "cache": false
     },
-    "//#gen:cloud": {
+    "//#gen:eliza": {
       "inputs": [
         "vendor/eliza/{package.json,pnpm-lock.yaml,pnpm-workspace.yaml}",
         "vendor/eliza/{apps,packages}/*/package.json",
@@ -133,10 +133,10 @@
         "vendor/eliza/vibestack/*.ts",
         "vendor/eliza/vibestack/{gen,patches,proof,std}/**"
       ],
-      "outputs": ["vendor/eliza/packages/cloud/gen/**"]
+      "outputs": ["vendor/eliza/packages/cloud/gen/**", "vendor/eliza/packages/os/gen/**"]
     },
     "//#gen": {
-      "dependsOn": ["//#gen:cloud"],
+      "dependsOn": ["//#gen:eliza"],
       "inputs": [
         "spec/**",
         "apps/*/package.json",
