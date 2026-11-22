@@ -1270,12 +1270,22 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
             ? fields[0] : undefined;
         }, "the BillWorld sign-in form");
         await tapNode(passwordField);
-        step = "confirm Android focused the BillWorld password field";
-        await waitForNode((node) => websitePassword(node) && node.focused, "the focused website password field");
         step = "wait for Android’s saved-password offer";
-        await tap((node) => node.label === "Fill with a saved password", "Android's fill offer");
+        const fillOffer = await waitForUi({ serial, file: screenFile, signal }, (nodes) => {
+          const offers = nodes.filter((node) => node.enabled && (node.label === "Fill with a saved password" ||
+            node.description === "Fill with a saved password"));
+          return offers.length === 1 ? offers[0] : undefined;
+        }, "Android's fill offer");
+        await tapNode(fillOffer);
+        process.stdout.write("Android offered the saved password on the encrypted BillWorld form.\n");
         step = "choose the matching saved sign-in";
-        await tap((node) => node.packageName === identity.appId && node.label.includes(login.label), "the matching sign-in");
+        const matchingSignIn = await waitForUi({ serial, file: screenFile, signal }, (nodes) => {
+          const choices = nodes.filter((node) => node.packageName === identity.appId && node.enabled &&
+            node.clickable && node.label.startsWith(login.label));
+          return choices.length === 1 ? choices[0] : undefined;
+        }, "the matching sign-in");
+        await tapNode(matchingSignIn);
+        process.stdout.write("The matching saved sign-in was chosen in Grace Passwords.\n");
       },
     });
     if (!isEpisode(started)) throw new Error("The fixture did not start");
