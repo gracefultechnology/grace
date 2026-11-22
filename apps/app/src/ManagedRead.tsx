@@ -420,6 +420,12 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
       <FolderList key={JSON.stringify([projection, snapshot.folder])} mail={snapshot} busy={pending}
         choose={(folder, search) => run({ kind: "mailFolder", accountId, grant, folder, search })} open={(id) => run({ kind: "open", id })}>
         {showNotice}
+        {snapshot.tablet && (snapshot.tablet.approved
+          ? <PageText role="status">Westvale Electric test sign-in suggestions are on for the paired tablet.</PageText>
+          : <Button variant="capsule" size="pill" disabled={pending}
+              onClick={() => snapshot.tablet && run({ kind: "approveTabletMail", stamp: snapshot.tablet.stamp })}>
+              Allow Westvale Electric test codes on the paired tablet
+            </Button>)}
         {signedIn && account?.googleLink.tag === "GoogleLinkConnected" &&
           maySendManagedMail(signedIn, account.googleLink, snapshot.accountId, account.googleLink.grant) && (
           <MailDraft key={JSON.stringify([snapshot.accountId, account.googleLink.email, account.googleLink.grant, draft?.number])} open={draft !== undefined}
