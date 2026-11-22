@@ -845,12 +845,14 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   expect(state).not.toContain("one-time");
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
   const visit = () => ({ workspace: workspaceState(), navigations: native.calls("navigate"), surfaces: native.calls("createSurface") });
-  const before = visit();
+  let before = visit();
   const help = page.getByRole("region", { name: "Sign-in help" });
   const { tap, routeTo } = routedControls(native);
   await tap(signInHelp);
   await routeTo(help);
   const watchMail = help.getByRole("button", { name: "Watch for new mail" });
+  const openConnectedInbox = help.getByRole("button", { name: "Open connected inbox" });
+  await expect.element(openConnectedInbox).not.toBeInTheDocument();
   if (deliverAfterEmptyPoll) {
     await tap(watchMail);
     await expect.element(help.getByRole("status")).toHaveTextContent("Watching for new mail in your connected inbox.");
@@ -861,6 +863,21 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
     await deliverAfterEmptyPoll();
     await expect.poll(() => help.getByRole("status").query()?.textContent, { timeout: 12000 }).toBe("New mail arrived");
     expect(visit()).toEqual(before);
+    await tap(openConnectedInbox);
+    await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
+    await expect.element(page.getByRole("button", { name: /Ordinary inbox arrival/ })).toBeVisible();
+    await tap(page.getByRole("button", { name: "Home", exact: true }));
+    await tap(page.getByRole("button", { name: "Internet", exact: true }));
+    await routeTo(address);
+    await expect.element(address).toHaveValue("https://utility.example");
+    expect(workspaceState().plan).toEqual(before.workspace.plan);
+    expect(browserState().selected).toBe(before.workspace.browser.selected);
+    expect(visit().surfaces).toEqual(before.surfaces);
+    expect(visit().navigations).toEqual(before.navigations);
+    await tap(signInHelp);
+    await routeTo(help);
+    await expect.element(openConnectedInbox).not.toBeInTheDocument();
+    before = visit();
   } else {
     await expect.element(watchMail).not.toBeInTheDocument();
   }
@@ -2446,6 +2463,17 @@ it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: 
         accountId: account.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
         identity: { email: account.email }, connectionId: grant, grantedCapabilities: ["google.gmail.triage"],
       });
+      case "/api/v1/eliza/google/gmail/triage": {
+        const search = new URL("/api/v1/eliza/google/gmail/search", cloud);
+        search.searchParams.set("query", "in:inbox");
+        search.searchParams.set("grantId", grant);
+        const result = await browserFetch(search, { headers, signal: init?.signal });
+        if (!result.ok) return result;
+        const inbox = Schema.decodeUnknownSync(Schema.Struct({
+          messages: Schema.Array(Schema.Unknown), nextPageToken: Schema.NullOr(Schema.String),
+        }))(await result.json());
+        return Response.json({ accountId: account.id, ...inbox });
+      }
       case "/api/v1/eliza/google/gmail/inbox-v1/arrival": {
         expect(init?.method).toBe("GET");
         expect(init?.body).toBeUndefined();
@@ -2466,6 +2494,7 @@ it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: 
       await expect.poll(() => requests.some(({ since, arrived }) => since !== null && !arrived), { timeout: 12000 }).toBe(true);
       await expect.element(page.getByRole("status").filter({ hasText: "Watching for new mail in your connected inbox." })).toBeVisible();
       expect(page.getByText("New mail arrived", { exact: true }).query()).toBeNull();
+      expect(page.getByRole("button", { name: "Open connected inbox" }).query()).toBeNull();
       const delivered = await browserFetch(new URL("/fake/gmail/incoming", cloud), {
         method: "POST", headers: { ...headers, "Content-Type": "application/json" },
         body: JSON.stringify({ to: account.email, from: "Synthetic delivery", fromEmail: "arrivals@grace.test",
