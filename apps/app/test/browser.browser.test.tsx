@@ -887,7 +887,11 @@ it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mism
     native.finished(destination);
     await expect.poll(() => ({ address: typedAddress(), load: workspace().browser.tabs[0]?.load })).toEqual({ address: destination, load: "Loaded" });
     const resume = ui.getByRole("button", { name: "Resume Grace", exact: true });
-    if (resume.query() !== null) await userEvent.click(resume);
+    await expect.element(resume).toBeVisible();
+    expect(workspace().assistant.activity).toBe("Paused");
+    expect(workspace().plan.receipts).toHaveLength(0);
+    await userEvent.click(resume);
+    await expect.poll(() => workspace().assistant.activity).toBe("Rechecking");
   };
   const point = async () => {
     await userEvent.click(show);

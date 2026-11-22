@@ -52,6 +52,7 @@ function context(w: Workspace, authority: GuidedAuthority) {
 
 type RecordContext = {
   scope: string
+  activity: Workspace["assistant"]["activity"]
   step: { owner: string; task: string; version: number; generation: number; deviceVersion: number; stepIndex: number; tabId: number }
   outcome: Extract<GuidedStep, { tag: "ReadLatestRecord" }>
   url: URL; cursor: number; history: readonly string[]; id: PageId; loadVersion: number; loaded: boolean; browserRevision: number
@@ -70,7 +71,7 @@ function recordContext(w: Workspace, authority: GuidedAuthority): RecordContext 
     stepIndex: w.plan.receipts.length, tabId: tab.id
   }
   return {
-    scope: JSON.stringify(step), step, outcome, url, cursor: tab.cursor, history: tab.history,
+    scope: JSON.stringify(step), activity: w.assistant.activity, step, outcome, url, cursor: tab.cursor, history: tab.history,
     id: PageId.make(`tab-${tab.id}`), loadVersion: tab.loadVersion, loaded: tab.load === "Loaded" && tab.secure,
     browserRevision: w.browser.revision
   }
@@ -85,10 +86,19 @@ type RecordSelection = { visit: PendingRecordVisit; key: string; identity: strin
 
 function directRecordVisit(visit: PendingRecordVisit, current: RecordContext): boolean {
   const { from } = visit
-  return current.scope === from.scope && (current.loadVersion === from.loadVersion && current.url.href === from.url.href ||
+  if (current.loadVersion === from.loadVersion) {
+    return current.scope === from.scope && current.browserRevision === from.browserRevision && current.url.href === from.url.href
+  }
+  const { version, generation, ...visitStep } = from.step
+  const { version: currentVersion, generation: currentGeneration, ...currentStep } = current.step
+  const afterPause = current.activity === "Paused" && currentVersion === version + 1
+  const afterResume = current.activity === "Rechecking" && currentVersion === version + 2
+  return (afterPause || afterResume) && currentGeneration === generation + 1 &&
+    JSON.stringify(currentStep) === JSON.stringify(visitStep) &&
     current.url.href === visit.href && current.loadVersion === from.browserRevision + 1 &&
+    current.browserRevision === from.browserRevision + (current.loaded ? 2 : 1) &&
     current.cursor === from.cursor + 1 &&
-    from.history.slice(0, from.cursor + 1).every((url, index) => current.history[index] === url))
+    from.history.slice(0, from.cursor + 1).every((url, index) => current.history[index] === url)
 }
 
 const insufficientRecords = unavailableBecause("I can’t verify which matching record is newest on this list.")
@@ -358,15 +368,13 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       return changed
     }
     selectedRecord = { visit: { from: start, href: onPage.link.href }, key: nonce, identity: onPage.identity, documentId: current.documentId, account: current.account }
-    return { kind: "Link" as const, words: "Open the highlighted record, then choose Check page." }
+    return { kind: "Link" as const, words: "Open the highlighted record. Choose Resume, then Check page." }
   }
   let triedMenus: { key: string; documentId: string; menus: PublicMenu[] } | undefined
   let active: { id: PageId; key: string; account: DecisionSession; alternateHref?: string; branch?: readonly PublicMenu[] } | undefined
-  const workspaceChanges: Stream.Stream<Workspace> = workspace.changes
-  const requestChanges: Stream.Stream<unknown> = requests.changes
-  const changes = Stream.merge(Stream.map(workspaceChanges, (state: Workspace): { state: Workspace } => ({ state })), Stream.as(requestChanges, { state: undefined }))
-  try fork.scoped Stream.runForEach(changes, effect ({ state }) => {
-    const observed: Workspace = state ?? (try workspace.get())
+  const changes = Stream.merge(Stream.as(workspace.changes, undefined), Stream.as(requests.changes, undefined))
+  try fork.scoped Stream.runForEach(changes, effect () => {
+    const observed = try workspace.get()
     const live = (try clear) ? recordContext(observed, try authority()) : undefined
     if (scan && observed.browser.revision >= scan.visit.from.browserRevision && (!live || !directRecordVisit(scan.visit, live))) scan = undefined
     if (selectedRecord && observed.browser.revision >= selectedRecord.visit.from.browserRevision &&

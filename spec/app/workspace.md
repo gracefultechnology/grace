@@ -1598,9 +1598,9 @@ locally in the active tab and accounts for every distinct record in the
 site’s reported total. A private collection and detail must identify the same
 site account. A public collection and detail must both be visibly public.
 Grace binds the unique latest match and the fresh collection to the active
-step. The person follows the highlight. A changed site or account, a detour
-or a check on the collection cannot complete the step. On the fresh document
-Grace checks the exact destination and independently visible record identity.
+step. The person follows the highlight, then chooses Resume. Only that
+direct visit and its single pause and resume can carry the selection forward.
+Grace checks the new document’s address and independently visible identity.
 A regular browser check cannot confirm this step.
 
 The source and detail evidence stays local, including the link, dates and
@@ -1651,8 +1651,9 @@ pure def guidedRecordBindingMatches(w: Workspace, selection: GuidedRecordSelecti
   val tab = B::activeTab(w.browser)
   val report = recordCheck.report
   recordCheck.key == selection.key and recordCheck.tabId == selection.tabId and tab.id == selection.tabId and
-  selection.owner == report.owner and selection.task == report.task and selection.version == report.version and
-  selection.generation == w.assistant.conversation.generation and selection.stepIndex == w.plan.receipts.length() and
+  selection.owner == report.owner and selection.task == report.task and selection.version + 2 == report.version and
+  w.assistant.activity == A::Rechecking and selection.generation + 1 == w.assistant.conversation.generation and
+  selection.stepIndex == w.plan.receipts.length() and
   selection.deviceVersion == report.deviceVersion and report.browserRevision == selection.browserRevision + 2 and
   tab.load == B::Loaded and tab.secure and recordCheck.loadVersion == tab.loadVersion and
   recordCheck.loadVersion == selection.browserRevision + 1 and recordCheck.loadVersion > selection.loadVersion and
@@ -1694,7 +1695,7 @@ pure val selectionValues = Set(sampleGuidedRecordSelection,
   { ...sampleGuidedRecordSelection, coverage: { observed: 2, total: 3 } },
   { ...sampleGuidedRecordSelection, matches: 2 })
 pure val sampleGuidedRecordCheck: GuidedRecordCheck = {
-  report: { ...sampleReport, owner: "tablet", task: "read", deviceVersion: 2, browserRevision: 3,
+  report: { ...sampleReport, owner: "tablet", task: "read", version: 3, deviceVersion: 2, browserRevision: 3,
     step: ReadLatestRecord({ collection: "order", status: "completed" }), sourceKey: "record-binding", evidence: recordReceiptText },
   key: "record-binding", tabId: 1, documentId: "detail-document", loadVersion: 2
 }
