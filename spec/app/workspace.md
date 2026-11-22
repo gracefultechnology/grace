@@ -1604,9 +1604,11 @@ pure def lawPausedPlanCannotAdvance(w: Workspace, report: GuidedObservation, by:
 pure def lawCommitmentCannotUsePlanReceipt(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   w.commitmentTask != "" implies not(canConfirmGuided(w, report, by))
 pure val sampleStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "appointment", outcome: "Read the appointment" })
+pure val sampleSearchStep: GuidedStep = SearchPublicSite({ query: "green tea", origin: "https://utility.example", tabId: 1 })
 pure val requestValues = Set(
   { owner: "owner", task: "task", goal: "Read my appointment", steps: List(sampleStep) },
-  { owner: "tablet", task: "read", goal: "Find Support", steps: List(ReachNamedPage({ subject: "Support" })) })
+  { owner: "tablet", task: "read", goal: "Find Support", steps: List(ReachNamedPage({ subject: "Support" })) },
+  { owner: "owner", task: "task", goal: "Search for green tea", steps: List(sampleSearchStep) })
 pure val sampleReport: GuidedObservation = {
   owner: "owner", task: "task", version: 1, deviceVersion: 1, browserRevision: 0,
   step: sampleStep, sourceKey: "appointment-id", evidence: "appointment-receipt"
@@ -1669,8 +1671,9 @@ pure def lawWrongSearchCannotFinish(w: Workspace, searchCheck: GuidedSearchCheck
     | _ => true
   }) implies not(canConfirmGuidedSearch(w, searchCheck, by))
 pure val sampleSearchCheck: GuidedSearchCheck = {
-  report: { ...sampleReport, step: SearchPublicSite({ query: "green tea", origin: "https://example.org", tabId: 1 }) },
-  documentId: "search-document", loadVersion: 2, url: "https://example.org/search?q=green+tea", origin: "https://example.org", query: "green tea"
+  report: { ...sampleReport, step: sampleSearchStep, version: 3, deviceVersion: 3, browserRevision: 4,
+    sourceKey: "search-document", evidence: "Search results for green tea." },
+  documentId: "search-document", loadVersion: 3, url: "https://utility.example/search?q=green+tea", origin: "https://utility.example", query: "green tea"
 }
 pure val searchCheckValues = Set(sampleSearchCheck, { ...sampleSearchCheck, query: "black tea" },
   { ...sampleSearchCheck, origin: "https://other.example" })
@@ -2215,7 +2218,8 @@ pure val spokenValues = Set(
 pure val taskRequestValues = Set(
   { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" },
   { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" })
-pure val browserInputValues = BC::browserInputValues.union(Set(BC::Navigate({ url: "https://utility.example/help" })))
+pure val browserInputValues = BC::browserInputValues.union(Set(
+  BC::Navigate({ url: "https://utility.example/help" }), BC::Navigate({ url: sampleSearchCheck.url })))
 pure val unexpectedValues = Set(
   { id: 1, revision: 2, loadVersion: 1, destination: "" },
   { id: 1, revision: 2, loadVersion: 1, destination: "https://utility.example/updated" },
@@ -2232,6 +2236,7 @@ pure val loadReportValues = Set(
   { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
   { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: B::redirectedTo },
   { id: 1, version: 3, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
+  { id: 1, version: 3, result: B::Loaded, secure: true, endedAt: sampleSearchCheck.url },
   { id: 1, version: 4, result: B::Loaded, secure: false, endedAt: "https://utility.example" },
   { id: 1, version: 4, result: B::Loaded, secure: false, endedAt: "https://utility.example/help" })
 pure val observed: CurrentObservation = {
