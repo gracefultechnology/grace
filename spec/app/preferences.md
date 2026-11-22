@@ -95,7 +95,8 @@ pure def save(p: Preferences, by: PreferenceActor): Preferences =
 
 Acknowledging a pending snapshot changes the durable options, never the
 possibly newer session preview. A failed save keeps the session's choice,
-exposes Retry and preserves the previous durable options. Callbacks from
+exposes Retry and preserves the previous durable options; Grace also tries a
+failed save again each minute, wherever the choice was made. Callbacks from
 superseded writes or a previous session are refused.
 
 ```quint
@@ -139,6 +140,9 @@ complete previous choice, then queues the same versioned save. Showing where a
 setting lives changes navigation only; it does not alter the preference. System
 volume, mute and output Voice off are different controls; none starts capture.
 Zero volume is muted. Unmute at zero chooses the prototype's 50 percent value.
+Each brightness or volume button press steps from the current session choice,
+including any earlier press still waiting to appear on screen. Volume steps
+from zero while muted.
 
 ```quint
 pure def canUndo(p: Preferences, by: PreferenceActor): bool = by == PreferenceUser and p.canUndo
@@ -151,6 +155,14 @@ pure def muteChoice(settings: DisplayPreferences, muted: bool): DisplayPreferenc
   { ...settings, muted: muted, volume: if (not(muted) and settings.volume == 0) 50 else settings.volume }
 pure def brightnessChoice(settings: DisplayPreferences, amount: int): DisplayPreferences =
   { ...settings, brightness: if (amount < 20) 20 else if (amount > 100) 100 else amount }
+type LevelStep = BrightnessBy({ amount: int }) | VolumeBy({ amount: int })
+pure def adjustedLevel(settings: DisplayPreferences, levelStep: LevelStep): DisplayPreferences =
+  match levelStep {
+    | BrightnessBy(delta) => brightnessChoice(settings, settings.brightness + delta.amount)
+    | VolumeBy(delta) => volumeChoice(settings, (if (settings.muted) 0 else settings.volume) + delta.amount)
+  }
+pure val levelStepValues = Set(BrightnessBy({ amount: -10 }), BrightnessBy({ amount: 10 }),
+  VolumeBy({ amount: -10 }), VolumeBy({ amount: 10 }))
 pure def lawControlsKeepValidSettings(settings: DisplayPreferences, amount: int, muted: bool): bool =
   validSettings(settings) implies validSettings(volumeChoice(settings, amount)) and
     validSettings(muteChoice(settings, muted)) and validSettings(brightnessChoice(settings, amount))

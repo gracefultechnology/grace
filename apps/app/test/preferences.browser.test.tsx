@@ -3,11 +3,14 @@ import { TestClock } from "effect/testing";
 import { act } from "react";
 import { expect, it } from "vitest";
 import { page, userEvent } from "vitest/browser";
+import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { application } from "../src/app.vibe";
-import { actOnScreen, mount } from "./screen.tsx";
+import { actOnScreen, mount, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
+
+const tap = (button: Element) => button.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 
 it('Dim the tablet at night (spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it")', async () => {
   const clock = Layer.effectDiscard(TestClock.setTime(new Date(2026, 10, 20, 6, 58).getTime())).pipe(Layer.provideMerge(TestClock.layer()));
@@ -42,4 +45,57 @@ it('Dim the tablet at night (spec/app/preferences.md, "Night dimming and sound s
   await expect.poll(() => brightness).toBe(30);
   await act(() => runtime.runPromise(TestClock.adjust("1 minute")));
   await expect.poll(() => brightness).toBe(60);
+  const dimmer = page.getByRole("button", { name: "Dimmer", exact: true }).element();
+  await act(async () => {
+    tap(dimmer);
+    tap(dimmer);
+    await expect.poll(() => brightness).toBe(40);
+    tap(dimmer);
+  });
+  await expect.poll(() => brightness).toBe(30);
+  const workspace = await runtime.runPromise(Workspaces);
+  await act(async () => {
+    await runtime.runPromise(workspace.send({ type: "undoPreferences" }, "Person"));
+    await expect.poll(() => brightness).toBe(40);
+    tap(dimmer);
+  });
+  await expect.poll(() => brightness).toBe(30);
+});
+
+it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence")', async () => {
+  const stored: { revision: number; value: string | null } = { revision: 0, value: null };
+  let acceptsWrites = false;
+  let refused = 0;
+  const start = () => ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    preferences: {
+      read: () => Promise.resolve({ ...stored }),
+      write: ({ revision, value }) => {
+        if (!acceptsWrites || revision !== stored.revision) return Promise.reject(new Error(`refused ${++refused}`));
+        Object.assign(stored, { revision: revision + 1, value });
+        return Promise.resolve({ revision: stored.revision });
+      },
+    },
+  }).pipe(Layer.provideMerge(TestClock.layer())));
+  const runtime = start();
+  const first = tabletView(runtime);
+  try {
+    await first.render();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Volume", exact: true })));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Mute", exact: true })));
+    await expect.element(page.getByText("Muted")).toBeVisible();
+    await expect.poll(() => refused).toBe(1);
+    acceptsWrites = true;
+    await act(() => runtime.runPromise(TestClock.adjust("1 minute")));
+    await expect.poll(() => stored.revision).toBe(1);
+  } finally {
+    await first.dispose();
+  }
+  await mount(start());
+  await act(() => userEvent.click(page.getByRole("button", { name: "Volume", exact: true })));
+  await expect.element(page.getByText("Muted")).toBeVisible();
+  const louder = page.getByRole("button", { name: "Louder", exact: true }).element();
+  await act(() => Promise.resolve().then(() => { tap(louder); tap(louder); }));
+  await expect.element(page.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuenow", "20");
+  await expect.poll((): unknown => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 20 });
 });

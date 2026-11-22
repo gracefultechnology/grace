@@ -1,9 +1,11 @@
 // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"
 import { Effect } from "effect";
+import { TestClock } from "effect/testing";
 import { act } from "react";
 import { expect, inject, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import type { Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
+import { lifetimeMs, type Offer } from "../gen/app__notices.ts";
 import { type Ask, type Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { proposalOf } from "../gen/app__proposal.ts";
 import { consent, type Request } from "../gen/app__request.ts";
@@ -37,14 +39,14 @@ async function company(key: string) {
 const selectedGmailCalendar = Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(1)), (c) => c.get());
 const held = async (key: string) => (await company(key)).filter((e) => e.title !== "Joan’s birthday").map((e) => ({ title: e.title, startAt: Date.parse(e.startAt) }));
 
-async function start(down = false) {
+async function start({ down = false, clockAt }: { down?: boolean; clockAt?: number } = {}) {
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const [eye] = await company(secret);
   const reachable = (up: boolean) => Effect.runPromise(Effect.provide(outage(cloud, secret, !up), client));
   if (down) await reachable(false);
   const eyeAt = Date.parse(eye.startAt);
   const eyeDay = dayOf(eyeAt);
-  const runtime = await mountGmail(gmail, { url: cloud, key: secret });
+  const runtime = await mountGmail(gmail, { url: cloud, key: secret }, clockAt);
   const run = <A,>(effect: Effect.Effect<A, unknown, Workspaces | AccountsMachine | Proposal | Instances>) => act(() => runtime.runPromise(effect));
   const card = page.getByRole("group", { name: "Calendar", exact: true });
   return {
@@ -78,7 +80,7 @@ async function start(down = false) {
 
 it('Browse (spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives")', async () => {
   // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"
-  const { secret, eyeDay, card, run, reachable, agree, toEyeWeek, switchCalendar } = await start(true);
+  const { secret, eyeDay, card, run, reachable, agree, toEyeWeek, switchCalendar } = await start({ down: true });
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
 
   // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
@@ -357,7 +359,8 @@ it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: De
 }, journey);
 
 it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event"; spec/app/notices.md, "Story: See what needs me on Home")', async () => {
-  const { card } = await start();
+  const now = Date.now();
+  const { card, run } = await start({ clockAt: now });
   const network = { online: true };
   Object.defineProperty(navigator, "onLine", { configurable: true, get: () => network.online });
   onTestFinished(() => { Reflect.deleteProperty(navigator, "onLine"); });
@@ -366,7 +369,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
     window.dispatchEvent(new Event(online ? "online" : "offline"));
   });
   // spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
-  const today = dayOf(Date.now());
+  const today = dayOf(now);
   const addToday = async (title: string, time: string) => {
     await click("Add");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), title));
@@ -380,24 +383,30 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
     await expect.element(row(title, "On this tablet")).toBeVisible();
   };
   const reminded = (title: string, time: string) => page.getByText(new RegExp(`^Reminder: ${title} today at ${time}`));
+  const expireToast = (offer: Offer) => run(TestClock.adjust(lifetimeMs(offer)));
   await act(() => userEvent.click(card.getByText("Calendar", { exact: true })));
   await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await addToday("Pill pickup", "7 am");
+  await expireToast("NoOffer");
+  await expect.element(reminded("Pill pickup", "7 am")).toBeVisible();
   await addToday("Tea with Joan", "8 am");
   await expect.element(reminded("Pill pickup", "7 am"), { timeout: 15000 }).toBeVisible();
   await click("Settings");
   await expect.element(reminded("Pill pickup", "7 am")).toBeVisible();
   await click("Home");
+  await expireToast("SeeDetails");
   await expect.element(reminded("Pill pickup", "7 am"), { timeout: 15000 }).not.toBeInTheDocument();
   await expect.element(card.getByText("Today", { exact: true })).toBeVisible();
   await click("Dismiss");
   await click("Settings");
+  await expireToast("NoOffer");
   await expect.element(reminded("Tea with Joan", "8 am")).toBeVisible();
   await expect.element(reminded("Pill pickup", "7 am")).not.toBeInTheDocument();
   await click("Home");
   // spec/app/notices.md, "Home shows one banner: the connection first, then the first reminder to come due"
   reach(false);
   await expect.element(page.getByText("Not connected to the internet")).toBeVisible();
+  await expireToast("SeeDetails");
   await expect.element(page.getByRole("button", { name: "See details" })).not.toBeInTheDocument();
   reach(true);
   await expect.element(page.getByText("Not connected to the internet")).not.toBeInTheDocument();

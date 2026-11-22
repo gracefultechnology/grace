@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
 import { Effect, Fiber, Latch, Layer, ManagedRuntime, Option, Result, Schema } from "effect";
@@ -293,7 +293,22 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects")).toMatchObject([{ id: "tab-1", rects: [] }]);
   await native.route();
   await native.started("tab-1");
-  await native.report("tab-1", "https://example.com/", 100);
+  await native.ask("navigationChanged", { id: "tab-1", exists: true, currentUrl: "https://example.com/", pageError: null, securityBlocked: false });
+  expect(tab(1).load).toBe("Loading");
+  await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(() => [tab(1).load, tab(1).secure]).toEqual(["Loaded", true]);
+  const siteAddress = page.getByRole("textbox", { name: "Address" });
+  const firstVisit = tab(1).history;
+  await expect.element(siteAddress).toHaveAccessibleDescription("Encrypted connection");
+  await native.ask("pageStarted", { id: "tab-1", url: "https://example.com/" });
+  await expect.element(siteAddress).toHaveAccessibleDescription("");
+  await native.report("tab-1", "https://example.com/", 35, { securityBlocked: true });
+  await expect.poll(async () => { await native.route(); return shown(page.getByText("This page isn't safe to open.")); }).toBe(true);
+  expect([tab(1).history, native.calls("reloadSurface")]).toEqual([firstVisit, []]);
+  await native.started("tab-1");
+  await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(async () => { await native.route(); return tab(1).secure; }).toBe(true);
+  await expect.element(siteAddress).toHaveAccessibleDescription("Encrypted connection");
   // spec/app/surface.md, "The page fills the rect the interface measured for it"
   const pageArea = document.querySelector("section[aria-label='Internet'] div[aria-hidden='true']")!;
   await expect.poll(() => native.calls("setBounds").at(-1)).toMatchObject({ id: "tab-1", ...rectOf(pageArea) });
@@ -397,7 +412,7 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
   expect(native.unanswered()).toBe(1);
   // spec/app/browser.md, "Load results must match the tab and request that produced them": the site's certificate is refused this time.
-  await native.report("tab-1", "https://example.com/", 100, { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
+  await native.report("tab-1", "https://example.com/", 43, { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
   await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
   expect(tab(1).load).not.toBe("SecurityBlocked");
   await native.route();
@@ -786,9 +801,15 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   });
   expect(native.calls("createSurface")[1]).not.toHaveProperty("profileKey");
   await native.route();
-  await native.report("tab-2", "https://utility.example", 100);
+  await native.report("tab-2", "https://utility.example", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(async () => {
+    await native.route();
+    return browserState().tabs.find((tab) => tab.id === 2)?.load;
+  }).toBe("Loaded");
   const address = page.getByRole("textbox", { name: "Private website address" });
+  await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
   await enter(address, "https://utility.example/enter/sample?ref=one-time");
+  await expect.element(address).toHaveAccessibleDescription("");
   await act(() => userEvent.keyboard("{Enter}"));
   await expect.poll(() => native.calls("navigate").at(-1)).toMatchObject({
     url: "https://utility.example/enter/sample?ref=one-time", id: "tab-2",
@@ -837,6 +858,13 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   const { agent, requests, answer, created, refused } = deviceAgent();
   const openEmail = vi.fn<() => Promise<void>>().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("No mail app could open"));
   const browserState = await signInPrivately(native, undefined, { native: true, agent, openPrivateEmail: openEmail });
+  await native.started("tab-3");
+  await native.report("tab-3", "https://issuer.example/private?ref=one-time", 100, { pageError: null, securityBlocked: false });
+  await expect.poll(() => browserState().tabs.find((tab) => tab.id === 3)?.load).toBe("Loaded");
+  const privateAddress = page.getByRole("textbox", { name: "Private website address" });
+  await expect.element(privateAddress).toHaveValue("https://utility.example");
+  await expect.element(privateAddress).toHaveAccessibleDescription("");
+  expect(JSON.stringify(browserState())).not.toContain("one-time");
   expect(openEmail.mock.calls).toEqual([[], []]);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
@@ -2915,8 +2943,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     });
 
     newsletterEmail = null;
-    currentPage = help;
-    await native.report("tab-1", origin + help.path, 100);
+    currentPage = { ...help, path: "/help/center" };
+    await native.report("tab-1", origin + help.path, 40);
+    await native.report("tab-1", origin + currentPage.path, 100);
     await native.route();
     await routeTo(resume);
     expect(check.query()).toBeNull();
@@ -3400,7 +3429,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
         return respond({ error: "route_not_found" }, 404);
     }
   });
-  const browserHome = "https://example.org/";
+  const browserHome = "https://www.example.org/";
   let browserUrl = browserHome;
   let switchOwnerDuringPageRead = false;
   const native = fakePlugin(({ command }) => {
@@ -3589,9 +3618,10 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     const address = page.getByRole("textbox", { name: "Address" });
     await routeTo(address);
     await act(() => userEvent.type(address, "example.org{Enter}"));
-    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.url; }).toBe("https://example.org/");
     await native.started("tab-1");
     await native.report("tab-1", browserUrl, 100);
+    await expect.poll(() => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs[0]).toMatchObject({ history: ["", browserUrl], load: "Loaded" });
     await send(browserAsk);
     await routeTo(page.getByRole("region", { name: "Review read plan" }));
     if (button("Collapse").query()) await tap(button("Collapse"));
@@ -3607,7 +3637,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(hostedChoices).toBe(0);
     await tap(button("Check page"));
     await routeTo(page.getByRole("status", { name: "Page check result" }));
-    expect(page.getByText("Open page: https://example.org/").query()).toBeNull();
+    expect(page.getByText("Open page: " + browserHome).query()).toBeNull();
 
     browserCookieOwner = undefined;
     nextSnapshot = () => { sessionGeneration++; };
