@@ -121,13 +121,13 @@ function SignInHelp({ visit, openVerificationApp, canWatch, openInbox, dismiss }
     <section ref={watchPanel} aria-label="Sign-in help" className="pointer-events-auto flex flex-col gap-2 bg-card px-4 py-2 text-body text-label-ink">
       <p>Choose a saved login from Android or type it on the website. Enter verification codes and submit only on the website that asked for them.</p>
       <div className="flex flex-wrap gap-2">
-        {arrival === "arrived" && openInbox && <Button variant="capsule" size="pill" onClick={() => {
+        {canWatch && openInbox && <Button variant="capsule" size="pill" disabled={handoff === "opening"} onClick={() => {
           if (document.hidden) return;
           stop();
           dismiss();
           openInbox(visit);
-        }}>Open connected inbox</Button>}
-        <Button variant="capsule" size="pill" disabled={handoff === "opening"} onClick={() => openApp("email")}>Open email</Button>
+        }}>Open Grace Email</Button>}
+        <Button variant="capsule" size="pill" disabled={handoff === "opening"} onClick={() => openApp("email")}>Open email app</Button>
         <Button variant="capsule" size="pill" disabled={handoff === "opening"} onClick={() => openApp("messages")}>Open messages</Button>
         {canWatch && (arrival === "starting" || arrival === "waiting" || arrival === "arrived" ?
           <Button variant="capsule" size="pill" onClick={stop}>Stop watching</Button> :
