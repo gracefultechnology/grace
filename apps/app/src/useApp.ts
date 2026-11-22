@@ -245,9 +245,10 @@ export function useMail() {
     reply: (id: number) => runtime.runPromise(mail.reply(id)),
     confirmSend: (id: number, revision: number) => runtime.runPromise(mail.confirmSend(id, revision)),
     moveDraft: (from: number, to: number) => runtime.runPromise(mail.moveDraft(from, to)),
-    discarded: () => runtime.runPromise(mail.discarded()),
     save: (id: number, refs: readonly string[]) => runtime.runPromise(mail.save(id, refs)),
     attach: (id: number, asset: SavedFile) => runtime.runPromise(mail.attach(id, asset)),
+    camera: mail.camera,
+    capture: (id: number) => runtime.runPromise(mail.capture(id)),
     contacts: (sources: string) => {
       const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();
       contactLists.set(mail, lists);

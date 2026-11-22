@@ -6,10 +6,10 @@ import type { Accounts } from "../gen/app__accounts.ts";
 import { canReplyToMessage, emptyContent, enabled, type Event as MailEvent, mayExportAttachments, messageRecord, photoAssets, readable, showsScamWarning } from "../gen/app__email.ts";
 import type { Folder, MessageChange } from "../gen/app__emailItem.ts";
 import { type Files, hasFile, type SavedFile } from "../gen/app__files.ts";
-import { type HomeMailStatus, type MailBanner, type MailSource, type Row, accountRows, banners, draftsIn, folderRows, fromChoices, homeRows, homeStatus, openSource, outboxCount, outboxRows, showsConnect, showsMail, showsOutbox, undoable, unreadIn } from "../gen/app__mailboxes.ts";
+import { type HomeMailStatus, type MailBanner, type MailSource, type Row, accountRows, banners, draftsIn, folderRows, fromChoices, homeRows, homeStatus, openSource, outboxCount, outboxRows, showsConnect, showsMail, showsOutbox, startFrom, undoable, unreadIn } from "../gen/app__mailboxes.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import type { Attached, MailContent } from "./connector.vibe";
-import { EmailCompose, type Picking, thumbnail } from "./EmailCompose.tsx";
+import { EmailCompose, thumbnail } from "./EmailCompose.tsx";
 import { chooseMailLink, type LinkChoice } from "./mailLink.vibe";
 import { messageLinkParts } from "./messageLinks.vibe";
 import { answerable, headerFor, queuedAt, recipientsOf } from "./mail.vibe";
@@ -127,7 +127,6 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const held = useMailFile();
   const files = useFiles();
   const mail = useMail();
-  const [picking, setPicking] = useState<Picking | null>(null);
   const [outboxChosen, setOutboxChosen] = useState(false);
   const sources = sourcesOf(boxes);
   if (!workspace) return null;
@@ -150,10 +149,10 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const sender = (b: MailInstance) => read(b.id, b.state.replyTo)?.from ?? "";
 
   const composing = shown.find((b) => b.state.composeVisible);
-  if (mail && (composing || picking))
+  if (mail && composing)
     return (
       <Suspense fallback={null}>
-        <EmailCompose key={composing?.id ?? 0} registry={registry} boxes={shown} box={composing} picking={picking} onPicking={setPicking} mail={mail} sender={sender} frame={frame} />
+        <EmailCompose key={composing.id} registry={registry} boxes={shown} box={composing} mail={mail} sender={sender} frame={frame} />
       </Suspense>
     );
 
@@ -163,12 +162,11 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     const ready = m.view !== "Inbox";
     const ref = ready ? m.messageRef : m.requestedRef;
     const c = read(opening.id, ref);
-    const forwarded = (sent: ReturnType<MailInstance["send"]>) => void sent.then((exit) => Exit.isSuccess(exit) && setPicking({ field: "to", query: "" }));
     const saver = saverOf(opening, mail, files);
     const unopened = m.view === "Message" && m.readKind === "OpenAttachment" && m.readStatus === "ReadFailed";
     const toast = unopened ? <Toast placement="screen">{unshown}</Toast> : mail?.note ? <Toast key={mail.note.id} placement="screen">{mail.note.text}</Toast> : undefined;
     if (m.view === "Attachment")
-      return <Attachment box={opening} held={held} saver={saver} sender={c?.from ?? ""} subject={c?.subject ?? ""} onForward={forwarded} toast={toast} frame={frame} />;
+      return <Attachment box={opening} held={held} saver={saver} sender={c?.from ?? ""} subject={c?.subject ?? ""} toast={toast} frame={frame} />;
     const open: MailEvent = { type: "readMail", kind: "OpenMessage", ref, approved: true };
     const target = { ref, revision: messageRecord(m, ref).revision };
     const change = (kind: MessageChange) => offer(opening, { type: "changeSelectedMessage", target, change: kind });
@@ -211,7 +209,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
         status={ready ? "ready" : m.readStatus === "Reading" ? "loading" : "failed"}
         onRetry={offer(opening, open)}
         onReply={replying ? () => void mail.reply(opening.id) : undefined}
-        onForward={m.folder !== "DraftsFolder" && opening.can(forward) ? () => forwarded(opening.send(forward)) : undefined}
+        onForward={m.folder !== "DraftsFolder" ? offer(opening, forward) : undefined}
         onDelete={change("TrashMessage")} onRestore={change("RestoreMessage")} onDeleteForever={change("PurgeMessage")}
         backLabel={backTo[m.folder]} onBack={offer(opening, { type: "showInbox" })} {...frame} />
       {ready && m.link.status === "LinkHeld" && <BrowserDialog title="Open this link?" tone="caution" onEscape={() => follow(m.link.link, "cancel")} actions={<>
@@ -278,7 +276,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   return (
     <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), drafts: draftsIn(registry, sources), outbox: waitingCount }}
       guide={rowGuide} accounts={rows} account={registry.inboxFilter || undefined} banners={notes.length ? notes : undefined} messages={outbox ? waiting : listed} toast={toast}
-      onWrite={writable ? () => setPicking({ field: "to", query: "" }) : undefined}
+      onWrite={writable ? offer(shown.find((b) => b.id === startFrom(registry, sources, "")) ?? shown[0], { type: "startDraft", reply: false }) : undefined}
       status={shownBanners.some((b) => b.kind === "OfflineBanner") ? "offline" : failed.length ? "failed" : "ready"}
       query={lead?.query ?? ""}
       onQueryChange={(query) => shown.forEach((b) => replace(b, search(query)))}
@@ -303,10 +301,10 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
 
 type AttachmentProps = {
   box: MailInstance; held: (id: number, file: SavedFile) => Attached | undefined; saver: Saver; sender: string; subject: string;
-  onForward: (sent: ReturnType<MailInstance["send"]>) => void; toast: ReactNode; frame: Frame;
+  toast: ReactNode; frame: Frame;
 };
 
-function Attachment({ box, held, saver, sender, subject, onForward, toast, frame }: AttachmentProps) {
+function Attachment({ box, held, saver, sender, subject, toast, frame }: AttachmentProps) {
   const m = box.state;
   const ref = m.readKind === "OpenAttachment" && m.readStatus !== "ReadIdle" ? m.requestedRef : m.attachmentRef;
   const file = m.assets.find((a) => a.sourceRef === ref);
@@ -334,7 +332,7 @@ function Attachment({ box, held, saver, sender, subject, onForward, toast, frame
       <PhotoViewer title={`Photo ${at + 1} of ${photos.length}`} {...picture(file, shown)} first={at === 0} last={at === photos.length - 1}
         onPrevious={offer({ type: "movePhoto", direction: -1 })} onNext={offer({ type: "movePhoto", direction: 1 })}
         {...save} onRetrySave={save.onSave}
-        onForward={box.can(forward) ? () => onForward(box.send(forward)) : undefined} {...leave} />
+        onForward={box.can(forward) ? () => void box.send(forward) : undefined} {...leave} />
       {toast}
     </>
   );

@@ -66,12 +66,12 @@ const decodeMailRecord = Schema.decodeUnknownOption(Schema.fromJsonString(Schema
 function currentMailRecord(text: string) {
   const box = Option.getOrUndefined(decodeMailRecord(text))
   if (box === undefined) return text
-  const current = { draftsTotal: initialMail.draftsTotal, ...box }
+  const current = { ...initialMail, ...box }
   if (typeof box.bill === "object" && box.bill !== null && !("sourceRef" in box.bill)) {
     const historical = parseMail({ ...current, bill: { ...box.bill, sourceRef: box.messageRef } })
     return historical === undefined ? text : JSON.stringify({ ...historical, bill: initialMail.bill })
   }
-  return "draftsTotal" in box ? text : JSON.stringify(current)
+  return Object.keys(initialMail).some((key) => !(key in box)) ? JSON.stringify(current) : text
 }
 
 effect function calendarWithMailSource(text: string, account: number) {
