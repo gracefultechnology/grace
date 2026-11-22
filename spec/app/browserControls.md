@@ -155,8 +155,9 @@ pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str)
 
 On a loaded, secure private tab, **Sign-in help** explains how to choose a
 saved login or type it. When the site asks for verification, the person can
-open their email or messages app, use an authenticator, or check another
-account or device. Only their choice on the current tab and revision can
+open Grace Email immediately to check an existing message in their connected
+inbox. This choice starts no watch. They can also open their email or messages
+app, use an authenticator, or check another account or device. Only their choice on the current tab and revision can
 launch an app. Android receives the chosen app category alone. Back returns
 to the website where the person requested the code. The website decides
 whether to accept what the person submits. Opening or returning from another

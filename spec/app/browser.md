@@ -143,9 +143,9 @@ pure def closeBrowser(b: Browser): Browser = {
 
 > On a secure website, I can ask Grace to open a separate private sign-in tab
 > and choose a saved login through Android, or type my own. I submit on the
-> site. If it asks for verification, I can have Grace tell me when new mail
-> arrives in my connected inbox, open email or messages, or use another
-> account, authenticator or device. I return to the same website to finish.
+> site. If it asks for verification, I can open Grace Email to find mail that
+> has already arrived. I can also watch for new mail or use another email app,
+> messages, an authenticator or another device. I return to the same website to finish.
 
 ### A private sign-in tab keeps its purpose until it closes
 

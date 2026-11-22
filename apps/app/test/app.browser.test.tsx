@@ -857,9 +857,26 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   await tap(signInHelp);
   await routeTo(help);
   const watchMail = help.getByRole("button", { name: "Watch for new mail" });
-  const openConnectedInbox = help.getByRole("button", { name: "Open connected inbox" });
-  await expect.element(openConnectedInbox).not.toBeInTheDocument();
+  const openConnectedInbox = help.getByRole("button", { name: "Open Grace Email" });
   if (deliverAfterEmptyPoll) {
+    const checkMailAndReturn = async (subject: RegExp) => {
+      await tap(openConnectedInbox);
+      await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
+      await expect.element(page.getByRole("button", { name: subject })).toBeVisible();
+      await tap(page.getByRole("button", { name: "Home", exact: true }));
+      await tap(page.getByRole("button", { name: "Internet", exact: true }));
+      await routeTo(address);
+      await expect.element(address).toHaveValue("https://utility.example");
+      expect(workspaceState().plan).toEqual(before.workspace.plan);
+      expect(browserState().selected).toBe(before.workspace.browser.selected);
+      expect(visit().surfaces).toEqual(before.surfaces);
+      expect(visit().navigations).toEqual(before.navigations);
+      await tap(signInHelp);
+      await routeTo(help);
+      await expect.element(help.getByRole("status")).not.toBeInTheDocument();
+      before = visit();
+    };
+    await checkMailAndReturn(/Already delivered to Grace Email/);
     await tap(watchMail);
     await expect.element(help.getByRole("status")).toHaveTextContent("Watching for new mail in your connected inbox.");
     await tap(help.getByRole("button", { name: "Stop watching" }));
@@ -869,27 +886,14 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
     await deliverAfterEmptyPoll();
     await expect.poll(() => help.getByRole("status").query()?.textContent, { timeout: 12000 }).toBe("New mail arrived");
     expect(visit()).toEqual(before);
-    await tap(openConnectedInbox);
-    await routeTo(page.getByRole("heading", { name: "Inbox", exact: true }));
-    await expect.element(page.getByRole("button", { name: /Ordinary inbox arrival/ })).toBeVisible();
-    await tap(page.getByRole("button", { name: "Home", exact: true }));
-    await tap(page.getByRole("button", { name: "Internet", exact: true }));
-    await routeTo(address);
-    await expect.element(address).toHaveValue("https://utility.example");
-    expect(workspaceState().plan).toEqual(before.workspace.plan);
-    expect(browserState().selected).toBe(before.workspace.browser.selected);
-    expect(visit().surfaces).toEqual(before.surfaces);
-    expect(visit().navigations).toEqual(before.navigations);
-    await tap(signInHelp);
-    await routeTo(help);
-    await expect.element(openConnectedInbox).not.toBeInTheDocument();
-    before = visit();
+    await checkMailAndReturn(/Ordinary inbox arrival/);
   } else {
+    await expect.element(openConnectedInbox).not.toBeInTheDocument();
     await expect.element(watchMail).not.toBeInTheDocument();
   }
   const openMessages = help.getByRole("button", { name: "Open messages" });
   if (openApp) {
-    const openEmail = help.getByRole("button", { name: "Open email" });
+    const openEmail = help.getByRole("button", { name: "Open email app" });
     await tap(openEmail);
     await expect.element(openEmail).toBeDisabled();
     await expect.element(openMessages).toBeDisabled();
@@ -2454,11 +2458,19 @@ it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: 
   const status = await fetch(new URL("/api/v1/eliza/google/status", cloud), { headers });
   const connected = Schema.decodeUnknownSync(Schema.Struct({ connectionId: Schema.String, identity: Schema.Struct({ email: Schema.String }) }))(await status.json());
   const account = { id: "sign-in-help-owner", email: connected.identity.email };
+  const browserFetch = window.fetch.bind(window);
+  const deliver = async (subject: string) => {
+    const delivered = await browserFetch(new URL("/fake/gmail/incoming", cloud), {
+      method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+      body: JSON.stringify({ to: account.email, from: "Synthetic delivery", fromEmail: "arrivals@grace.test",
+        subject, body: "Your appointment details are available." }),
+    });
+    expect(delivered.ok).toBe(true);
+  };
   const grant = connected.connectionId;
   const configuredApi: unknown = apiOrigin;
   const api = typeof configuredApi === "string" && configuredApi ? new URL(configuredApi, window.location.href).origin : window.location.origin;
   const requests: { grant: string | null; since: string | null; arrived: boolean; cursor: string }[] = [];
-  const browserFetch = window.fetch.bind(window);
   const provider = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, window.location.href);
     if (url.origin !== api) return browserFetch(input, init);
@@ -2493,6 +2505,7 @@ it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: 
     }
   });
   try {
+    await deliver("Already delivered to Grace Email");
     await signInPrivately(native, async (field, text) => {
       await act(() => userEvent.clear(field));
       await act(() => userEvent.type(field, text));
@@ -2500,13 +2513,7 @@ it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: 
       await expect.poll(() => requests.some(({ since, arrived }) => since !== null && !arrived), { timeout: 12000 }).toBe(true);
       await expect.element(page.getByRole("status").filter({ hasText: "Watching for new mail in your connected inbox." })).toBeVisible();
       expect(page.getByText("New mail arrived", { exact: true }).query()).toBeNull();
-      expect(page.getByRole("button", { name: "Open connected inbox" }).query()).toBeNull();
-      const delivered = await browserFetch(new URL("/fake/gmail/incoming", cloud), {
-        method: "POST", headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ to: account.email, from: "Synthetic delivery", fromEmail: "arrivals@grace.test",
-          subject: "Ordinary inbox arrival", body: "Your appointment details are available." }),
-      });
-      expect(delivered.ok).toBe(true);
+      await deliver("Ordinary inbox arrival");
     });
     const baseline = requests[0]?.cursor;
     expect(requests.map(({ grant }) => grant)).toEqual(requests.map(() => grant));
