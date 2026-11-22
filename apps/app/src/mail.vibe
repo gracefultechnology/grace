@@ -1,11 +1,11 @@
-// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"
+// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/email.md, "Sending a saved draft takes it out of Drafts"
 import { Machine as Accounts, type Account } from "../gen/app__accounts.effect.vibe"
-import { canQueueSend, canSendDraft, currentDraft, draftStoreBusy, emptyContent, enabled, type Event as MailEvent, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
+import { canEditDraft, canQueueSend, canSendDraft, currentDraft, draftStoreBusy, emptyContent, enabled, type Event as MailEvent, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.vibe"
 import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
-import { Connector, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
+import { Connector, sendableAttachment, sendableAttachments, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
 import { Library } from "./files.vibe"
 import { type Held, followAccounts, Instances } from "./instances.vibe"
 
@@ -13,7 +13,6 @@ export type Note = { readonly id: number; readonly text: string }
 
 export type Board = {
   readonly note: Note | undefined; readonly undeleted: ReadonlySet<number>; readonly replies: ReadonlyMap<number, ReplyHeader>; readonly unsaved: ReadonlySet<string>
-  readonly sharing?: number
 }
 
 export type Boards = { readonly subscribe: (listener: () => void) => () => void; readonly current: () => Board }
@@ -22,21 +21,22 @@ export service Mail {
   reply(id: number): void!!
   confirmSend(id: number, revision: number): void!!
   moveDraft(from: number, to: number): void!!
-  discarded(): void!!
   save(id: number, refs: readonly string[]): void!!
   attach(id: number, asset: SavedFile): boolean!!
+  capture(id: number): boolean!!
+  readonly camera: boolean
   share(photo: SavedFile): boolean!!
   contacts(): readonly Contact[]!!
   readonly hush: (id: number) => void
-  readonly nameOf: (address: string) => string
+  readonly nameOf: (address: string, replied?: Replied) => string
   readonly board: Boards
 }
+
+export type Replied = { readonly id: number; readonly ref: string }
 
 const address = /^[^@\s,;]+@[^@\s,;]+$/
 export const recipientsOf = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
 export const recipientsValid = (c: DraftContent) => c.to !== "" && [...recipientsOf(c.to), ...c.cc, ...c.bcc].every((a) => address.test(a))
-export const sendsWith = (m: Mailbox, file: SavedFile) =>
-  file.origin === m.provider && file.account === m.account && m.draftAttachments.every((a) => a.container === file.container)
 const folderNames: Record<string, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Drafts" }
 export const answerable = (m: Mailbox) => replyable(m) && m.folder !== "DraftsFolder"
 export const headerFor = (board: Board, held: Held | undefined, id: number, m: Mailbox): ReplyHeader | undefined => {
@@ -74,20 +74,36 @@ effect function closeUndo(box: MailMachine.Shape, record: MessageRecord) {
   box.send({ type: "closeUndoToast", target: { ref: record.identity.ref, revision: record.undoRevision } }, "MailHost") catch () => undefined
 }
 
+const sentDraftGone = (before: Mailbox, after: Mailbox) => after.sentDrafts.length < before.sentDrafts.length
+
 function draftsMayHaveChanged(before: Mailbox, after: Mailbox) {
   const listed = before.readKind === "Search" && before.readStatus === "Reading" && after.readStatus === "ReadIdle"
   const stored = (before.draftStorage === "DraftSaving" && after.draftStorage === "DraftSaved") || (before.draftStorage === "DraftDeleting" && after.draftStorage === "DraftUnstored")
-  return listed || stored
+  return listed || stored || sentDraftGone(before, after)
 }
 
-effect function countDrafts(mail: MailConnection, box: MailMachine.Shape, generation: number) {
-  const total = mail.draftCount() catch () => undefined
-  if (total !== undefined) box.send({ type: "countDrafts", generation, total }, "MailConnector") catch () => undefined
+effect function countDrafts(mail: MailConnection, box: MailMachine.Shape) {
+  let moved = true
+  while (moved) {
+    const generation = (try box.get()).generation
+    const total = mail.draftCount() catch () => undefined
+    if (total === undefined) return
+    const counted = box.send({ type: "countDrafts", generation, total }, "MailConnector") catch () => undefined
+    moved = counted === undefined && (try box.get()).generation !== generation
+  }
 }
 
 function draftCounts(mail: MailConnection, box: MailMachine.Shape) {
   const changes = Stream.filter(Stream.zipWithPrevious(box.changes), ([before, after]) => Option.isSome(before) && draftsMayHaveChanged(before.value, after))
-  return Stream.switchMap(changes, ([, after]) => Stream.fromEffect(countDrafts(mail, box, after.generation)))
+  return Stream.switchMap(changes, () => Stream.fromEffect(countDrafts(mail, box)))
+}
+
+effect function removeSent(mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
+  for (const draftId of m.sentDrafts) {
+    const answered = mail.deleteDraft(draftId) catch () => undefined
+    if (answered === undefined) return try expired(box)
+    if (answered) box.send({ type: "forgetSentDraft", draftId }, "MailHost") catch () => undefined
+  }
 }
 
 effect function noteSent(registry: Accounts.Shape, id: number, to: string) {
@@ -101,7 +117,7 @@ effect function outcome(box: MailMachine.Shape, sent: SendOutcome!NeedsSignIn) {
   }
 }
 
-effect function dispatch(account: Account, mail: MailConnection, box: MailMachine.Shape, m: Mailbox, online: boolean) {
+effect function dispatch(account: Account, mail: MailConnection, library: Library.Shape, box: MailMachine.Shape, m: Mailbox, online: boolean) {
   const operationId = `send-${account.id}-${(try Clock.currentTimeMillis).toString(36)}-${(try Random.nextInt).toString(36)}`
   const recipientValid = recipientsValid(m.draft)
   const allowed = online ? canSendDraft(m, operationId, recipientValid, true, "MailHost") : canQueueSend(m, operationId, recipientValid, true, false, "MailHost")
@@ -115,16 +131,17 @@ effect function dispatch(account: Account, mail: MailConnection, box: MailMachin
   }
   const started = box.send({ type: "sendDraft", operationId, recipientValid, persisted: true }, "MailHost") catch () => undefined
   if (started === undefined) return
-  const result = try outcome(box, mail.send(operationId, currentDraft(m)))
+  const draft = currentDraft(m)
+  const result = try outcome(box, mail.send(operationId, draft, try library.contents(draft.attachments)))
   if (result !== undefined) box.send({ type: "sendResult", operationId, ...result, persisted: true }, "MailConnector") catch () => undefined
 }
 
-effect function flush(box: MailMachine.Shape, mail: MailConnection, m: Mailbox) {
+effect function flush(box: MailMachine.Shape, mail: MailConnection, library: Library.Shape, m: Mailbox) {
   for (const q of m.outbox) {
     if (q.status === "Waiting") {
       const begun = box.send({ type: "dispatchQueued", operationId: q.operationId, reachable: true }, "MailHost") catch () => undefined
       if (begun === undefined) continue
-      const result = try outcome(box, mail.send(q.operationId, q.snapshot))
+      const result = try outcome(box, mail.send(q.operationId, q.snapshot, try library.contents(q.snapshot.attachments)))
       if (result === undefined) return
       box.send({ type: "queuedResult", operationId: q.operationId, ...result, persisted: true }, "MailConnector") catch () => undefined
     }
@@ -134,6 +151,15 @@ effect function flush(box: MailMachine.Shape, mail: MailConnection, m: Mailbox) 
       if (found.resultStatus !== "SendUnknown") box.send({ type: "queuedResult", operationId: q.operationId, ...found, persisted: true }, "MailConnector") catch () => undefined
     }
   }
+}
+
+effect function attachTo(box: MailMachine.Shape, launched: Mailbox, asset: SavedFile, library: Library.Shape) {
+  if (!sendableAttachments([...launched.draftAttachments, asset])) return false
+  const content = (try library.contents([asset])).get(asset.id)
+  if (content === undefined || !sendableAttachment(asset, content)) return false
+  const event: MailEvent = { type: "attachAsset", owner: launched.owner, asset, draftRevision: launched.revision, selected: true }
+  if (!enabled(try box.get(), event, "MailHost")) return false
+  return (box.send(event, "MailHost") catch () => undefined) !== undefined
 }
 
 effect function place(box: MailMachine.Shape, content: DraftContent, files: readonly SavedFile[]) {
@@ -161,6 +187,13 @@ effect function fetched(shelf: Instances.Shape, mail: MailConnection, id: number
 
 error AttachmentChanged
 
+function nameIn(names: ReadonlyMap<string, string>, shelf: Instances.Shape, to: string, replied?: Replied) {
+  const first = recipientsOf(to)[0] ?? ""
+  const held = replied === undefined || replied.ref === "" ? undefined : shelf.held(replied.id, replied.ref)
+  const sender = held !== undefined && [held.content.fromAddress, held.reply?.address].some((a) => a?.toLowerCase() === first.toLowerCase()) ? held.content.from : ""
+  return names.get(first.toLowerCase()) ?? (sender || first)
+}
+
 export const mailing = Layer.effect(Mail, effect {
   const registry = try Accounts
   const shelf = try Instances
@@ -178,10 +211,7 @@ export const mailing = Layer.effect(Mail, effect {
     board = { ...board, ...next }
     listeners.forEach((listener) => listener())
   }
-  const nameOf = (to: string) => {
-    const first = recipientsOf(to)[0] ?? ""
-    return names.get(first.toLowerCase()) ?? first
-  }
+  const nameOf = (to: string, replied?: Replied) => nameIn(names, shelf, to, replied)
   const undeleted = (id: number, failed: boolean) => {
     if (board.undeleted.has(id) === failed) return
     post({ undeleted: new Set(failed ? [...board.undeleted, id] : [...board.undeleted].filter((x) => x !== id)) })
@@ -233,7 +263,6 @@ export const mailing = Layer.effect(Mail, effect {
     const opened = after.view === "Message" && (before.view !== "Message" || before.messageRef !== after.messageRef || before.generation !== after.generation)
     if (opened && answerable(after) && headerFor(board, shelf.held(account.id, after.messageRef), account.id, after) === undefined) try fork.in(scope) prepareReply(account.id, mail, box, after)
     if (opened && after.folder === "DraftsFolder") try fork.in(scope) reopen(mail, box, after)
-    if (board.sharing === account.id && (!after.composeVisible || after.draft.to !== "")) post({ sharing: undefined })
     const changes = settled(before, after)
     for (const { record } of changes.filter((c) => c.record.folder !== "PurgedFolder")) {
       const opened = mail.read(record.identity.ref, after.generation) catch () => undefined
@@ -242,12 +271,12 @@ export const mailing = Layer.effect(Mail, effect {
     const news = told(account.id, before, after).news
     if (news === "SentEmail") {
       try noteSent(registry, account.id, after.draft.to)
-      try show(`Sent to ${nameOf(after.draft.to)}`)
+      try show(`Sent to ${nameOf(after.draft.to, { id: account.id, ref: after.replyTo })}`)
     }
     if (news === "QueuedEmail") try show("Waiting in Outbox until you’re back online")
     const gone = leftOutbox(before, after)
     for (const q of gone) try noteSent(registry, account.id, q.snapshot.content.to)
-    if (gone.length === 1) try show(`Your email to ${nameOf(gone[0].snapshot.content.to)} was sent`)
+    if (gone.length === 1) try show(`Your email to ${nameOf(gone[0].snapshot.content.to, { id: account.id, ref: gone[0].snapshot.replyTo })} was sent`)
     if (gone.length > 1) try show("Your waiting emails were sent")
     for (const record of undoable(after).filter((r) => !undoable(before).some((o) => o.identity.ref === r.identity.ref))) {
       try fork.in(scope) effect {
@@ -261,7 +290,7 @@ export const mailing = Layer.effect(Mail, effect {
     if (after.draftStorage === "DraftUnstored" && (before.draftStorage === "DraftDeleting" || after.draftRequest > before.draftRequest)) try say(account.id, "Email discarded")
     if (draftStoreBusy(before) && after.draftStorage === "DraftStoreFailed") quiet.delete(account.id)
     if (after.draftStorage !== "DraftStoreFailed") undeleted(account.id, false)
-    if ((savedDraft || deletedDraft) && after.folder === "DraftsFolder") try relist(box)
+    if ((savedDraft || deletedDraft || sentDraftGone(before, after)) && after.folder === "DraftsFolder") try relist(box)
     const restored = changes.filter((c) => c.change === "RestoreMessage").map((c) => c.record)
     if (restored.length > 0) {
       try show(`Moved back to ${folderNames[restored[0].folder] ?? "Inbox"}`)
@@ -288,14 +317,15 @@ export const mailing = Layer.effect(Mail, effect {
   effect function drive(account: Account, mail: MailConnection, box: MailMachine.Shape) {
     const online = try reachable()
     const m = try box.get()
-    if (m.sendStatus === "Reviewing" && m.approvedRevision === m.revision && !draftStoreBusy(m)) try dispatch(account, mail, box, m, online)
+    if (m.sendStatus === "Reviewing" && m.approvedRevision === m.revision && !draftStoreBusy(m)) try dispatch(account, mail, library, box, m, online)
     try store(account, mail, box, try box.get())
     if (!online) return
+    try removeSent(mail, box, try box.get())
     if (m.sendStatus === "SendUnknown" && m.operationId !== "") {
       const found = try outcome(box, mail.lookup(m.operationId))
       if (found !== undefined && found.resultStatus !== "SendUnknown") box.send({ type: "sendResult", operationId: m.operationId, ...found, persisted: true }, "MailConnector") catch () => undefined
     }
-    try flush(box, mail, try box.get())
+    try flush(box, mail, library, try box.get())
   }
 
   effect function watch(account: Account, box: MailMachine.Shape) {
@@ -334,7 +364,7 @@ export const mailing = Layer.effect(Mail, effect {
     const box = shelf.mail(id) catch () => undefined
     if (box === undefined) return
     const m = try box.get()
-    if (m.revision !== revision || !recipientsValid(m.draft)) return
+    if (m.revision !== revision || !recipientsValid(m.draft) || !sendableAttachments(m.draftAttachments)) return
     const confirmed = box.send({ type: "confirmVisibleSend", revision }, "MailUser") catch () => undefined
     if (confirmed !== undefined && m.view !== "Inbox") box.send({ type: "showInbox" }, "MailUser") catch () => undefined
   }
@@ -357,28 +387,32 @@ export const mailing = Layer.effect(Mail, effect {
 
   effect function attach(id: number, asset: SavedFile) {
     const owned = try ownedMailbox(id)
-    if (!owned) return false
-    const { box, m } = owned
-    const event: MailEvent = { type: "attachAsset", owner: m.owner, asset, draftRevision: m.revision, selected: true }
-    if (!sendsWith(m, asset) || !enabled(m, event, "MailHost")) return false
-    return (box.send(event, "MailHost") catch () => undefined) !== undefined
+    return owned !== undefined && (try attachTo(owned.box, owned.m, asset, library))
+  }
+
+  effect function capture(id: number) {
+    const owned = try ownedMailbox(id)
+    if (!owned || !canEditDraft(owned.m, "MailUser")) return false
+    const photo = try library.capture()
+    return photo !== undefined && (try attachTo(owned.box, owned.m, photo, library))
   }
 
   effect function share(photo: SavedFile) {
+    if (!sendableAttachments([photo])) return false
     const a = try registry.get()
     const sources = try Effect.forEach(a.accounts, effect (account) => {
       const box = shelf.mail(account.id) catch () => undefined
       return box === undefined ? [] : [{ account: account.id, mailbox: try box.get() }]
     })
     if (sources.flat().some((source) => source.mailbox.composeVisible)) return false
-    const from = sources.flat().find((source) => sendsWith({ ...source.mailbox, draftAttachments: [] }, photo))
-    if (from === undefined || !enabled(from.mailbox, { type: "startDraft", reply: false }, "MailUser")) return false
+    const open = sources.flat().filter((source) => enabled(source.mailbox, { type: "startDraft", reply: false }, "MailUser"))
+    const from = open.find((source) => source.mailbox.provider === photo.origin && source.mailbox.account === photo.account) ?? open[0]
+    if (from === undefined) return false
     const id = from.account
     const box = shelf.mail(id) catch () => undefined
     if (box === undefined) return false
     const placed = place(box, { ...emptyContent, subject: "A photo" }, [photo]) catch () => false
-    if (placed) post({ sharing: id })
-    else {
+    if (!placed) {
       quiet.add(id)
       box.send({ type: "discardDraft", confirmed: true }, "MailUser") catch () => quiet.delete(id)
     }
@@ -412,9 +446,10 @@ export const mailing = Layer.effect(Mail, effect {
     reply: (id) => asBuilt(reply(id)),
     confirmSend: (id, revision) => asBuilt(confirmSend(id, revision)),
     moveDraft: (from, to) => asBuilt(moveDraft(from, to)),
-    discarded: () => show("Email discarded"),
     save: (id, refs) => asBuilt(save(id, refs)),
     attach: (id, asset) => asBuilt(attach(id, asset)),
+    capture: (id) => asBuilt(capture(id)),
+    camera: library.camera,
     share: (photo) => asBuilt(share(photo)),
     contacts: () => asBuilt(people()),
     hush: (id) => { quiet.add(id) },
