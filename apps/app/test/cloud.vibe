@@ -95,7 +95,7 @@ type Account = {
   sendLookups: string[]
   script: Scripted[]
   decision?: ScriptedDecision
-  turns: (Turn & { id: number; context: string })[]
+  turns: (Turn & { id: number; context: string; messages: ChatMessage[] })[]
   changes: { receipt: Receipt; proposal: Proposal; grantId: string }[]
   consents: string[]
   googleRequests: string[]
@@ -178,7 +178,7 @@ schema GoogleCalendarPath { calendar: Filled }
 schema GoogleMailPath { message: Filled }
 schema SpeechSession { consentNonce: Uuid }
 schema Recorded { turns: Turn[] }
-schema Shown { turns: { context: string }[] }
+schema Shown { turns: { context: string; messages: ChatMessage[] }[] }
 schema Credential { credentialId: string; secret: string; code: string }
 schema Acknowledged { status: "acknowledged" }
 schema Delta { content: string }
@@ -1135,7 +1135,7 @@ effect function store(site: string) {
     const answer = chosen < 0 ? reply(said) : queued[chosen].answer
     const id = try next()
     const settled = (outcome: Turn["outcome"]) => change(key, (a) => ({ ...a, turns: a.turns.map((t) => t.id === id ? { ...t, outcome } : t) }))
-    try change(key, (a) => ({ ...a, script: a.script.filter((_, i) => i !== chosen), turns: [...a.turns, { id, said, outcome: "streaming", context }] }))
+    try change(key, (a) => ({ ...a, script: a.script.filter((_, i) => i !== chosen), turns: [...a.turns, { id, said, outcome: "streaming", context, messages }] }))
     if (!stream) {
       try settled("completed")
       return try HttpServerResponse.json({ object: "chat.completion", choices: [{ index: 0, message: { role: "assistant", content: answer }, finish_reason: "stop" }] })
@@ -1343,9 +1343,13 @@ export effect function turns(cloud: string, key: string) {
   return (try Schema.decodeUnknownEffect(Recorded)(try response.json)).turns
 }
 
-export effect function contexts(cloud: string, key: string) {
+export effect function modelTurns(cloud: string, key: string) {
   const response = try HttpClient.execute(HttpClientRequest.bearerToken(HttpClientRequest.get(`${cloud}/fake/account`), key))
-  return (try Schema.decodeUnknownEffect(Shown)(try response.json)).turns.map((turn) => turn.context)
+  return (try Schema.decodeUnknownEffect(Shown)(try response.json)).turns
+}
+
+export effect function contexts(cloud: string, key: string) {
+  return (try modelTurns(cloud, key)).map((turn) => turn.context)
 }
 
 export effect function parts(cloud: string, key: string, said: string) {

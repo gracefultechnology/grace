@@ -27,7 +27,7 @@ import { ManagedReads } from "../src/managedReads.vibe";
 import type { PasswordVault } from "../src/passwords.vibe";
 import type { GraceAction } from "../src/agent.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
-import { client, contexts, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
+import { client, modelTurns, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
 import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
 import { actOnScreen, mount, signInToGrace, tabletView } from "./screen.tsx";
@@ -2875,7 +2875,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     "Confidential preview marker", "Confidential body marker", "Chase verification code", "finish signing in", "Pay my bill now.",
     "Synthetic issuer", "Your verification code is", "Unrecognized subject marker"];
   const assertMailWithheld = (text: string) => expect(withheld.some((value) => text.includes(value))).toBe(false);
-  const shownToGrace = async () => (await Effect.runPromise(Effect.provide(contexts(cloud, secret), client))).at(-1) ?? "";
+  const modelRequests = () => Effect.runPromise(Effect.provide(modelTurns(cloud, secret), client));
+  const shownToGrace = async () => (await modelRequests()).at(-1)?.context ?? "";
   const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
   const account = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "owner@grace.test", granted: allowedUse }, "Gmail", "AccountConnector");
   localStorage.clear();
@@ -2967,14 +2968,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let duringDecision: (() => void) | undefined;
   const DecisionAsk = Schema.fromJsonString(Schema.Struct({ goal: Schema.String, candidates: Schema.Array(Schema.Struct({ id: Schema.String, label: Schema.String })) }));
   let replaceGuideOwner = true;
-  let checkedModelRequests = 0;
   const browserFetch = window.fetch.bind(window);
-  const accountNetwork = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+  const accountNetwork = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, window.location.origin);
-    if (url.origin === new URL(cloud).origin && url.pathname === "/api/v1/chat/completions") {
-      assertMailWithheld(input instanceof Request ? await input.clone().text() : await new Response(init?.body).text());
-      checkedModelRequests++;
-    }
     if (url.origin !== window.location.origin) return browserFetch(input, init);
     switch (url.pathname) {
       case "/api/product/files/scope": return Promise.resolve(guideOwner === null ? new Response(null, { status: 401 }) :
@@ -3388,11 +3384,12 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(page.getByRole("button", { name: /Westside Reception/ }));
     await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
     const followUp = "What does this other email say?";
-    const previousRequests = checkedModelRequests;
+    const previousRequests = (await modelRequests()).length;
     await send(followUp);
     await routeTo(page.getByText(reply(followUp), { exact: true }));
-    expect(checkedModelRequests).toBeGreaterThan(previousRequests);
-    const replayed = await shownToGrace();
+    const replayedRequests = await modelRequests();
+    expect(replayedRequests.length).toBeGreaterThan(previousRequests);
+    const replayed = replayedRequests.at(-1)?.context ?? "";
     expect(replayed.includes("Your appointment is at our Westside office.")).toBe(true);
     expect(replayed.includes("A private sign-in email is open.")).toBe(false);
     assertMailWithheld(replayed);
@@ -3402,11 +3399,13 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await openBrowserAndAsk();
     await send("fill my password");
     await routeTo(page.getByRole("textbox", { name: "Private website address" }));
-    const privateRequests = checkedModelRequests;
+    const privateRequests = (await modelRequests()).length;
     expect((await deliver("Unknown sender", "unknown@bank.test", "Unrecognized subject marker", "Regular fixture preview")).ok).toBe(true);
     await act(() => tablet.requestHelp());
     expect(page.getByRole("button", { name: "Ask Grace", exact: true }).query()).toBeNull();
-    expect(checkedModelRequests).toBe(privateRequests);
+    const received = await modelRequests();
+    expect(received.length).toBe(privateRequests);
+    for (const { messages } of received) assertMailWithheld(JSON.stringify(messages));
   } finally {
     await tablet.dispose();
     accountNetwork.mockRestore();
@@ -3664,19 +3663,12 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   let connected = true;
   let statusAvailable = true;
   let historyId = "one";
-  let observedModelRequest = false;
   const fetch = window.fetch.bind(window);
   const unserved: string[] = [];
   onTestFinished(() => expect(unserved, "Grace called /api/ routes this Cloud does not serve").toEqual([]));
-  const provider = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
+  const provider = vi.spyOn(window, "fetch").mockImplementation((input, options) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url, window.location.href);
-    if (url.origin === new URL(cloud).origin) {
-      if (url.pathname === "/api/v1/chat/completions") {
-        withoutConfidentialMail(input instanceof Request ? await input.clone().text() : await new Response(options?.body).text());
-        observedModelRequest = true;
-      }
-      return fetch(input, options);
-    }
+    if (url.origin === new URL(cloud).origin) return fetch(input, options);
     const respond = (body: unknown, status = 200) => Promise.resolve(Response.json(body, { status }));
     switch (url.pathname) {
       case "/api/auth/session": return respond({ account: signedIn ? browserCookieOwner ?? person : null });
@@ -3783,10 +3775,9 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Ask Grace"));
     await send(confidentialQuestion);
     await routeTo(page.getByText(reply(confidentialQuestion), { exact: true }));
-    expect(observedModelRequest).toBe(true);
-    const sent = (await Effect.runPromise(Effect.provide(contexts(cloud, secret), client))).at(-1) ?? "";
-    expect(sent.includes("A private sign-in email is open.")).toBe(true);
-    withoutConfidentialMail(sent);
+    const sent = (await Effect.runPromise(Effect.provide(modelTurns(cloud, secret), client))).at(-1);
+    expect(sent?.context.includes("A private sign-in email is open.")).toBe(true);
+    withoutConfidentialMail(JSON.stringify(sent?.messages ?? []));
     await tap(button("Close Grace"));
     await tap(button("Back to Inbox"));
     await tap(button(/Riverview Clinic/));
