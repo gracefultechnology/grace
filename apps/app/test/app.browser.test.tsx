@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
 import { Effect, Latch, Layer, ManagedRuntime, Option, Schema } from "effect";
@@ -2825,8 +2825,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     });
 
     newsletterEmail = null;
-    currentPage = help;
-    await native.report("tab-1", origin + help.path, 100);
+    currentPage = { ...help, path: "/help/center" };
+    await native.report("tab-1", origin + help.path, 40);
+    await native.report("tab-1", origin + currentPage.path, 100);
     await native.route();
     await routeTo(resume);
     expect(check.query()).toBeNull();
@@ -3310,7 +3311,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
         return respond({ error: "route_not_found" }, 404);
     }
   });
-  const browserHome = "https://example.org/";
+  const browserHome = "https://www.example.org/";
   let browserUrl = browserHome;
   let switchOwnerDuringPageRead = false;
   const native = fakePlugin(({ command }) => {
@@ -3499,9 +3500,10 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     const address = page.getByRole("textbox", { name: "Address" });
     await routeTo(address);
     await act(() => userEvent.type(address, "example.org{Enter}"));
-    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.url; }).toBe("https://example.org/");
     await native.started("tab-1");
     await native.report("tab-1", browserUrl, 100);
+    await expect.poll(() => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs[0]).toMatchObject({ history: ["", browserUrl], load: "Loaded" });
     await send(browserAsk);
     await routeTo(page.getByRole("region", { name: "Review read plan" }));
     if (button("Collapse").query()) await tap(button("Collapse"));
@@ -3517,7 +3519,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(hostedChoices).toBe(0);
     await tap(button("Check page"));
     await routeTo(page.getByRole("status", { name: "Page check result" }));
-    expect(page.getByText("Open page: https://example.org/").query()).toBeNull();
+    expect(page.getByText("Open page: " + browserHome).query()).toBeNull();
 
     browserCookieOwner = undefined;
     nextSnapshot = () => { sessionGeneration++; };
