@@ -1,5 +1,5 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Story: Save, share and remove the chosen file"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"
-import { Effect, ManagedRuntime, Schema } from "effect";
+import { Effect, Latch, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
@@ -16,7 +16,7 @@ import { Instances } from "../src/instances.vibe";
 import { chooseMailLink } from "../src/mailLink.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
-import { tabletView, actOnScreen, browserAccountResponse } from "./screen.tsx";
+import { tabletView, actOnScreen, browserAccountResponse, mountGmail } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -625,6 +625,42 @@ it("Write or reply and confirm before sending", async () => {
   await expect.poll(() => sentWith("Recital photos")).toHaveLength(1);
   await expect.element(row("Outbox")).not.toBeInTheDocument();
 }, 600_000);
+
+it(`Keep the saved draft count while the Inbox refresh is delayed (spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open")`, async () => {
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const captured = Latch.makeUnsafe();
+  const release = Latch.makeUnsafe();
+  const returned = Latch.makeUnsafe();
+  const fetch = window.fetch.bind(window);
+  let first = true;
+  const network = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+    const path = new URL(input instanceof Request ? input.url : input, location.href).pathname;
+    const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+    const response = await fetch(input, init);
+    if (first && method === "GET" && path.endsWith("/inbox-v1/drafts")) {
+      first = false;
+      captured.openUnsafe();
+      await Effect.runPromise(release.await);
+      returned.openUnsafe();
+    }
+    return response;
+  });
+  try {
+    await mountGmail(gmail, { url: cloud, key: secret });
+    await click(page.getByRole("button", { name: /^Email/ }));
+    await Effect.runPromise(captured.await);
+    await click(page.getByRole("button", { name: "Write" }));
+    await click(page.getByRole("button", { name: "Susan" }));
+    await act(() => userEvent.fill(subject(), "Lunch tomorrow"));
+    await click(page.getByRole("button", { name: "Back to Inbox" }));
+    await expect.element(row("Drafts 1")).toBeVisible();
+    await act(async () => { release.openUnsafe(); await Effect.runPromise(returned.await); });
+    await expect.element(row("Drafts 1")).toBeVisible();
+  } finally {
+    release.openUnsafe();
+    network.mockRestore();
+  }
+}, 120_000);
 
 it('Review an unsent reply (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
   const { secret, host, company, restartFromEarlierMailbox } = await start();
