@@ -73,7 +73,7 @@ checks on the completed trial, including unchanged protected state and
 credentials. CI uploads asset provenance and both grader receipts as
 `billworld-released-task-md9`.
 
-The same command also runs the separate Fleet `view-bill` cases listed in
+The same CI job also runs the separate Fleet `view-bill` cases listed in
 `test/fleet.fixture.ts`. For a Fleet-only local run, set
 `GRACE_BILLWORLD_RELEASED_DIR` to the pinned checkout and use:
 
