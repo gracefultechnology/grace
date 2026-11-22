@@ -44,6 +44,7 @@ function notice(n: NetworkJoin, name: string) {
     ? `${n.explanation} ${fixSteps}`
     : `${n.explanation} Move closer and try again. If it still won’t connect, ask whoever looks after this network.`;
   if (n.phase === "JoinUnconfirmed") return `Android hasn’t confirmed the connection to ${name}.`;
+  if (n.phase === "SavedNetworkPanel") return `${name} is already saved. Choose it in Android’s Wi-Fi to connect.`;
   if (n.phase === "PortalEntry") return `${name} has a sign-in page. Sign in there to finish joining.`;
   return undefined;
 }
@@ -97,7 +98,7 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
         noneLabel={reasons[n.discovery.tag]}
         action={action !== "NoAction" && <Button variant="prominent" size="pill" onClick={act}>{actionLabels[action]}</Button>} />
       {said && <Alert variant={n.phase === "JoinFailed" ? "caution" : "info"} className="mt-4">{said}</Alert>}
-      {n.phase === "PortalEntry" && <Button variant="prominent" size="pill" className="mt-3.5" onClick={() => run(page.reopenPanel())}>Open the sign-in page</Button>}
+      {(n.phase === "PortalEntry" || n.phase === "SavedNetworkPanel") && <Button variant="prominent" size="pill" className="mt-3.5" onClick={() => run(page.reopenPanel())}>{n.phase === "PortalEntry" ? "Open the sign-in page" : actionLabels.OpenPanel}</Button>}
       {!online && n.discovery.tag !== "WifiOff" && <Alert variant="info" className="mt-4">{offlineSteps}</Alert>}
     </>
   );
