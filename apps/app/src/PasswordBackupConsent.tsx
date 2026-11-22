@@ -3,7 +3,7 @@ import { Button } from "@repo/ui";
 import { GraceSignInCode } from "./GraceSignInCode.tsx";
 import type { CodeProvider, CodeSignIn } from "./graceAccount.vibe";
 import { useState, useTransition } from "react";
-import { mayOfferBackupApproval } from "../gen/app__setup.ts";
+import { mayApprovePasswordBackup, mayOfferBackupApproval } from "../gen/app__setup.ts";
 import {
   cancelPasswordApproval, confirmPasswordApproval, noBackupSignInProviders, signInForApproval, signInWithBackupCode,
   type Approval, type ConsentResult, type SignedInAccount,
@@ -39,7 +39,8 @@ export function PasswordBackupConsent({ approval, account: originalAccount, prov
     }
     onSuccess();
   });
-  const offersApproval = mayOfferBackupApproval(approval !== null, status?.kind !== "signInRequired", account !== null && status?.kind !== "accountChanged");
+  const gate = [approval !== null, status?.kind !== "signInRequired", account !== null && status?.kind !== "accountChanged"] as const;
+  const offersApproval = mayOfferBackupApproval(...gate);
   const message = !approval ? "Open Passwords on your tablet and try again." :
     status?.kind === "unavailable" ? "Grace couldn’t finish. Please try again." :
     status?.kind === "accountChanged" ? "Your signed-in account changed. Sign in to continue." :
@@ -70,7 +71,7 @@ export function PasswordBackupConsent({ approval, account: originalAccount, prov
           )}
           {approval && account && offersApproval && status?.kind !== "returning" && (
             <Button variant="prominent" size="pill" disabled={pending} onClick={() => run(async () => {
-              setStatus(await confirmPasswordApproval(approval, account.id));
+              if (mayApprovePasswordBackup(...gate, true)) setStatus(await confirmPasswordApproval(approval, account.id));
             })}>Approve</Button>
           )}
           {status?.kind === "returning" && <a href={status.href} rel="noreferrer" className="text-primary underline">Return to Grace</a>}
