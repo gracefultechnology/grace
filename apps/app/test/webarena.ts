@@ -246,17 +246,13 @@ export async function setup(project: TestProject) {
     project.vite.config.plugins.find(({ name }) => name === webArenaPluginName)?.api;
   if (typeof api?.start !== "function" || typeof api.close !== "function")
     throw new Error("The WebArena project has no evaluator lifecycle");
-  const unsubscribe = project.vitest.onCancel(api.close);
-  project.vitest.onClose(api.close);
-  const teardown = async () => {
-    unsubscribe();
-    await api.close();
-  };
-  try {
+  const prepare = async () => {
+    project.vitest.onCancel(api.close);
     await api.start();
-    return teardown;
-  } catch (error) {
-    await teardown();
-    throw error;
-  }
+  };
+  project.vitest.onServerRestart(api.close);
+  project.vitest.onClose(api.close);
+  project.vitest.onTestsRerun(prepare);
+  await prepare();
+  return api.close;
 }

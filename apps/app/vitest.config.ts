@@ -104,6 +104,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   if (action.kind === "begin") {
     const fixture = byId.get(action.taskId);
     if (!fixture || activeRuns.has(context.page)) throw new Error("The Chromium benchmark case is not available");
+    if (fixture.evaluator === "webarena" && official) context.project.vitest.onCancel(official.close);
     activeRuns.set(context.page, { fixture, decisions: 0, decisionResults: [] });
     return {};
   }
