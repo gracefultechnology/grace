@@ -45,10 +45,18 @@ function statementLabels(text: string): Labeled[] {
     const candidate = rest === "" ? lines[index + 1] ?? "" : rest;
     const paymentAmount = fact === "DueDate" && /^payment\s+due$/iu.test(words) ? money.exec(candidate)?.[0] : undefined;
     const value = paymentAmount ?? (fact === "DueDate" ? date : money).exec(candidate)?.[0];
-    return value === undefined ? [] : [{
+    if (value === undefined) return [];
+    const found: Labeled = {
       fact: paymentAmount === undefined ? fact : "AmountDue",
       label: words.replace(/\s+/gu, " "),
       value: value.replace(/\s+/gu, " "),
+    };
+    const by = found.fact === "AmountDue" ? /^\s+by\s+/iu.exec(candidate.slice(value.length))?.[0] : undefined;
+    const due = by === undefined ? undefined : date.exec(candidate.slice(value.length + by.length))?.[0];
+    return by === undefined || due === undefined ? [found] : [found, {
+      fact: "DueDate",
+      label: by.trim(),
+      value: due.replace(/\s+/gu, " "),
     }];
   }));
 }
