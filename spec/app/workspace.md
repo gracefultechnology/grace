@@ -1650,10 +1650,11 @@ pure def isPublicSearch(guidedStep: GuidedStep): bool = match guidedStep {
 }
 pure def canConfirmGuidedSearch(w: Workspace, searchCheck: GuidedSearchCheck, by: WorkspaceActor): bool =
   val tab = B::activeTab(w.browser)
+  val searchedStep = searchCheck.report.step
   guidedObservationCurrent(w, searchCheck.report, by) and searchCheck.documentId != "" and
   tab.load == B::Loaded and tab.secure and searchCheck.url != "" and searchCheck.url == B::tabUrl(tab) and
   searchCheck.loadVersion == tab.loadVersion and searchCheck.loadVersion > w.plan.openingBrowser and
-  match searchCheck.report.step {
+  match searchedStep {
     | SearchPublicSite(target) => target.origin == searchCheck.origin and target.query == searchCheck.query and target.tabId == tab.id
     | _ => false
   }
@@ -1662,7 +1663,8 @@ pure def confirmGuidedSearch(w: Workspace, searchCheck: GuidedSearchCheck, by: W
 pure def lawSearchNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   isPublicSearch(report.step) implies not(canConfirmGuided(w, report, by))
 pure def lawWrongSearchCannotFinish(w: Workspace, searchCheck: GuidedSearchCheck, by: WorkspaceActor): bool =
-  (match searchCheck.report.step {
+  val searchedStep = searchCheck.report.step
+  (match searchedStep {
     | SearchPublicSite(target) => target.origin != searchCheck.origin or target.query != searchCheck.query or target.tabId != B::activeTab(w.browser).id
     | _ => true
   }) implies not(canConfirmGuidedSearch(w, searchCheck, by))
