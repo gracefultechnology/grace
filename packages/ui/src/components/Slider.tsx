@@ -11,6 +11,8 @@ export type SliderProps = Omit<ComponentProps<"div">, "defaultValue" | "onChange
   defaultValue?: number;
   /** Called with each new value: once per drag, when it is let go, and on each tap, key or step by − and +. */
   onValueChange?: (value: number) => void;
+  /** Called by − and + instead of `onValueChange`, with how far to move: for an owner that steps its own value, which a render may not show yet. */
+  onStep?: (change: number) => void;
   min?: number;
   max?: number;
   /** How far − and + and the arrow keys move it. */
@@ -28,24 +30,19 @@ export type SliderProps = Omit<ComponentProps<"div">, "defaultValue" | "onChange
  * A level between two ends, such as brightness or volume: a track between round − and + buttons (prototype .vol).
  * @design packages/design-system/design.md#buttons
  */
-export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max = 100, step = 10, label, decreaseLabel = "Less", increaseLabel = "More", disabled, className, ...props }: SliderProps) {
+export function Slider({ value, defaultValue = 50, onValueChange, onStep, min = 0, max = 100, step = 10, label, decreaseLabel = "Less", increaseLabel = "More", disabled, className, ...props }: SliderProps) {
   const [own, setOwn] = useState(defaultValue);
   const [dragged, setDragged] = useState<number>();
   const pressedRef = useRef(false);
-  const askedRef = useRef<{ while?: number; next: number }>(undefined);
   const current = value ?? own;
   const set = (next: number) => {
     setDragged(undefined);
     if (disabled) return;
     const clamped = Math.min(max, Math.max(min, next));
-    askedRef.current = { while: value, next: clamped };
     setOwn(clamped);
     onValueChange?.(clamped);
   };
-  const stepBy = (change: number) => {
-    const asked = askedRef.current;
-    set((asked && asked.while === value ? asked.next : current) + change);
-  };
+  const stepBy = (change: number) => (onStep ? onStep(change) : set(current + change));
   const end = "text-chrome active:scale-96";
   return (
     <div className={cn("flex items-center gap-3", disabled && "opacity-40", className)} {...props}>

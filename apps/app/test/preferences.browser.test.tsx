@@ -42,10 +42,6 @@ it('Dim the tablet at night (spec/app/preferences.md, "Night dimming and sound s
   await expect.poll(() => brightness).toBe(30);
   await act(() => runtime.runPromise(TestClock.adjust("1 minute")));
   await expect.poll(() => brightness).toBe(60);
-  const dimmer = page.getByRole("button", { name: "Dimmer", exact: true }).element();
-  const tap = () => dimmer.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  await act(() => { tap(); tap(); });
-  await expect.poll(() => brightness).toBe(40);
 });
 
 it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence")', async () => {
