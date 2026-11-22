@@ -286,6 +286,8 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         if (definition.evaluator === "webarena" && definition.taskId === "157" &&
           (!["GET", "HEAD"].includes(request.method()) || request.isNavigationRequest() && !url.pathname.startsWith("/admin/")))
           return route.abort();
+        if (definition.evaluator === "webarena" && definition.taskId === "258" && !["GET", "HEAD"].includes(request.method()))
+          return route.abort();
         return route.continue();
       });
       const response = await website.goto(action.url, { waitUntil: "load" });

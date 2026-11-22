@@ -31,6 +31,10 @@ on:
         description: Run official WebArena Shopping tasks with hosted guidance and controls
         type: boolean
         default: false
+      webarena_gitlab:
+        description: Run official GitLab public-project task 258 with hosted guidance and controls
+        type: boolean
+        default: false
       webarena_pending_order:
         description: Include the exploratory Shopping pending-order case in the WebArena run
         type: boolean
@@ -76,12 +80,15 @@ jobs:
       WEBARENA_RECORD_TASKS: ${{ inputs.webarena_pending_order && '[298,299,300]' || '[298,299]' }}
       WEBARENA_REQUIRED: '[260,261,262,263]'
     steps:
-      - uses: actions/checkout@v7
+      - &webarena_checkout
+        uses: actions/checkout@v7
         with:
           submodules: true
           persist-credentials: false
-      - uses: ./.github/actions/setup
-      - uses: actions/checkout@v7
+      - &webarena_setup
+        uses: ./.github/actions/setup
+      - &webarena_pinned_catalog
+        uses: actions/checkout@v7
         with:
           repository: web-arena-x/webarena
           ref: dce04686a56253aefba7b18a4fa0937cf1dc987b
@@ -121,10 +128,12 @@ jobs:
             "$results_dir/corpus-coverage.json" >> "$GITHUB_STEP_SUMMARY"
           jq -r '.total | "The pinned catalog has \(.catalog) tasks. This run configures \(.configuredTaskIds | length) tasks, of which \(.requiredTaskIds | length) are required. \(.unconfigured) tasks are outside this run."' \
             "$results_dir/corpus-coverage.json" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/setup-python@v6
+      - &webarena_python
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
-      - name: Prepare the WebArena evaluator
+      - &webarena_evaluator
+        name: Prepare the WebArena evaluator
         run: |
           private_dir="$RUNNER_TEMP/grace-webarena-private"
           results_dir="$RUNNER_TEMP/grace-webarena-results"
@@ -135,7 +144,7 @@ jobs:
             echo "WEBARENA_PRIVATE=$private_dir"
             echo "WEBARENA_RESULTS=$results_dir"
             echo "GRACE_WEBARENA_PYTHON=$private_dir/venv/bin/python"
-            echo "GRACE_BROWSER_BENCHMARK_FILE=$private_dir/shopping-input.json"
+            echo "GRACE_BROWSER_BENCHMARK_FILE=$private_dir/input.json"
           } >> "$GITHUB_ENV"
           pnpm gen
       - name: Start the pinned Shopping storefront
@@ -373,6 +382,159 @@ jobs:
             ${{ runner.temp }}/grace-webarena-results/run-coverage.json
             ${{ runner.temp }}/grace-webarena-results/public-search-journey.json
             ${{ runner.temp }}/grace-webarena-results/grace-browser.log
+          if-no-files-found: warn
+  webarena-gitlab:
+    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.webarena_gitlab
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      GITLAB_IMAGE: docker.io/am1n3e/webarena-verified-gitlab@sha256:673ba94d757c5b3f4bb55751ad8b745a33bad2b987349322403cbc41035a92e0
+      GITLAB_ORIGIN: https://127.0.0.1:8023
+      GRACE_WEBARENA_UPSTREAM: ${{ github.workspace }}/.cache/webarena-upstream
+    steps:
+      - *webarena_checkout
+      - *webarena_setup
+      - *webarena_pinned_catalog
+      - *webarena_python
+      - *webarena_evaluator
+      - name: Start the pinned GitLab fixture
+        run: |
+          umask 077
+          test "$(uname -m)" = x86_64
+          docker_root=$(docker info --format '{{.DockerRootDir}}')
+          available=$(sudo df -PB1 "$docker_root" | awk 'NR == 2 { print $4 }')
+          inodes=$(sudo df -Pi "$docker_root" | awk 'NR == 2 { print $4 }')
+          memory=$(awk '/^MemAvailable:/ { printf "%.0f", $2*1024 }' /proc/meminfo)
+          jq -n --argjson disk "$available" --argjson inodes "$inodes" --argjson memory "$memory" \
+            '{availableDockerBytes:$disk,availableDockerInodes:$inodes,availableMemoryBytes:$memory}' > "$WEBARENA_RESULTS/capacity.json"
+          (( available >= 65000000000 && inodes >= 100000 && memory >= 4294967296 ))
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends caddy
+          docker pull --platform linux/amd64 "$GITLAB_IMAGE"
+          docker image inspect --format '{{json .RepoDigests}}' "$GITLAB_IMAGE" > "$WEBARENA_RESULTS/gitlab-image.json"
+          docker create --name grace-webarena-gitlab --platform linux/amd64 --shm-size 2gb \
+            -p 127.0.0.1:18023:8023 -e WA_ENV_CTRL_ENABLE=false \
+            -e WA_ENV_CTRL_EXTERNAL_SITE_URL="$GITLAB_ORIGIN" "$GITLAB_IMAGE"
+          docker cp grace-webarena-gitlab:/etc/gitlab/gitlab.rb "$WEBARENA_PRIVATE/gitlab.rb"
+          printf "\nexternal_url '%s'\n" "$GITLAB_ORIGIN" >> "$WEBARENA_PRIVATE/gitlab.rb"
+          cat >> "$WEBARENA_PRIVATE/gitlab.rb" <<'RUBY'
+
+          nginx['listen_port'] = 8023
+          nginx['listen_https'] = false
+          letsencrypt['enable'] = false
+          RUBY
+          docker cp "$WEBARENA_PRIVATE/gitlab.rb" grace-webarena-gitlab:/etc/gitlab/gitlab.rb
+          docker start grace-webarena-gitlab
+          cat > "$WEBARENA_PRIVATE/Caddyfile" <<'CADDY'
+          {
+            admin off
+            auto_https disable_redirects
+            skip_install_trust
+          }
+          https://127.0.0.1:8023 {
+            bind 127.0.0.1
+            tls internal
+            reverse_proxy http://127.0.0.1:18023
+          }
+          CADDY
+          XDG_DATA_HOME="$WEBARENA_PRIVATE/caddy-data" XDG_CONFIG_HOME="$WEBARENA_PRIVATE/caddy-config" \
+            caddy start --config "$WEBARENA_PRIVATE/Caddyfile" --adapter caddyfile
+          for _ in {1..90}; do
+            test "$(docker inspect --format '{{.State.Running}}' grace-webarena-gitlab)" = true
+            if curl --insecure --fail --silent --max-time 10 "$GITLAB_ORIGIN/users/sign_in" -o "$WEBARENA_PRIVATE/sign-in.html" &&
+                rg -q 'data-testid="username-field"' "$WEBARENA_PRIVATE/sign-in.html"; then
+              jq -n '{signInReady:true}' > "$WEBARENA_RESULTS/readiness.json"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "GitLab did not serve the synthetic sign-in form"
+          exit 1
+      - name: Verify the pinned GitLab synthetic sign-in
+        working-directory: apps/app
+        run: |
+          umask 077
+          python - "$GRACE_WEBARENA_UPSTREAM/browser_env/env_config.py" > "$WEBARENA_PRIVATE/gitlab-login.json" <<'PY'
+          import ast
+          import json
+          import pathlib
+          import sys
+          source = ast.parse(pathlib.Path(sys.argv[1]).read_text())
+          accounts = next(node.value for node in source.body if isinstance(node, ast.Assign) and
+              any(isinstance(target, ast.Name) and target.id == "ACCOUNTS" for target in node.targets))
+          json.dump(ast.literal_eval(accounts)["gitlab"], sys.stdout)
+          PY
+          node --input-type=module <<'JS'
+          import { readFile, writeFile } from "node:fs/promises";
+          import { chromium } from "playwright";
+          const origin = process.env.GITLAB_ORIGIN;
+          const privateDir = process.env.WEBARENA_PRIVATE;
+          const { username, password } = JSON.parse(await readFile(privateDir + "/gitlab-login.json", "utf8"));
+          const browser = await chromium.launch();
+          try {
+            const context = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: "block" });
+            await context.route("**/*", (route) => {
+              const request = route.request();
+              const url = new URL(request.url());
+              const login = request.method() === "POST" && url.pathname === "/users/sign_in";
+              return url.origin === origin && (login || ["GET", "HEAD"].includes(request.method())) ? route.continue() : route.abort();
+            });
+            const page = await context.newPage();
+            await page.goto(origin + "/users/sign_in", { timeout: 120000 });
+            await page.getByTestId("username-field").fill(username);
+            await page.getByTestId("password-field").fill(password);
+            await page.getByTestId("sign-in-button").click();
+            await page.waitForURL((url) => url.origin === origin && url.pathname !== "/users/sign_in", { timeout: 120000 });
+            const profile = await page.goto(origin + "/-/profile", { timeout: 120000 });
+            if (!profile?.ok() || new URL(page.url()).pathname !== "/-/profile") throw new Error("Synthetic profile did not open");
+            const start = await page.goto(origin + "/", { timeout: 120000 });
+            if (!start?.ok() || page.url() !== origin + "/") throw new Error("The authenticated GitLab home did not open");
+            await context.storageState({ path: privateDir + "/gitlab-state.json" });
+            await writeFile(process.env.WEBARENA_RESULTS + "/authentication.json", JSON.stringify({ signedIn:true, homeStatus:start.status() }));
+          } catch {
+            throw new Error("The isolated synthetic GitLab sign-in was not verified");
+          } finally {
+            await browser.close();
+          }
+          JS
+      - name: Grade official GitLab public-project navigation
+        env:
+          GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
+          GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
+        run: |
+          test -n "$GRACE_BENCHMARK_CLEF_ORIGIN" && test -n "$GRACE_BENCHMARK_CLEF_KEY"
+          git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
+            jq -e --arg start "$GITLAB_ORIGIN/" --arg state "$WEBARENA_PRIVATE/gitlab-state.json" --arg receipt "$WEBARENA_RESULTS/task-258.json" '
+              [.[] | select(.task_id == 258 and .sites == ["gitlab"] and .require_login) |
+                {taskId: (.task_id | tostring), intent, startUrl: $start, receipt: $receipt,
+                 siteStorageState: $state, evaluator: "webarena", chat: "upstream", requiredStep: "ReachNamedPage"}] |
+              select(length == 1)' > "$GRACE_BROWSER_BENCHMARK_FILE"
+          browser_exit=0
+          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link 258' |
+            tee "$WEBARENA_PRIVATE/grace-browser.log" || browser_exit=$?
+          jq -e '
+            .taskId == "258" and .chatStatus == 200 and .outcome.chatProvider == "upstream" and
+            .decisionProvider == "hosted" and .outcome.ringTap == true and
+            (.outcome.reviewedSteps | map(.kind)) == ["ReachNamedPage"] and
+            .outcome.failure == null and .outcome.hops[-1].checked == true and
+            .outcome.hops[-1].documentId == .outcome.destination.documentId and
+            .webArena.site == "gitlab" and .webArena.officialScore == 1 and .webArena.noActionScore == 0 and
+            .webArena.groundedNavigation and .webArena.qualifiedHostedGuidance
+          ' "$WEBARENA_RESULTS/task-258.json"
+          test "$browser_exit" -eq 0
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: webarena-gitlab
+          path: |
+            ${{ runner.temp }}/grace-webarena-results/capacity.json
+            ${{ runner.temp }}/grace-webarena-results/gitlab-image.json
+            ${{ runner.temp }}/grace-webarena-results/readiness.json
+            ${{ runner.temp }}/grace-webarena-results/authentication.json
+            ${{ runner.temp }}/grace-webarena-results/task-258.json
           if-no-files-found: warn
   billworld:
     if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
@@ -785,7 +947,7 @@ jobs:
           if-no-files-found: error
   checks:
     name: ${{ matrix.lane }}
-    if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena)
+    if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena || inputs.webarena_gitlab)
     runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -909,7 +1071,7 @@ jobs:
           include-hidden-files: true
   vibestack-fixture-selftests:
     name: ${{ matrix.lane }}
-    if: ${{ !inputs.cross_app_only && (github.event_name != 'workflow_dispatch' || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena)) }}
+    if: ${{ !inputs.cross_app_only && (github.event_name != 'workflow_dispatch' || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena || inputs.webarena_gitlab)) }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
