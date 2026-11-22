@@ -264,8 +264,10 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
 
   await act(() => userEvent.click(row("Bridge club").first()));
   await edit("Bridge night", "Every week");
-  // spec/app/calendars.md, "Calendar turns to the day of Grace’s question and of what was just saved, but never past an edit"
-  await expect.element(selectedDay(eyeDay)).toBeVisible();
+  // spec/app/calendars.md, "Calendar turns to the day of Grace’s question and of what was just added, but never past an edit"
+  await expect.element(dated(eyeDay)).toBeVisible();
+  await click("Back to Calendar");
+  await click("Previous week");
   await opensOn("Bridge night", eyeDay);
 
   // spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"
@@ -274,12 +276,8 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
   if (second === undefined) throw new Error("the second Bridge night is not on the tablet");
   const details = { ...second.committed, location: "The club house" };
   await agree({ tag: "ChangeAsk", target: 0, review: { id: second.identity.occurrenceId, details, committedRevision: second.revision, calendarGeneration: tabletView.generation } });
-  await expect.element(selectedDay(eyeDay + 7)).toBeVisible();
-  await expect.element(ringed("Bridge night", "Done").first()).toBeVisible();
-  await act(() => userEvent.click(row("Bridge night").first()));
   await expect.element(page.getByText("The club house")).toBeVisible();
   await click("Back to Calendar");
-  await click("Previous week");
   await opensOn("Bridge night", eyeDay);
   await click("Next week");
   await opensOn("Bridge night", eyeDay + 7);
@@ -295,11 +293,11 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
   await act(() => userEvent.click(row("Bridge night").first()));
   const retainedId = (await tablet()).selectedId;
   await edit("Bridge night", "Never");
-  await expect.element(selectedDay(eyeDay + 14)).toBeVisible();
   await expect.poll(async () => (await tablet()).entries.filter((entry) => entry.phase === "Saved" && entry.committed.title === "Bridge night").map((entry) => entry.identity.occurrenceId)).toEqual([retainedId]);
-  await act(() => userEvent.click(row("Bridge night").first()));
   await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
   await click("Back to Calendar");
+  await click("Previous week");
+  await click("Previous week");
   await expect.poll(() => row("Bridge night").elements().length).toBe(1);
   await act(() => userEvent.click(row("Bridge night").first()));
   await click("Delete");
@@ -337,8 +335,6 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   expect((await run(selectedGmailCalendar)).entries.find((e) => e.identity.occurrenceId === eye)?.draft.startAt).toBe(eyeAt);
   await click("Back to Calendar");
   await edit("Eye check at Riverside", "Every week");
-  await expect.element(selectedDay(eyeDay)).toBeVisible();
-  await act(() => userEvent.click(row("Eye check at Riverside", "Gmail").first()));
   await expect.element(page.getByText("Repeats every week")).toBeVisible();
   await expect.poll(titles, atCloud).toEqual(["Eye check at Riverside"]);
   await click("Back to Calendar");
@@ -351,13 +347,11 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await click("Next week");
   await act(() => userEvent.click(row("Eye check at Riverside", "Gmail").first()));
   await edit("Eye check at Riverside", "Never");
-  await expect.element(selectedDay(eyeDay)).toBeVisible();
-  await act(() => userEvent.click(row("Eye check at Riverside", "Gmail").first()));
   await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
   await expect.poll(() => held(secret), atCloud).toEqual([{ title: "Eye check at Riverside", startAt: eyeAt }]);
   await click("Back to Calendar");
-  await click("Next week");
   await expect.element(row("Eye check at Riverside")).not.toBeInTheDocument();
+  await click("Previous week");
   await click("Previous week");
   await act(() => userEvent.click(row("Eye check at Riverside", "Gmail")));
   await click("Delete");
