@@ -178,8 +178,8 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const heading = native.readPrimaryHeading(id, true) catch () => undefined
       if (!heading) return undefined
       if (heading.url !== url) return "Changed"
-      const named = /^(?:search )?results for(?:\s*:\s*|\s+)(?:"(.*)"|'(.*)'|“(.*)”|‘(.*)’)$/iu.exec(heading.text.trim())
-      if ((named?.[1] ?? named?.[2] ?? named?.[3] ?? named?.[4]) !== step.query) return undefined
+      const named = /^(?:search )?results for(?:\s*:\s*|\s+)(?:"(.*)"|'(.*)'|“(.*)”|‘(.*)’|([^"'“‘].*))$/iu.exec(heading.text.trim())
+      if ((named?.[1] ?? named?.[2] ?? named?.[3] ?? named?.[4] ?? named?.[5]) !== step.query) return undefined
       const after = native.observeLinks(id) catch () => undefined
       if (!after || after.documentId !== before.documentId) return "Changed"
       const afterMiss = pageMiss(after, url, "CheckPublicSearchResult")

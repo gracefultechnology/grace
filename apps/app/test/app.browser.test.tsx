@@ -3430,7 +3430,7 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const query = "green tea";
-  const request = `Search for "${query}"`;
+  const request = `Search this website for ${query}`;
   const rewritten = 'Search for "green tea bags"';
   const answer = JSON.stringify({ text: "Review the search.", isQuestion: false, answers: [],
     actions: [{ kind: "proposeReadPlan", steps: [{ kind: "SearchPublicSite", query }] }] });

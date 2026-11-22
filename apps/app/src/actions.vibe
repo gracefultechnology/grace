@@ -297,8 +297,8 @@ export const agent = Layer.effect(Agent, effect {
         const workspace = s.workspace
         const tab = activeTab(workspace.browser)
         const site = URL.parse(tabUrl(tab))
-        const phrase = /^(?:please\s+)?search (?:this (?:site|website) )?for\s+(?:"([^"\r\n]+)"|“([^”\r\n]+)”|([^"“”\r\n.!?]+))\s*[.!?]?$/iu.exec(words.trim())
-        const query = phrase?.[1] ?? phrase?.[2] ?? phrase?.[3]?.trim()
+        const phrase = /^(?:please\s+)?search (?:this (?:site|website) )?for\s+(?:"([^"\r\n]+)"|“([^”\r\n]+)”|'(.+)'|‘(.+)’|([^"“”\r\n.!?]+))\s*[.!?]?$/iu.exec(words.trim())
+        const query = phrase?.[1] ?? phrase?.[2] ?? phrase?.[3] ?? phrase?.[4] ?? phrase?.[5]?.trim()
         return workspace.device.surface === "Browser" && workspace.device.observationAllowed && tab.load === "Loaded" &&
           tab.secure && site?.protocol === "https:" && !site.username && !site.password &&
           action.steps.length === 1 && query === step.query ? { tag: "SearchPublicSite", query, origin: site.origin, tabId: tab.id } : undefined
