@@ -1,4 +1,5 @@
-import { Effect, ManagedRuntime, Schema } from "effect";
+import { Effect, Layer, ManagedRuntime, Schema } from "effect";
+import { TestClock } from "effect/testing";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, onTestFinished } from "vitest";
@@ -51,13 +52,16 @@ export function connected(accounts: Accounts, provider: Provider, address: strin
   return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, name, "AccountConnector");
 }
 
-export const mountGmail = (address: string, cloud: CloudLink) => mountAccounts(connected(initial, "Gmail", address, "Gmail"), cloud);
+export const mountGmail = (address: string, cloud: CloudLink, clockAt?: number) => mountAccounts(connected(initial, "Gmail", address, "Gmail"), cloud, clockAt);
 
-export async function mountAccounts(accounts: Accounts, cloud: CloudLink) {
+export async function mountAccounts(accounts: Accounts, cloud: CloudLink, clockAt?: number) {
   localStorage.clear();
   localStorage.setItem("accounts", JSON.stringify(accounts));
   onTestFinished(() => localStorage.clear());
-  const runtime = ManagedRuntime.make(application(undefined, undefined, cloud));
+  const app = application(undefined, undefined, cloud);
+  const runtime = ManagedRuntime.make(clockAt === undefined ? app : app.pipe(
+    Layer.provideMerge(Layer.effectDiscard(TestClock.setTime(clockAt)).pipe(Layer.provideMerge(TestClock.layer()))),
+  ));
   await mount(runtime);
   return runtime;
 }

@@ -26,13 +26,13 @@ schema Scan { networks: Found[] }
 schema Connectivity { validated: boolean; online: boolean; captivePortal: boolean; ssid: string | null }
 schema AccessPoint { ssid: string; bssid: string; secured: boolean }
 schema Current { network: AccessPoint | null }
-schema Join { status: "connected" | "captivePortal" | "declined" | "unverified" | "notConnected" | "wrongPassword" }
+schema Join { status: "connected" | "captivePortal" | "declined" | "unverified" | "notConnected" | "wrongPassword" | "savedNetwork" }
 
 const authentication: Readonly<Record<WiFiSecurity, Authentication>> = {
   open: "OpenNetwork", owe: "OpenNetwork", wpa2: "SharedPassword", wpa3: "SharedPassword", eap: "AccountPassword", wep: "AccountPassword",
 }
 const outcomes: Readonly<Record<Join["status"], JoinResult>> = {
-  connected: "Joined", captivePortal: "PortalRequired", declined: "Declined", unverified: "Unverified", notConnected: "Unavailable", wrongPassword: "RejectedCredentials",
+  connected: "Joined", captivePortal: "PortalRequired", declined: "Declined", unverified: "Unverified", notConnected: "Unavailable", wrongPassword: "RejectedCredentials", savedNetwork: "SavedNetwork",
 }
 const unlisted: Readonly<Partial<Record<string, ScanResult>>> = {
   LOCATION_PERMISSION_REQUIRED: { tag: "NoLocationAccess" }, LOCATION_DISABLED: { tag: "LocationDisabled" },
@@ -114,7 +114,7 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
     const report = { network: n.selected.id, version: n.version, result: confirmed, certificate: "", explanation }
     const next = networks.send({ type: "receive", report }, "OperatingSystem") catch () => undefined
     if (next?.phase === "PortalEntry") try panel()
-    if (result !== "Joined" && (next?.phase === "JoinUnconfirmed" || next?.phase === "JoinFailed")) try look
+    if (result !== "Joined" && (next?.phase === "JoinUnconfirmed" || next?.phase === "JoinFailed" || next?.phase === "SavedNetworkPanel")) try look
   }
 
   effect function attempt(n: NetworkJoin | undefined, password: string | undefined) {
@@ -136,6 +136,7 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
 
   effect function returned() {
     const n = try networks.get()
+    if (n.phase === "SavedNetworkPanel") return try look
     if (n.phase !== "AndroidPanel" && n.phase !== "PortalEntry") {
       if (n.discovery.tag === "NetworksFound" || listAction(n.discovery) === "OpenPanel") try look
       return
@@ -155,8 +156,8 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
   try fork.scoped Stream.runForEach(shownAgain, () => returned())
   const changed = Stream.filter(Stream.fromEventListener(webView.window, "android-network-changed"), () => !webView.hidden())
   try fork.scoped Stream.runForEach(changed, effect () => {
-    const { discovery } = try networks.get()
-    if (discovery.tag === "NetworksFound" || discovery.tag === "NoNetworks") try look
+    const { discovery, phase } = try networks.get()
+    if (phase === "SavedNetworkPanel" || discovery.tag === "NetworksFound" || discovery.tag === "NoNetworks") try look
   })
 
   return {
@@ -182,7 +183,7 @@ const host = (wifi: WiFiPlugin) => Layer.effect(WifiPage, effect {
     },
     effect reopenPanel() {
       const n = try networks.get()
-      if (n.phase === "AndroidPanel" || n.phase === "PortalEntry") try panel()
+      if (n.phase === "AndroidPanel" || n.phase === "PortalEntry" || n.phase === "SavedNetworkPanel") try panel()
     },
     effect allowLocation() {
       if (!canAllowLocation(try networks.get(), "Person")) return
