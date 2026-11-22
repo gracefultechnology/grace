@@ -3045,7 +3045,7 @@ describe("the documents name what exists", () => {
     const vibeDeclared = ["apps/app", "packages/ui", "vibestack/studio"].filter((dir) => read(`${dir}/tsconfig.json`, root).includes(".vibe/declarations")).map((dir) => `${JSON.parse(read(`${dir}/package.json`, root)).name}#typecheck`);
     const [prose, selftest, fixture] = [await changedBy(append("spec/app/index.md")), await changedBy(append("vibestack/selftest.ts", "\n")), await changedBy(append("vibestack/fixtures/door.md"))];
     assert.deepEqual({
-      rootUsesCloudModels: reach("//#gen").has("//#gen:cloud"),
+      rootUsesElizaModels: reach("//#gen").has("//#gen:eliza"),
       notWaiting: real.filter((id) => !reach(id).has("//#gen")).sort(),
       lintWaitsFor: vibeDeclared.filter((id) => tasks.get("//#lint:js")!.dependencies.includes(id)),
       devWaitsFor: tasks.get("vibestack-studio#dev")!.dependencies.toSorted(),
@@ -3059,8 +3059,8 @@ describe("the documents name what exists", () => {
         assert.equal((await exec("git", ["add", "-A"], root)).status, 0);
       }),
     }, {
-      rootUsesCloudModels: true,
-      notWaiting: ["//#analyze", "//#build", "//#gen:cloud", "//#lint:css", "//#selftest:docs", "//#selftest:examples", "@repo/design-system#build", "@repo/ui#typecheck", "vibestack-studio#build", "vibestack-studio#dev", "vibestack-studio#test", "vibestack-studio#typecheck"],
+      rootUsesElizaModels: true,
+      notWaiting: ["//#analyze", "//#build", "//#gen:eliza", "//#lint:css", "//#selftest:docs", "//#selftest:examples", "@repo/design-system#build", "@repo/ui#typecheck", "vibestack-studio#build", "vibestack-studio#dev", "vibestack-studio#test", "vibestack-studio#typecheck"],
       lintWaitsFor: vibeDeclared, devWaitsFor: tasks.get("vibestack-studio#build")!.dependencies.toSorted(), prose: [[], true], selftest: [[], true], fixture: ["vibestack-studio#test"], leftovers: [],
     }, "the owners' tasks, @repo/kit's among them, wait for the root's gen, and install's //#build does not, so `gen --if-valid` after it keeps a half-edited spec from failing install");
   });
