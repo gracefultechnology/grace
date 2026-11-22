@@ -24,16 +24,18 @@ and traces (SPEC.md, "One spec tree").
 
 Dispatch the CI workflow with BillWorld enabled to run the Fleet cohorts and
 the released statement task. Fleet runs four deterministic shards against the
-same pinned 100-biller cohort. The aggregate requires all 100 distinct
-browser receipts. For a local Fleet run, set `GRACE_BILLWORLD_DIR` to the
+same numbered cohort in the pinned catalog. The aggregate independently
+derives its biller IDs, start and destination routes, and shard sizes from
+the catalog. It requires a passing browser receipt for every biller. For a local Fleet run, set `GRACE_BILLWORLD_DIR` to the
 pinned checkout used by CI. Set `GRACE_BILLWORLD_SHARD` to `1` through `4`
-for a 25-biller run, or omit it to run the full cohort. Fleet requires Python 3
+to run one shard, or omit it to run the full cohort. Fleet requires Python 3
 for its result-directory lock and an unmodified tracked Grace checkout.
-The local option `GRACE_BILLWORLD_COHORT=2` selects the next 100 distinct
-billers in the same deterministic order. Omit it or use `1` for the
-original cohort. In CI, choose the same number in the `billworld_cohort` dispatch input.
-To run the second cohort locally, set the fixture and
-hosted benchmark variables and use:
+Choose a positive cohort number through `GRACE_BILLWORLD_COHORT` locally or
+`billworld_cohort` in CI. Omit it for cohort 1. The pinned catalog has 595
+disjoint cohorts. Cohorts 1–594 contain 100 billers each. Cohort 595 contains
+77, assigned across the four shards in groups of 20, 19, 19, and 19. Each CI
+dispatch runs the selected cohort. To run cohort 2 locally, set the fixture
+and hosted benchmark variables and use:
 
 ```sh
 GRACE_BILLWORLD_COHORT=2 pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' --passWithNoTests
@@ -51,8 +53,8 @@ Fleet preserves the initial cohort manifest and every completed receipt,
 including failed grades. It runs only billers without a receipt and
 rebuilds scores from the receipts. A stopped writer releases the directory
 lock when its process exits. A score without a final receipt is rerun.
-The final aggregate still requires 100 successful receipts from the
-declared cohort at the same Grace commit.
+The final aggregate requires every receipt in the selected cohort at the
+same Grace commit.
 
 The released case is `task_md9`, mapped upstream to `malden-view-bill-v1`.
 CI checks out the public BillWorld revision
