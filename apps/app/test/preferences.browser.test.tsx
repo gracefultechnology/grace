@@ -97,5 +97,5 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
   const louder = page.getByRole("button", { name: "Louder", exact: true }).element();
   await act(() => Promise.resolve().then(() => { tap(louder); tap(louder); }));
   await expect.element(page.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuenow", "20");
-  await expect.poll(() => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 20 });
+  await expect.poll((): unknown => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 20 });
 });
