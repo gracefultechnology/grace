@@ -19,6 +19,13 @@ on:
         description: Run the pinned 100-biller browser qualification
         type: boolean
         default: true
+      billworld_cohort:
+        description: Select the first or second disjoint set of 100 Fleet billers
+        type: choice
+        options:
+          - '1'
+          - '2'
+        default: '1'
       billworld_resume_run:
         description: Optional earlier CI run ID at the exact same product commit
         type: string
@@ -45,6 +52,7 @@ concurrency:
 
 env:
   TURBO_TELEMETRY_DISABLED: "1"
+  GRACE_BILLWORLD_SELECTED_COHORT: ${{ inputs.billworld_cohort || '1' }}
   GRACE_BILLWORLD_REVISION: 8320228bccf0759f375b9633592612e0e570a526
 
 permissions:
@@ -368,6 +376,7 @@ jobs:
         env:
           GRACE_BILLWORLD_DIR: ${{ github.workspace }}/.cache/billworld
           GRACE_BILLWORLD_RESULTS: ${{ runner.temp }}/grace-fleet
+          GRACE_BILLWORLD_COHORT: ${{ env.GRACE_BILLWORLD_SELECTED_COHORT }}
           GRACE_BILLWORLD_SHARD: ${{ matrix.shard }}
           GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
@@ -402,6 +411,7 @@ jobs:
           root = Path(os.environ["GRACE_BILLWORLD_RESULTS"])
           revision = os.environ["GRACE_BILLWORLD_REVISION"]
           product_revision = os.environ["GRACE_PRODUCT_REVISION"]
+          cohort_number = int(os.environ["GRACE_BILLWORLD_SELECTED_COHORT"])
           cohort = None
           verified = {}
           documents = set()
@@ -440,6 +450,7 @@ jobs:
                   (revision, product_revision, shard, 4),
                   f"Wrong Fleet revision or shard metadata for shard {shard}",
               )
+              require(manifest.get("cohortNumber", 1) == cohort_number, f"Wrong selected Fleet cohort on shard {shard}")
               tasks = manifest["cohort"]
               ids = [task["taskId"] for task in tasks]
               require(len(ids) == len(set(ids)) == 100, "Fleet manifest must declare 100 unique billers")
@@ -460,6 +471,7 @@ jobs:
                    scores["attempted"], scores["total"], scores["passed"]) == (revision, product_revision, shard, 4, 100, 25, 25, 25),
                   f"Incomplete or failed Fleet score for shard {shard}",
               )
+              require(scores.get("cohortNumber", 1) == cohort_number, f"Wrong score cohort on shard {shard}")
               require(set(scores["cases"]) == set(assigned), f"Wrong case membership on shard {shard}")
               for task_id, task in assigned.items():
                   require(Path(task_id).name == task_id and task_id not in (".", ".."), "Invalid Fleet task ID")
@@ -493,10 +505,10 @@ jobs:
           require(len(verified) == 100, "Expected 100 distinct verified Fleet browser receipts")
           require(os.environ["GRACE_BILLWORLD_MATRIX_RESULT"] == "success", "A Fleet shard job did not succeed")
           (root / "qualification.json").write_text(json.dumps(
-              {"revision": revision, "productRevision": product_revision, "checked": 100, "passed": 100, "shards": 4, "cases": verified}, indent=2
+              {"revision": revision, "productRevision": product_revision, "cohortNumber": cohort_number, "checked": 100, "passed": 100, "shards": 4, "cases": verified}, indent=2
           ) + "\n")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
-              summary.write("Verified **100 of 100** distinct Fleet billers across four shards.\n")
+              summary.write(f"Verified **100 of 100** distinct Fleet billers in cohort {cohort_number} across four shards.\n")
           PY
       - uses: actions/upload-artifact@v7
         with:

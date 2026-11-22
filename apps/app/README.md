@@ -31,7 +31,8 @@ for a 25-biller run, or omit it to run the full cohort. Fleet requires Python 3
 for its result-directory lock and an unmodified tracked Grace checkout.
 The local option `GRACE_BILLWORLD_COHORT=2` selects the next 100 distinct
 billers in the same deterministic order. Omit it or use `1` for the
-original CI cohort. To run the second cohort locally, set the fixture and
+original cohort. In CI, choose the same number in the `billworld_cohort` dispatch input.
+To run the second cohort locally, set the fixture and
 hosted benchmark variables and use:
 
 ```sh
