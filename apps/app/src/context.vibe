@@ -230,6 +230,7 @@ function emailScreen(s: Scene): Part {
   if (mailAccounts(registry).length === 0) return { lines: ["Email shows that no email is on the tablet yet; Connect your email opens Settings, Email & calendar."], targets: [] }
   const shown = mail.filter((m) => showsMail(registry, m.account))
   const writing = shown.find((m) => m.mailbox.composeVisible)
+  if (writing?.mailbox.choosing === "PickNewEmail") return { lines: ["Email: the person is choosing who to write to, from the faces of their contacts."], targets: [] }
   if (writing !== undefined) return composing(s, writing.account, writing.mailbox)
   const open = shown.find((m) => m.account === openSource(registry, mail))
   if (open !== undefined && open.mailbox.view === "Attachment") return viewing(s, open.account, open.mailbox)

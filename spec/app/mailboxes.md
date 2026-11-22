@@ -387,20 +387,23 @@ pure def lawStartFromIsAChoice(registry: A::Accounts, sources: List[MailSource],
 
 Write, Forward and Share from Files open the recipient picker for To before
 the composer (`prototype/Grace Prototype.html:2009–2011`). That first
-picker’s Back reads "Inbox" and discards the new email. A picker opened from
+picker’s Back reads "Inbox" and discards the new email. Write opens it in the
+account a new email starts from, and the first person she picks there moves
+an email with nothing attached to the account that person starts from
+(previous rule), as changing From does (next rule). A picker opened from
 the composer, with + next to To, Cc or Bcc, reads "New email" and goes back
 to the composer keeping the whole draft, even after she removed its To. Cc and Bcc rows show once she taps Add next to
 "Cc/Bcc" or the draft already has a copy or a hidden copy. Whether the picker
-is open, which row it fills, the words typed in its search and whether she
-tapped Add are the screen’s own choices; the draft they change is the
-mailbox’s.
+is open, which row it fills and whether she tapped Add are the mailbox’s,
+kept with its draft ([email](./email.md)); only the words typed in its
+search are the screen’s own.
 
 ```quint
-type PickFor = PickNewEmail | PickTo | PickCc | PickBcc
 type PickerBack = DiscardToInbox | BackToComposer
-pure def pickerBack(pickingFor: PickFor): PickerBack = if (pickingFor == PickNewEmail) DiscardToInbox else BackToComposer
-pure def showsCopies(mailbox: E::Mailbox, opened: bool): bool =
-  opened or mailbox.draft.cc.size() > 0 or mailbox.draft.bcc.size() > 0
+pure def pickerBack(mailbox: E::Mailbox): PickerBack =
+  if (mailbox.choosing == E::PickNewEmail) DiscardToInbox else BackToComposer
+pure def showsCopies(mailbox: E::Mailbox): bool =
+  mailbox.ccOpen or mailbox.draft.cc.size() > 0 or mailbox.draft.bcc.size() > 0
 ```
 
 ### Changing From moves a draft never saved, whole and unapproved, and a saved draft stays

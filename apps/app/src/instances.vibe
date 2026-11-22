@@ -63,10 +63,10 @@ const keyPattern = /^(?:mail|calendar|held)\/(\d+)$/
 const decodeHeld = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Array(Held)))
 const decodeMailRecord = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))
 
-function mailWithDraftCount(text: string) {
+function mailWithNewFields(text: string) {
   const box = Option.getOrUndefined(decodeMailRecord(text))
-  return box !== undefined && !("draftsTotal" in box)
-    ? JSON.stringify({ ...box, draftsTotal: initialMail.draftsTotal })
+  return box !== undefined && Object.keys(initialMail).some((key) => !(key in box))
+    ? JSON.stringify({ ...initialMail, ...box })
     : text
 }
 
@@ -136,7 +136,7 @@ export const instances = Layer.effect(Instances, effect {
   }
   const openMail = (id: number) => effect {
     const key = mailKey(id)
-    const compatible = compatibleStore(key, (raw) => Effect.succeed(mailWithDraftCount(raw)))
+    const compatible = compatibleStore(key, (raw) => Effect.succeed(mailWithNewFields(raw)))
     const box = try Effect.orDie(Effect.provide(effect { return try MailMachine }, Layer.provide(storedMail(key), compatible)))
     try Effect.orDie(box.send({ type: "restartMailbox" }, "MailHost"))
     return box

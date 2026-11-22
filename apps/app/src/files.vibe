@@ -47,13 +47,13 @@ export service FileStorage { readonly port: FilesPort | undefined }
 export const fileStorage = (native: boolean, port: FilesPort | undefined) => Layer.sync(FileStorage, () => ({ port: native ? port : browserFiles() }))
 
 export type Origin = { readonly from: string; readonly subject: string }
-export type SavedPhoto = { readonly file: SavedFile; readonly src?: string }
+export type SavedPreview = { readonly file: SavedFile; readonly src?: string }
 
 export service Library {
   readonly changes: Stream.Stream<FileState>
   get(): FileState!!
   save(chosen: readonly SavedFile[], content: (file: SavedFile) => Attached!unknown, authorization: string, version: string, about: Origin, expectedOwner?: string): (FileFeedback | undefined)!!
-  photos(keep: (file: SavedFile) => boolean): (readonly SavedPhoto[] | undefined)!!
+  saved(keep: (file: SavedFile) => boolean): (readonly SavedPreview[] | undefined)!!
 }
 export const library = Layer.effect(Library, effect {
   const { port } = try FileStorage
@@ -74,14 +74,15 @@ export const library = Layer.effect(Library, effect {
     return { port: actual, owner, lease }
   }
 
-  effect function photos(keep: (file: SavedFile) => boolean) {
+  effect function saved(keep: (file: SavedFile) => boolean) {
     const { port: actual, owner, lease } = try leased()
     const catalog = try Schema.decodeUnknownEffect(FileCatalog)(try tryPromise(() => actual.list({ lease })))
     const kept = catalog.entries.flatMap((entry) => {
       const file = savedFile(entry, owner, lease)
-      return entry.kind === "photo" && keep(file) ? [{ entry, file }] : []
+      return keep(file) ? [{ entry, file }] : []
     })
     return try Effect.forEach([...kept].sort((a, b) => b.entry.savedAt - a.entry.savedAt), effect ({ entry, file }) => {
+      if (entry.kind !== "photo") return { file }
       const preview = Schema.decodeUnknownEffect(Preview)(try tryPromise(() => actual.preview({ lease, id: entry.id, page: 0, small: true }))) catch () => undefined
       return { file, src: preview?.id === entry.id ? preview.image : undefined }
     }, { concurrency: 3 })
@@ -125,6 +126,6 @@ export const library = Layer.effect(Library, effect {
 
   return { changes: SubscriptionRef.changes(status), get: () => SubscriptionRef.get(status),
     save: effect (chosen, content, authorization, version, about, expectedOwner) => serial.withPermit(scoped(save(chosen, content, authorization, version, about, expectedOwner))) catch () => "WriteFailed" as const,
-    photos: effect (keep) => serial.withPermit(scoped(photos(keep))) catch () => undefined }
+    saved: effect (keep) => serial.withPermit(scoped(saved(keep))) catch () => undefined }
 
 })

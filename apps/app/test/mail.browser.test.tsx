@@ -438,13 +438,16 @@ it("See all my email in one place", async () => {
   await click(piano);
   await click(page.getByRole("button", { name: "Share" }));
   // spec/app/mailboxes.md, "Writing starts at Who is it to?, and Cc and Bcc show once opened or used"
+  await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
   await expect.element(row("Inbox")).toHaveAttribute("aria-current", "page");
   await click(page.getByRole("button", { name: "Close Email" }));
   await click(page.getByRole("button", { name: /^Files/ }));
   await click(piano);
-  await click(page.getByRole("button", { name: "Share" }));
+  const share = page.getByRole("button", { name: "Share" });
+  await expect.element(share).toBeVisible();
+  await click(share);
   await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
   await click(page.getByRole("button", { name: "Susan" }));
   await expect.element(subject()).toHaveValue("A photo");
@@ -460,6 +463,21 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("button", { name: /^Email/ }));
   await click(row("Drafts"));
   await expect.element(email(/A photo/)).toBeVisible();
+
+  // spec/app/email.md, "The composer remembers who she is choosing for, Cc and Bcc, and where she attaches from"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"
+  await click(row("Inbox"));
+  await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
+  await click(page.getByRole("button", { name: "Reply" }));
+  await act(() => userEvent.fill(words(), "Here is the form."));
+  await click(page.getByRole("button", { name: "Attach" }));
+  await click(page.getByRole("menuitem", { name: "Choose a file" }));
+  const form = page.getByRole("dialog", { name: "Choose a file" }).getByRole("button", { name: "Visit form.pdf" });
+  await expect.element(form).toBeVisible();
+  await click(form);
+  await expect.element(page.getByRole("button", { name: "Remove Visit form.pdf" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Re: Reminder: your appointment tomorrow at 10 am" && m.labels.includes("SENT")).map((m) => m.attachments)))
+    .toEqual([[{ filename: "Visit form.pdf" }]]);
 }, 300_000);
 
 it("Write or reply and confirm before sending", async () => {
@@ -571,9 +589,20 @@ it("Write or reply and confirm before sending", async () => {
   await expect.element(email(/^To Susan.*Lunch next week/)).not.toBeInTheDocument();
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week"))).toEqual([]);
 
-  // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
+  // spec/app/email.md, "Sending a saved draft takes it out of Drafts"
   await click(row("All inboxes"));
   await expect.element(row("Drafts 1")).toBeVisible();
+  await click(row("Drafts"));
+  await click(email(/^To Susan.*Tea on Friday/));
+  await expect.element(subject()).toHaveValue("Tea on Friday");
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(page.getByText("Sent to Susan")).toBeVisible();
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Tea on Friday").map((m) => m.labels.includes("DRAFT")))).toEqual([false]);
+  await expect.element(email(/^To Susan.*Tea on Friday/)).not.toBeInTheDocument();
+  await expect.element(row("Drafts 1")).not.toBeInTheDocument();
+
+  // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
+  await click(row("All inboxes"));
   await opened(/Ruth/, "Lunch on Sunday?");
   await host("Offline");
   await expect.element(page.getByRole("button", { name: "Reply" })).toBeVisible();
@@ -629,9 +658,8 @@ it("Write or reply and confirm before sending", async () => {
 
 it(`Keep the latest draft count (spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open")`, async () => {
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-  const captured = Latch.makeUnsafe();
-  const release = Latch.makeUnsafe();
-  const settled = Latch.makeUnsafe();
+  const latches = () => ({ captured: Latch.makeUnsafe(), release: Latch.makeUnsafe(), settled: Latch.makeUnsafe() });
+  let { captured, release, settled } = latches();
   const fetch = window.fetch.bind(window);
   let hold = false;
   const delayed: typeof fetch = async (input, init) => {
@@ -639,12 +667,13 @@ it(`Keep the latest draft count (spec/app/email.md, "Drafts shows the provider's
     const method = init?.method ?? (input instanceof Request ? input.method : "GET");
     if (!hold || method !== "GET" || !path.endsWith("/inbox-v1/drafts")) return fetch(input, init);
     hold = false;
+    const held = { captured, release, settled };
     const reader = Fiber.getCurrent();
     if (!reader) throw new Error("The draft count has no active reader");
-    reader.addObserver(() => settled.openUnsafe());
+    reader.addObserver(() => held.settled.openUnsafe());
     const response = await fetch(input, init);
-    captured.openUnsafe();
-    await Effect.runPromise(release.await);
+    held.captured.openUnsafe();
+    await Effect.runPromise(held.release.await);
     return response;
   };
   localStorage.clear();
@@ -670,6 +699,14 @@ it(`Keep the latest draft count (spec/app/email.md, "Drafts shows the provider's
     await expect.element(row("Drafts 2")).toBeVisible();
     await act(async () => { release.openUnsafe(); await Effect.runPromise(settled.await); });
     await expect.element(row("Drafts 2")).toBeVisible();
+
+    ({ captured, release, settled } = latches());
+    await save("Coffee on Monday", true);
+    await Effect.runPromise(captured.await);
+    await opened(/Main St Clinic/, "Reminder: your appointment tomorrow at 10 am");
+    await act(async () => { release.openUnsafe(); await Effect.runPromise(settled.await); });
+    await click(page.getByRole("button", { name: "Back to Inbox" }));
+    await expect.element(row("Drafts 3")).toBeVisible();
   } finally {
     release.openUnsafe();
     await view.dispose();
