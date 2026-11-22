@@ -999,6 +999,40 @@ function agentEvents(listeners: Map<string, (input: unknown) => void>): Pick<Emb
   };
 }
 
+it('Ask the embedded agent for help connecting email (spec/app/conversation.md, "A turn may start without her words, marked with where it came from")', async () => {
+  const { agent, requests, answer } = deviceAgent();
+  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: true, agent }));
+  const view = tabletView(runtime);
+  await view.render();
+  try {
+    const workspace = await runtime.runPromise(Workspaces);
+    const conversation = () => runtime.runSync(workspace.get()).assistant.conversation;
+    await expect.poll(() => runtime.runSync(workspace.get()).device.reasoningAvailable).toBe(true);
+    await act(() => runtime.runPromise(workspace.send({ type: "visit", destination: "Email" }, "Person")));
+    const help = page.getByRole("button", { name: "Ask Grace to help" });
+    await act(() => help.click());
+    await expect.poll(() => sentTurn(requests[0]?.body).text).toContain("help connecting their email");
+    expect(sentTurn(requests[0].body).said).toBeUndefined();
+    expect(conversation().messages).toEqual([]);
+    await answer(0, { text: "Which email do you use?", isQuestion: true, answers: ["Gmail"] });
+    await act(() => page.getByRole("button", { name: "Gmail", exact: true }).click());
+    await expect.poll(() => sentTurn(requests[1]?.body).said).toBe("Gmail");
+    await answer(1, { text: "Would you like to open Calendar?", isQuestion: true, answers: ["Yes", "No"] });
+    await expect.element(page.getByRole("button", { name: "Yes", exact: true })).toBeVisible();
+    const before = conversation().messages;
+    await act(() => help.click());
+    await expect.poll(() => sentTurn(requests[2]?.body).text).toContain("help connecting their email");
+    expect(sentTurn(requests[2].body).said).toBeUndefined();
+    expect(conversation().messages).toEqual(before);
+    expect(conversation().answers).toEqual([]);
+    await answer(2, { text: "Let’s connect your email.", isQuestion: false, answers: [], actions: [{ kind: "confirmProposal" }] });
+    await expect.element(page.getByText("Let’s connect your email.", { exact: true })).toBeVisible();
+    expect(runtime.runSync(workspace.get()).device.surface).toBe("Email");
+  } finally {
+    await view.dispose();
+  }
+});
+
 it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
   // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
   const { agent, requests, answer, listeners, stopped, created, refused } = deviceAgent();

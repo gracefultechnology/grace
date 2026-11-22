@@ -31,20 +31,22 @@ export type CloudLink = { readonly url: string; readonly key: string }
 export type GuidedCheck = "Confirmed" | "NotFound" | "Several" | "Past" | "Changed" | "Covered" | "Used" | "PrivateForm" | "Refused"
 export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer" }>
 
+type TurnSource = { readonly origin: Exclude<Origin, "AskedForHelp"> } | { readonly origin: "AskedForHelp"; readonly context: string }
+
 export service Conversation {
   say(input: PersonTurn): boolean!!
-  turnOrigin(generation: number): Origin!!
+  turnSource(generation: number): TurnSource!!
   checkGuidedRead(): GuidedCheck!!
   help(need: Help): void!!
   startReadReview(revision: number): boolean!!
   resumeReadPlan(): boolean!!
 }
 
-const origins: Record<PersonTurn["tag"], Origin> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
+const origins: Record<PersonTurn["tag"], "Typed" | "Tapped"> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
 const apology = "Sorry, I didn’t catch that. Could you say it again?"
 const noControls = "This conversation shows no controls under your reply, so never offer {kind:\"privateSignIn\"}: tell the person to tap Private sign-in on the website instead."
 const hostStarted = "(The person has not spoken: the tablet started this turn. Answer what it just told you happened.)"
-const helpAsked = "(The person tapped Ask Grace: what they want help with is what the tablet just told you.)"
+export const helpAsked = "(The person tapped Ask Grace: what they want help with is what the tablet just told you.)"
 const askedForHelp = { tag: "HostTurn", turnOrigin: "AskedForHelp" } as const
 
 schema Delta { content?: string }
@@ -244,7 +246,8 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const agent = try Agent
   const native = try NativePage
   const managed = try ManagedReads
-  const asked = try Ref.make<{ readonly generation: number; readonly origin: Origin }>({ generation: -1, origin: "FromDevice" })
+  const accepting = try Semaphore.make(1)
+  const asked = try Ref.make<{ generation: number; source: TurnSource } | undefined>(undefined)
   const last = try Ref.make<Last>({ notDone: [], unread: [] })
   const told = try Ref.make<readonly string[]>([])
   const look = try looker()
@@ -298,13 +301,13 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   try following(registry.changes, effect (before: Registry, after: Registry) => toldOfAccounts(before, after))
   try fork.scoped Stream.runForEach(news.reports, effect (report) => tell(toldOfCalendar(try look(), report)))
 
-  effect function turnOrigin(generation: number): Origin!! {
-    const turn = try Ref.get(asked)
-    return turn.generation === generation ? turn.origin : "FromDevice"
+  effect function turnSource(generation: number): TurnSource!! {
+    const turn = try accepting.withPermit(Ref.get(asked))
+    return turn?.generation === generation ? turn.source : { origin: "FromDevice" }
   }
 
   effect function request(token: number, workVersion: number) {
-    return { generation: token, workVersion, origin: try turnOrigin(token) } as const
+    return { generation: token, workVersion, origin: (try turnSource(token)).origin } as const
   }
 
   effect function fail(token: number, workVersion: number) {
@@ -328,7 +331,9 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const outgoing = window.map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: text }))
     const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
     const news = try Ref.get(told)
-    const system = { role: "system", content: `${character.system}\n\n${noControls}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(last), news, try managed.guidedSelection()).text}` }
+    const source = try turnSource(token)
+    const help = source.origin === "AskedForHelp" ? "\n" + source.context : ""
+    const system = { role: "system", content: `${character.system}\n\n${noControls}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(last), news, try managed.guidedSelection()).text}${help}` }
     const { origin } = w.assistant.conversation
     const started = origin === "HerRequest" ? [] : [{ role: "user", content: origin === "AskedForHelp" ? helpAsked : hostStarted }]
     const said = ask(link, [system, ...outgoing, ...started]) catch () => undefined
@@ -366,11 +371,13 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     try Ref.set(last, { notDone: applied.filter((a) => a.outcome !== "Applied"), unread })
   }
 
-  effect function take(input: PersonTurn | typeof askedForHelp, origin: Origin) {
-    const taken = workspace.send({ type: "interact", input }, "Person") catch () => undefined
-    if (taken === undefined) return false
-    try Ref.set(asked, { generation: taken.state.assistant.conversation.generation, origin })
-    return true
+  function take(input: PersonTurn | typeof askedForHelp, source: TurnSource) {
+    return accepting.withPermit(Effect.uninterruptible(effect {
+      const taken = workspace.send({ type: "interact", input }, "Person") catch () => undefined
+      if (taken === undefined) return false
+      try Ref.set(asked, { generation: taken.state.assistant.conversation.generation, source })
+      return true
+    }))
   }
 
   if (link !== undefined) {
@@ -382,7 +389,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   }
 
   return {
-    turnOrigin,
+    turnSource,
     startReadReview: recovery.begin,
     resumeReadPlan: effect () => {
       const state = try workspace.get()
@@ -488,10 +495,10 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       if (accepted !== undefined) try recovery.keepProgress()
       return accepted === undefined ? "Refused" : "Confirmed"
     },
-    say: (input) => take(input, origins[input.tag]),
+    say: (input) => take(input, { origin: origins[input.tag] }),
     help: effect (need) => {
-      try tell(helpWith(need, try registry.get()))
-      if (link !== undefined) try take(askedForHelp, "AskedForHelp")
+      const context = withhold({ text: helpWith(need, try registry.get()), passwords: [] })
+      try take(askedForHelp, { origin: "AskedForHelp", context })
     }
   }
 }).pipe(Layer.provide(Layer.merge(client, Digest.layerWebCrypto)))
