@@ -23,6 +23,7 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   callback.searchParams.set("code", "c".repeat(64));
   const ambiguous = new URL(callback);
   ambiguous.searchParams.append("code", "d".repeat(64));
+  const rejectedRedirects = ["https://elsewhere.example.test/android/auth/callback", ambiguous.href];
   const returns: string[] = [];
   const returned = Latch.makeUnsafe();
   const browser = cdp();
@@ -34,6 +35,7 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   browser.on("Fetch.requestPaused", captureReturn);
   let accountId = "tablet-owner";
   const authorizations: unknown[] = [];
+  const authorizationArrived = Latch.makeUnsafe();
   let beforeReply: ((path: string) => Promise<void>) | undefined;
   const network = window.fetch.bind(window);
   const service = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
@@ -42,9 +44,9 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
     if (path === "/api/auth/session") return Response.json({ account: { id: accountId, email: accountId + "@example.test" } });
     if (path !== "/api/auth/device/authorize") return network(input, init);
     authorizations.push(await new Response(init?.body).json());
+    authorizationArrived.openUnsafe();
     if (authorizations.length === 1) return new Response(null, { status: 503 });
-    if (authorizations.length === 2) return Response.json({ redirectUrl: "https://elsewhere.example.test/android/auth/callback" });
-    return Response.json({ redirectUrl: authorizations.length === 3 ? ambiguous.href : callback.href });
+    return Response.json({ redirectUrl: rejectedRedirects[authorizations.length - 2] ?? callback.href });
   });
   onTestFinished(async () => {
     browser.off("Fetch.requestPaused", captureReturn);
@@ -63,15 +65,18 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   const signIn = page.getByRole("button", { name: "Sign in on tablet" });
   await act(() => userEvent.click(signIn));
   await expect.element(page.getByRole("alert")).toBeVisible();
-  await act(() => userEvent.click(signIn));
   const firstChoice = { challenge, state, expectedAccountId: accountId };
-  await expect.poll(() => authorizations).toEqual([firstChoice, firstChoice]);
-  await expect.element(page.getByRole("button", { name: "Cancel tablet sign-in" })).toBeVisible();
-  await act(() => userEvent.click(signIn));
-  const retries = [firstChoice, firstChoice, firstChoice];
-  await expect.poll(() => authorizations).toEqual(retries);
-  await expect.element(signIn).toBeEnabled();
-  expect(returns).toEqual([]);
+  const retries = [firstChoice];
+  for (let retried = 0; retried < rejectedRedirects.length; retried++) {
+    authorizationArrived.closeUnsafe();
+    await act(() => userEvent.click(signIn));
+    await Effect.runPromise(authorizationArrived.await);
+    retries.push(firstChoice);
+    expect(authorizations).toEqual(retries);
+    await expect.element(page.getByRole("button", { name: "Cancel tablet sign-in" })).toBeVisible();
+    await expect.element(signIn).toBeEnabled();
+    expect(returns).toEqual([]);
+  }
 
   accountId = "second-owner";
   await act(() => userEvent.click(signIn));
