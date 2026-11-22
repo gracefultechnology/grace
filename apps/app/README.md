@@ -325,16 +325,16 @@ must publish Android Digital Asset Links for the release signer to validate the 
 sessions expire after seven days, when the person signs in again. Standalone
 password recovery uses a fresh approval on Grace Cloud's registered browser page.
 
-Shared Eliza Cloud uses the selected deployment's registered App Link at
-`/auth/grace/callback`. Password backup and recovery ask for fresh native Google
-verification through Steward and a separate native choice for the action.
-Each deployment accepts grants for its own acknowledged account and request.
-Shared profiles compile Eliza OS’s Android authentication client from
-`packages/os/android/cloud-auth`. It exchanges a fresh Steward session at
-`POST /api/v1/app-auth/mobile/password-backup` and checks the returned account
-and organization before recovery. The standalone profile uses Grace Cloud’s
-browser approval and the native secure-store client. Each APK registers one
-`GraceAccount` implementation.
+Shared profiles use Eliza OS’s Android `sign-in` module. Google sign-in can use
+the Android picker or the selected deployment’s verified `/auth/grace/callback`
+App Link. Existing shared accounts must sign in again with the same account
+and organization before Grace uses the new native credential store. The
+upgrade preserves the previous encrypted owner record and the local vault.
+
+Shared and standalone builds request fresh Passwords approval on the selected
+Cloud’s first-party browser page. The native secure-store client checks the
+account, organization and current approval before recovery. Each APK registers
+one `GraceAccount` implementation.
 
 This release pins Eliza `0633f633`, which includes the shared Android client
 and the protected Passwords approval return. Upstream retired `cloud-auth` in
