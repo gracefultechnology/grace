@@ -5,8 +5,6 @@ import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
-import java.net.HttpURLConnection;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -22,7 +20,6 @@ import org.json.JSONObject;
 
 final class ManagedCalendarReminders {
  static final String PREFIX = "owned-calendar-";
- private static final String ENDPOINT = BuildConfig.CLOUD_API_ORIGIN + "/api/v1/calendar-reminders/device";
  private static final Executor WORK = Executors.newSingleThreadExecutor();
  record ApprovedReminder(String id, String title, long fireAt, String binding) {}
  record LocalReminder(String id, String status, long alarmAt) {
@@ -121,7 +118,7 @@ final class ManagedCalendarReminders {
   String stamp = null;
   do {
    if (!owner.equals(GracePasswordsOwner.stableSession(context))) throw new IllegalStateException();
-   var page = get(cursor == null ? ENDPOINT : ENDPOINT + "?page=" + Uri.encode(cursor), owner);
+   var page = GraceOwnerRead.read(GraceOwnerRead.Endpoint.REMINDERS, cursor == null ? "" : "?page=" + Uri.encode(cursor), owner);
    var rows = page.getJSONArray("reminders");
    if (!page.has("nextPage") || rows.length() > 64) throw new IllegalStateException();
    for (int i = 0; i < rows.length(); i++) {
@@ -193,7 +190,7 @@ final class ManagedCalendarReminders {
   var binding = new JSONArray(GraceRecordStorePlugin.load(bindingFile(context, id)).value());
   var owner = GracePasswordsOwner.stableSession(context);
   if (owner == null || !allowed(context, id)) throw new IllegalStateException();
-  var target = get(ENDPOINT + "?verify=" + Uri.encode(binding.getString(0)), owner);
+  var target = GraceOwnerRead.read(GraceOwnerRead.Endpoint.REMINDERS, "?verify=" + Uri.encode(binding.getString(0)), owner);
   if (!target.getString("version").equals(binding.getString(1)) ||
       !target.getString("grantId").equals(binding.getString(2)) ||
       target.getLong("fireAt") != binding.getLong(3) ||
@@ -228,28 +225,5 @@ final class ManagedCalendarReminders {
  private static File bindingFile(Context context, String id) {
   if (!id.matches("owned-calendar-[a-f0-9]{24}-[a-f0-9]{48}")) throw new IllegalArgumentException();
   return new File(GraceRecordStorePlugin.folder(context, "calendar-reminder-bindings"), id + ".json");
- }
-
- private static JSONObject get(String url, CloudDeviceAccount.Session owner) throws Exception {
-  var connection = (HttpURLConnection) URI.create(url).toURL().openConnection();
-  connection.setInstanceFollowRedirects(false);
-  connection.setConnectTimeout(3000);
-  connection.setReadTimeout(5000);
-  connection.setRequestProperty("Accept", "application/json");
-  connection.setRequestProperty("Authorization", "Bearer " + owner.token());
-  try {
-   if (connection.getResponseCode() != 200) throw new IllegalStateException();
-   try (var stream = connection.getInputStream()) {
-    byte[] bytes = new byte[65_536];
-    int size = 0;
-    while (size < bytes.length) {
-     int read = stream.read(bytes, size, bytes.length - size);
-     if (read < 0) break;
-     size += read;
-    }
-    if (size == bytes.length && stream.read() != -1) throw new IllegalStateException();
-    return new JSONObject(new String(bytes, 0, size, StandardCharsets.UTF_8));
-   }
-  } finally { connection.disconnect(); }
  }
 }
