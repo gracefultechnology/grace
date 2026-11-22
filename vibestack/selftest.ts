@@ -12,7 +12,7 @@ import { after, before, describe, test } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { gzipSync, zstdDecompressSync } from "node:zlib";
 import { Miniflare } from "miniflare";
-import { cacheCredentials, collectGarbage, entry, isActionEntry, recall, store, withFormalCache } from "./cache.ts";
+import { cacheCredentials, collectGarbage, entry, isActionEntry, recall, store, withFormalCache, type installedProgram as lookupTool } from "./cache.ts";
 import { LIB_FILE, isolatedCopies, parseProofFile, readVerdict, splice } from "./prove.ts";
 import { exec, run as tool } from "./run.ts";
 import { pendingSpecs, showPending, writeLedger } from "./review.ts";
@@ -3749,7 +3749,7 @@ test("the same installed Quint shares verification results across checkouts and 
     return { root, shim };
   };
   const identity = async (root: string) => {
-    const { installedProgram }: typeof import("./cache.ts") = await import(path.join(root, "vibestack/cache.ts"));
+    const { installedProgram }: { installedProgram: typeof lookupTool } = await import(path.join(root, "vibestack/cache.ts"));
     const program = installedProgram(root, "quint");
     assert.ok(program);
     return program.id;
@@ -3764,6 +3764,35 @@ test("the same installed Quint shares verification results across checkouts and 
     fs.writeFileSync(right.shim, changed);
     assert.notEqual(await identity(right.root), expected);
   }
+  const publication = await exec(process.execPath, ["--input-type=module", "--eval", `
+    import assert from "node:assert/strict";
+    import fs from "node:fs";
+    import { entry, installedProgram, recall, steady, store } from "./vibestack/cache.ts";
+    const memory = { root: ".", fresh: false, used: new Set() };
+    const [first, next, tainted] = await Promise.all(["first", "next", "tainted"].map(key => entry(".", "action", [key])));
+    const aggregate = await entry(".", "types", ["together"]);
+    const program = installedProgram(".", "quint");
+    const write = to => store(memory, to, to.name, { program, began: performance.now() });
+    await steady(async () => {
+      write(first);
+      assert.ok(fs.existsSync(first.file), "the first completed action survives interruption");
+      write(next);
+      assert.equal(recall(memory, next), next.name, "the check can use its own completed action");
+      store(memory, aggregate, [first.name, next.name]);
+      assert.ok([first, next, aggregate].every(item => fs.existsSync(item.file)), "a stage publishes its verified actions");
+    });
+    await assert.rejects(steady(async () => {
+      write(first);
+      const source = "node_modules/@informalsystems/quint/cli.js";
+      const original = fs.readFileSync(source);
+      fs.appendFileSync(source, "export const changed = true;");
+      fs.writeFileSync(source, original);
+      write(tainted);
+    }), /tool installation changed/);
+    assert.equal(fs.existsSync(tainted.file), false, "an edit and restore cannot publish a stale action");
+    assert.equal(recall(memory, first), first.name, "the prior verified action survives");
+  `], left.root);
+  assert.equal(publication.status, 0, publication.stderr);
 });
 
 test("a trace integer of 16 or more digits that Quint wrote as a BigNumber decodes to the same integer", () => {
