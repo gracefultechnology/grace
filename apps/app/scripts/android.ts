@@ -262,7 +262,7 @@ function agentRuntime(abi: Abi) {
     if (!existsSync(bundleFile) || !existsSync(bundleManifest)
         || Schema.decodeUnknownSync(BundlePin)(readJson(bundleManifest)).sourceCommit !== commit) {
       const sourceEdits = git(upstream, "status", "--porcelain", "--", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
-        "packages/core", "packages/agent", "packages/os", "spec", "vibestack");
+        "packages/core", "packages/cloud", "packages/agent", "packages/os", "spec", "vibestack");
       if (sourceEdits) throw new Error("The Eliza device source has uncommitted changes");
       bundleAgent(commit, bundle);
     }
