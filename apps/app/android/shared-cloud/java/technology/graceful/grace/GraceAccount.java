@@ -49,8 +49,9 @@ public final class GraceAccount extends ElizaSignInPlugin {
   if (GracePasswordsOwner.accountChanging()) throw new IllegalStateException("Account change in progress");
   long generation = GracePasswordsOwner.generation();
   var current = DeviceCustody.reader(context, API.toString()).current();
-  if (current == null || new SharedGraceCredentials(context).legacyOwner() != null) return null;
+  if (current == null) return null;
   var owner = new SharedGraceCredentials.Owner(current.account().userId(), current.account().organizationId());
+  if (!new SharedGraceCredentials(context).exposesCanonical(owner)) return null;
   if (GracePasswordsOwner.accountChanging() || generation != GracePasswordsOwner.generation()) {
    throw new IllegalStateException("Account change in progress");
   }
@@ -146,6 +147,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
     if (environment != expected) throw new IllegalStateException("Mismatched shared Cloud profile");
     try {
      changeAccount(context, () -> {
+      legacy.signOut();
       delegate.signOut(environment);
       return null;
      });
@@ -212,8 +214,17 @@ public final class GraceAccount extends ElizaSignInPlugin {
   if (call.getData().has("method") && !"browser".equals(method)) { call.reject("Unknown sign-in method"); return; }
   ACCOUNT.execute(() -> {
    try {
-    if (session(getContext()) != null) { call.reject("Sign out before adding another account"); return; }
-    new SharedGraceCredentials(getContext()).legacyOwner();
+    synchronized (CREDENTIAL_CHANGE) {
+     var legacy = new SharedGraceCredentials(getContext());
+     legacy.recoverOwner();
+     if (session(getContext()) != null) { call.reject("Sign out before adding another account"); return; }
+     var held = DeviceCustody.reader(getContext(), API.toString()).current();
+     if (held != null && changeAccount(getContext(), () ->
+      legacy.acceptCanonical(new SharedGraceCredentials.Owner(held.account().userId(), held.account().organizationId())))) {
+      finishEnrollment(call);
+      return;
+     }
+    }
     var lease = GracePasswordsOwner.beginEnrollment(getContext());
     enrollment = lease;
     try {
