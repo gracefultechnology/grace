@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"
 import { Schema } from "effect"
 
 export const PageId = Schema.String.pipe(Schema.brand("PageId"))
@@ -9,6 +9,10 @@ export type RequestKey = typeof RequestKey.Type
 
 export const Url = Schema.String.pipe(Schema.brand("Url"))
 export type Url = typeof Url.Type
+
+export const SecurePage = Url.check(Schema.isPattern(/^https:\/\/[a-z0-9.-]+(?::\d+)?(?:[/?#]\S*)?$/i))
+
+export const LoopbackPage = Url.check(Schema.isPattern(/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|[a-z0-9.-]+\.localhost)(?::\d+)?(?:[/?#]\S*)?$/i))
 
 const surface = {
   id: PageId,
@@ -55,13 +59,20 @@ export const SitePermissionRequested = Schema.Struct({
 
 export const SitePermissionWithdrawn = Schema.Struct({ ...surface, requestId: RequestKey })
 
-export const ExternalLinkRequested = Schema.Struct({ ...surface, url: Url, handoff: Schema.Literals(["send-to", "dial", "view", "refuse"]) })
+export const ExternalLinkRequested = Schema.Struct({
+  ...surface,
+  url: Url,
+  handoff: Schema.Literals(["send-to", "dial", "view", "refuse"]),
+  fallbackUrl: Schema.optional(Schema.NullOr(Schema.String))
+})
 
 export const IdentityProviderRequested = Schema.Struct({ ...surface, requestId: RequestKey, provider: Schema.Literals(["google", "facebook"]) })
 
 export const SitePermissionAnswer = Schema.Struct({ outcome: Schema.Literals(["granted", "denied", "android-refused", "ended"]) })
 
 export const PermissionClosed = Schema.Struct({ code: Schema.Literal("SITE_PERMISSION_CLOSED") })
+
+export const AppUnavailable = Schema.Struct({ code: Schema.Literal("EXTERNAL_APP_UNAVAILABLE") })
 
 export const PurgeResult = Schema.Struct({ clean: Schema.optional(Schema.Boolean) })
 
