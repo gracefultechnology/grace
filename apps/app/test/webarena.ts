@@ -1,10 +1,12 @@
-import { execFile, execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { realpathSync } from "node:fs";
-import { promisify } from "node:util";
+import { createInterface } from "node:readline";
+import { Readable } from "node:stream";
 import { Schema } from "effect";
+import type { TestProject } from "vitest/node";
 
-const execute = promisify(execFile);
 const revision = "dce04686a56253aefba7b18a4fa0937cf1dc987b";
 const catalogPath = "config_files/test.raw.json";
 const urlTask = {
@@ -27,21 +29,151 @@ const Outcome = Schema.Struct({
   graceTerminal: Schema.optional(Schema.NullOr(Schema.String)),
   failure: Schema.optional(Schema.String),
 });
+const Scores = Schema.Tuple([Schema.Literals([0, 1]), Schema.Literals([0, 1])]);
 const officialUrlEvaluator = `
 import json
+import os
 from pathlib import Path
 import sys
 from tempfile import NamedTemporaryFile
 sys.path.insert(0, sys.argv[1])
 from evaluation_harness import URLEvaluator
 from evaluation_harness.helper_functions import PseudoPage
-with NamedTemporaryFile("w", suffix=".json") as config:
-    json.dump(json.loads(sys.argv[2]), config)
-    config.flush()
-    print(json.dumps([URLEvaluator()([], Path(config.name), PseudoPage(None, url), None) for url in sys.argv[3:]]))
+with os.fdopen(3, "w") as output:
+    print("ready", file=output, flush=True)
+    for line in sys.stdin:
+        request = json.loads(line)
+        with NamedTemporaryFile("w", suffix=".json") as config:
+            json.dump(request["fixture"], config)
+            config.flush()
+            scores = [URLEvaluator()([], Path(config.name), PseudoPage(None, url), None) for url in request["urls"]]
+        print(json.dumps(scores), file=output, flush=True)
 `;
 
-export function webArena({ checkout, python }: { checkout: string; python: string }) {
+export class WebArenaEvaluatorError extends Error {
+  readonly phase: "startup" | "grading";
+  readonly reason: "spawn" | "exit" | "protocol" | "deadline" | "closed";
+
+  constructor(phase: WebArenaEvaluatorError["phase"], reason: WebArenaEvaluatorError["reason"]) {
+    super(`Pinned WebArena URL evaluator ${phase} failed (${reason})`);
+    this.phase = phase;
+    this.reason = reason;
+  }
+}
+
+function spawnEvaluator(python: string, root: string, env: NodeJS.ProcessEnv) {
+  try {
+    return spawn(python, ["-IB", "-c", officialUrlEvaluator, root], {
+      env, cwd: root, stdio: ["pipe", "ignore", "ignore", "pipe"],
+    });
+  } catch {
+    throw new WebArenaEvaluatorError("startup", "spawn");
+  }
+}
+
+type WorkerOptions = {
+  python: string; root: string; env: NodeJS.ProcessEnv; startupTimeoutMs?: number; gradingTimeoutMs?: number;
+};
+type Evaluation = { fixture: string; urls: readonly [string, string] };
+
+function launchEvaluator({ python, root, env, startupTimeoutMs = 30 * 60_000, gradingTimeoutMs = 30_000 }: WorkerOptions) {
+  const child = spawnEvaluator(python, root, env);
+  const input = child.stdin;
+  const output = child.stdio[3];
+  const reader = output instanceof Readable ? createInterface({ input: output, crlfDelay: Infinity }) : undefined;
+  const lines = reader?.[Symbol.asyncIterator]();
+  type Stop = "spawn" | "exit" | "closed";
+  const terminal = new AbortController();
+  const stop = (reason: Stop) => terminal.abort(reason);
+  const reaped = new Promise<void>((resolve) => {
+    child.once("close", () => resolve());
+  });
+  child.once("error", () => stop("spawn"));
+  child.once("exit", () => stop("exit"));
+  input?.on("error", () => stop("exit"));
+  output?.on("error", () => stop("exit"));
+  reader?.on("error", () => stop("exit"));
+  let closing: Promise<void> | undefined;
+  const close = () => closing ??= (async () => {
+    stop("closed");
+    reader?.close();
+    input?.destroy();
+    child.kill("SIGKILL");
+    await reaped;
+  })();
+
+  const read = async (phase: WebArenaEvaluatorError["phase"], deadline?: AbortSignal) => {
+    if (closing || !lines) throw new WebArenaEvaluatorError(phase, closing ? "closed" : "protocol");
+    const signal = deadline ? AbortSignal.any([terminal.signal, deadline]) : terminal.signal;
+    const finished = new AbortController();
+    const failure = () => {
+      const reason: unknown = signal.reason;
+      return new WebArenaEvaluatorError(phase, reason === "spawn" || reason === "closed" ? reason : deadline?.aborted ? "deadline" : "exit");
+    };
+    const interrupted = async (): Promise<never> => {
+      if (!signal.aborted) await once(signal, "abort", { signal: finished.signal });
+      throw failure();
+    };
+    try {
+      const next = await Promise.race([interrupted(), lines.next()]);
+      if (next.done || signal.aborted) throw failure();
+      return next.value;
+    } finally {
+      finished.abort();
+    }
+  };
+  const ready = (async () => {
+    try {
+      if (await read("startup", AbortSignal.timeout(startupTimeoutMs)) !== "ready") throw new WebArenaEvaluatorError("startup", "protocol");
+    } catch (error) {
+      await close();
+      throw error instanceof WebArenaEvaluatorError ? error : new WebArenaEvaluatorError("startup", "protocol");
+    }
+  })();
+  const grade = async ({ fixture, urls }: Evaluation) => {
+    await ready;
+    if (closing || !input) throw new WebArenaEvaluatorError("grading", "closed");
+    try {
+      const task: unknown = JSON.parse(fixture);
+      input.write(JSON.stringify({ fixture: task, urls }) + "\n");
+      const response = await read("grading", AbortSignal.timeout(gradingTimeoutMs));
+      return Schema.decodeUnknownSync(Scores)(JSON.parse(response));
+    } catch (error) {
+      await close();
+      throw error instanceof WebArenaEvaluatorError ? error : new WebArenaEvaluatorError("grading", "protocol");
+    }
+  };
+  return { ready, grade, close, stopped: terminal.signal };
+}
+
+export function startWebArenaWorker(options: WorkerOptions) {
+  let worker = launchEvaluator(options);
+  const ready = worker.ready;
+  let closed = false;
+  let queue = Promise.resolve();
+  const grade = (request: Evaluation) => {
+    const result = queue.then(async () => {
+      if (worker.stopped.aborted) {
+        await worker.close();
+        if (closed) throw new WebArenaEvaluatorError("grading", "closed");
+        worker = launchEvaluator(options);
+      }
+      return worker.grade(request);
+    });
+    queue = result.then(() => {}, () => {});
+    return result;
+  };
+  const close = () => {
+    closed = true;
+    return worker.close();
+  };
+  return { ready, grade, close };
+}
+
+type Case = { taskId: string; intent: string; startUrl: string };
+type Evidence = { guided: boolean; authenticatedFixture: boolean };
+
+export function webArena({ checkout, python, cases }: { checkout: string; python: string; cases: readonly Case[] }) {
   const root = realpathSync(checkout);
   const git = (args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", timeout: 15_000 });
   if (git(["rev-parse", "HEAD"]).trim() !== revision) throw new Error("Use the pinned WebArena checkout");
@@ -53,7 +185,9 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
   const tasks = Schema.decodeUnknownSync(Schema.Array(Schema.Record(Schema.String, Schema.Unknown)))(JSON.parse(raw));
   const catalogSha256 = createHash("sha256").update(raw).digest("hex");
 
-  return ({ taskId, intent, startUrl }: { taskId: string; intent: string; startUrl: string }) => {
+  const scopes = new Map<string, NodeJS.ProcessEnv>();
+  const workers = new Map<string, ReturnType<typeof startWebArenaWorker>>();
+  const prepare = ({ taskId, intent, startUrl }: Case) => {
     const hits = tasks.filter((task) => task.task_id?.toString() === taskId);
     if (hits.length !== 1) throw new Error("The requested WebArena task is absent from the pinned catalog");
     const task = Schema.decodeUnknownSync(Task)(hits[0]);
@@ -68,7 +202,8 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
     const unused = "http://127.0.0.1:1";
     const env = { SHOPPING: admin ? unused : siteRoot, SHOPPING_ADMIN: admin ? siteRoot : unused,
       REDDIT: unused, GITLAB: unused, WIKIPEDIA: unused, MAP: unused, HOMEPAGE: unused };
-    return async (observed: unknown, evidence: { guided: boolean; authenticatedFixture: boolean }) => {
+    scopes.set(siteRoot, env);
+    return async (observed: unknown, evidence: Evidence) => {
       const outcome = Schema.decodeUnknownSync(Outcome)(observed);
       const { destination } = outcome;
       const initial = outcome.start;
@@ -79,12 +214,9 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
         const landed = destination && new URL(destination.url);
         if (new URL(initial.url).href !== start.href || landed && (landed.origin !== origin || admin && !landed.pathname.startsWith("/admin/")))
           throw new Error("The observed Chromium URL left the pinned WebArena fixture");
-        const { stdout } = await execute(python, ["-IB", "-c", officialUrlEvaluator, root, fixture, destination?.url ?? initial.url, initial.url], {
-          env, cwd: root, timeout: 30_000,
-        }).catch(() => { throw new Error("The pinned WebArena URL evaluator could not run"); });
-        [officialScore, noActionScore] = Schema.decodeUnknownSync(
-          Schema.Tuple([Schema.Literals([0, 1]), Schema.Literals([0, 1])]),
-        )(JSON.parse(stdout));
+        const worker = workers.get(siteRoot);
+        if (!worker) throw new WebArenaEvaluatorError("startup", "closed");
+        [officialScore, noActionScore] = await worker.grade({ fixture, urls: [destination?.url ?? initial.url, initial.url] });
         if (destination) {
           const next = new URL(destination.url);
           next.hash = "";
@@ -98,4 +230,56 @@ export function webArena({ checkout, python }: { checkout: string; python: strin
       };
     };
   };
+  const grades = new Map(cases.map((fixture) => [fixture.taskId, prepare(fixture)]));
+  let startup: Promise<void> | undefined;
+  let shutdown: Promise<void> | undefined;
+  const close = () => shutdown ??= (async () => {
+    await Promise.all([...workers.values()].map((worker) => worker.close()));
+    workers.clear();
+    startup = undefined;
+    shutdown = undefined;
+  })();
+  const start = async (): Promise<void> => {
+    if (shutdown) await shutdown;
+    return startup ??= (async () => {
+      try {
+        await Promise.all([...scopes].map(async ([siteRoot, env]) => {
+          const worker = startWebArenaWorker({ python, root, env });
+          workers.set(siteRoot, worker);
+          await worker.ready;
+        }));
+      } catch (error) {
+        await close();
+        throw error;
+      }
+    })();
+  };
+  const grade = (taskId: string, outcome: unknown, evidence: Evidence) => {
+    const gradeCase = grades.get(taskId);
+    if (!gradeCase) throw new Error("The requested WebArena task was not configured");
+    return gradeCase(outcome, evidence);
+  };
+  return { start, close, grade };
+}
+
+export const webArenaPluginName = "grace-official-webarena";
+
+function hasEvaluatorLifecycle(value: unknown): value is Pick<ReturnType<typeof webArena>, "start" | "close"> {
+  return typeof value === "object" && value !== null &&
+    "start" in value && typeof value.start === "function" && "close" in value && typeof value.close === "function";
+}
+
+export async function setup(project: TestProject) {
+  const api: unknown = project.vite.config.plugins.find(({ name }) => name === webArenaPluginName)?.api;
+  if (!hasEvaluatorLifecycle(api))
+    throw new Error("The WebArena project has no evaluator lifecycle");
+  const prepare = async () => {
+    project.vitest.onCancel(api.close);
+    await api.start();
+  };
+  project.vitest.onServerRestart(api.close);
+  project.vitest.onClose(api.close);
+  project.vitest.onTestsRerun(prepare);
+  await prepare();
+  return api.close;
 }
