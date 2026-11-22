@@ -2034,12 +2034,13 @@ pure val stayedValues = Set({ id: 1, version: 1 }, { id: 1, version: 2 }, { id: 
 pure val loadReportValues = Set(
   { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
   { id: 1, version: 1, result: B::Loaded, secure: false, endedAt: B::redirectedTo },
+  { id: 1, version: 1, result: B::Loaded, secure: false, endedAt: "https://utility.example/updated" },
   { id: 1, version: 1, result: B::LoadFailed, secure: false, endedAt: "https://utility.example" },
   { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
   { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: B::redirectedTo },
   { id: 1, version: 3, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
-  { id: 1, version: 4, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
-  { id: 1, version: 4, result: B::Loaded, secure: true, endedAt: "https://utility.example/help" })
+  { id: 1, version: 4, result: B::Loaded, secure: false, endedAt: "https://utility.example" },
+  { id: 1, version: 4, result: B::Loaded, secure: false, endedAt: "https://utility.example/help" })
 pure val observed: CurrentObservation = {
   deviceVersion: 7, browserRevision: 3, taskVersion: 1, website: X::goodObservation, checkpoint: "Read the current account"
 }
