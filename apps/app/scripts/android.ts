@@ -214,8 +214,10 @@ function resolveNodeRuntime(directory: string, lock: typeof NodeLock.Type, abi: 
 function bundleAgent(commit: string, bundle: string) {
   const generate = (owner: string) => execFileSync("pnpm", ["--dir", upstream, "gen", "--owner", owner], { stdio: "inherit" });
   generate("core");
+  generate("cloud");
   generate("agent");
   execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/core", "build"], { stdio: "inherit" });
+  execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/cloud", "exec", "vibelang", "-p", "tsconfig.client.json"], { stdio: "inherit" });
   execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/agent", "exec", "vibelang", "-p", "tsconfig.device.json"], { stdio: "inherit" });
   const build = path.join(upstream, "packages/agent/dist/src/bundle/build.js");
   execFileSync(process.execPath, ["--input-type=module", "--eval", [
@@ -244,7 +246,7 @@ function agentRuntime(abi: Abi) {
     if (!existsSync(bundleFile) || !existsSync(bundleManifest)
         || Schema.decodeUnknownSync(BundlePin)(readJson(bundleManifest)).sourceCommit !== commit) {
       const sourceEdits = git(upstream, "status", "--porcelain", "--", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
-        "packages/core", "packages/agent", "packages/os", "spec", "vibestack");
+        "packages/core", "packages/cloud", "packages/agent", "packages/os", "spec", "vibestack");
       if (sourceEdits) throw new Error("The Eliza device source has uncommitted changes");
       bundleAgent(commit, bundle);
     }
