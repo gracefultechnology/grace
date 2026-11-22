@@ -259,6 +259,12 @@ const BrowserControl = Schema.Struct({
 });
 type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "tap-guide-ring" | "observe-link-landing" | "bind-native-landing" |
   "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
+type PendingPageCheck = {
+  startedAt: number;
+  returnedAt?: number;
+  resumed: boolean;
+  snapshot: "not-requested" | "requested" | "returned" | "failed";
+};
 
 it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
@@ -273,6 +279,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
   let selected: string | null | undefined;
   let failureStage: BrowserJourneyStage = "prepare-journey";
+  let pendingCheck: PendingPageCheck | undefined;
   const outcome: Record<string, unknown> = {
     chatProvider: "fixture", observationPermission: "awaiting permission",
     operator: "trusted Chromium mouse input at visible guide ring",
@@ -304,7 +311,16 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     async controlPage(request) {
       if (request.id !== selected && request.command.guidance?.kind !== "hide")
         throw new Error("The benchmark site is not the selected Grace surface");
-      return Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "control", request }));
+      const check = request.command.subaction === "snapshot" ? pendingCheck : undefined;
+      if (check) check.snapshot = "requested";
+      try {
+        const observed = Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "control", request }));
+        if (check) check.snapshot = "returned";
+        return observed;
+      } catch (error) {
+        if (check) check.snapshot = "failed";
+        throw error;
+      }
     },
   });
   try {
@@ -537,12 +553,16 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       const resume = page.getByRole("button", { name: "Resume Grace" });
       const check = page.getByRole("button", { name: "Check page", exact: true });
       await expect.element(resume.or(check).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
-      if (resume.query() !== null) await userEvent.click(resume);
+      const resumed = resume.query() !== null;
+      if (resumed) await userEvent.click(resume);
       failureStage = "check-page";
+      const attempt: PendingPageCheck = { startedAt: performance.now(), resumed, snapshot: "not-requested" };
+      pendingCheck = attempt;
       await userEvent.click(check);
       failureStage = "observe-check-result";
-      const checkReturnedAt = performance.now();
+      const checkReturnedAt = attempt.returnedAt = performance.now();
       await expect.element(finished.or(continuing).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
+      pendingCheck = undefined;
       const checked = finished.query() !== null;
       const reason = continuing.query()?.textContent;
       hops.push({ url: landed.url, documentId: landed.documentId, checked, checkResultWaitMs: Math.round(performance.now() - checkReturnedAt), reason });
@@ -568,6 +588,15 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const failure = publicFailure(error, "Browser journey");
     outcome.failure = failure.message;
     outcome.failureStage = failureStage;
+    if (pendingCheck) {
+      const endedAt = performance.now();
+      const { startedAt, returnedAt, resumed, snapshot } = pendingCheck;
+      outcome.pageCheckFailure = {
+        elapsedMs: Math.round(endedAt - startedAt), resumed, snapshot,
+        ...(returnedAt === undefined ? {} : { checkResultWaitMs: Math.round(endedAt - returnedAt) }),
+      };
+      pendingCheck = undefined;
+    }
     if (failureStage === "tap-guide-ring") outcome.linkUnavailable = page.getByRole("status", { name: "Link unavailable", exact: true }).query() !== null;
     if (!gradeWholeCohort) throw failure;
   } finally {
