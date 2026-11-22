@@ -20,10 +20,12 @@ type PageElement = LinkObservation["result"]["elements"][number]
 function pageField(element: PageElement, use: GuidedEvidenceUse = "ReadGuidedContent"): GuidedPageField {
   if (element.sensitive) return "PrivatePageField"
   const type = element.type ?? ""
+  const label = element.label?.trim() ?? ""
+  const searchLabel = use === "CheckPublicSearchResult" ? label.replace(/^[\p{Co}\s]+/u, "") : label
   const search = element.role === "searchbox" || type === "search" ||
     ((type === "" || type === "text") &&
       /^(q|query|search)$/iu.test(element.fieldName ?? "") &&
-      (/^search(?:\s+(?:this\s+)?(?:site|website))?$/iu.test(element.label?.trim() ?? "") ||
+      (/^search(?:\s+(?:this\s+)?(?:site|website))?$/iu.test(searchLabel) ||
         (use === "CheckPublicSearchResult" && element.form != null && element.role === "combobox" &&
           /^search (?:the |this |entire )?(?:site|website|store)(?: here)?[ .…]*$/iu.test(element.label?.trim() ?? ""))))
   if (search) return "NavigationPageField"

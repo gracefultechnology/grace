@@ -3440,7 +3440,7 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   const frame = await pinnedPage("statements", home, (html) => html
     .replace("</head>", `<script>(${String(pageCommand)})(null, "");</script></head>`)
     .replace(/<body\b[^>]*>[\s\S]*<\/body>/u,
-      '<body><header><form method="get"><input type="text" name="q" role="combobox" placeholder="Search the site"></form></header><main><h1>Public catalogue</h1></main><form><label>Newsletter email <input type="email"></label><button type="submit">Subscribe</button></form></body>'));
+      '<body><header><form method="get"><label>&#xe615; Search<input type="text" name="q" role="combobox"></label></form></header><main><h1>Public catalogue</h1></main><form><label>Newsletter email <input type="email"></label><button type="submit">Subscribe</button></form></body>'));
   const heading = frame.document.querySelector("h1")!;
   const searchField = frame.document.querySelector('input[name="q"]')!;
   let url = home;
