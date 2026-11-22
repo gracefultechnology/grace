@@ -13,7 +13,7 @@ one shared password, in her own screen, through Android's "Save this
 network?" dialog. Company-style networks, which ask for an account, old
 WEP networks and a hotel or café's sign-in page are handed to Android's own
 internet panel.
-Six of the seven join outcomes are the Wi-Fi bridge's six statuses, one for
+Seven of the eight join outcomes are the Wi-Fi bridge's seven statuses, one for
 one (`vendor/eliza/packages/os/src/bridges/definitions/wifi.ts`);
 the certificate challenge is the one outcome no bridge status sends. Network
 names, credentials and fixed delays in
@@ -45,8 +45,8 @@ reports an old WEP network, which no app can join either, as one.
 type NetworkActor = Person | OperatingSystem
 type Authentication = OpenNetwork | SharedPassword | AccountPassword
 type Network = { id: str, authentication: Authentication, remembered: bool }
-type JoinPhase = Selecting | PrivateEntry | Joining | AndroidPanel | CertificateDecision | PortalEntry | JoinComplete | JoinUnconfirmed | JoinFailed
-type JoinResult = Joined | RejectedCredentials | Unavailable | Declined | Unverified | CertificateRequired | PortalRequired
+type JoinPhase = Selecting | PrivateEntry | Joining | AndroidPanel | SavedNetworkPanel | CertificateDecision | PortalEntry | JoinComplete | JoinUnconfirmed | JoinFailed
+type JoinResult = Joined | RejectedCredentials | Unavailable | Declined | Unverified | CertificateRequired | PortalRequired | SavedNetwork
 type JoinReport = { network: str, version: int, result: JoinResult, certificate: str, explanation: str }
 type Discovery = Scanning | WifiOff | LocationAccessNeeded | ExplainingLocation | LocationRefused | LocationOff | NoNetworks | NetworksFound({ networks: List[Network] })
 type NetworkJoin = {
@@ -133,6 +133,11 @@ join says the tablet is online but could not confirm which network. A
 sign-in page opens in Android's panel; Grace never fills it in or accepts
 its terms. While Android's panel is open, the result Android reports when
 Grace is shown again completes, fails or keeps waiting on the join.
+When Android reports the network is already saved but has not connected, Grace
+keeps the selection and offers to open Android’s Wi-Fi so the person can select
+it there. Opening or closing the panel and remaining on a different network
+leave this attempt pending. A fresh observation of the chosen connection can
+complete it.
 If Android later validates the selected network after an unavailable or
 unverified result, Grace clears that result and shows the connected network.
 Android may name its current connection even when it has no nearby scan
@@ -165,6 +170,7 @@ pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJ
     | Unverified => JoinUnconfirmed
     | CertificateRequired => CertificateDecision
     | PortalRequired => PortalEntry
+    | SavedNetwork => SavedNetworkPanel
   }
   if (nextPhase == Selecting) cleared(n.version, n) else {
   ...n, phase: nextPhase,
@@ -176,7 +182,7 @@ pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJ
 pure def canConfirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
   val discovery = n.discovery
   by == OperatingSystem and (match discovery { | NetworksFound(_) => true | NoNetworks => true | _ => false }) and
-  (n.phase == JoinFailed or n.phase == JoinUnconfirmed) and
+  (n.phase == JoinFailed or n.phase == JoinUnconfirmed or n.phase == SavedNetworkPanel) and
   networkId != "" and networkId == n.selected.id and version == n.version
 pure def confirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): NetworkJoin =
   { ...n, phase: JoinComplete, explanation: "" }
@@ -189,6 +195,7 @@ pure def canRetry(n: NetworkJoin, by: NetworkActor): bool = by == Person and n.p
 pure def retry(n: NetworkJoin, by: NetworkActor): NetworkJoin = {
   ...n, phase: attemptPhase(n.selected), version: n.version + 1, explanation: ""
 }
+pure def sometimesSavedNetworkPanel(n: NetworkJoin): bool = n.phase == SavedNetworkPanel
 pure def sometimesJoinUnconfirmed(n: NetworkJoin): bool = n.phase == JoinUnconfirmed
 ```
 
@@ -232,7 +239,7 @@ pure val goodReport: JoinReport = { network: "network", version: 1, result: Join
 pure val reportValues = Set(goodReport, { ...goodReport, version: 2 },
   { ...goodReport, result: CertificateRequired, certificate: "certificate" },
   { ...goodReport, result: PortalRequired }, { ...goodReport, result: Unavailable, explanation: "Network unavailable" },
-  { ...goodReport, result: Unverified }, { ...goodReport, version: 2, result: Declined },
+  { ...goodReport, result: Unverified }, { ...goodReport, result: SavedNetwork }, { ...goodReport, version: 2, result: Declined },
   { ...goodReport, result: RejectedCredentials, explanation: "Check private details" },
   { ...goodReport, version: 2, result: RejectedCredentials, explanation: "Check private details" },
   { ...goodReport, version: 3, result: RejectedCredentials, explanation: "Check private details" })
