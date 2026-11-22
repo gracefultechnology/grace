@@ -21,9 +21,14 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   const callback = new URL("https://app.graceforseniors.com/android/auth/callback");
   callback.searchParams.set("state", state);
   callback.searchParams.set("code", "c".repeat(64));
-  const loopback = new URL(callback.pathname + callback.search, "http://localhost:5173");
+  const proof = callback.pathname + callback.search;
   const ambiguous = new URL(callback);
   ambiguous.searchParams.append("code", "d".repeat(64));
+  const rejectedRedirects = [
+    new URL(proof, "http://localhost:5173"),
+    new URL(proof, "https://elsewhere.example.test"),
+    ambiguous,
+  ];
   const returns: string[] = [];
   const browser = cdp();
   const captureReturn = async ({ request, requestId }: { request: { url: string }; requestId: string }) => {
@@ -44,8 +49,7 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
     if (path !== "/api/auth/device/authorize") return network(input, init);
     authorizations.push(await new Response(init?.body).json());
     if (authorizations.length === 1) return new Response(null, { status: 503 });
-    if (authorizations.length === 2) return Response.json({ redirectUrl: loopback.href });
-    return Response.json({ redirectUrl: authorizations.length === 3 ? ambiguous.href : callback.href });
+    return Response.json({ redirectUrl: (rejectedRedirects[authorizations.length - 2] ?? callback).href });
   });
   onTestFinished(async () => {
     browser.off("Fetch.requestPaused", captureReturn);
@@ -62,20 +66,20 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   await view.render();
 
   const signIn = page.getByRole("button", { name: "Sign in on tablet" });
+  const firstChoice = { challenge, state, expectedAccountId: accountId };
   await act(() => userEvent.click(signIn));
   await expect.element(page.getByRole("alert")).toBeVisible();
   await expect.element(signIn).toBeEnabled();
-  await act(() => userEvent.click(signIn));
-  const firstChoice = { challenge, state, expectedAccountId: accountId };
-  await expect.poll(() => authorizations, { timeout: 15000 }).toEqual([firstChoice, firstChoice]);
+  const retries = [firstChoice];
+  expect(authorizations).toEqual(retries);
+  for (let attempt = 0; attempt < rejectedRedirects.length; attempt += 1) {
+    await act(() => userEvent.click(signIn));
+    retries.push(firstChoice);
+    await expect.poll(() => authorizations, { timeout: 15000 }).toEqual(retries);
+    await expect.element(signIn).toBeEnabled();
+    expect(returns).toEqual([]);
+  }
   await expect.element(page.getByRole("button", { name: "Cancel tablet sign-in" })).toBeVisible();
-  await expect.element(signIn).toBeEnabled();
-  expect(returns).toEqual([]);
-  await act(() => userEvent.click(signIn));
-  const retries = [firstChoice, firstChoice, firstChoice];
-  await expect.poll(() => authorizations, { timeout: 15000 }).toEqual(retries);
-  await expect.element(signIn).toBeEnabled();
-  expect(returns).toEqual([]);
 
   accountId = "second-owner";
   await act(() => userEvent.click(signIn));
