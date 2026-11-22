@@ -294,7 +294,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository_id == '1457180554' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 150
     strategy:
       fail-fast: false
@@ -344,7 +344,7 @@ jobs:
   billworld-aggregate:
     if: always() && github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
     needs: billworld
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository_id == '1457180554' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     steps:
       - uses: actions/download-artifact@v8
         with:
@@ -468,7 +468,7 @@ jobs:
           if-no-files-found: error
   billworld-released:
     if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository_id == '1457180554' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     env:
       GRACE_BILLWORLD_RELEASED_DIR: ${{ github.workspace }}/.cache/billworld
