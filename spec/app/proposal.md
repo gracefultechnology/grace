@@ -127,7 +127,10 @@ pure def sometimesSettled(p: Pending): bool = not(asking(p)) and p.spent > 0
 A correction, her No, a new question, New conversation or closing Grace
 retires an unanswered question, whether the host or Grace notices it.
 Looking at another app or opening a popover from the rail does not: the
-question waits.
+question waits. When a turn drops it, that turn is her own answer, typed,
+said or tapped, in the current generation and for the current work: her Ask
+Grace tap asked for help, so neither Grace's reply to it nor the host drops
+her question then, and it waits for her answer.
 
 ```quint
 pure def canWithdraw(p: Pending, interruption: R::Interruption, by: ProposalActor): bool =
@@ -135,6 +138,13 @@ pure def canWithdraw(p: Pending, interruption: R::Interruption, by: ProposalActo
 pure def withdraw(p: Pending, interruption: R::Interruption, by: ProposalActor): Pending =
   { ...p, ask: NoAsk, revision: p.revision + 1 }
 
+pure def turnDrops(p: Pending, interruption: R::Interruption, request: R::Request, now: R::Moment, by: ProposalActor): bool =
+  R::answers(request.origin) and R::mayAct(request, now) and canWithdraw(p, interruption, by)
+
+pure def lawAskingForHelpCannotDrop(p: Pending, interruption: R::Interruption, request: R::Request, now: R::Moment, by: ProposalActor): bool =
+  request.origin == R::AskedForHelp implies not(turnDrops(p, interruption, request, now, by))
+pure def lawHostTurnCannotDrop(p: Pending, interruption: R::Interruption, request: R::Request, now: R::Moment, by: ProposalActor): bool =
+  not(R::fromPerson(request.origin)) implies not(turnDrops(p, interruption, request, now, by))
 pure def lawLookingElsewhereKeepsTheQuestion(p: Pending, interruption: R::Interruption, by: ProposalActor): bool =
   (interruption == R::SurfaceVisit or interruption == R::RailPopover) implies not(canWithdraw(p, interruption, by))
 pure def sometimesWithdrawn(p: Pending): bool = not(asking(p)) and p.revision > 0 and p.spent == 0
@@ -150,7 +160,8 @@ pure val askValues = Set(addVisit).union(Set(moveVisit)).union(Set(removeVisit))
   .union(Set(AddAsk({ target: -1, review: V::reviewedAppointment.review })))
 pure val requestValues = Set(
   { generation: 1, workVersion: 1, origin: R::Spoken }, { generation: 2, workVersion: 1, origin: R::Typed },
-  { generation: 1, workVersion: 1, origin: R::FromEmail }, { generation: 1, workVersion: 2, origin: R::Tapped })
+  { generation: 1, workVersion: 1, origin: R::FromEmail }, { generation: 1, workVersion: 2, origin: R::Tapped },
+  { generation: 2, workVersion: 1, origin: R::AskedForHelp })
 pure val nowValues = Set({ generation: 1, workVersion: 1 }, { generation: 2, workVersion: 1 }, { generation: 3, workVersion: 1 })
 pure val givenValues = Set(
   R::consent({ generation: 2, workVersion: 1, origin: R::Tapped }, 1, { subject: asked, revision: 1 }))
