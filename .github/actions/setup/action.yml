@@ -91,7 +91,7 @@ runs:
           turbo-${{ runner.os }}-${{ runner.arch }}-${{ inputs.job }}-
           turbo-${{ runner.os }}-${{ runner.arch }}-
     - name: Install pinned Eliza backend workspaces
-      run: pnpm --dir vendor/eliza --filter @elizaos/cloud... --filter @elizaos/agent... --filter @elizaos/os... install --frozen-lockfile --ignore-scripts
+      run: pnpm --dir vendor/eliza --filter @elizaos/cloud... --filter @elizaos/agent... --filter @elizaos/os... install --frozen-lockfile --ignore-scripts --package-import-method=clone-or-copy
       shell: bash
     - id: gen-seed
       if: >-
@@ -155,7 +155,7 @@ runs:
         GEN_SEED_PREFIX: ${{ steps.gen-seed.outputs.prefix }}
       run: |
         if [[ -n $GEN_SEED_PREFIX ]]; then export TURBO_RUN_SUMMARY=true; fi
-        pnpm install --frozen-lockfile
+        pnpm install --frozen-lockfile --package-import-method=clone-or-copy
     - id: publish-gen-seed
       if: steps.gen-seed.outputs.prefix != ''
       continue-on-error: true
