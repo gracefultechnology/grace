@@ -413,7 +413,7 @@ pure def lawTheStepIsOnThePlan(view: TaskView): bool =
   view.preparation.phase != P::NoTask implies K::plan(view.preparation.key.kind).includes(currentStep(view))
 pure def lawARejectedOrReturnedTaskShowsTheOutcome(view: TaskView): bool =
   val c = view.workspace.commitment
-  (joined(view) and c.stage == CM::Resolved and (c.result == CM::VerifiedFailure or c.result == CM::Returned))
+  joined(view) and c.stage == CM::Resolved and (c.result == CM::VerifiedFailure or c.result == CM::Returned)
     implies currentStep(view) == K::OutcomeStep
 ```
 
@@ -465,7 +465,7 @@ pure def lawCancellationEndsTheTaskView(view: TaskView): bool =
 
 pure def lawEndingTheFinishedRunKeepsItsReceipt(view: TaskView): bool =
   val ended = { ...view, preparation: P::retire(view.preparation, view.preparation.version, T::Host), progress: progressAtEnd(view, T::Host) }
-  (joined(view) and view.preparation.phase == P::HandedOff and finishedWithReceipt(view.workspace))
+  joined(view) and view.preparation.phase == P::HandedOff and finishedWithReceipt(view.workspace)
     implies (joined(ended) and taskStatus(ended) == taskStatus(view))
 
 pure def viewTokens(w: W::Workspace): W::CommitmentTokens =
