@@ -174,8 +174,8 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
           const offered = applied.some((item) => item.outcome === "Applied") &&
             review.generation === token && review.workVersion === workVersion &&
             review.request.owner === guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), review.request.steps)
-          const words = offered ? "Review the selected-item checks before starting." : "I can’t prepare that read plan on this tablet."
-          workspace.send({ type: "interact", input: { tag: "Respond", token, text: words,
+          const planReply = offered ? "Review the selected-item checks before starting." : "I can’t prepare that read plan on this tablet."
+          workspace.send({ type: "interact", input: { tag: "Respond", token, text: planReply,
             isQuestion: false, answers: [], audible: false } }, "Host") catch () => undefined
           return
         }

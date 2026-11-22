@@ -497,7 +497,8 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     },
     say: (input) => take(input, { origin: origins[input.tag] }),
     help: effect (need) => {
-      const context = withhold({ text: helpWith(need, try registry.get()), passwords: [] })
+      const text = helpWith(need, try registry.get())
+      const context = try Effect.orDie(Effect.try(() => withhold({ text, passwords: [] })))
       try take(askedForHelp, { origin: "AskedForHelp", context })
     }
   }
