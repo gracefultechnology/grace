@@ -633,6 +633,9 @@ jobs:
         uses: ./.github/actions/setup
         with:
           job: ${{ matrix.lane }}
+      - name: Verify local Gmail delivery and account isolation
+        if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm --filter @repo/app test --project node test/app.test.vibe -t "Google denies missing consent"
       - name: Exercise Google consent and guided tasks across apps with local fixtures
         if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         run: >-

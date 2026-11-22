@@ -443,9 +443,11 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("radio", { name: "Photos" }));
   await click(piano);
   const share = page.getByRole("button", { name: "Share" });
+  const recipients = page.getByRole("heading", { name: "Who is it to?" });
   await expect.element(share).toBeVisible();
   await click(share);
   // spec/app/mailboxes.md, "Writing starts at Who is it to?, and Cc and Bcc show once opened or used"
+  await expect.element(recipients).toBeVisible();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
   await expect.element(row("Inbox")).toHaveAttribute("aria-current", "page");
@@ -454,7 +456,7 @@ it("See all my email in one place", async () => {
   await click(piano);
   await expect.element(share).toBeVisible();
   await click(share);
-  await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
+  await expect.element(recipients).toBeVisible();
   await click(page.getByRole("button", { name: "Susan" }));
   await expect.element(subject()).toHaveValue("A photo");
   await expect.element(page.getByRole("img", { name: "Piano.png" })).toBeVisible();
@@ -727,6 +729,7 @@ it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email rele
   const warning = page.getByRole("dialog", { name: "Open this link?" });
   await openEmail();
   await opened(/Account Security/, "Urgent: confirm your password");
+  await expect.element(flagged).toBeVisible();
   await expect.element(page.getByRole("link", { name: /invalid\.example/ })).not.toBeInTheDocument();
   const target = flagged.element().textContent;
   await click(flagged);
@@ -764,6 +767,7 @@ it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email rele
   await opened(/Riverside Power/, "Your Riverside Power bill is ready");
   await expect.element(page.getByRole("link", { name: /\/statement\/\[print\]$/ })).toBeVisible();
   const ordinary = page.getByRole("link", { name: /\/bill\/#statement_\(journal\)$/ });
+  await expect.element(ordinary).toBeVisible();
   const destination = ordinary.element().textContent;
   await click(ordinary);
   await expect.element(address).toHaveValue(destination ?? "");
