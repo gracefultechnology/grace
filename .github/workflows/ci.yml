@@ -650,7 +650,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: ${{ fromJSON(inputs.cross_app_only && '["product"]' || '["product","selftest-rest"]') }}
+        lane: [product]
     environment: &cache-environment ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
     env: &cache-env
       TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}
@@ -676,11 +676,11 @@ jobs:
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
           -t "Gmail signup to Calendar|Follow one reviewed plan across apps|An authenticated restart restores the reviewed plan paused at its next outcome|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
       - if: ${{ matrix.lane == 'product' && !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue --summarize
+        run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue=dependencies-successful --summarize
       - if: ${{ matrix.lane != 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         env:
           LANE: ${{ matrix.lane }}
-        run: pnpm all "//#selftest:tools:${LANE#selftest-}" --only --continue --summarize
+        run: pnpm all "//#selftest:tools:${LANE#selftest-}" --only --continue=dependencies-successful --summarize
       - name: Report Turbo task timings
         if: ${{ !cancelled() }}
         run: |
@@ -708,12 +708,19 @@ jobs:
         with:
           path: ${{ steps.setup.outputs.spec-cache-path }}
           key: ${{ steps.setup.outputs.spec-cache-key }}
-      - if: always() && !inputs.cross_app_only && steps.setup.outputs.turbo-cache-key != ''
+      - id: prune-turbo-cache
+        if: always() && !inputs.cross_app_only && steps.setup.outputs.turbo-cache-key != ''
         run: |
-          mkdir -p .turbo/cache
+          [[ -d .turbo/cache ]] || exit 0
           cat .turbo/runs/*.json 2>/dev/null | jq -r '.tasks[] | select(.cache.status == "HIT") | .hash' | while read -r hash; do find .turbo/cache -name "$hash*" -exec touch {} +; done
           find .turbo/cache -type f -mtime +7 -delete
-      - if: always() && !inputs.cross_app_only && steps.setup.outputs.turbo-cache-key != ''
+          for archive in .turbo/cache/*.tar.zst; do
+            metadata="${archive%.tar.zst}-meta.json"
+            [[ -f "$archive" && -s "$archive" && -f "$metadata" && -s "$metadata" ]] || continue
+            echo "populated=true" >> "$GITHUB_OUTPUT"
+            break
+          done
+      - if: always() && steps.prune-turbo-cache.outputs.populated == 'true'
         uses: actions/cache/save@v6
         with:
           path: .turbo/cache
@@ -752,7 +759,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [selftest-a, selftest-b]
+        lane: [selftest-a, selftest-b, selftest-rest]
     environment: *cache-environment
     env: *cache-env
     steps: *verification-steps
