@@ -516,9 +516,13 @@ async function googleConsent(context: BrowserCommandContext, endpoint: string, a
   }
 }
 
-type RecordCase = "later winner" | "earlier winner" | "tied latest" | "changed scope" | "mismatched detail" | "wrong record kind" | "ambiguous collection" | "conflicting counts" | "unclear count" | "conflicting account" | "private form" | "newsletter list" | "unverified account" | "short dates" | "public list";
-type RecordAction = { kind: "open"; scenario: RecordCase; decisionUrl: string } | { kind: "close" } | { kind: "requests" } | SiteObservation;
-const recordSites = new WeakMap<Page, { site: Site; decisionUrl: string; chatUrl: string; requests: { count: number; leaked: boolean } }>();
+type RecordCase = "later winner" | "earlier winner" | "tied latest" | "changed scope" | "mismatched detail" | "wrong record kind" | "ambiguous collection" | "conflicting counts" | "unclear count" | "conflicting account" | "private form" | "newsletter list" | "unverified account" | "same-name account switch" | "short dates" | "public list";
+type RecordAction =
+  | { kind: "open"; scenario: RecordCase; decisionUrl: string }
+  | { kind: "close" } | { kind: "requests" } | { kind: "accountVisits" }
+  | { kind: "manualRecordLink"; label: "View order" | "My Account" }
+  | SiteObservation;
+const recordSites = new WeakMap<Page, { site: Site; decisionUrl: string; chatUrl: string; requests: { count: number; leaked: boolean }; accountVisits?: string[] }>();
 
 async function recordPage(context: BrowserCommandContext, action: RecordAction) {
   const open = recordSites.get(context.page);
@@ -527,6 +531,7 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
     const browser = await context.context.browser()?.newContext();
     if (!browser) throw new Error("The record fixture needs Chromium");
     const origin = "https://records.localhost";
+    const accountVisits: string[] | undefined = action.scenario === "same-name account switch" ? [] : undefined;
     const requests = { count: 0, leaked: false };
     const chatUrl = new URL("/api/v1/chat/completions", action.decisionUrl).href;
     try {
@@ -536,10 +541,13 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
         const url = new URL(route.request().url());
         const later = url.searchParams.get("page") === "2";
         const account = later && action.scenario === "changed scope" ? "acct-a" : "acct-A";
+        const dashboard = url.pathname === "/home";
+        if (route.request().isNavigationRequest())
+          accountVisits?.push(`${url.pathname}:${dashboard ? "A" : "B"}`);
         const index = later ? 2 : 1;
         const unbound = action.scenario === "public list" || action.scenario === "unverified account";
         const conflictingCount = action.scenario === "conflicting counts" || action.scenario === "unclear count";
-        const single = unbound || conflictingCount;
+        const single = unbound || conflictingCount || accountVisits !== undefined;
         const detail = url.pathname.startsWith("/view/");
         const label = action.scenario === "mismatched detail" ? "private-canary-wrong" : "private-canary-" + url.pathname.split("/").at(-1);
         const newer = action.scenario === "earlier winner" ? !later : later;
@@ -548,11 +556,13 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
           action.scenario === "short dates" ? `10/${day}/26` : `2026-10-${day}`;
         const status = action.scenario === "earlier winner" ? "Canceled" : "Complete";
         const newsletter = '<form><label>Newsletter email<input type="email"></label><button type="submit">Subscribe</button></form>';
-        const homepage = '<h1>My Account</h1><nav><a id="orders" href="/list">My Orders</a></nav><section><h2>Recent orders</h2><table><tbody><tr><td><a href="/view/1">View order</a></td></tr></tbody></table></section>';
+        const homepage = '<h1>My Account</h1><nav><a id="orders" href="/list">My Orders</a></nav>' +
+          `<section><h2>Recent orders</h2><table><tbody><tr>${accountVisits ? `<td>private-canary-1</td><td>${date}</td><td>${status}</td>` : ""}<td><a href="/view/1">View order</a></td></tr></tbody></table></section>`;
         const totals = conflictingCount
           ? `<div><p>1 Item</p><section><p>${action.scenario === "unclear count" ? "Showing part of 8" : "Showing 1–1 of 8"}</p></section></div>`
           : `<p>${single ? "1 Item" : `Items ${index} to ${index} of 2 total`}</p>`;
-        const content = detail ? `<h1>${action.scenario === "wrong record kind" ? "Invoice" : "Order"} #${label}</h1>` : url.pathname === "/home" ?
+        const content = detail ? `<h1>${action.scenario === "wrong record kind" ? "Invoice" : "Order"} #${label}</h1>` +
+          (accountVisits ? `<p>${status}</p><time>${date}</time><a href="/home">My Account</a>` : "") : dashboard ?
           homepage + (action.scenario === "private form" ?
             '<form aria-label="Sign in"><label>Username<input name="username"></label><label>Password<input name="password" type="password"></label><button type="submit">Sign in</button></form>' :
             newsletter) :
@@ -563,7 +573,8 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
         const decoy = action.scenario === "ambiguous collection" ?
           '<section><p>1 Item</p><table><thead><tr><th>Order number</th><th>Order date</th><th>Status</th></tr></thead><tbody><tr><td>private-canary-decoy</td><td>2026-10-20</td><td>Complete</td></tr></tbody></table></section>' : "";
         const badge = action.scenario === "conflicting account" ? '<span aria-label="Account">#acct-B</span>' : "";
-        const banner = unbound ? "" : `<header>Account ID: ${account}${badge}</header>`;
+        const banner = accountVisits ? `<header><span>Welcome, Morgan Lee</span>${dashboard ? "<p>Account ID: private-canary-A</p>" : ""}</header>`
+          : unbound ? "" : `<header>Account ID: ${account}${badge}</header>`;
         const scope = action.scenario === "public list" ? ' aria-label="Public records"' : "";
         return route.fulfill({ contentType: "text/html; charset=utf-8", body: `<!doctype html><title>Record fixture</title>${banner}<main${scope}>${content}${decoy}</main>` });
       });
@@ -576,9 +587,9 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
         requests.leaked ||= (route.request().postData() ?? "").includes("private-canary");
         return route.continue();
       });
-      const url = origin + (action.scenario === "later winner" || action.scenario === "private form" ? "/home" : "/list");
+      const url = origin + (accountVisits || action.scenario === "later winner" || action.scenario === "private form" ? "/home" : "/list");
       await website.goto(url);
-      recordSites.set(context.page, { site: { page: website, origin, browser, session }, decisionUrl: action.decisionUrl, chatUrl, requests });
+      recordSites.set(context.page, { site: { page: website, origin, browser, session }, decisionUrl: action.decisionUrl, chatUrl, requests, accountVisits });
       await context.page.bringToFront();
       return { url };
     } catch (error) {
@@ -597,6 +608,12 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
     return {};
   }
   if (action.kind === "requests") return open.requests;
+  if (action.kind === "accountVisits") return { visits: open.accountVisits };
+  if (action.kind === "manualRecordLink") {
+    if (!open.accountVisits) throw new Error("This fixture has no manual account-switch journey");
+    await open.site.page.getByRole("link", { name: action.label, exact: true }).click();
+    return { tapped: true };
+  }
   return observeSite(open.site, action);
 }
 
