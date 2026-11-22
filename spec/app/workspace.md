@@ -2168,6 +2168,8 @@ pure val loadReportValues = Set(
   { id: 1, version: 1, result: B::Loaded, secure: false, endedAt: B::redirectedTo },
   { id: 1, version: 1, result: B::Loaded, secure: false, endedAt: "https://utility.example/updated" },
   { id: 1, version: 1, result: B::LoadFailed, secure: false, endedAt: "https://utility.example" },
+  { id: 1, version: 1, result: B::SecurityBlocked, secure: true, endedAt: "https://utility.example" },
+  { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: "" },
   { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
   { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: B::redirectedTo },
   { id: 1, version: 3, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
