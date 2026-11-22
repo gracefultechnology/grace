@@ -288,8 +288,10 @@ public final class GraceAccount extends ElizaSignInPlugin {
     synchronized (CREDENTIAL_CHANGE) {
      if (GracePasswordsOwner.enrollmentInProgress()) throw new IllegalStateException("Sign-in is in progress");
      var context = getContext();
+     var legacy = new SharedGraceCredentials(context);
+     if (!legacy.needsCleanup()) throw new IllegalStateException("The previous sign-in no longer needs cleanup");
      changeAccount(context, () -> {
-      new SharedGraceCredentials(context).signOut(true, signOutCanonical);
+      legacy.signOut(true, signOutCanonical);
       return null;
      });
     }
