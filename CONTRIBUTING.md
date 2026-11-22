@@ -74,7 +74,7 @@ Pull requests go to `develop`, and `develop` to `main`; what CI runs on each is 
 | `vibestack/explore.ts` | the `explore` stage: serves a package's page with its app script, runs Bombadil on it, and replays and removes a saved run |
 | `vibestack/conformance.ts` | the comparing: journeys, malformed-input probes, walks, shrinking and replay; copied into `gen/` for a driver's types |
 | `vibestack/testing/` | what packages import: `project()` (the Vitest configuration), the property-test generator, `effectDriver` |
-| `vibestack/stories/`, `vibestack/design/` | generated stories and their tests; design tokens and their lint rules. The [design project module](vibestack/design/project.ts) builds and checks token directories in one process. |
+| `vibestack/stories/`, `vibestack/design/` | generated stories and their tests; design tokens and their lint rules. The design project module in [`vibestack/design/project.ts`](vibestack/design/project.ts) builds or checks several token directories in one process. |
 | `vibestack/gen.ts` | the translator: reads what a module imports and defines |
 | `vibestack/gen/types.ts` | everything decided by a type |
 | `vibestack/gen/print.ts` | expressions |
@@ -107,7 +107,7 @@ A test that observes a tool really running uses a scratch project of its own, wh
 `pnpm selftest` runs all five through Turborepo, side by side, as `pnpm verify` does. Each of the three
 `selftest:tools` processes bounds its own tests and tools to the machine and checks the order project once for itself,
 so three at once ask about three times what one does: on a machine too small for that,
-`pnpm selftest --concurrency=1` runs one at a time, to the same cached results. What a change to the
+`pnpm selftest --concurrency=1` runs one shard at a time. What a change to the
 tools owes it, and the sync skill, is in [AGENTS.md, "Definition of done"](AGENTS.md#definition-of-done).
 
 ## Releasing
@@ -229,7 +229,11 @@ device, inode, size and modification and change times stay the same, so an
 unchanged toolchain is not read again, nor Z3 asked its version. A check
 reads those times of Dafny's installation once, and reads them again after each
 run of Dafny, so a result is not remembered when the verifier was installed
-again during the run. The template install generates locally with `gen --if-valid`. Local installs and the product job run the CLI build and vendored Eliza generation in parallel. The three tool selftest shards build the CLI and generate their scratch projects on demand. The packaged CLI test rebuilds the workspace in a clean copy. Other GitHub Actions jobs use the same strict root
+again during the run. The template install generates locally with `gen --if-valid`.
+Local installs and the product job run the CLI build and vendored Eliza
+generation in parallel. The three tool selftest jobs in `ci.yml` build the tools
+and generate their scratch projects on demand. The packaged CLI test rebuilds
+from a clean copy of the workspace. Other GitHub Actions jobs use the same strict root
 `gen` task as verification, so a successful install warms the task cache. A failed generation leaves the
 remaining checks runnable and is retried by verification. Generated stories,
 browser build artifacts, compiler declarations and successful test receipts
