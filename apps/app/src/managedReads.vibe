@@ -42,7 +42,7 @@ const partIdField = Schema.String.check(Schema.isPattern(/^[0-9.]{1,32}$/))
 const historyField = Schema.String.check(Schema.isPattern(/^[0-9]{1,20}$/))
 const supportedMedia = Schema.Literals(["application/pdf", "text/plain", "image/png", "image/jpeg", "image/webp"])
 schema AttachmentDescriptor { partId: string; name: attachmentName; mimeType: idField; size: Schema.Int; supported: boolean }
-const MailBody = Schema.Struct({ accountId: idField, message: Schema.Struct({ ...MailRow.fields, fromEmail: Schema.optionalKey(nullableText), snippet: Schema.optionalKey(Schema.String) }), historyId: Schema.NullOr(historyField),
+const MailBody = Schema.Struct({ accountId: idField, message: Schema.Struct({ ...MailRow.fields, snippet: Schema.optionalKey(Schema.String) }), historyId: Schema.NullOr(historyField),
   attachments: Schema.Array(AttachmentDescriptor), reply: Schema.optional(Schema.NullOr(MailReply)), bodyText: Schema.String, bodyTextAvailable: Schema.Boolean })
 export function actionableMailBody(selected: typeof MailBody.Type | undefined) {
   return selected?.bodyTextAvailable && selected.historyId && selected.message.labels &&
