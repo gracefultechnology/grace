@@ -238,7 +238,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const waiting: MailSummary[] = outboxRows(registry, sources).map((r) => {
     const at = queuedAt(r.queued.operationId);
     return {
-      id: `${r.account}/${r.queued.operationId}`, from: contact(mail?.nameOf(r.queued.snapshot.content.to) ?? recipientsOf(r.queued.snapshot.content.to)[0] ?? "", recipientsOf(r.queued.snapshot.content.to)[0] ?? ""),
+      id: `${r.account}/${r.queued.operationId}`, from: contact(mail?.nameOf(r.queued.snapshot.content.to, { id: r.account, ref: r.queued.snapshot.replyTo }) ?? recipientsOf(r.queued.snapshot.content.to)[0] ?? "", recipientsOf(r.queued.snapshot.content.to)[0] ?? ""),
       subject: untitled(r.queued.snapshot.content.subject), time: Number.isNaN(at) ? "" : when(at, now), attachment: r.queued.snapshot.attachments.length > 0,
       account: rows.length ? name(r.account) : undefined,
     };

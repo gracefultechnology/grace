@@ -587,11 +587,11 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Send" }));
   await expect.element(page.getByText("Waiting in Outbox until you’re back online")).toBeVisible();
   await click(row("Outbox 1"));
-  const waiting = email(/Re: Lunch on Sunday\?/);
+  const waiting = email(/Ruth.*Re: Lunch on Sunday\?/);
   await expect.element(waiting).toBeVisible();
   await expect.element(page.getByText("Just now")).toBeVisible();
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
-  const delivered = expect.element(page.getByText("Your email to ruth@family.test was sent"), { timeout: 60_000 }).toBeVisible();
+  const delivered = expect.element(page.getByText("Your email to Ruth was sent"), { timeout: 60_000 }).toBeVisible();
   await host("Online");
   await delivered;
   await expect.element(waiting).not.toBeInTheDocument();

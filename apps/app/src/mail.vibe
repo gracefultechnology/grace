@@ -28,9 +28,11 @@ export service Mail {
   share(photo: SavedFile): boolean!!
   contacts(): readonly Contact[]!!
   readonly hush: (id: number) => void
-  readonly nameOf: (address: string) => string
+  readonly nameOf: (address: string, replied?: Replied) => string
   readonly board: Boards
 }
+
+export type Replied = { readonly id: number; readonly ref: string }
 
 const address = /^[^@\s,;]+@[^@\s,;]+$/
 export const recipientsOf = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
@@ -178,9 +180,11 @@ export const mailing = Layer.effect(Mail, effect {
     board = { ...board, ...next }
     listeners.forEach((listener) => listener())
   }
-  const nameOf = (to: string) => {
+  const nameOf = (to: string, replied?: Replied) => {
     const first = recipientsOf(to)[0] ?? ""
-    return names.get(first.toLowerCase()) ?? first
+    const held = replied === undefined || replied.ref === "" ? undefined : shelf.held(replied.id, replied.ref)
+    const sender = held !== undefined && [held.content.fromAddress, held.reply?.address].some((a) => a?.toLowerCase() === first.toLowerCase()) ? held.content.from : ""
+    return names.get(first.toLowerCase()) ?? (sender || first)
   }
   const undeleted = (id: number, failed: boolean) => {
     if (board.undeleted.has(id) === failed) return
@@ -243,12 +247,12 @@ export const mailing = Layer.effect(Mail, effect {
     const news = told(account.id, before, after).news
     if (news === "SentEmail") {
       try noteSent(registry, account.id, after.draft.to)
-      try show(`Sent to ${nameOf(after.draft.to)}`)
+      try show(`Sent to ${nameOf(after.draft.to, { id: account.id, ref: after.replyTo })}`)
     }
     if (news === "QueuedEmail") try show("Waiting in Outbox until you’re back online")
     const gone = leftOutbox(before, after)
     for (const q of gone) try noteSent(registry, account.id, q.snapshot.content.to)
-    if (gone.length === 1) try show(`Your email to ${nameOf(gone[0].snapshot.content.to)} was sent`)
+    if (gone.length === 1) try show(`Your email to ${nameOf(gone[0].snapshot.content.to, { id: account.id, ref: gone[0].snapshot.replyTo })} was sent`)
     if (gone.length > 1) try show("Your waiting emails were sent")
     for (const record of undoable(after).filter((r) => !undoable(before).some((o) => o.identity.ref === r.identity.ref))) {
       try fork.in(scope) effect {
