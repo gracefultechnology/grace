@@ -209,7 +209,7 @@ effect function openBilling(transport: Transport, operation: "checkout" | "porta
   try transport.openExternal(destination)
 }
 
-export const graceAccount = (native: boolean) => Layer.effect(AccountActions, effect {
+export const graceAccount = (native: boolean, hasLocalConnector: boolean) => Layer.effect(AccountActions, effect {
   const setup = try Setup
   const workspace = try Workspaces
   const gate = try Semaphore.make(1)
@@ -227,8 +227,10 @@ export const graceAccount = (native: boolean) => Layer.effect(AccountActions, ef
   effect function refresh() {
     const account: GraceAccount = native ? (readDevice() catch () => ({ tag: "AccountUnavailable" } as const)) :
       (readAccount(webTransport) catch () => ({ tag: "AccountUnavailable" } as const))
+    const previous = try setup.get()
+    const fallback: GoogleLink = hasLocalConnector && previous.googleLink.tag === "GoogleLinkUnknown" ? { tag: "GoogleLinkUnknown" } : { tag: "GoogleLinkUnavailable" }
     const link: GoogleLink = account.tag !== "GraceSignedIn" ? { tag: "GoogleLinkUnknown" } :
-      (googleLink(webTransport, account.accountId) catch () => ({ tag: "GoogleLinkUnknown" } as const))
+      (googleLink(webTransport, account.accountId) catch () => fallback)
     const held = setup.send({ type: native ? "reportGraceAccount" : "reportGraceService", report: account, link }) catch () => undefined
     return held?.state.graceAccount ?? ({ tag: "AccountUnavailable" } as const)
   }

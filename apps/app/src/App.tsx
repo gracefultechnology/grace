@@ -1,7 +1,7 @@
 // spec/app/index.md, "Story: Manage my saved passwords privately"
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
-import { AppWindow, AskGraceButton, besideRail, Button, HomeScreen, Rail, RailButton, RailPopover, SleepScreen, Slider, TextScale, WifiSlash, cn } from "@repo/ui";
+import { AppWindow, AskGraceButton, besideRail, Button, HomeScreen, ListRow, Rail, RailButton, RailPopover, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
 import { Effect, Stream } from "effect";
 import { CalendarDays, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
@@ -13,7 +13,7 @@ import { canChangeLifecycle, privateSurfaceActive, type Event as WorkspaceEvent 
 import { Browser } from "./Browser.tsx";
 import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import { dayOf, relative, timeLabel } from "./calendar.vibe";
-import { type HomeCards, ManagedReads, usesManagedSurfaces } from "./managedReads.vibe";
+import { type HomeCards, ManagedReads, surfaceOwner } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
 import { Files, useFilesHome } from "./Files.tsx";
 import { Calendar, calendarKeys, homeCalendar, nextAppointment, reminderNotice, useCalendarActions } from "./Calendar.tsx";
@@ -128,7 +128,7 @@ function Screen() {
   const fire = (event: WorkspaceEvent) => ({ disabled: !can(event), onClick: () => void send(event) });
   const visit = (destination: Surface) => fire({ type: "visit", destination });
   const reminders = (calendars: Parameters<typeof reminderNotice>[1]) =>
-    accounts && !useManaged ? reminderNotice(accounts, calendars, now.getTime(), calendarActions, surface === "Calendar" || !visit("Calendar").disabled) : undefined;
+    accounts && ours ? reminderNotice(accounts, calendars, now.getTime(), calendarActions, surface === "Calendar" || !visit("Calendar").disabled) : undefined;
   const toggle = (popover: Popover) => ({
     selected: device.railPopover === popover,
     ...fire({ type: "togglePopover", popover }),
@@ -138,7 +138,8 @@ function Screen() {
       void send({ type: "togglePopover", popover });
     },
   });
-  const useManaged = usesManagedSurfaces(setup, window.location.hash);
+  const owner = surfaceOwner(setup, window.location.hash);
+  const ours = owner === "Ours";
   const online = device.connectivity === "Online";
   const volume = preferences.session;
   // spec/app/preferences.md, "Undo restores the last setting choice without changing the microphone": zero volume is muted, and Unmute at zero chooses 50.
@@ -175,7 +176,7 @@ function Screen() {
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
             <HomeScreen className="inset-0" banner={<NoticeBanner reminders={reminders(calendars)} />} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...!useManaged && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : calendarActions) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
+              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...ours && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : calendarActions) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
               const when = startOf(event);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
                 weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0,
@@ -183,7 +184,7 @@ function Screen() {
                   managed.send({ kind: "homeOccurrence", row: { accountId: cards.accountId, grant: cards.grant, id: event.externalId, version: event.etag ?? null } }))) };
             }) }, ...visit("Calendar") }}
               email={{
-                ...!useManaged && accounts ? homeMail(accounts, boxes, read, online) : { messages: (useManaged ? cards?.mail ?? [] : []).slice(0, 2).map((message) => ({ id: message.externalId,
+                ...ours && accounts ? homeMail(accounts, boxes, read, online) : { messages: (owner === "Hosted" ? cards?.mail ?? [] : []).slice(0, 2).map((message) => ({ id: message.externalId,
               name: message.from || "Unknown sender", subject: message.subject || "No subject", unread: message.isUnread })),
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." } }, ...visit("Email"),
               }}
@@ -195,8 +196,8 @@ function Screen() {
         </OverPage>
       )}
       {surface === "Browser" && <div className={cn(lifted, besideRail, "pointer-events-none z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
-      {surface === "Calendar" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
-      {surface === "Email" && !useManaged && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
+      {surface === "Calendar" && ours && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
+      {surface === "Email" && ours && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
       {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
       {surface === "Passwords" && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
@@ -210,10 +211,11 @@ function Screen() {
           <Files {...under(covered)} onClose={() => { if (can({ type: "visit", destination: "Home" })) void send({ type: "visit", destination: "Home" }); }} />
         </OverPage>
       )}
-      {useManaged && (surface === "Email" || surface === "Calendar") && (
+      {!ours && (surface === "Email" || surface === "Calendar") && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
           <AppWindow {...under(covered)} title={surface} icon={surface === "Email" ? <Mail size={26} /> : <CalendarDays size={26} />} closeLabel={`Close ${surface}`} onClose={visit("Home").onClick}>
-            <ManagedRead view={surface} now={now.getTime()} />
+            {owner === "Hosted" ? <ManagedRead view={surface} now={now.getTime()} />
+              : <ListRow role="status" className="m-6" leading={<Spinner size="lg" aria-hidden />} title={`Getting your ${surface === "Email" ? "email" : "calendar"}…`} />}
           </AppWindow>
         </OverPage>
       )}
@@ -242,7 +244,7 @@ function Screen() {
         <SleepScreen role="button" tabIndex={0} aria-label="Wake Grace"
         time={`${clock.hour}:${clock.minute}`}
         date={now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
-        next={useManaged ? managedNext(cards, now) : accounts && nextAppointment(accounts, calendars, now.getTime())}
+        next={ours ? accounts && nextAppointment(accounts, calendars, now.getTime()) : managedNext(cards, now)}
         hint="Touch the screen to wake it" onClick={wake} onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); wake(); }
         }} />

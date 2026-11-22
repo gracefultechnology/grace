@@ -304,7 +304,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
     profile: {
       ...profile,
       modules: selected.sources === "shared-cloud"
-        ? [...profile.modules, { name: "eliza-cloud-auth", source: { root: "upstream", path: "packages/auth/android" } }]
+        ? [...profile.modules, { name: "eliza-cloud-auth", source: { root: "upstream", path: "packages/os/android/cloud-auth" } }]
         : profile.modules,
       embeddedAgent: {
         ...profile.embeddedAgent,

@@ -7,7 +7,7 @@ import type { PluginListenerHandle } from "@capacitor/core";
 import { accountPlugin } from "./accountPlugin.ts";
 import type { ElizaSurfaceManagerPlugin } from "@elizaos/os/bridges/definitions/browser-surface";
 import type { WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
-import { createPasswordsClient } from "../../../vendor/eliza/packages/os/src/bridges/passwords-client.ts";
+import { createPasswordsClient } from "@elizaos/os/bridges/passwords";
 import type { ElizaPasswordsPlugin } from "@elizaos/os/bridges/definitions/passwords";
 
 export type { ElizaSurfaceManagerPlugin as SurfacePlugin } from "@elizaos/os/bridges/definitions/browser-surface";

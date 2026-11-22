@@ -1,4 +1,5 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/email.md, "A scam warning needs current evidence and holds that message's links"
+import type { WebsiteTask } from "./websiteTask.vibe"
 import { Digest } from "effect/crypto"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import type { OtherReport, Provider, SheetReport, Use } from "../gen/app__accounts.effect.vibe"
@@ -70,11 +71,12 @@ export type MailConnection = {
   readonly lookup: (operationId: string) => SendOutcome!NeedsSignIn
 }
 
+export type GuidedDispatch = { website: WebsiteTask.Shape; current: boolean!! }
 export type CalendarConnection = {
   readonly feed: (view: CalendarView) => Stream.Stream<Published, ConnectorFailure>
   readonly isGuidedCreateFenced: (identity: Calendar["identity"], task: string) => boolean!Unreachable
   readonly fenceGuidedCreate: (identity: Calendar["identity"], task: string) => boolean!!
-  readonly write: (entry: Calendar, view: CalendarView, guidedFirstDispatch?: boolean) => StoreReceipt!NeedsSignIn
+  readonly write: (entry: Calendar, view: CalendarView, dispatch?: GuidedDispatch) => StoreReceipt!NeedsSignIn
   readonly verifySaved: (view: CalendarView, occurrence: string, expected: EntryDetails) => (EntryDetails | undefined)!ConnectorFailure
   readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!NeedsSignIn
 }
@@ -314,6 +316,7 @@ const legacyCalendarDraft = /^(?:tablet-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89
 data CreateBinding {
   Unknown
   Pending
+  Held
   Received { providerId: string }
 }
 
@@ -342,7 +345,7 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
     const scope = try scopeOf(account, identity)
     return Effect.map(storage.get(fenceKey(scope)), (value) => value === task) catch effect () => { throw new Unreachable() }
   }
-  const bind = (account: AccountRef, send: (body: object, key: string) => ProviderEvent!ConnectorFailure) => effect (entry: Calendar, grantId: string, approve: boolean, guidedFirstDispatch: boolean) => {
+  const bind = (account: AccountRef, send: (body: object, key: string) => ProviderEvent!ConnectorFailure) => effect (entry: Calendar, grantId: string, approve: boolean, dispatch: GuidedDispatch | undefined) => {
     const { owner, calendarId, occurrenceId } = entry.identity
     if (owner !== account.address || entry.identity.kind !== "Appointment" || (entry.phase !== "Saved" && entry.phase !== "Editing")) return CreateBinding.Unknown()
     if (approve && entry.phase === "Editing" && entry.approvedRevision !== entry.revision) return CreateBinding.Unknown()
@@ -380,13 +383,19 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
       if (previous !== undefined && previous.fingerprint !== fingerprint) return CreateBinding.Pending()
       const fenceValue = storage.get(fenceKey(scope)) catch effect () => { throw new Unreachable() }
       const fenced = fenceValue !== undefined
-      if (guidedFirstDispatch && (!fenced || previous !== undefined)) return CreateBinding.Pending()
+      if (dispatch !== undefined && (!fenced || previous !== undefined)) return CreateBinding.Pending()
       if (previous?.providerId !== undefined) return CreateBinding.Received({ providerId: previous.providerId })
-      if (!guidedFirstDispatch && fenced) return CreateBinding.Pending()
+      if (dispatch === undefined && fenced) return CreateBinding.Pending()
       if (previous !== undefined && account.provider !== "Gmail") return CreateBinding.Pending()
       const claim = previous ?? { fingerprint, grantId, mutation: try providerKey(entry.revision) }
       if (previous === undefined) journal.set(at, claim) catch effect () => { throw new Unreachable() }
-      const saved = send(body, claim.mutation) catch effect (cause) => {
+      const request = send(body, claim.mutation)
+      const issued = dispatch === undefined ? undefined : try dispatch.website.start(dispatch.current, request)
+      if (issued === "Held" || issued === "Stale") {
+        journal.remove(at) catch effect () => { throw new Unreachable() }
+        return issued === "Held" ? CreateBinding.Held() : CreateBinding.Pending()
+      }
+      const saved = (issued === undefined ? request : Fiber.join(issued)) catch effect (cause) => {
         if (previous === undefined && (cause instanceof NeedsSignIn || (cause instanceof ProviderRefused && [400, 403, 404, 405, 415, 422].includes(cause.status))))
           journal.remove(at) catch effect () => { throw new Unreachable() }
         throw cause
@@ -417,11 +426,16 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
 
 
-  effect function stored(entry: Calendar, guidedFirstDispatch: boolean) {
+  effect function stored(entry: Calendar, dispatch: GuidedDispatch | undefined) {
     const { calendarId, occurrenceId: id } = entry.identity
     const grantId = try grantOf(account)
     if (!entry.hasSaved) {
-      const bound = try createBinding(entry, grantId, true, guidedFirstDispatch)
+      let bound = try createBinding(entry, grantId, true, dispatch)
+      while (bound._tag === "Held" && dispatch !== undefined) {
+        try Effect.interruptible(dispatch.website.released)
+        if (!(try dispatch.current) || (try grantOf(account)) !== grantId) throw new ProviderRefused({ status: 409 })
+        bound = try createBinding(entry, grantId, true, dispatch)
+      }
       if (bound._tag !== "Received") throw new ProviderRefused({ status: 409 })
       return bound.providerId
     }
@@ -447,7 +461,7 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
       const waiting = new Set<Calendar>()
       for (const c of view.entries) {
         if (c.identity.owner !== view.owner || c.identity.calendarId !== view.calendarId || (c.phase !== "Saved" && (c.phase !== "Editing" || c.hasSaved)) || feed.some((e) => e.externalId === c.identity.occurrenceId)) continue
-        const bound = createBinding(c, grantId, false, false) catch effect (cause) => match (cause) {
+        const bound = createBinding(c, grantId, false, undefined) catch effect (cause) => match (cause) {
           when NeedsSignIn: throw cause;
           default: CreateBinding.Pending();
         }
@@ -469,9 +483,9 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
       const observed = details(saved, startAt, endAt, timezone, expected)
       return verified && sameDetails(observed, expected) ? observed : undefined
     },
-    write: effect (entry, _view, guidedFirstDispatch = false) => {
+    write: effect (entry, _view, dispatch) => {
       const revision = entry.revision
-      return Effect.map(stored(entry, guidedFirstDispatch), (saved): StoreReceipt => ({
+      return Effect.map(stored(entry, dispatch), (saved): StoreReceipt => ({
         revision, succeeded: true, published: [],
         ...entry.hasSaved ? {} : { providerId: saved }
       })) catch effect (e) => match (e) {
