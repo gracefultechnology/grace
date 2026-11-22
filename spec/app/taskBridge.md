@@ -242,15 +242,18 @@ Before the hand-off the step follows the preparation: choosing what the task is
 about, signing in, reading the facts (also while nothing is needed, something is
 already under way or the task is blocked), the yes to the facts, the choice, the
 fill offer, and the form, then the review once the form is checked. After the
-hand-off the step follows this task's own commitment: the consent while the
-window is open, the submission once she has said yes, the outcome while it is
+hand-off the step follows this task's own commitment, the one bound to the
+same subject; before the hand-off no commitment is read, so an earlier run of
+the same subject never shows through a new preparation. It is the consent
+while the window is open, the submission once she has said yes, the outcome while it is
 being checked, and, once it is resolved, recording in the calendar for a kind
 that records there and the outcome otherwise; before the commitment reaches its
 window, or when the commitment belongs to another subject, the step is the
 review. The step of a begun task is always one of its kind's plan.
 
 ```quint
-pure def joined(preparation: P::Prep, c: CM::Commitment): bool = c.stage != CM::Empty and c.key == preparation.key
+pure def joined(preparation: P::Prep, c: CM::Commitment): bool =
+  preparation.phase == P::HandedOff and c.stage != CM::Empty and c.key == preparation.key
 pure def currentStep(preparation: P::Prep, c: CM::Commitment): K::StepKind =
   if (preparation.phase == P::HandedOff) (
     if (joined(preparation, c) and c.stage == CM::Guarded) K::ConsentStep
@@ -287,8 +290,11 @@ pure val cValues = {
 
 ### The task is done only once a positive outcome and its reference are saved
 
-The status is read in this order. It did not go through when this task's own
-commitment is resolved with a verified failure or a return. It is done when
+The status reads the commitment only once the preparation has handed off, as
+the step does, so a status of done or did not go through always shows beside
+the outcome or the recording step, and waiting for the website beside the
+outcome step. The status is read in this order. It did not go through when this
+task's own commitment is resolved with a verified failure or a return. It is done when
 that commitment is resolved and its saved outcome is positive with a reference.
 Otherwise it is stopped when no task is being prepared, the preparation is
 paused, or the commitment is paused; it could not continue when the
@@ -312,5 +318,10 @@ pure def taskStatus(preparation: P::Prep, c: CM::Commitment): TaskStatus =
   else InProgress
 pure def lawDoneMeansASavedPositiveOutcome(preparation: P::Prep, c: CM::Commitment): bool =
   taskStatus(preparation, c) == Done implies
-    (c.key == preparation.key and c.stage == CM::Resolved and CM::positiveOutcome(c.durable.result) and c.durable.reference != "")
+    (preparation.phase == P::HandedOff and c.key == preparation.key and c.stage == CM::Resolved and CM::positiveOutcome(c.durable.result) and c.durable.reference != "")
+pure def lawTheStatusAgreesWithTheStep(preparation: P::Prep, c: CM::Commitment): bool =
+  val status = taskStatus(preparation, c)
+  val shown = currentStep(preparation, c)
+  ((status == Done or status == DidNotGoThrough) implies (shown == K::OutcomeStep or shown == K::RecordStep)) and
+  (status == WaitingForProvider implies shown == K::OutcomeStep)
 ```

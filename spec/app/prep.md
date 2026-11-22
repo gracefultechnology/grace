@@ -263,7 +263,7 @@ pure def sometimesPaused(b: Prep): bool = b.phase != NoTask and not(b.live)
 
 ### Ending a task discards its preparation, keeps its subject and lets nothing from it come back
 
-The person ends a task by cancelling it; the host ends it when the assistant's work on it finishes, is abandoned or is replaced. Ending returns the preparation to no task: the facts, the yes to them, the choice and the answer to the fill offer are discarded, the preparation is live again, and its version advances, so that a report or a hand-off for the ended run carries an old version and attaches to nothing. The subject is kept, and only the person's own begin can select another one. Ending leaves the commitment alone, so a possible submission stays recorded. A task that was never begun cannot be ended, and no step of a preparation ever lowers its version.
+The person ends a task by cancelling it; the host ends it when the assistant's work on it finishes, is abandoned or is replaced. Ending returns the preparation to no task: the facts, the evidence they were read from, the yes to them, the choice, the answer to the fill offer and any reason the task stopped are discarded, the preparation is live again, and its version advances, so that a report or a hand-off for the ended run carries an old version and attaches to nothing. The subject is kept, and only the person's own begin can select another one. Ending leaves the commitment alone, so a possible submission stays recorded. A task that was never begun cannot be ended, and no step of a preparation ever lowers its version.
 
 ```quint
 pure def canRetire(b: Prep, by: T::TaskActor): bool = b.phase != NoTask and (by == T::Person or by == T::Host)
