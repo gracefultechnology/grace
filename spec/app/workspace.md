@@ -1686,12 +1686,13 @@ Grace binds the unique latest match and the fresh collection to the active
 step. The person follows the highlight, then chooses Resume. Only that
 direct visit and its single pause and resume can carry the selection forward.
 Grace checks the new document’s address and independently visible identity.
-A regular browser check cannot confirm this step. When the website prevents
-record reading or leaves the account, dates or completeness unverified, Grace
-explains the limitation and gives the person a way to check on the website.
-On a page where only public links may be read, the instructions use the reviewed
-status and tell the person to compare full dates across every page.
-The step remains unfinished.
+A regular browser check cannot confirm this step. When Grace identifies a
+private form, a page that permits only public links, or a problem verifying
+the account, dates or completeness, she explains that limitation and gives
+the person a next step on the website. If she cannot verify the collection
+itself, she says so. On a page that permits only public links, she tells the person
+to look for the reviewed status on every page and compare the matching records’
+full dates. These refusals leave the step unfinished.
 
 The source and detail evidence stays local, including the link, dates and
 provider identifiers. The reviewed checkpoint retains the collection and
