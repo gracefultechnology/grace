@@ -133,6 +133,7 @@
       "cache": false
     },
     "//#gen:eliza": {
+      "env": ["!VITE_*"],
       "inputs": [
         "vendor/eliza/{package.json,pnpm-lock.yaml,pnpm-workspace.yaml}",
         "vendor/eliza/{apps,packages}/*/package.json",
@@ -143,6 +144,7 @@
       "outputs": ["vendor/eliza/packages/cloud/gen/**", "vendor/eliza/packages/os/gen/**"]
     },
     "//#gen": {
+      "env": ["!VITE_*"],
       "dependsOn": ["//#gen:eliza"],
       "inputs": [
         "spec/**",
@@ -395,6 +397,7 @@
       "outputs": []
     },
     "//#analyze": {
+      "dependsOn": ["//#gen", "@repo/design-system#build", "@repo/ui#gen", "vibestack-studio#gen"],
       "inputs": [
         "apps/**",
         "packages/**",
@@ -426,6 +429,10 @@
       "dependsOn": ["//#gen"],
       "cache": false,
       "persistent": true
+    },
+    "vibestack-studio#gen": {
+      "env": ["!VITE_*"],
+      "outputs": ["gen/**", "generated/**"]
     },
     "vibestack-studio#dev": {
       "dependsOn": [

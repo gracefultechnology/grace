@@ -50,6 +50,8 @@ files and the `vibestack/fixtures/` they read, besides the tools every task is k
 `check` rewrites its owners' `gen/` too, so it waits for their tasks: name each owner's in `//#check` of `turbo.json`,
 as `@repo/app`'s are. `pnpm lint:js` on its own needs what `gen` and `typecheck` write (`gen/`, `.vibe/declarations`);
 `pnpm lint` runs them first.
+`pnpm all //#analyze` also runs or restores the application and Studio generators,
+the UI stories and the design theme before analysis reads their outputs.
 
 Pull requests go to `develop`, and `develop` to `main`; what CI runs on each is in
 [CI](#ci).
@@ -104,11 +106,21 @@ The two suites of the tools, the command line and each kind of mistake, run side
 edits copy and a few long checks of fixtures are shared projects: each starts with the tool runs (`action-*` entries)
 earlier selftests kept in `.cache/selftest/.spec-cache` and leaves its own there; entries unused for a week are pruned.
 A test that observes a tool really running uses a scratch project of its own, which starts empty.
+Scratch dependency installs clone package files when the filesystem supports it and copy them otherwise. Both methods leave the shared store's hardlink metadata stable while parallel checks observe an installed verifier.
 `pnpm selftest` runs all five through Turborepo, side by side, as `pnpm verify` does. Each of the three
 `selftest:tools` processes bounds its own tests and tools to the machine and checks the order project once for itself,
 so three at once ask about three times what one does: on a machine too small for that,
 `pnpm selftest --concurrency=1` runs one shard at a time. What a change to the
 tools owes it, and the sync skill, is in [AGENTS.md, "Definition of done"](AGENTS.md#definition-of-done).
+
+For phase timings, subscribe to the Node diagnostics channel `vibestack:check:phase` before running `spec check`.
+Each message has `root`, `checkStartedAt` (Unix milliseconds), `phase`, `event` (`start` or `end`) and
+`elapsedMs` (milliseconds measured by a monotonic clock since the check acquired its project lock). Phases
+can overlap. The simulation end records when the last simulation settled. Its message can arrive later,
+once generation has scheduled every simulation. An ordinary exception closes open phases as the check
+unwinds. If the process is interrupted, only events already delivered are available. The check's results
+and exit code still come from its normal output. Keep subscribers' output outside the project and catch
+errors in subscribers, since Node reports a thrown subscriber error as an uncaught exception.
 
 ## Releasing
 
@@ -230,7 +242,10 @@ unchanged toolchain is not read again, nor Z3 asked its version. A check
 reads those times of Dafny's installation once, and reads them again after each
 run of Dafny, so a result is not remembered when the verifier was installed
 again during the run. The template install generates locally with `gen --if-valid`.
-The install command runs its listed root prerequisite tasks together before generation.
+Local installs and the product job run the CLI build and vendored Eliza generation together.
+The tooling package sets `--skip-gen-on-pack` in its prepare script. A
+`pnpm pack` still builds the CLI and Studio. It skips the application's
+generated models, which the tools' tarball does not contain.
 The three tool selftest jobs in `ci.yml` run only the listed `//#build` task and generate their scratch
 projects on demand. The packaged CLI test rebuilds from a clean copy of the
 workspace. Other GitHub Actions jobs use the same strict root
@@ -273,11 +288,12 @@ an identical installation does not invalidate it and replacing an executable
 with the same version does; tests, drivers and explorations are keyed by the
 verifier too, since they may run proofs, as Studio's do. A process that
 outlives a reinstall, as `spec watch` does, reads the installed toolchain
-again on the next check. Simulations and proofs include the resolved package
-versions and dependency links for Quint and LemmaScript respectively. Each
-check reads each package graph once and shares it with all runs of that tool. Short actions share an installation
-check before their results reach disk. The first action, long actions, completed stages and the end of the
-check flush pending results. A changed installation discards the pending results and stops the check. A
+again on the next check. Simulations and proofs include the resolved package files
+and dependency links for Quint and LemmaScript. Each check shares an installation
+inventory across runs of the same tool and validates its files before publishing a batch.
+The first action, long actions, completed stages and the end of the check flush pending results.
+If a concurrent installation changes these files, the check discards the pending results
+and retries under the same project lock. It stops after two unsuccessful retries. A
 simulation also depends on the bytes of Quint's installed Rust evaluator. A
 run that installs its evaluator can produce a result; the next run records it
 against the installed binary. The task runner supplies the evaluator fingerprint
@@ -376,6 +392,7 @@ restore their shared fixture runs and the product runner restores verification
 results from the root, workspace packages and standalone examples. The result
 cache keys include the job, commit and run attempt. Nightly verification restores
 only the pinned evaluator and runs fresh checks.
+The default branch's product job publishes the pnpm store after its frozen installs. All jobs can restore public dependencies with the same workspace, vendored Eliza and example lockfiles. Fork pull requests can read this cache.
 Turborepo shares task results through the private Cloudflare/R2 cache.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
