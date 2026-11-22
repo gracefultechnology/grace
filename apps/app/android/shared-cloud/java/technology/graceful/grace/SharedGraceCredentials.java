@@ -120,8 +120,14 @@ final class SharedGraceCredentials {
   }
   var authority = DeviceCustody.legacyCredentials(context, BuildConfig.CLOUD_API_ORIGIN);
   if (receipt != null && !renewal) {
-   if (!Objects.equals(key.serverId(), receipt.serverId()) ||
-       !(authority.acknowledge(key.serverId(), key.secret()) instanceof Answer.Answered<Acknowledgement>)) throw needsVerification();
+   if (key.serverId() == null) throw needsVerification();
+   if (key.serverId().equals(receipt.serverId())) {
+    if (!(authority.acknowledge(key.serverId(), key.secret()) instanceof Answer.Answered<Acknowledgement>)) throw needsVerification();
+   } else {
+    JSONObject proof = new JSONObject(saved.receipt());
+    if (proof.length() != 8 || !(proof.opt("code") instanceof String) || !(proof.opt("state") instanceof String) ||
+        !(proof.opt("codeVerifier") instanceof String) || !(proof.opt("acknowledgeBy") instanceof Number)) throw needsVerification();
+   }
   } else if (renewal && receipt.after() != null && key.equals(receipt.after())) {
    authority.acknowledge(key.serverId(), key.secret());
   }
