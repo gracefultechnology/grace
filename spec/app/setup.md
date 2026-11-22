@@ -513,12 +513,12 @@ the account she is shown, and may confirm again for that same account while
 her earlier confirmation still holds, as after a sign-in that did not
 finish. She can cancel while Grace checks the account or waits for a sign-in
 code. The tablet must then ask again before she can confirm. The model records
-her confirmation. The tablet follows only the registered callback with the
-request's own state and one code, the check "Browser approval needs an
-explicit choice for the shown account" makes for a browser approval. Just
-before it opens the tablet callback, the browser checks that the same
-request still has her confirmation. This runtime check,
-which no rule here makes, prevents a late reply from reopening a cancelled
+her confirmation. The browser opens the tablet's callback only when the
+service's reply is the registered callback with the request's own state and
+one code, the check isTheRequestsOwnReturn under "Browser approval needs an
+explicit choice for the shown account". Just before it opens that callback,
+the browser checks again that the same request still has her confirmation,
+through tabletSignInConfirmed, so a late reply cannot reopen a cancelled
 request.
 
 A tablet signed in with its own session never offers checkout or the payment
@@ -757,25 +757,39 @@ calendar. For a repeating appointment, the person chooses a single occurrence
 or reviews and confirms the entire series separately. Grace checks provider
 evidence before showing success.
 
-The two Setup laws below cover permission and selection. A managed change
-requires the signed-in web account, its current grant and the permission for
-that operation. Trash requires both mail and Trash access. An appointment
-change requires both calendar access and permission to change appointments.
-The selection check accepts only the exact, nonempty ID and version the
-person reviewed.
+A managed change requires the signed-in web account, its current grant and
+the permission for that operation. Trash requires both mail and Trash
+access. An appointment change requires both calendar access and permission
+to change appointments. The selection check accepts only the exact,
+nonempty ID and version the person reviewed, and the managed Google shell
+applies it twice, when it stages the proposal and again before sending.
+A message is offered for Trash only with its version, and that version is
+empty unless the opened message is outside the Trash folder, carries the
+Inbox label and does not carry the Trash label, so no other message can be
+selected for Trash.
 
-The managed Google shell enforces the remaining steps at runtime. It checks
-the ID and version when it stages the proposal and again before sending.
-For a whole-series change it opens review only while the selection that
-requested the series is still on screen. A new appointment starts with a new
-item. Undo names the confirmed Trash operation. Before showing success, Grace
-checks that the provider receipt names the same account, item and operation.
+A whole-series change opens review only while the occurrence that asked
+for the series is still selected and its series is the one under review.
+A new appointment carries no selected ID or version, so it cannot change an
+existing item, and its receipt must name the item this operation made.
+Before showing success, Grace checks that the provider receipt names the
+same account, item and operation. Undo is built only from a Trash receipt
+that passed that check, and it names that receipt's operation as the one it
+reverses.
 
-These runtime steps, including read-back of frequency and time zone, skipping
-months without the selected day and choosing one occurrence or the whole
-series, are outside the two Setup laws. The [Email](./email.md) and
-[Calendar view](./calendarView.md) rules cover the corresponding local
-mailbox and calendar operations.
+The read-back of frequency and time zone, the notice that a monthly series
+skips months without the selected day, and the choice of one occurrence or
+the whole series are shown by the hosted calendar page, and Google computes
+the series; no rule here checks them. The local mailbox and calendar have
+their own rules for the same steps: "Only an authorized current selection
+can begin a provider mutation" in [Email item](./emailItem.md),
+and in [Calendar](./calendar.md) and [Calendar view](./calendarView.md)
+"Recurrence creates another occurrence rather than changing an existing
+identity", "Saving a repeating event updates its whole series through the
+same form", "The deletion question binds its selected occurrence and
+explicit scope", "Grace's deletion takes effect only for the occurrence and
+scope the person agreed to" and "A provider's create receipt names the
+saved occurrence".
 
 ```quint
 type ManagedChange = ManagedTrash | ManagedAppointmentChange
@@ -793,6 +807,21 @@ pure def isSelectedVersion(selectedId: str, selectedVersion: str, id: str, versi
 pure def lawOnlyTheSelectedVersionIsChanged(selectedId: str, selectedVersion: str, id: str, version: str): bool =
   (isSelectedVersion(selectedId, selectedVersion, selectedId, selectedVersion) == (selectedId != "" and selectedVersion != "")) and
   (isSelectedVersion(selectedId, selectedVersion, id, version) implies (id == selectedId and version == selectedVersion))
+pure def trashableVersion(inTrashFolder: bool, inboxLabel: bool, trashLabel: bool, version: str): str =
+  if (not(inTrashFolder) and inboxLabel and not(trashLabel)) version else ""
+pure def lawOnlyAnInboxMessageOutsideTrashCanBeSelectedForTrash(inTrashFolder: bool, inboxLabel: bool, trashLabel: bool, id: str, version: str): bool =
+  isSelectedVersion(id, trashableVersion(inTrashFolder, inboxLabel, trashLabel, version), id, version) implies
+    (not(inTrashFolder) and inboxLabel and not(trashLabel) and version != "")
+pure def isTheSelectedSeries(selectedId: str, selectedSeriesId: str, seriesFor: str, seriesId: str): bool =
+  seriesFor != "" and selectedId == seriesFor and selectedSeriesId != "" and selectedSeriesId == seriesId
+pure def lawASeriesChangeNeedsItsOccurrenceStillSelected(selectedId: str, selectedSeriesId: str, seriesFor: str, seriesId: str): bool =
+  isTheSelectedSeries(selectedId, selectedSeriesId, seriesFor, seriesId) implies
+    isSelectedVersion(selectedId, selectedSeriesId, seriesFor, seriesId)
+pure def changeReceiptMatches(accountId: str, receiptAccountId: str, itemId: str, receiptItemId: str, operation: str, receiptOperation: str): bool =
+  managedReadMatches(accountId, receiptAccountId, itemId, receiptItemId) and operation != "" and operation == receiptOperation
+pure def lawAChangeReceiptNamesTheSameAccountItemAndOperation(accountId: str, receiptAccountId: str, itemId: str, receiptItemId: str, operation: str, receiptOperation: str): bool =
+  changeReceiptMatches(accountId, receiptAccountId, itemId, receiptItemId, operation, receiptOperation) implies
+    (accountId != "" and accountId == receiptAccountId and itemId == receiptItemId and operation != "" and operation == receiptOperation)
 pure def grantOf(link: GoogleLink): str = match link {
   | GoogleLinkConnected(g) => g.grant
   | _ => ""
@@ -830,17 +859,19 @@ the match to the shown account as inputs. All three must hold to offer
 Approve. Counting the action as approved also requires the person's explicit
 confirmation, which is her tap on Approve. A request is registered only when
 it names the registered page and carries no field beyond the registered
-ones, so a request carrying the recovery key or a password is never
-registered. The service reports a stale sign-in or a changed account when it
+ones, so a request cannot add a field for the recovery key or a password.
+The page does not inspect the values of the registered fields. The service reports a stale sign-in or a changed account when it
 receives the action and shown account together.
 
-The browser, and the tablet for its own sign-in, follow a return only to the
-registered callback, with exactly one state that is the request's own and
-exactly one well-formed code. Cancel clears the saved request, so no later
+The browser follows a return, for a backup approval and for a tablet
+sign-in, only to the registered callback, with exactly one state that is the
+request's own and exactly one well-formed code. Cancel clears the saved request, so no later
 sign-in return resumes it, as "Google sign-in can resume only a pending
-browser approval" below requires. Binding the code to the original native
-request, its single use and the verified exchange before native recovery uses
-the approval are "A grant can be used once for the current request".
+browser approval" below requires. Binding the approval to the original
+native request and its single use are mayUsePasswordBackupGrant and
+consumePasswordBackupGrant under "A grant can be used once for the current
+request". That the exchange is verified before native recovery uses the
+approval is that heading's prose, which no law there checks.
 
 ```quint
 pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
