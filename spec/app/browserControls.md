@@ -162,11 +162,11 @@ until the person resumes and Grace receives a fresh ordinary-page observation.
 
 ~~~quint
 type PrivateCodeField = { tab: int, revision: int, loadVersion: int, document: int, fieldId: int, topOrigin: str, fieldOrigin: str }
-pure def currentPrivateCodeField(b: B::Browser, field: PrivateCodeField): bool = {
+pure def currentPrivateCodeField(b: B::Browser, focused: PrivateCodeField): bool = {
   val tab = B::activeTab(b)
-  field.tab == b.selected and field.revision == b.revision and field.loadVersion == tab.loadVersion and
-    tab.manualSignIn and tab.load == B::Loaded and tab.secure and field.topOrigin != "" and
-    field.topOrigin == B::tabUrl(tab) and field.fieldOrigin == field.topOrigin
+  focused.tab == b.selected and focused.revision == b.revision and focused.loadVersion == tab.loadVersion and
+    tab.manualSignIn and tab.load == B::Loaded and tab.secure and focused.topOrigin != "" and
+    focused.topOrigin == B::tabUrl(tab) and focused.fieldOrigin == focused.topOrigin
 }
 pure def mayFillPrivateCodeField(b: B::Browser, offered: PrivateCodeField, focused: PrivateCodeField, by: BrowserControlActor): bool =
   by == BrowserControlUser and offered == focused and currentPrivateCodeField(b, focused)
