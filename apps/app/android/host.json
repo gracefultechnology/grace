@@ -2,6 +2,9 @@
   "schema": 1,
   "sdk": { "min": 29, "target": 36, "compile": 36 },
   "releaseMinify": true,
+  "buildTypes": {
+    "release": { "proguardFiles": [{ "root": "consumer", "path": "android/proguard-rules.pro" }] }
+  },
   "kotlin": true,
   "nativeLibraries": "extract-16k",
   "embeddedAgent": {
