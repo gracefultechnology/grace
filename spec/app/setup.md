@@ -946,7 +946,8 @@ pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool
 
 > As a tablet owner, I can save an encrypted copy of my passwords to the
 > cloud deployment my tablet uses, restore them on a replacement tablet
-> with my recovery key, or remove the copy from my cloud account.
+> with my recovery key, or remove the copy from my cloud account while
+> keeping the passwords on my tablet.
 
 ### A backup belongs to the signed-in owner and has its own approval
 
@@ -1093,11 +1094,9 @@ pure def lawCancelledPasswordBackupRequestCannotBeApproved(pending: PasswordBack
 
 Verifying ownership, saving and restoring require a fresh Android unlock
 confirmation for that operation, even when the foreground Passwords screen is already open.
-A tablet with saved passwords asks the owner before linking those
-passwords to the account. Passwords and the recovery key stay in the
-protected native flow and are kept out of the agent. The cloud receives
-only the encrypted snapshot. Restore fills an empty vault in one step.
-Removing a cloud copy leaves local passwords available.
+Passwords and the recovery key stay in the protected native flow and are
+kept out of the agent. The cloud receives only the encrypted snapshot.
+Restore fills an empty vault in one step.
 
 ```quint
 type RecoveryPresence = ForegroundVaultAccess | ConfirmedRecoveryUnlock | EndedRecoveryUnlock
