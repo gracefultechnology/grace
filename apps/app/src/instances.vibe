@@ -70,9 +70,13 @@ function mailWithDraftCount(text: string) {
     : text
 }
 
-effect function calendarWithMailSource(text: string, account: number) {
+effect function upgradedCalendar(text: string, account: number) {
   let changed = false
   const parsed: unknown = try Effect.try(() => JSON.parse(text, (key: string, value: unknown): unknown => {
+    if (key === "" && typeof value === "object" && value !== null && "entries" in value && !("picker" in value)) {
+      changed = true
+      return { ...value, picker: "NoPicker" }
+    }
     if (key !== "identity" || typeof value !== "object" || value === null || !("occurrenceId" in value) ||
         !("kind" in value) || !("sourceRef" in value) || "sourceAccount" in value) return value
     const sourceAccount = value.kind === "Appointment" && typeof value.sourceRef === "string" && value.sourceRef !== "" ? account : 0
@@ -143,7 +147,7 @@ export const instances = Layer.effect(Instances, effect {
   }
   const openCalendar = (account: number) => {
     const key = calendarKey(account)
-    const compatible = compatibleStore(key, (text) => calendarWithMailSource(text, account))
+    const compatible = compatibleStore(key, (text) => upgradedCalendar(text, account))
     return Effect.orDie(Effect.provide(effect { return try CalendarMachine }, Layer.provide(storedCalendar(key), compatible)))
   }
   const mail = (id: number) => id === tablet ? Effect.fail(new NotAnAccount({ id })) : ensure(mails, id, openMail(id))

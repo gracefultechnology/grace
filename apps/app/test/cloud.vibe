@@ -48,6 +48,8 @@ type Appointment = {
   organizer: Record<string, unknown> | null
   attendees: { email: string | null; displayName: string | null; responseStatus: string | null; self: boolean; organizer: boolean; optional: boolean }[]
   metadata: { etag: string; iCalUID: string | null; recurringEventId: string | null; createdAt: string | null; updatedAt: string | null }
+  recurrence?: readonly string[]
+  reminders?: typeof Reminders.Type
 }
 
 schema Turn { said: string; outcome: "streaming" | "completed" | "aborted" }
@@ -134,7 +136,9 @@ schema Proposal = Change | Outgoing
 schema Prepare { grantId: Uuid; requestId: Uuid; proposal: Proposal }
 schema Dispatch { grantId: Uuid; reviewDigest: string; proposal: Proposal }
 schema Attendee { email: Mailbox; displayName?: Filled; optional?: boolean }
-schema NewAppointment { side?: "owner" | "agent"; grantId?: Filled; calendarId?: Filled; title: Filled; description?: string; location?: string; startAt: Instant; endAt: Instant; timeZone: Filled; attendees?: Attendee[] }
+schema Reminder { method: "popup" | "email"; minutes: number }
+schema Reminders { useDefault: boolean; overrides?: Reminder[] }
+schema NewAppointment { side?: "owner" | "agent"; grantId?: Filled; calendarId?: Filled; title: Filled; description?: string; location?: string; startAt: Instant; endAt: Instant; timeZone: Filled; attendees?: Attendee[]; recurrence?: Filled[]; reminders?: Reminders }
 schema AppointmentChange { side?: "owner" | "agent"; grantId?: Filled; calendarId?: Filled; title?: Filled; description?: string; location?: string; startAt?: Instant; endAt?: Instant; timeZone?: Filled; attendees?: Attendee[] }
 schema Selected { grantId: Uuid }
 schema FeedQuery { timeMin: Instant; timeMax: Instant; grantId?: string; calendarId?: string; timeZone?: string }
@@ -173,7 +177,7 @@ schema GmailMessage { id: string; snippet: string; payload: { body: { data: stri
 schema GoogleEventReferences { items: { id: string }[] }
 schema GoogleEventReference { id: string }
 schema GoogleEventTime { dateTime: Instant; timeZone: string }
-schema GoogleEventBody { summary: Filled; description?: string; location?: string; start: GoogleEventTime; end: GoogleEventTime; attendees?: Attendee[] }
+schema GoogleEventBody { summary: Filled; description?: string; location?: string; start: GoogleEventTime; end: GoogleEventTime; attendees?: Attendee[]; recurrence?: Filled[]; reminders?: Reminders }
 schema GoogleCalendarPath { calendar: Filled }
 schema GoogleMailPath { message: Filled }
 schema SpeechSession { consentNonce: Uuid }
@@ -332,7 +336,7 @@ function seeded(provider: Slug, address: string, at: number, site: string, visit
   }
 }
 
-type Stored = Pick<Appointment, "externalId" | "calendarId" | "title" | "description" | "location" | "startAt" | "endAt" | "isAllDay" | "timezone" | "etag" | "attendees">
+type Stored = Pick<Appointment, "externalId" | "calendarId" | "title" | "description" | "location" | "startAt" | "endAt" | "isAllDay" | "timezone" | "etag" | "attendees" | "recurrence" | "reminders">
 
 function appointment(written: Stored): Appointment {
   return {
@@ -363,8 +367,11 @@ function shown(e: Appointment, timeZone: string): Appointment {
 function googleEvent(e: Appointment) {
   const at = (dateTime: string) => e.isAllDay ? { date: dateTime.slice(0, 10) } : { dateTime, timeZone: e.timezone }
   return { kind: "calendar#event", id: e.externalId, summary: e.title, description: e.description, location: e.location, etag: e.etag,
-    status: e.status, start: at(e.startAt), end: at(e.endAt) }
+    status: e.status, start: at(e.startAt), end: at(e.endAt), recurrence: e.recurrence, reminders: e.reminders }
 }
+
+const during = (e: Appointment, timeMin: string, timeMax: string) =>
+  Date.parse(e.startAt) < Date.parse(timeMax) && (e.recurrence !== undefined || Date.parse(e.endAt) > Date.parse(timeMin))
 
 function box(provider: Slug, address: string, grantId: string, at: number, site: string, visit: string): Box {
   const today = Math.floor(at / day) * day
@@ -808,13 +815,13 @@ effect function store(site: string) {
     const zone = timeZone?.trim() || "UTC"
     const token = (try Ref.get(googleLinks)).get(found.grantId)
     const raw = token === undefined ? undefined : try Schema.decodeUnknownEffect(GoogleEventReferences)(try googleRequest("GET", `${googleCalendar}/${encodeURIComponent(calendar)}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`, token))
-    const events = found.calendar.filter((e) => raw === undefined || raw.items.some(({ id }) => id === e.externalId)).map((e) => shown(e, zone)).filter((e) => e.calendarId === calendar && Date.parse(e.startAt) < Date.parse(timeMax) && Date.parse(e.endAt) > Date.parse(timeMin))
+    const events = found.calendar.filter((e) => raw === undefined || raw.items.some(({ id }) => id === e.externalId)).map((e) => shown(e, zone)).filter((e) => e.calendarId === calendar && during(e, timeMin, timeMax))
     return try HttpServerResponse.json({ calendarId: calendar, events, syncedAt: try now() })
   }
 
   effect function addAppointment(fixed?: Slug) {
     const fields = try HttpServerRequest.schemaBodyJson(NewAppointment)
-    const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId } = fields
+    const { title, description, location, startAt, endAt, timeZone, calendarId, attendees, grantId, recurrence, reminders } = fields
     const { key, box: found } = try connection(fixed, grantId)
     const fault = (try caller()).calendarFault
     try change(key, (a) => ({ ...a, calendarFault: undefined, calendarCreateRequests: a.calendarCreateRequests + 1 }))
@@ -828,7 +835,7 @@ effect function store(site: string) {
       const token = (try Ref.get(googleLinks)).get(found.grantId)
       if (token === undefined) return try recordAppointment(key, found, fields)
       const raw = try Schema.decodeUnknownEffect(GoogleEventReference)(try googleRequest("POST", `${googleCalendar}/${encodeURIComponent(calendarId ?? "primary")}/events`, token, {
-        summary: title, description, location, start: { dateTime: startAt, timeZone }, end: { dateTime: endAt, timeZone }, attendees
+        summary: title, description, location, start: { dateTime: startAt, timeZone }, end: { dateTime: endAt, timeZone }, attendees, recurrence, reminders
       }))
       const current = try connection(fixed, grantId)
       const added = current.box.calendar.find((event) => event.externalId === raw.id)
@@ -854,11 +861,12 @@ effect function store(site: string) {
     return try HttpServerResponse.json({ event: shown(saved, timeZone) }, { status: 201 })
   }
 
-  effect function recordAppointment(key: string, found: Box, { title, description, location, startAt, endAt, timeZone, calendarId, attendees }: typeof NewAppointment.Type) {
+  effect function recordAppointment(key: string, found: Box, { title, description, location, startAt, endAt, timeZone, calendarId, attendees, recurrence, reminders }: typeof NewAppointment.Type) {
     const added = appointment({
       externalId: `appointment${try next()}`, calendarId: calendarId?.trim() ?? "primary", title: title.trim(), description: description ?? "", location: location ?? "",
       startAt: new Date(startAt).toISOString(), endAt: new Date(endAt).toISOString(), isAllDay: false, timezone: timeZone.trim(), etag: `"${try next()}"`,
-      attendees: (attendees ?? []).map((a) => ({ email: a.email, displayName: a.displayName ?? null, responseStatus: "needsAction", self: false, organizer: false, optional: a.optional ?? false }))
+      attendees: (attendees ?? []).map((a) => ({ email: a.email, displayName: a.displayName ?? null, responseStatus: "needsAction", self: false, organizer: false, optional: a.optional ?? false })),
+      ...recurrence === undefined ? {} : { recurrence }, ...reminders === undefined ? {} : { reminders }
     })
     try changeBox(key, found.grantId, (b) => ({ ...b, calendar: [...b.calendar, added] }))
     return added
@@ -868,15 +876,15 @@ effect function store(site: string) {
     const { calendar } = try HttpRouter.schemaPathParams(GoogleCalendarPath)
     const { timeMin, timeMax } = try HttpServerRequest.schemaSearchParams(FeedQuery)
     const { box } = try googleAuthorized(`GET ${googleCalendar}/${calendar}/events`)
-    const items = box.calendar.filter((e) => e.calendarId === calendar && Date.parse(e.startAt) < Date.parse(timeMax) && Date.parse(e.endAt) > Date.parse(timeMin))
+    const items = box.calendar.filter((e) => e.calendarId === calendar && during(e, timeMin, timeMax))
     return try HttpServerResponse.json({ kind: "calendar#events", items: items.map(googleEvent) })
   }
 
   effect function googleCalendarInsert() {
     const { calendar } = try HttpRouter.schemaPathParams(GoogleCalendarPath)
     const { key, box } = try googleAuthorized(`POST ${googleCalendar}/${calendar}/events`)
-    const { summary, description, location, start, end, attendees } = try HttpServerRequest.schemaBodyJson(GoogleEventBody)
-    const saved = try recordAppointment(key, box, { calendarId: calendar, title: summary, description, location, startAt: start.dateTime, endAt: end.dateTime, timeZone: start.timeZone, attendees })
+    const { summary, description, location, start, end, attendees, recurrence, reminders } = try HttpServerRequest.schemaBodyJson(GoogleEventBody)
+    const saved = try recordAppointment(key, box, { calendarId: calendar, title: summary, description, location, startAt: start.dateTime, endAt: end.dateTime, timeZone: start.timeZone, attendees, recurrence, reminders })
     return try HttpServerResponse.json(googleEvent(saved), { status: 201 })
   }
 
