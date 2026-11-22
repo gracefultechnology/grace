@@ -353,11 +353,17 @@ jobs:
                 (.miss == "insufficient-record-evidence" and .refusedRecord) or
                 (.miss == "action-budget-exhausted" and .exhaustedBudget)))) and
               .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1) and
-              (.completed == false or (.checkedPlan and (.officialScore == 1 or .userAssistedSearch)))) and
+              (.completed == false or (.checkedPlan and (.officialScore == 1 or (.userAssistedSearch and .taskId == "277"))))) and
             all(.[] | select(.userAssistedSearch); .completed and .checkedUserAssistedSearch and (.hostedGuidance | not)) and
             all(.[] | select(.cohort == "required"); .officialScore == 1 and .hostedGuidance and .checkedPlan)
           ' "$WEBARENA_RESULTS/scorecard.json"
           test "$browser_exit" -eq 0
+      - name: Exercise the public search and its negative controls in Chromium
+        if: ${{ !cancelled() && inputs.webarena_public_search && env.WEBARENA_RESULTS != '' }}
+        run: |
+          unset GRACE_BROWSER_BENCHMARK_FILE
+          pnpm --filter @repo/app test:browser test/app.browser.test.tsx -t 'Check a public search the person performs' \
+            --reporter default --reporter json --outputFile.json="$WEBARENA_RESULTS/public-search-journey.json"
       - if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -367,6 +373,8 @@ jobs:
             ${{ runner.temp }}/grace-webarena-results/corpus-coverage.json
             ${{ runner.temp }}/grace-webarena-results/task-*.json
             ${{ runner.temp }}/grace-webarena-results/scorecard.json
+            ${{ runner.temp }}/grace-webarena-results/run-coverage.json
+            ${{ runner.temp }}/grace-webarena-results/public-search-journey.json
             ${{ runner.temp }}/grace-webarena-results/grace-browser.log
           if-no-files-found: warn
   billworld:

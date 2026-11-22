@@ -258,7 +258,7 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
-type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "bind-native-landing" |
+type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "submit-public-search" | "observe-search-landing" | "bind-native-landing" |
   "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
 
 it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
@@ -363,8 +363,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       expect(search.query).toBe(publicSearchQuery(intent));
       expect(search.origin).toBe(new URL(initial.url).origin);
       outcome.operator = "trusted Chromium keyboard input in the website search field";
-      failureStage = "follow-guidance";
+      failureStage = "submit-public-search";
       const submitted = Schema.decodeUnknownSync(PublicSearch)(await transport({ kind: "submitPublicSearch", query: search.query }));
+      failureStage = "observe-search-landing";
       const landed = await read();
       outcome.destination = { url: landed.url, documentId: landed.documentId };
       outcome.publicSearch = submitted;
