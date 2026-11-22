@@ -149,19 +149,34 @@ pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str)
   not(canControl(b, RequestPrivateSignIn({ id: b.selected, revision: b.revision, origin: origin }), BrowserControlHost))
 ```
 
-### An email code suggestion belongs to the current private website field
+### Only the person can open their mail app from the current private tab
 
-When the person focuses the website’s email-code field in private sign-in,
-the tablet checks the connected Grace inbox for that request. Android offers
-a suggestion only for a matching fresh message in the person’s linked account.
-The native browser verifies the focused field and its top-level HTTPS origin.
-The inbox adapter verifies the account, grant and message before delivery.
-If the field, document, account or request changes, the suggestion expires.
+If the website asks for a code by email, the person taps **Check email** on
+the loaded private sign-in tab. Android opens a mail app through its normal
+app selection. Grace sends no address, search, message or code and receives
+no mail result. A stale request, another tab or a host request cannot open
+mail. The handoff leaves the private tab open and grants no website work or
+completion. If Android cannot open a mail app, the person can check on another
+device. Back or Android's app switcher returns to the same private tab, where
+the person enters the code directly on the website.
 
-Choosing the suggestion fills just that field. The person submits on the site.
-The message and code stay outside browser controls, conversation and task
-history. Filling the field or submitting the form leaves guided work pending
-until the person resumes and Grace receives a fresh ordinary-page observation.
+~~~quint
+pure def canCheckPrivateEmail(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
+  by == BrowserControlUser and id == b.selected and revision == b.revision and
+  B::activeTab(b).manualSignIn and B::activeTab(b).load == B::Loaded
+pure def lawPrivateEmailRequiresTheCurrentPersonTab(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
+  (by != BrowserControlUser or id != b.selected or revision != b.revision or
+    not(B::activeTab(b).manualSignIn) or B::activeTab(b).load != B::Loaded) implies
+    not(canCheckPrivateEmail(b, id, revision, by))
+~~~
+
+### Only the person can fill the current private website field
+
+During private sign-in the person enters a code on the website. Android
+manages any system suggestion for the focused field. A choice for a different
+field, document, tab or origin has no authority over the current field.
+Entering a value leaves the guided task pending until the person resumes and
+Grace checks the ordinary page.
 
 ~~~quint
 type PrivateCodeField = { tab: int, revision: int, loadVersion: int, document: int, fieldId: int, topOrigin: str, fieldOrigin: str }

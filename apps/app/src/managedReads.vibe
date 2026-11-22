@@ -26,9 +26,6 @@ const Folder = Schema.Literals(["inbox", "sent", "drafts", "trash"])
 export type ManagedFolder = typeof Folder.Type
 const count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const MailCounts = Schema.Struct({ inboxUnread: count, drafts: count })
-schema TabletMailConsent { accountId: idField; grant: idField; stamp: string; approved: boolean }
-const consentEndpoint = apiOrigin + "/api/product/email/westvale/consent"
-type TabletMailOffer = typeof TabletMailConsent.Type & { request: string }
 const MailPage = Schema.Struct({ accountId: idField, folder: Schema.optionalKey(Folder), q: Schema.optionalKey(Schema.String), messages: Schema.Array(MailRow), nextPageToken: Schema.NullOr(Schema.String), counts: Schema.optionalKey(MailCounts) })
 const CalendarPage = Schema.Struct({ accountId: idField, events: Schema.Array(EventRow), nextPageToken: Schema.NullOr(Schema.String) })
 export schema MailReply { recipient: string; subject: string }
@@ -96,7 +93,7 @@ type Scope =
   | { kind: "waiting"; view: ReadView; reason: Waiting }
   | { kind: "ready"; view: ReadView; accountId: string; grant: string }
 type ReadyScope = Extract<Scope, { kind: "ready" }>
-type Mail = { folder: ManagedFolder; search: string; counts?: typeof MailCounts.Type; tablet?: TabletMailOffer; proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
+type Mail = { folder: ManagedFolder; search: string; counts?: typeof MailCounts.Type; proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
 export function inboxTrashVersion(mail: Mail) {
   const row = mail.selected?.message
   return mail.folder !== "trash" && row?.labels?.includes("INBOX") && !row.labels.includes("TRASH") ? row.metadata?.historyId : undefined
@@ -112,7 +109,7 @@ export type ManagedSnapshot =
 
 type HomeOccurrence = { accountId: string; grant: string; id: string; version: string | null }
 type ReadIntent = Intent & { homeOccurrence?: HomeOccurrence }
-type Command = { kind: "approveTabletMail"; stamp: string } | (({ kind: "mailFolder"; folder: ManagedFolder; search: string } | { kind: "calendarWindow"; move: Navigation; day: number }) & WriteScope) | { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" | "saveAttachment" | "savePhotos" }
+type Command = (({ kind: "mailFolder"; folder: ManagedFolder; search: string } | { kind: "calendarWindow"; move: Navigation; day: number }) & WriteScope) | { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" | "saveAttachment" | "savePhotos" }
 
 export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | (
   { accountId: string; googleEmail: string; grant: string; id: string; version: string } &
@@ -263,18 +260,6 @@ effect function scopeOf(native: boolean, view: ReadView, account: SetupState, in
   return { kind: "ready", view, accountId, grant: account.googleLink.tag === "GoogleLinkConnected" ? account.googleLink.grant : "" }
 }
 
-effect function tabletMailOffer(scope: ReadyScope) {
-  const request = new URL(webView.window.location.href).searchParams.get("emailDevice")
-  if (!request || !/^[A-Za-z0-9_-]{43}$/.test(request)) return undefined
-  const result = try timeout(tryPromise(async (signal) => {
-    const reply = await webView.window.fetch(consentEndpoint + "?request=" + request, { credentials: "include", cache: "no-store", signal })
-    return reply.ok ? await reply.json() as unknown : null
-  }), "10 seconds")
-  const parsed = Schema.decodeUnknownOption(TabletMailConsent)(result)
-  return Option.isSome(parsed) && parsed.value.accountId === scope.accountId && parsed.value.grant === scope.grant
-    ? { ...parsed.value, request } : undefined
-}
-
 effect function fetchPage(authorization: AccountActions.Shape, scope: ReadyScope, prior?: Mail | Calendar, next?: string, home?: ReturnType<typeof range>) {
   const paging = { pageToken: next, grantId: scope.grant }
   if (scope.view === "Email") {
@@ -286,8 +271,7 @@ effect function fetchPage(authorization: AccountActions.Shape, scope: ReadyScope
     if (!sameListing || !managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
     const existing = next && prior?.kind === "mail" ? prior.rows : []
     const rows = [...new Map([...existing, ...loaded.messages].map((row) => [row.externalId, row])).values()]
-    const tablet = tabletMailOffer(scope) catch () => undefined
-    return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, tablet, folder, search, counts: loaded.counts ?? (prior?.kind === "mail" ? prior.counts : undefined), rows, next: loaded.nextPageToken }
+    return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, folder, search, counts: loaded.counts ?? (prior?.kind === "mail" ? prior.counts : undefined), rows, next: loaded.nextPageToken }
   }
   const window = prior?.kind === "calendar" ? prior.window : navigation(initialCalendarView.window, "Today", dayOf(try Clock.currentTimeMillis)).window
   const interval = next && prior?.kind === "calendar" ? prior : home
@@ -701,18 +685,6 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     const shown = try SubscriptionRef.get(latest)
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
       (shown.kind === "mail") !== (scope.view === "Email")) return false
-    if (command.kind === "approveTabletMail") {
-      if (shown.kind !== "mail" || !shown.tablet || shown.tablet.approved || shown.tablet.stamp !== command.stamp) return false
-      const { request, grant, accountId, stamp } = shown.tablet
-      const approved = try timeout(tryPromise(async (signal) => {
-        const reply = await webView.window.fetch(consentEndpoint, { method: "POST", credentials: "include", cache: "no-store",
-          headers: { "content-type": "application/json" }, body: JSON.stringify({ request, grant, accountId, stamp }), signal })
-        const value: unknown = reply.ok ? await reply.json() : null
-        return Schema.is(Schema.Struct({ approved: Schema.Literal(true) }))(value)
-      }), "10 seconds")
-      try refresh(try activeScope())
-      return approved
-    }
     if (command.kind === "openAttachment") return shown.kind === "mail" && (try openAttachment(scope, shown, command.partId))
     if (command.kind === "saveAttachment" || command.kind === "savePhotos") return shown.kind === "mail" && (try saveAttachment(scope, shown, command.kind === "savePhotos"))
     if (command.kind === "closeAttachment") {

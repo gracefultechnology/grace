@@ -2,7 +2,6 @@
 export { SpeechRelayCoordinator } from "@elizaos/cloud/worker"
 import { cloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud/worker"
 import { HttpServerResponse } from "effect/http"
-import { deviceInboxPaths, inboxPath, westvaleInbox } from "./westvaleInbox.vibe"
 
 type GraceCloud = CloudBindings & { ASSETS?: { fetch(request: Request): Promise<Response> } }
 effect function scopeDigest(parts: readonly string[]) {
@@ -15,8 +14,7 @@ function scopeResponse(status: number, payload: unknown) {
   return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(payload, { status, headers: { "cache-control": "private, no-store" } }))
 }
 
-const cloud = cloudWorker<GraceCloud>(async (request, env, db, account) => {
-  if (new URL(request.url).pathname.startsWith(inboxPath)) return westvaleInbox(request, env, db, account)
+const cloud = cloudWorker<GraceCloud>(async (request, _env, db, account) => {
   if (new URL(request.url).pathname !== "/api/product/files/scope" || request.method !== "GET") return scopeResponse(404, { error: "not_found" })
   const credentials = (request.headers.get("cookie") ?? "").split(";").map((part) => part.trim()).filter((part) => part.startsWith("__Host-eliza-session="))
   if (credentials.length !== 1) return scopeResponse(401, { error: "authentication_required" })
@@ -30,7 +28,7 @@ const cloud = cloudWorker<GraceCloud>(async (request, env, db, account) => {
       return scopeResponse(200, { accountId: account, owner, session })
     }
   })
-}, deviceInboxPaths)
+})
 
 export default {
   scheduled: cloud.scheduled,
@@ -39,7 +37,7 @@ export default {
     if (url.origin === env.WEB_ORIGIN && url.pathname === "/.well-known/assetlinks.json" && request.method === "GET") return nativeAssetLinks(env)
     if (url.origin === env.WEB_ORIGIN && env.ASSETS && !url.pathname.startsWith("/api/")) {
       const page = await env.ASSETS.fetch(request)
-      if (url.pathname !== "/android/passwords/approve" && !url.searchParams.has("emailDevice")) return page
+      if (url.pathname !== "/android/passwords/approve") return page
       const response = HttpServerResponse.fromWeb(page)
       return HttpServerResponse.toWeb(HttpServerResponse.setHeaders(response, {
         "content-security-policy": "frame-ancestors 'none'",

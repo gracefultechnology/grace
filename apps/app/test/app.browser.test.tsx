@@ -778,6 +778,7 @@ async function askForPrivateSignIn(native: ReturnType<typeof fakePlugin>, reques
 
 async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fillField, platform: Extract<Parameters<typeof application>[2], { native: boolean }> = { native: false }) {
   const runtime = ManagedRuntime.make(application(native.plugin, undefined, platform));
+  const { openPrivateEmail } = platform;
   const browserState = () => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (machine) => machine.get())).browser;
   await mount(runtime);
   await askForPrivateSignIn(native, "use a saved password", enter);
@@ -819,6 +820,7 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   }).toBe(enabled);
   await native.report("tab-2", "https://utility.example", 100, { canGoBack: true, canGoForward: false });
   await waitForBack(true);
+  await expect.element(address).toHaveValue("https://utility.example");
   expect(await pressBack()).toBe(true);
   await expect.poll(() => native.calls("goBack").at(-1)?.id).toBe("tab-2");
   await native.report("tab-2", "https://utility.example", 100, { canGoBack: false, canGoForward: true });
@@ -826,11 +828,20 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   await act(() => userEvent.click(page.getByRole("button", { name: "Forward", exact: true })));
   await expect.poll(() => native.calls("goForward").at(-1)?.id).toBe("tab-2");
   await native.report("tab-2", "https://utility.example/account?ref=one-time", 100, { canGoBack: true, canGoForward: false });
-  await expect.element(checkEmail).not.toBeInTheDocument();
-  await expect.element(address).toHaveValue("https://utility.example");
   const state = JSON.stringify(browserState());
   expect(state).not.toContain("one-time");
   expect(browserState().recent).toEqual(["https://utility.example/normal"]);
+  if (openPrivateEmail) {
+    const visit = () => ({ selected: browserState().selected, navigations: native.calls("navigate"), surfaces: native.calls("createSurface") });
+    const before = visit();
+    await act(() => userEvent.click(checkEmail));
+    await expect.element(page.getByRole("status").filter({ hasText: "return here" })).toBeVisible();
+    expect(visit()).toEqual(before);
+    await act(() => userEvent.click(checkEmail));
+    await expect.element(page.getByRole("status").filter({ hasText: "another device" })).toBeVisible();
+    await expect.element(address).toBeVisible();
+    expect(visit()).toEqual(before);
+  }
   await expect.element(page.getByRole("button", { name: "Ask Grace" })).not.toBeInTheDocument();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   await askForPrivateSignIn(native, "sign me in to pay my bill", enter);
@@ -845,7 +856,8 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   // spec/app/browserControls.md, "Story: Ask Grace to start a private sign-in for my bill"
   const native = fakePlugin(undefined, true);
   const { agent, requests, answer, created, refused } = deviceAgent();
-  const browserState = await signInPrivately(native, undefined, { native: true, agent });
+  const openEmail = vi.fn<() => Promise<void>>().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("No mail app could open"));
+  const browserState = await signInPrivately(native, undefined, { native: true, agent, openPrivateEmail: openEmail });
   await native.started("tab-3");
   await native.report("tab-3", "https://issuer.example/private?ref=one-time", 100, { pageError: null, securityBlocked: false });
   await expect.poll(() => browserState().tabs.find((tab) => tab.id === 3)?.load).toBe("Loaded");
@@ -853,6 +865,7 @@ it('Sign in privately on a website (spec/app/browser.md, "Story: Sign in private
   await expect.element(privateAddress).toHaveValue("https://utility.example");
   await expect.element(privateAddress).toHaveAccessibleDescription("");
   expect(JSON.stringify(browserState())).not.toContain("one-time");
+  expect(openEmail.mock.calls).toEqual([[], []]);
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Private sign-in", exact: true })));
   native.privateSignIn.allows = false;
   await askForPrivateSignIn(native, "use a saved password");
@@ -1499,7 +1512,6 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
 
 it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
   // spec/app/email.md, "Story: Read an email and its original attachment"
-  // spec/app/email.md, "A private sign-in suggestion requires one current message from the website's issuer"
   const person = { id: "private-qa-account", email: "reader@example.test" };
   const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
@@ -1544,10 +1556,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const url = new URL(oldURL);
   url.hash = "email";
   url.searchParams.set("owner_hint", ownerHint);
-  const tabletRequest = "a".repeat(43);
-  const consentStamp = "b".repeat(64);
-  let tabletApproved = false;
-  url.searchParams.set("emailDevice", tabletRequest);
   window.history.replaceState(undefined, "", url);
 
   let signedIn = false;
@@ -1595,16 +1603,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     switch (api.pathname) {
       case "/api/auth/session": return reply({ account: signedIn ? person : null });
       case "/api/product/files/scope": return signedIn ? reply({ accountId: person.id, owner: filesScope, session: "7".repeat(64) }) : reply({}, 401);
-      case "/api/product/email/westvale/consent":
-        if (!signedIn || !connectorConfigured) return reply({}, 403);
-        if (options?.method === "POST") {
-          const expected = { request: tabletRequest, grant, accountId: person.id, stamp: consentStamp };
-          expect(JSON.parse(String(options.body))).toEqual(expected);
-          tabletApproved = true;
-          return reply({ approved: true });
-        }
-        return api.searchParams.get("request") === tabletRequest
-          ? reply({ accountId: person.id, grant, stamp: consentStamp, approved: tabletApproved }) : reply({}, 403);
       case "/api/auth/refresh": return reply({}, 401);
       case "/api/auth/providers": return reply({ google: false, email: true, sms: false });
       case "/api/auth/email/send":
@@ -1767,8 +1765,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" })));
     });
     await expect.element(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
-    await tap("Allow Westvale Electric test codes on the paired tablet");
-    await expect.element(page.getByText("Westvale Electric test sign-in suggestions are on for the paired tablet.")).toBeVisible();
     const homeUrl = new URL(window.location.href);
     homeUrl.hash = "";
     window.history.replaceState(undefined, "", homeUrl);
