@@ -142,3 +142,50 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
     expect(page.getByRole("alert").query()).toBeNull();
   }
 });
+
+it('Clear an expired tablet sign-in before signing in again (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
+  let needsCleanup = true;
+  let cleanupAttempts = 0;
+  const signInAttempts: unknown[] = [];
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    account: {
+      status: async () => needsCleanup ? { kind: "signedOut", legacySignInNeedsCleanup: true } : { kind: "signedOut" },
+      cleanupLegacySignIn: async () => {
+        cleanupAttempts += 1;
+        if (cleanupAttempts === 1) throw new Error("Cloud is unreachable");
+        needsCleanup = false;
+      },
+      beginSignIn: async (options) => { signInAttempts.push(options); },
+      signOut: async () => { throw new Error("Legacy cleanup must use its dedicated action"); },
+      manageAccount: async () => { throw new Error("An unverified owner cannot manage an account"); },
+      addListener: async () => ({ remove: async () => undefined }),
+    },
+  }));
+  const view = tabletView(runtime);
+  onTestFinished(view.dispose);
+  await view.render();
+
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  await act(() => userEvent.click(button("Settings")));
+  await act(() => userEvent.click(button("Account")));
+  const clear = button("Clear old sign-in");
+  const confirm = button("Confirm clearing old sign-in");
+  await expect.element(clear).toBeEnabled();
+  await expect.element(button("Sign in to Grace")).not.toBeInTheDocument();
+  await expect.element(button("Manage Grace account")).not.toBeInTheDocument();
+  await act(() => userEvent.click(clear));
+  await act(() => userEvent.click(button("Cancel")));
+  await expect.element(clear).toBeEnabled();
+  expect(cleanupAttempts).toBe(0);
+
+  await act(() => userEvent.click(clear));
+  await act(() => userEvent.click(confirm));
+  await expect.element(page.getByRole("alert")).toBeVisible();
+  expect(cleanupAttempts).toBe(1);
+  await act(() => userEvent.click(confirm));
+  await expect.element(clear).not.toBeInTheDocument();
+  await act(() => userEvent.click(button("Other sign-in options")));
+  expect(signInAttempts).toEqual([{ method: "browser" }]);
+  expect(cleanupAttempts).toBe(2);
+});

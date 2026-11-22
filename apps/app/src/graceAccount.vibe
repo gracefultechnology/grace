@@ -1,14 +1,18 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
 import {
-  type GoogleLink, type GraceAccount, type GracePlan, Machine as Setup, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, tabletSignInConfirmed
+  type GoogleLink, type GraceAccount, type GracePlan, Machine as Setup, mayBeginDeviceSignIn, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, tabletSignInConfirmed
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
-import { accountPlugin } from "./accountPlugin.ts"
+import { accountPlugin, type AccountBridge } from "./accountPlugin.ts"
 import type { AccountRequest, accountRequests } from "./cloudRequests.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 const filesScope = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
 const Session = Schema.Struct({ account: Schema.NullOr(Schema.Struct({ id: Schema.NonEmptyString, email: Schema.NullOr(Schema.String) })) })
+const DeviceAccountStatus = Schema.Struct({
+  kind: Schema.Literals(["signedIn", "signedOut"]),
+  legacySignInNeedsCleanup: Schema.optional(Schema.Literal(true)),
+})
 schema Providers { google: boolean; email: boolean; sms: boolean }
 schema Subscription { status: "inactive" | "active"; canManage: boolean; canCheckout: boolean }
 schema Destination { url: string }
@@ -61,7 +65,7 @@ const clearDevice = () => Effect.try(() => webView.window.sessionStorage.removeI
 
 export type CodeProvider = "email" | "sms"
 export type Operation =
-  | { kind: "refresh" | "signOut" | "checkout" | "portal" | "manageAccount" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "refresh" | "signOut" | "cleanupLegacySignIn" | "checkout" | "portal" | "manageAccount" | "cancelDevice" | "disconnectGoogle" }
   | { kind: "authorizeDevice"; expectedAccountId: string }
   | { kind: "signIn"; method?: "browser" }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
@@ -209,7 +213,7 @@ effect function openBilling(transport: Transport, operation: "checkout" | "porta
   try transport.openExternal(destination)
 }
 
-export const graceAccount = (native: boolean, hasLocalConnector: boolean) => Layer.effect(AccountActions, effect {
+export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin: AccountBridge | undefined = accountPlugin) => Layer.effect(AccountActions, effect {
   const setup = try Setup
   const workspace = try Workspaces
   const gate = try Semaphore.make(1)
@@ -236,20 +240,27 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean) => Lay
   }
 
   effect function readDevice(): GraceAccount!unknown {
-    const plugin = accountPlugin
     if (plugin === undefined) throw new AccountRequestFailed()
     const status: unknown = try tryPromise(() => plugin.status())
-    const result = try Schema.decodeUnknownEffect(Schema.Struct({ kind: Schema.Literals(["signedIn", "signedOut"]) }))(status)
+    const result = try Schema.decodeUnknownEffect(DeviceAccountStatus)(status)
+    if (result.legacySignInNeedsCleanup === true) {
+      if (result.kind !== "signedOut") throw new AccountRequestFailed()
+      return { tag: "GraceDeviceSignInNeedsCleanup" }
+    }
     return result.kind === "signedIn" ? { tag: "GraceDeviceSignedIn" } : { tag: "GraceDeviceSignedOut" }
   }
 
   effect function perform(operation: Operation) {
     if (operation.kind === "refresh") return (try refresh()).tag !== "AccountUnavailable"
+    if (operation.kind === "cleanupLegacySignIn") {
+      if (!native || plugin === undefined || !mayCleanupLegacySignIn(try refresh())) return false
+      try tryPromise(() => plugin.cleanupLegacySignIn())
+      return (try refresh()).tag === "GraceDeviceSignedOut"
+    }
     if (native) {
-      const plugin = accountPlugin
       if (plugin === undefined) return false
       const current = try refresh()
-      if (operation.kind === "signIn" && current.tag === "GraceDeviceSignedOut") try tryPromise(() =>
+      if (operation.kind === "signIn" && mayBeginDeviceSignIn(current)) try tryPromise(() =>
         operation.method === "browser" ? plugin.beginSignIn({ method: "browser" }) : plugin.beginSignIn())
       else if (operation.kind === "manageAccount" && current.tag === "GraceDeviceSignedIn") try tryPromise(() => plugin.manageAccount())
       else if (operation.kind === "signOut" && current.tag === "GraceDeviceSignedIn") {
@@ -331,8 +342,7 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean) => Lay
     const visible = Stream.filter(Stream.fromEventListener(webView.document, "visibilitychange"), () => !webView.hidden())
     try fork.scoped Stream.runForEach(visible, () => gate.withPermit(refresh()))
   }
-  if (native && accountPlugin !== undefined) {
-    const plugin = accountPlugin
+  if (native && plugin !== undefined) {
     try fork.scoped Stream.runForEach(
       Stream.callback<void>((queue) => acquireRelease(
         promise(() => plugin.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })),
