@@ -1,4 +1,5 @@
 // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "An account's calendar is bound by its store before Calendar opens"; spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"; spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"; spec/app/calendarView.md, "Closing Calendar cancels unsubmitted edits and retains submitted writes"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Her yes is applied as the exact question she was asked"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/calendars.md, "Calendar turns to the day of Grace’s question and of what was just added, but never past an edit"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/notices.md, "One toast shows at a time and the others wait their turn in order"; spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background"; spec/app/notices.md, "Only the calendar dismisses a reminder, and then it is gone everywhere"
+import { WebsiteTask } from "./websiteTask.vibe"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { askedDay, type CalendarSource, type CalRow, changeOf, confirmationOf, confirmRing, type DayToShow, deletionOf, savedDay, shownReminders, showsDay, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
@@ -8,7 +9,7 @@ import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/ap
 import { GuidedRecovery } from "./guidedRecovery.vibe"
 import { enabled as admits, guidedSavePending, hasNext, isAppointmentSave, nextOutcome, Machine as Workspaces, type GuidedCalendarApproval, type Workspace } from "../gen/app__workspace.effect.vibe"
 import type { Watched } from "./accounts.vibe"
-import { Connector, type DeletionReceipt, type Published, type StoreReceipt } from "./connector.vibe"
+import { Connector, type DeletionReceipt, type GuidedDispatch, type Published, type StoreReceipt } from "./connector.vibe"
 import { followAccounts, Instances, tablet } from "./instances.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
 import { Machine as Notices } from "../gen/app__notices.effect.vibe"
@@ -149,7 +150,7 @@ function repetitions(v: CalendarView, span: Reach): Published[] {
 }
 
 type Store = {
-  readonly write: (entry: Calendar, view: CalendarView, guidedFirstDispatch?: boolean) => StoreReceipt!!
+  readonly write: (entry: Calendar, view: CalendarView, dispatch?: GuidedDispatch) => StoreReceipt!!
   readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!!
 }
 
@@ -267,6 +268,7 @@ const deletedBy = (host: NoticeHost.Shape) => effect (title: string) => {
 }
 
 effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publish: CalendarNews.Shape["publish"], span: Reach!!, workspace: Workspaces.Shape, recovery: GuidedRecovery.Shape, deleted: (title: string) => void!!) {
+  const website = try WebsiteTask
   const sent = try Ref.make<ReadonlySet<string>>(new Set())
   const last = try Ref.make<CalendarView | undefined>(undefined)
   effect function first(mark: string) {
@@ -284,7 +286,12 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     const approval = task.plan.calendarApproval
     const guidedFirstDispatch = guidedSavePending(task) && approval.task === task.assistant.taskId &&
       c.identity.occurrenceId === approval.provisional && matchesGuidedApproval(key, c, approval)
-    const receipt = try store.write(written(v, c), v, guidedFirstDispatch)
+    const current = effect {
+      const live = try workspace.get()
+      return guidedSavePending(live) && live.assistant.taskId === approval.task && live.assistant.workVersion === task.assistant.workVersion &&
+        live.plan.calendarApproval.proposal === approval.proposal && matchesGuidedApproval(key, c, live.plan.calendarApproval)
+    }
+    const receipt = try store.write(written(v, c), v, guidedFirstDispatch ? { website, current } : undefined)
     const event: CalendarEvent = receipt.providerId !== undefined && !single(c)
       ? { type: "storeCreatedSeries", receipt: seriesReceipt(try box.get(), c, receipt), providerId: receipt.providerId }
       : receipt.providerId !== undefined

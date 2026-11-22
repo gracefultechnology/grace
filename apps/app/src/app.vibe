@@ -31,6 +31,7 @@ import { instances, reading } from "./instances.vibe"
 import { mailing } from "./mail.vibe"
 import { nativePage } from "./nativePage.vibe"
 import { type SurfacePlugin, type WiFiPlugin, type PasswordBackupPlugin, webView } from "./surfacePlugin.ts"
+import { websiteTask } from "./websiteTask.vibe"
 import { pageHost } from "./page.vibe"
 import { reminderPlugin, type ReminderPlugin } from "./accountPlugin.ts"
 import { notices } from "./notices.vibe"
@@ -114,7 +115,8 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const storage = fileStorage(platform.native, platform.files ?? filesPlugin)
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), tabletStorage))
   const records = platform.native ? platform.preferences ?? preferenceRecords : undefined
-  const machines = Layer.provideMerge(library, Layer.mergeAll(storage, preferenceWorkspace(records), pageLayers(), websiteRequests(), nativePage(plugin), kept, setup(), passwordViews()))
+  const workspaceAndRequests = Layer.provide(websiteTask, Layer.merge(preferenceWorkspace(records), websiteRequests()))
+  const machines = Layer.provideMerge(library, Layer.mergeAll(storage, workspaceAndRequests, pageLayers(), nativePage(plugin), kept, setup(), passwordViews()))
   const recoverable = Layer.provideMerge(guidedRecovery(platform.native, host.guidedTasks ?? (platform.native ? guidedTaskRecords : undefined)), machines)
   const guidance = Layer.provideMerge(agent, services(cloud))
   const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup))
