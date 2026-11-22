@@ -11,6 +11,8 @@ export type SliderProps = Omit<ComponentProps<"div">, "defaultValue" | "onChange
   defaultValue?: number;
   /** Called with each new value: once per drag, when it is let go, and on each tap, key or step by − and +. */
   onValueChange?: (value: number) => void;
+  /** Called by − and + instead of `onValueChange`, with how far to move: for an owner that steps its own value, which a render may not show yet. */
+  onStep?: (change: number) => void;
   min?: number;
   max?: number;
   /** How far − and + and the arrow keys move it. */
@@ -28,7 +30,7 @@ export type SliderProps = Omit<ComponentProps<"div">, "defaultValue" | "onChange
  * A level between two ends, such as brightness or volume: a track between round − and + buttons (prototype .vol).
  * @design packages/design-system/design.md#buttons
  */
-export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max = 100, step = 10, label, decreaseLabel = "Less", increaseLabel = "More", disabled, className, ...props }: SliderProps) {
+export function Slider({ value, defaultValue = 50, onValueChange, onStep, min = 0, max = 100, step = 10, label, decreaseLabel = "Less", increaseLabel = "More", disabled, className, ...props }: SliderProps) {
   const [own, setOwn] = useState(defaultValue);
   const [dragged, setDragged] = useState<number>();
   const pressedRef = useRef(false);
@@ -40,10 +42,11 @@ export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max =
     setOwn(clamped);
     onValueChange?.(clamped);
   };
+  const stepBy = (change: number) => (onStep ? onStep(change) : set(current + change));
   const end = "text-chrome active:scale-96";
   return (
     <div className={cn("flex items-center gap-3", disabled && "opacity-40", className)} {...props}>
-      <Button variant="capsule" size="pill-icon" aria-label={decreaseLabel} disabled={disabled} onClick={() => set(current - step)} className={end}>
+      <Button variant="capsule" size="pill-icon" aria-label={decreaseLabel} disabled={disabled} onClick={() => stepBy(-step)} className={end}>
         <Minus size={28} strokeWidth={2.6} aria-hidden />
       </Button>
       <SliderPrimitive.Root
@@ -67,7 +70,7 @@ export function Slider({ value, defaultValue = 50, onValueChange, min = 0, max =
           <span className="absolute -top-5 -left-5 size-10 rounded-full bg-card shadow-thumb group-focus-visible:ring-2 group-focus-visible:ring-ring" />
         </SliderPrimitive.Thumb>
       </SliderPrimitive.Root>
-      <Button variant="capsule" size="pill-icon" aria-label={increaseLabel} disabled={disabled} onClick={() => set(current + step)} className={end}>
+      <Button variant="capsule" size="pill-icon" aria-label={increaseLabel} disabled={disabled} onClick={() => stepBy(step)} className={end}>
         <Plus size={28} strokeWidth={2.6} aria-hidden />
       </Button>
     </div>
