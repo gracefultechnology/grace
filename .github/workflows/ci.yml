@@ -38,6 +38,10 @@ on:
         description: Include the exploratory Shopping pending-order case in the WebArena run
         type: boolean
         default: false
+      webarena_public_search:
+        description: Also observe the five official Shopping public searches with a simulated person
+        type: boolean
+        default: false
   pull_request:
     branches: [develop, main]
   push:
@@ -70,6 +74,7 @@ jobs:
       SHOPPING_IMAGE: docker.io/am1n3e/webarena-verified-shopping@sha256:3e8cb9b945ea9b1c94ab26dba53e8d12dd0406abbf4bf686fd3bb2b6a5908feb
       SHOPPING_ORIGIN: https://127.0.0.1:7770
       GRACE_WEBARENA_UPSTREAM: ${{ github.workspace }}/.cache/webarena-upstream
+      WEBARENA_SEARCH_TASKS: ${{ inputs.webarena_public_search && '[274,275,276,277,278]' || '[]' }}
       WEBARENA_NAVIGATION_TASKS: '[260,261,262,263,264]'
       WEBARENA_RECORD_TASKS: ${{ inputs.webarena_pending_order && '[298,299,300]' || '[298,299]' }}
       WEBARENA_REQUIRED: '[260,261,262,263]'
@@ -92,7 +97,7 @@ jobs:
           catalog_object=HEAD:config_files/test.raw.json
           revision=$(git -C "$GRACE_WEBARENA_UPSTREAM" rev-parse HEAD)
           catalog_sha256=$(git -C "$GRACE_WEBARENA_UPSTREAM" show "$catalog_object" | sha256sum | cut -d' ' -f1)
-          tasks=$(jq -cn --argjson navigation "$WEBARENA_NAVIGATION_TASKS" --argjson records "$WEBARENA_RECORD_TASKS" '$navigation + $records | sort')
+          tasks=$(jq -cn --argjson navigation "$WEBARENA_NAVIGATION_TASKS" --argjson records "$WEBARENA_RECORD_TASKS" --argjson searches "$WEBARENA_SEARCH_TASKS" '$navigation + $records + $searches | sort')
           git -C "$GRACE_WEBARENA_UPSTREAM" show "$catalog_object" |
             jq -e --arg revision "$revision" --arg sha256 "$catalog_sha256" \
               --argjson configured "$tasks" --argjson required "$WEBARENA_REQUIRED" '
@@ -219,20 +224,28 @@ jobs:
           tasks="$WEBARENA_TASKS"
           required="$WEBARENA_REQUIRED"
           records="$WEBARENA_RECORD_TASKS"
+          searches="$WEBARENA_SEARCH_TASKS"
           git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
             jq -e --arg start "$SHOPPING_ORIGIN/" --arg results "$WEBARENA_RESULTS" \
-              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$tasks" --argjson required "$required" --argjson records "$records" \
+              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$tasks" --argjson required "$required" --argjson records "$records" --argjson searches "$searches" \
               '[.[] | select(.task_id as $id | $tasks | index($id)) |
                 {taskId: (.task_id | tostring), intent, startUrl: $start, receipt: ($results + "/task-" + (.task_id | tostring) + ".json"),
                  siteStorageState: $state, evaluator: "webarena"} +
                 (if .task_id as $id | $required | index($id) then {} else {exploratory: true} end) +
                 (if .task_id == 260 then {} else {chat: "upstream", requiredStep:
-                  (if .task_id as $id | $records | index($id) then "ReadLatestRecord" else "ReachNamedPage" end)} end)] |
+                  (if .task_id as $id | $records | index($id) then "ReadLatestRecord"
+                   elif .task_id as $id | $searches | index($id) then "SearchPublicSite"
+                   else "ReachNamedPage" end)} end)] |
                 select(map(.taskId | tonumber) == $tasks)' > "$GRACE_BROWSER_BENCHMARK_FILE"
           browser_exit=0
           pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' |
             tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
-          jq -es --argjson tasks "$tasks" --argjson required "$required" --argjson records "$records" '
+          jq -es --argjson tasks "$tasks" --argjson required "$required" --argjson records "$records" --argjson searches "$searches" '
+            def search_case: (.taskId | tonumber) as $id | $searches | index($id) != null;
+            def checked_search:
+              search_case and .userAssisted == true and .decisionProvider == "none" and
+              .decisionRequests == 0 and .syntheticStorageState == true and .webArena.groundedNavigation == true and
+              .webArena.qualifiedHostedGuidance == false;
             def checked_record:
               .outcome as $out | $out.checkedRecord as $record |
               (($out.reviewedSteps // []) | map(.kind)) == ["ReadLatestRecord"] and
@@ -299,19 +312,20 @@ jobs:
               exhaustedBudget: (.outcome.miss == "action-budget-exhausted" and verified_action_budget),
               officialScore: .webArena.officialScore, noActionScore: .webArena.noActionScore,
               hostedGuidance: (.webArena.qualifiedHostedGuidance == true),
-              checkedPlan: (.outcome.hops[-1].checked == true and
+              userAssistedSearch: search_case, checkedUserAssistedSearch: checked_search,
+              checkedPlan: (if search_case then checked_search else .outcome.hops[-1].checked == true and
                 (.outcome.destination.documentId | type == "string" and length > 0) and
                 .outcome.hops[-1].documentId == .outcome.destination.documentId and
                 .outcome.start.documentId != .outcome.destination.documentId and
                 (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
-                  (if (.taskId | tonumber) as $id | $records | index($id) then checked_record else (.outcome.reviewedDestination | length) > 0 end))))})
+                  (if (.taskId | tonumber) as $id | $records | index($id) then checked_record else (.outcome.reviewedDestination | length) > 0 end))) end)})
           ' "$WEBARENA_RESULTS"/task-*.json > "$WEBARENA_RESULTS/scorecard.json"
           jq -r '
             "### WebArena Shopping",
             "",
-            "| Official task | Cohort | Landing score | No-action score | Hosted guidance | Checked plan |",
-            "| --- | --- | --- | --- | --- | --- |",
-            (.[] | "| \(.taskId) | \(.cohort) | \(.officialScore) | \(.noActionScore) | \(.hostedGuidance) | \(.checkedPlan) |")
+            "| Official task | Cohort | Landing score | No-action score | Hosted guidance | User-assisted search | Checked plan |",
+            "| --- | --- | --- | --- | --- | --- | --- |",
+            (.[] | "| \(.taskId) | \(.cohort) | \(.officialScore) | \(.noActionScore) | \(.hostedGuidance) | \(.checkedUserAssistedSearch) | \(.checkedPlan) |")
           ' "$WEBARENA_RESULTS/scorecard.json" >> "$GITHUB_STEP_SUMMARY"
           jq -e '
             all(.[]; (.failed | not) and (.completed == (.miss == null)) and (.completed or (.cohort == "exploratory" and
@@ -320,7 +334,8 @@ jobs:
                 (.miss == "insufficient-record-evidence" and .refusedRecord) or
                 (.miss == "action-budget-exhausted" and .exhaustedBudget)))) and
               .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1) and
-              (.completed == false or (.checkedPlan and .officialScore == 1))) and
+              (.completed == false or (.checkedPlan and (.officialScore == 1 or .userAssistedSearch)))) and
+            all(.[] | select(.userAssistedSearch); .completed and .checkedUserAssistedSearch and (.hostedGuidance | not)) and
             all(.[] | select(.cohort == "required"); .officialScore == 1 and .hostedGuidance and .checkedPlan)
           ' "$WEBARENA_RESULTS/scorecard.json"
           test "$browser_exit" -eq 0
