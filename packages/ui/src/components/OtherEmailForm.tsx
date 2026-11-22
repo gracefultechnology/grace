@@ -41,6 +41,8 @@ export type OtherEmailFormProps = Omit<ComponentProps<"form">, "onSubmit"> & {
   checking?: boolean;
   /** Called by Next once a name, a whole address and a password are typed; the password field empties at once. Without it Next stays disabled. */
   onNext?: (details: OtherEmailDetails) => void;
+  /** Whether Next may go on with the address as typed, trimmed; Next stays disabled while it refuses. */
+  accepts?: (address: string) => boolean;
   onCancel?: () => void;
 };
 
@@ -50,12 +52,12 @@ export type OtherEmailFormProps = Omit<ComponentProps<"form">, "onSubmit"> & {
  * @model spec/app/accounts.md
  * @design packages/design-system/design.md#windows
  */
-export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem, checking = false, onNext, onCancel, className, ...props }: OtherEmailFormProps) {
+export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem, checking = false, onNext, accepts = () => true, onCancel, className, ...props }: OtherEmailFormProps) {
   const [name, setName] = useState(defaultName);
   const [address, setAddress] = useState(defaultAddress);
   const [filled, setFilled] = useState(false);
   const secretRef = useRef<SecretFieldHandle>(null);
-  const ready = name.trim() !== "" && /@.+\./.test(address) && filled && !checking && onNext !== undefined;
+  const ready = name.trim() !== "" && /@.+\./.test(address) && accepts(address.trim()) && filled && !checking && onNext !== undefined;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (ready) secretRef.current?.submit();

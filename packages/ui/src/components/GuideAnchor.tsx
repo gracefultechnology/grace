@@ -28,17 +28,19 @@ export type GuidePointing = Pick<GuideAnchorProps, "kind" | "title" | "onClose" 
 export type Guide<Target extends string> = GuidePointing & { targetId: Target };
 
 const gap = 8;
+const marks = { point: "Grace is pointing here", instruction: "Grace is pointing here", confirm: "Done" } as const;
 
 /**
  * Grace pointing inside an app window: her ring round the target and her label beside it, anchored to the element so they
- * follow it whatever the text size (prototype `.anch-w`, `.gring.anch`, `.glab.anch`).
+ * follow it whatever the text size (prototype `.anch-w`, `.gring.anch`, `.glab.anch`). The ring is silent, so the anchor is a
+ * group named by her label, or by what the ring means.
  * @model spec/app/workspace.md
  * @design packages/design-system/design.md#guidance
  */
 export function GuideAnchor({ children, radius = 12, kind = "point", title, onClose, closeLabel, placement = "beside", className, ...props }: GuideAnchorProps) {
   const instruction = kind === "instruction";
   return (
-    <span className={cn("relative inline-flex", className)} {...props}>
+    <span role="group" aria-label={title ?? marks[kind]} className={cn("relative inline-flex", className)} {...props}>
       {children}
       <GuideRing gap={gap} radius={Math.min(radius + gap, 999)} tone={kind === "confirm" ? "ok" : "guide"} motion={instruction ? "tap" : "pulse"} />
       {instruction && title && (

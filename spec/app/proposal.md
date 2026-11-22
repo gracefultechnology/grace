@@ -71,7 +71,8 @@ her own turn for the question as it is held now: its subject and revision,
 in the conversation's current generation, from a turn after the one that
 asked, with an answer stamp not used before. Agreeing spends that stamp, so
 the same yes cannot agree twice, and any newer turn voids a yes not yet used.
-Grace's own words, a page, an email, a file or a device event never agree.
+Grace's own words, a page, an email, a file, a device event or her Ask Grace
+tap never agree.
 Nothing but her yes marks the question agreed.
 
 ```quint
@@ -94,6 +95,8 @@ pure def lawYesToAnotherRevisionDoesNotAgree(p: Pending, given: R::Consent, now:
   (given.revision != p.revision or given.subject != asked) implies not(canAgree(p, given, now, by))
 pure def lawHostTurnCannotAgree(p: Pending, given: R::Consent, now: R::Moment, by: ProposalActor): bool =
   not(R::fromPerson(given.origin)) implies not(canAgree(p, given, now, by))
+pure def lawAskingForHelpCannotAgree(p: Pending, given: R::Consent, now: R::Moment, by: ProposalActor): bool =
+  given.origin == R::AskedForHelp implies not(canAgree(p, given, now, by))
 pure def lawTheAskingTurnCannotAgree(p: Pending, given: R::Consent, now: R::Moment, by: ProposalActor): bool =
   given.generation <= p.generation implies not(canAgree(p, given, now, by))
 pure def sometimesAgreed(p: Pending): bool = p.agreed > 0
@@ -157,5 +160,6 @@ pure val givenValues = Set(
   .union(Set(R::consent({ generation: 1, workVersion: 1, origin: R::Tapped }, 1, { subject: asked, revision: 1 })))
   .union(Set(R::consent({ generation: 2, workVersion: 1, origin: R::FromEmail }, 1, { subject: asked, revision: 1 })))
   .union(Set(R::consent({ generation: 2, workVersion: 1, origin: R::Tapped }, 1, { subject: R::visit, revision: 1 })))
+  .union(Set(R::consent({ generation: 3, workVersion: 1, origin: R::AskedForHelp }, 3, { subject: asked, revision: 1 })))
 pure val revisionValues = Set(0, 1, 2, 3)
 ```
