@@ -10,7 +10,7 @@ import { tabUrl } from "../gen/app__browser.ts";
 import { approveSave, create, initial as emptyOccurrence, noDetails, noIdentity, save } from "../gen/app__calendar.ts";
 import { bindCalendar, initial as emptyCalendar, publishOccurrence, type CalendarView } from "../gen/app__calendarView.ts";
 import { parseState as parseMail } from "../gen/app__email.ts";
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { type Event as WorkspaceEvent, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { Email } from "../src/Email.tsx";
 import { RuntimeContext } from "../src/useApp.ts";
 import { application } from "../src/app.vibe";
@@ -108,14 +108,16 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
       });
       expect(restored.messages.map((message) => message.identity)).toEqual(expect.arrayContaining(box.messages.map((message) => message.identity)));
     },
-    browserTabs: () => runtime.runPromise(Effect.flatMap(Workspaces, (desk) => Effect.map(desk.get(), (w) => w.browser.tabs.map((tab) => [tab.id, tabUrl(tab)])))),
+    workspaceEvent: (event: WorkspaceEvent) => act(() => runtime.runPromise(Effect.flatMap(Workspaces, (desk) => desk.send(event, "Person")))),
+    browserTabs: () => runtime.runPromise(Effect.flatMap(Workspaces, (desk) => Effect.map(desk.get(), (w) => w.browser.tabs.map((tab) => [tab.id, tabUrl(tab), tab.manualSignIn])))),
     pendingLink: (account: number) => runtime.runPromise(Effect.gen(function*() {
       const shelf = yield* Instances;
       const box = yield* shelf.mail(account);
       const { generation, messageRef: ref, link } = yield* box.get();
       const read = shelf.held(account, ref)?.read;
+      const { device, browser } = yield* (yield* Workspaces).get();
       if (!read || link.status !== "LinkHeld") throw new Error("No email link is waiting for confirmation");
-      return () => runtime.runPromise(chooseMailLink({ account, ref, generation, version: read.version, link: link.link }, "confirm"));
+      return () => runtime.runPromise(chooseMailLink({ account, ref, generation, version: read.version, link: link.link, deviceVersion: device.contextVersion, browserRevision: browser.revision }, "confirm"));
     })),
     appointments: (key: number) => runtime.runPromise(Effect.gen(function*() {
       const shelf = yield* Instances;
@@ -717,7 +719,7 @@ it('Review an unsent reply (spec/app/email.md, "Only the current approved draft 
 
 it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email released opens in a new Browser tab, and no other link does")', async () => {
   // spec/app/email.md, "A scam warning needs current evidence and holds that message's links"
-  const { person, company, browserTabs, pendingLink } = await start();
+  const { person, company, browserTabs, pendingLink, workspaceEvent } = await start();
   const before = await browserTabs();
   const sent = async () => (await company()).boxes.flatMap((box) => box.mail.filter((message) => message.labels.includes("SENT")).map((message) => message.externalId));
   const priorMail = await sent();
@@ -743,20 +745,35 @@ it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email rele
   expect(await browserTabs()).toEqual(before);
   await person({ type: "setUse", id: 1, use: { mail: true, calendar: true, contacts: true } });
   await expect.element(warning.getByText(target ?? "", { exact: true })).toBeVisible();
+  await workspaceEvent({ type: "visit", destination: "Browser" });
+  await workspaceEvent({ type: "changePage", browserInput: { tag: "NewTab" } });
+  const changedTabs = await browserTabs();
+  await workspaceEvent({ type: "visit", destination: "Home" });
+  await openEmail();
+  await expect.element(warning).toBeVisible();
+  expect(await confirmEarlier()).toBe(false);
+  expect(await browserTabs()).toEqual(changedTabs);
   await click(warning.getByRole("button", { name: "Open in Browser" }));
   await expect.element(address).toHaveValue(target ?? "");
   const first = await browserTabs();
-  expect(first.slice(0, -1)).toEqual(before);
-  await click(page.getByRole("button", { name: "Home", exact: true }));
+  expect(first.slice(0, -1)).toEqual(changedTabs);
+  await workspaceEvent({ type: "changePage", browserInput: { tag: "OpenPrivateSignIn", url: "https://utility.example" } });
+  await expect.element(page.getByRole("textbox", { name: "Private website address" })).toBeVisible();
+  const withPrivateTab = await browserTabs();
+  expect(withPrivateTab.at(-1)?.[2]).toBe(true);
+  await workspaceEvent({ type: "visit", destination: "Home" });
   await openEmail();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await opened(/Riverside Power/, "Your Riverside Power bill is ready");
-  const ordinary = page.getByRole("link", { name: /bill\// });
+  await expect.element(page.getByRole("link", { name: /\/statement\/\[print\]$/ })).toBeVisible();
+  const ordinary = page.getByRole("link", { name: /\/bill\/#statement_\(journal\)$/ });
   await expect.element(ordinary).toBeVisible();
   const destination = ordinary.element().textContent;
   await click(ordinary);
   await expect.element(address).toHaveValue(destination ?? "");
-  expect((await browserTabs()).slice(0, -1)).toEqual(first);
+  const after = await browserTabs();
+  expect(after.slice(0, -1)).toEqual(withPrivateTab);
+  expect(after.at(-1)).toEqual([expect.any(Number), destination, false]);
   expect(await sent()).toEqual(priorMail);
 });
 

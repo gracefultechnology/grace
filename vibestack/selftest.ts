@@ -3274,7 +3274,30 @@ export function useShown(counter: ManagedRuntime.ManagedRuntime<Machine, never>,
     // Nothing stored starts from `initial`, and a stored state goes on from where it was; what the rules refuse, or what is no state, leaves the store as it is; a machine steps from what another over the same store stored since, and its guard is judged by it.
     const kept = await exec(process.execPath, ["--import", "vibelang/register", "--input-type=module", "-e", `import assert from "node:assert/strict"; import { Effect } from "effect"; import { counted, twoPages } from "./src/kept.vibe";
 assert.deepEqual(await Promise.all([undefined, "1", "2", "7", "{"].map((before) => Effect.runPromise(counted(before)))), [[1, "1"], [2, "2"], ["Rejected", "2"], ["NotAState", "7"], ["NotAState", "{"]]);
-assert.deepEqual(await Effect.runPromise(twoPages()), [1, 2, "Rejected", "2"]);`], root);
+assert.deepEqual(await Effect.runPromise(twoPages()), [1, 2, "Rejected", "2"]);
+const { machineOver } = await import("./gen/index.effect.vibe");
+const { Deferred, Fiber, Ref } = await import("effect");
+const outcome = await Effect.runPromise(Effect.gen(function*() {
+  const kept = yield* Ref.make(0);
+  const firstSaving = yield* Deferred.make();
+  const resume = yield* Deferred.make();
+  const machine = yield* machineOver(() => Ref.get(kept), (n) => Effect.gen(function*() {
+    if (n === 1) {
+      yield* Deferred.succeed(firstSaving, undefined);
+      yield* Deferred.await(resume);
+    }
+    yield* Ref.set(kept, n);
+  }));
+  const first = yield* Effect.forkChild(machine.send({ type: "inc" }));
+  yield* Deferred.await(firstSaving);
+  let source = "first";
+  const pending = yield* Effect.forkChild(Effect.flip(machine.send({ type: "inc" }, () => source === "first")), { startImmediately: true });
+  source = "replacement";
+  yield* Deferred.succeed(resume, undefined);
+  yield* Fiber.join(first);
+  return [(yield* Fiber.join(pending))._tag, yield* machine.get(), yield* machine.send({ type: "inc" }, (current) => current === 1)];
+}));
+assert.deepEqual(outcome, ["Rejected", 1, 2]);`], root);
     assert.equal(kept.status, 0, kept.stdout + kept.stderr);
     // An owner's package.json decides for its own gen/, whatever the root's says.
     const tree = scratch({ "spec/index.md": "# Product\n", "spec/app/index.md": ruleSpec(COUNTER), "spec/plain/index.md": ruleSpec(COUNTER), "apps/app/package.json": manifest("@scratch/app"), "apps/plain/package.json": "{}" });
