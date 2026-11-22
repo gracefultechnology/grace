@@ -2113,6 +2113,7 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
       close: () => Promise.resolve(),
       list: () => Promise.resolve({ entries }),
       preview: ({ id, page }) => Promise.resolve({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" }),
+      content: ({ id }) => Promise.resolve({ id, mimeType: "image/jpeg", data: "/9j/2Q==" }),
       pick: () => Promise.resolve(),
       capture: () => Promise.resolve(),
       addListener: (_event, listener) => {

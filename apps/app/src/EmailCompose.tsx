@@ -9,7 +9,7 @@ import type { ComposeChoice, DraftContent, Event as MailEvent, Mailbox, SendStat
 import { canMoveDraft, contactAccounts, fromChoices, type MailSource, pickerBack, showsCopies, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import type { Contact } from "./connector.vibe";
 import { Library, type SavedPreview } from "./files.vibe";
-import { attachedFrom, recipientsOf, recipientsValid, sendable } from "./mail.vibe";
+import { recipientsOf, recipientsValid } from "./mail.vibe";
 import { type MailInstance, type MailWriter, useRuntime, useWorkspace } from "./useApp.ts";
 
 type Field = "subject" | "body";
@@ -88,13 +88,10 @@ function AttachChoice({ found, onChoose, ...props }: ChoiceProps & { found: Foun
     onChoose={(id) => { const item = saved?.find((s) => s.file.id === id); if (item) onChoose(item); }} />;
 }
 
-function AttachRead({ mailbox, ...props }: ChoiceProps & { mailbox: Mailbox }) {
+function AttachRead(props: ChoiceProps) {
   const runtime = useRuntime();
-  const { provider, account } = mailbox;
-  const container = attachedFrom(mailbox);
   const kind = kinds[props.source];
-  const found = useMemo(() => runtime.runPromise(Effect.flatMap(Library, (files) =>
-    files.saved((file) => file.kind === kind && sendable(provider, account, container)(file)))), [runtime, kind, provider, account, container]);
+  const found = useMemo(() => runtime.runPromise(Effect.flatMap(Library, (files) => files.saved((file) => file.kind === kind))), [runtime, kind]);
   return (
     <Suspense fallback={<MailAttachChooser open {...props} onChoose={undefined} />}>
       <AttachChoice found={found} {...props} />
@@ -192,10 +189,10 @@ export function EmailCompose({ registry, boxes, box, mail, sender, frame }: Emai
       draftError={m.draftStorage !== "DraftStoreFailed" ? undefined : undeleted ? "This email couldn’t be deleted from Drafts." : "This email couldn’t be saved to Drafts."}
       onRetryDraft={box.can(retry) ? () => void (undeleted ? discard(box) : box.send(keep)) : undefined}
       onBack={leavable(box) ? () => void leave(box) : undefined}
-      onAttach={{ photos: chooser("ChoosePhoto"), file: chooser("ChooseFile") }}
+      onAttach={{ camera: mail.camera && editable ? () => void mail.capture(box.id) : undefined, photos: chooser("ChoosePhoto"), file: chooser("ChooseFile") }}
       {...frame}
       onClose={close} />
-    {attaching && <AttachRead key={tries} mailbox={m} onChoose={(item) => void choose(item)} {...attaching} />}
+    {attaching && <AttachRead key={tries} onChoose={(item) => void choose(item)} {...attaching} />}
     </>
   );
 }

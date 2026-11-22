@@ -129,7 +129,8 @@ schema ChatMessage { role: string; content: string }
 schema ChatRequest { model: Filled; messages: ChatMessage[]; stream?: boolean }
 schema Change { kind: "trash" | "untrash" | "mark-read" | "mark-unread" | "purge"; messageId: string; expectedHistoryId: string }
 schema Forwarded { messageId: string; historyId: string; partIds: string[] }
-schema Outgoing { kind: "send"; mode: "compose" | "reply" | "reply-all" | "forward"; to?: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; replyMessageId?: string; forwardAttachments?: Forwarded }
+schema Uploaded { name: string; mimeType: string; dataBase64: string }
+schema Outgoing { kind: "send"; mode: "compose" | "reply" | "reply-all" | "forward"; to?: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; replyMessageId?: string; attachments?: Uploaded[]; forwardAttachments?: Forwarded }
 schema Proposal = Change | Outgoing
 schema Prepare { grantId: Uuid; requestId: Uuid; proposal: Proposal }
 schema Dispatch { grantId: Uuid; reviewDigest: string; proposal: Proposal }
@@ -208,6 +209,7 @@ error NoRecipient
 error BadAddress
 error ModeMismatch
 error NoParts
+error BadUpload
 error ProviderFailed
 error Reconnect
 error ConsentRequired
@@ -232,6 +234,7 @@ const refusals: Record<string, { status: number; body: object }> = {
   BadAddress: { status: 400, body: { error: "Use an unambiguous email address without a display name" } },
   ModeMismatch: { status: 400, body: { error: "Reply identity is not valid for this compose mode" } },
   NoParts: { status: 400, body: { error: "Explicit source attachment parts required" } },
+  BadUpload: { status: 400, body: { error: "invalid_request" } },
   ProviderFailed: { status: 502, body: { error: "Google request failed." } },
   Reconnect: { status: 409, body: { error: "Reconnect Google to keep using Gmail.", code: "reauth_required" } },
   ConsentRequired: { status: 403, body: { error: "speech_consent_required" } },
@@ -397,6 +400,7 @@ export const photos: Record<string, string> = {
 }
 const pdf = btoa("%PDF-1.1\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 144]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF")
 const sizeOf = (base64: string) => atob(base64).length
+const canonical = /^(?:[A-Za-z0-9+/]{4})+(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$|^(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)$/
 const servable: Record<string, RegExp> = { "text/plain": /\.txt$/i, "application/pdf": /\.pdf$/i, "image/png": /\.png$/i, "image/jpeg": /\.jpe?g$/i, "image/webp": /\.webp$/i }
 const draftIdOf = (externalId: string) => `r-${externalId}`
 const bare = (address: string) => /<([^>]+)>/.exec(address)?.[1] ?? address.trim()
@@ -693,9 +697,12 @@ effect function store(site: string) {
     if (source !== undefined && (origin === undefined || origin.metadata.historyId !== source.historyId)) throw new StaleRevision()
     const parts = source === undefined || origin === undefined ? [] : source.partIds.map((partId) => origin.attachments.find((a) => a.partId === partId))
     if (parts.some((a) => a === undefined)) throw new StaleRevision()
+    const uploads = proposal.attachments ?? []
+    if (uploads.some((u) => !servable[u.mimeType]?.test(u.name) || !canonical.test(u.dataBase64))) throw new BadUpload()
+    const uploaded = uploads.map((u, i): Attachment => ({ partId: String(i + 2), attachmentId: `upload-${i + 1}`, filename: u.name, mimeType: u.mimeType, size: sizeOf(u.dataBase64) }))
     const review = {
       kind: proposal.kind, mode: proposal.mode, from: found.address, to, cc, bcc, subject: proposal.subject, bodyText: proposal.bodyText,
-      threadId: parent?.threadId ?? null, replyMessageId: proposal.replyMessageId ?? null, attachments: parts.flatMap((a) => a === undefined ? [] : [a])
+      threadId: parent?.threadId ?? null, replyMessageId: proposal.replyMessageId ?? null, attachments: [...uploaded, ...parts.flatMap((a) => a === undefined ? [] : [a])]
     }
     return { review, parent }
   }

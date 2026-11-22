@@ -1,6 +1,6 @@
-// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/email.md, "Sending a saved draft takes it out of Drafts"
+// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/email.md, "Sending a saved draft takes it out of Drafts"
 import { Machine as Accounts, type Account } from "../gen/app__accounts.effect.vibe"
-import { canQueueSend, canSendDraft, currentDraft, draftStoreBusy, emptyContent, enabled, type Event as MailEvent, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
+import { canEditDraft, canQueueSend, canSendDraft, currentDraft, draftStoreBusy, emptyContent, enabled, type Event as MailEvent, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.vibe"
 import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
@@ -23,6 +23,8 @@ export service Mail {
   moveDraft(from: number, to: number): void!!
   save(id: number, refs: readonly string[]): void!!
   attach(id: number, asset: SavedFile): boolean!!
+  capture(id: number): boolean!!
+  readonly camera: boolean
   share(photo: SavedFile): boolean!!
   contacts(): readonly Contact[]!!
   readonly hush: (id: number) => void
@@ -33,10 +35,6 @@ export service Mail {
 const address = /^[^@\s,;]+@[^@\s,;]+$/
 export const recipientsOf = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
 export const recipientsValid = (c: DraftContent) => c.to !== "" && [...recipientsOf(c.to), ...c.cc, ...c.bcc].every((a) => address.test(a))
-export const sendable = (provider: string, account: string, container: string) => (file: SavedFile) =>
-  file.origin === provider && file.account === account && (container === "" || file.container === container)
-export const attachedFrom = (m: Mailbox) => m.draftAttachments[0]?.container ?? ""
-export const sendsWith = (m: Mailbox, file: SavedFile) => sendable(m.provider, m.account, attachedFrom(m))(file)
 const folderNames: Record<string, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Drafts" }
 export const answerable = (m: Mailbox) => replyable(m) && m.folder !== "DraftsFolder"
 export const headerFor = (board: Board, held: Held | undefined, id: number, m: Mailbox): ReplyHeader | undefined => {
@@ -102,7 +100,7 @@ effect function removeSent(mail: MailConnection, box: MailMachine.Shape, m: Mail
   for (const draftId of m.sentDrafts) {
     const answered = mail.deleteDraft(draftId) catch () => undefined
     if (answered === undefined) return try expired(box)
-    box.send({ type: "forgetSentDraft", draftId }, "MailHost") catch () => undefined
+    if (answered) box.send({ type: "forgetSentDraft", draftId }, "MailHost") catch () => undefined
   }
 }
 
@@ -117,7 +115,7 @@ effect function outcome(box: MailMachine.Shape, sent: SendOutcome!NeedsSignIn) {
   }
 }
 
-effect function dispatch(account: Account, mail: MailConnection, box: MailMachine.Shape, m: Mailbox, online: boolean) {
+effect function dispatch(account: Account, mail: MailConnection, library: Library.Shape, box: MailMachine.Shape, m: Mailbox, online: boolean) {
   const operationId = `send-${account.id}-${(try Clock.currentTimeMillis).toString(36)}-${(try Random.nextInt).toString(36)}`
   const recipientValid = recipientsValid(m.draft)
   const allowed = online ? canSendDraft(m, operationId, recipientValid, true, "MailHost") : canQueueSend(m, operationId, recipientValid, true, false, "MailHost")
@@ -131,16 +129,17 @@ effect function dispatch(account: Account, mail: MailConnection, box: MailMachin
   }
   const started = box.send({ type: "sendDraft", operationId, recipientValid, persisted: true }, "MailHost") catch () => undefined
   if (started === undefined) return
-  const result = try outcome(box, mail.send(operationId, currentDraft(m)))
+  const draft = currentDraft(m)
+  const result = try outcome(box, mail.send(operationId, draft, try library.contents(draft.attachments)))
   if (result !== undefined) box.send({ type: "sendResult", operationId, ...result, persisted: true }, "MailConnector") catch () => undefined
 }
 
-effect function flush(box: MailMachine.Shape, mail: MailConnection, m: Mailbox) {
+effect function flush(box: MailMachine.Shape, mail: MailConnection, library: Library.Shape, m: Mailbox) {
   for (const q of m.outbox) {
     if (q.status === "Waiting") {
       const begun = box.send({ type: "dispatchQueued", operationId: q.operationId, reachable: true }, "MailHost") catch () => undefined
       if (begun === undefined) continue
-      const result = try outcome(box, mail.send(q.operationId, q.snapshot))
+      const result = try outcome(box, mail.send(q.operationId, q.snapshot, try library.contents(q.snapshot.attachments)))
       if (result === undefined) return
       box.send({ type: "queuedResult", operationId: q.operationId, ...result, persisted: true }, "MailConnector") catch () => undefined
     }
@@ -150,6 +149,12 @@ effect function flush(box: MailMachine.Shape, mail: MailConnection, m: Mailbox) 
       if (found.resultStatus !== "SendUnknown") box.send({ type: "queuedResult", operationId: q.operationId, ...found, persisted: true }, "MailConnector") catch () => undefined
     }
   }
+}
+
+effect function attachTo(box: MailMachine.Shape, launched: Mailbox, asset: SavedFile) {
+  const event: MailEvent = { type: "attachAsset", owner: launched.owner, asset, draftRevision: launched.revision, selected: true }
+  if (!enabled(try box.get(), event, "MailHost")) return false
+  return (box.send(event, "MailHost") catch () => undefined) !== undefined
 }
 
 effect function place(box: MailMachine.Shape, content: DraftContent, files: readonly SavedFile[]) {
@@ -302,7 +307,7 @@ export const mailing = Layer.effect(Mail, effect {
   effect function drive(account: Account, mail: MailConnection, box: MailMachine.Shape) {
     const online = try reachable()
     const m = try box.get()
-    if (m.sendStatus === "Reviewing" && m.approvedRevision === m.revision && !draftStoreBusy(m)) try dispatch(account, mail, box, m, online)
+    if (m.sendStatus === "Reviewing" && m.approvedRevision === m.revision && !draftStoreBusy(m)) try dispatch(account, mail, library, box, m, online)
     try store(account, mail, box, try box.get())
     if (!online) return
     try removeSent(mail, box, try box.get())
@@ -310,7 +315,7 @@ export const mailing = Layer.effect(Mail, effect {
       const found = try outcome(box, mail.lookup(m.operationId))
       if (found !== undefined && found.resultStatus !== "SendUnknown") box.send({ type: "sendResult", operationId: m.operationId, ...found, persisted: true }, "MailConnector") catch () => undefined
     }
-    try flush(box, mail, try box.get())
+    try flush(box, mail, library, try box.get())
   }
 
   effect function watch(account: Account, box: MailMachine.Shape) {
@@ -372,11 +377,14 @@ export const mailing = Layer.effect(Mail, effect {
 
   effect function attach(id: number, asset: SavedFile) {
     const owned = try ownedMailbox(id)
-    if (!owned) return false
-    const { box, m } = owned
-    const event: MailEvent = { type: "attachAsset", owner: m.owner, asset, draftRevision: m.revision, selected: true }
-    if (!sendsWith(m, asset) || !enabled(m, event, "MailHost")) return false
-    return (box.send(event, "MailHost") catch () => undefined) !== undefined
+    return owned !== undefined && (try attachTo(owned.box, owned.m, asset))
+  }
+
+  effect function capture(id: number) {
+    const owned = try ownedMailbox(id)
+    if (!owned || !canEditDraft(owned.m, "MailUser")) return false
+    const photo = try library.capture()
+    return photo !== undefined && (try attachTo(owned.box, owned.m, photo))
   }
 
   effect function share(photo: SavedFile) {
@@ -386,8 +394,9 @@ export const mailing = Layer.effect(Mail, effect {
       return box === undefined ? [] : [{ account: account.id, mailbox: try box.get() }]
     })
     if (sources.flat().some((source) => source.mailbox.composeVisible)) return false
-    const from = sources.flat().find((source) => sendsWith({ ...source.mailbox, draftAttachments: [] }, photo))
-    if (from === undefined || !enabled(from.mailbox, { type: "startDraft", reply: false }, "MailUser")) return false
+    const open = sources.flat().filter((source) => enabled(source.mailbox, { type: "startDraft", reply: false }, "MailUser"))
+    const from = open.find((source) => source.mailbox.provider === photo.origin && source.mailbox.account === photo.account) ?? open[0]
+    if (from === undefined) return false
     const id = from.account
     const box = shelf.mail(id) catch () => undefined
     if (box === undefined) return false
@@ -428,6 +437,8 @@ export const mailing = Layer.effect(Mail, effect {
     moveDraft: (from, to) => asBuilt(moveDraft(from, to)),
     save: (id, refs) => asBuilt(save(id, refs)),
     attach: (id, asset) => asBuilt(attach(id, asset)),
+    capture: (id) => asBuilt(capture(id)),
+    camera: library.camera,
     share: (photo) => asBuilt(share(photo)),
     contacts: () => asBuilt(people()),
     hush: (id) => { quiet.add(id) },

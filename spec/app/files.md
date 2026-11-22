@@ -309,15 +309,21 @@ pure def sometimesWriteFailure(f: Files): bool = f.feedback == WriteFailed
 ### A photo taken or a file chosen on the device has its own local source identity
 
 Email's Attach menu offers Take a photo, Choose from Photos and Choose a file
-(`prototype/Grace Prototype.html`, line 2021). Choose from Photos attaches a
-saved Files entry with the identity it already has. A new camera photo or a
-file from the system picker has no mailbox source, so its source is the device:
+(`prototype/Grace Prototype.html`, line 2021); Take a photo shows only on a
+tablet with a camera. Choose from Photos and Choose a file attach a saved
+Files photo or document with the identity it already has, whichever account
+or message it came from. A new camera photo, or a file Files took from the
+system picker, has no mailbox source, so its source is the device:
 origin `device`, the owner's account, the capture or picker session as its
 container, and the capture or picked item's ID as both its source reference and
-its stable local ID. Its content reference names the captured bytes. Such a
-capture goes into the draft only, as in the prototype (line 2340): it is not
-added to Files. Saving it later is the ordinary Save of a sent or received
-attachment.
+its stable local ID. Its content reference names the captured bytes. A photo
+taken from Email is saved to Files by the same acknowledged write as any
+import before it joins the draft, because its bytes must outlast the camera
+and wait for Send; a photo Files did not keep is not attached, and the draft
+keeps the revision it had when the camera opened. Every attachment is sent as
+its own bytes: those Files holds, or, for one forwarded from a message and
+never saved, the bytes fetched from that message in the account sending it.
+One that is neither is refused, and the email is not sent.
 
 ```quint
 type DeviceCapture = {

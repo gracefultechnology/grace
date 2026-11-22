@@ -929,7 +929,7 @@ pure def canQueueSend(m: Mailbox, operationId: str, recipientValid: bool, persis
   operationId != "" and not(m.issuedSends.contains(operationId)) and recipientValid and persisted
 pure def queueSend(m: Mailbox, operationId: str, recipientValid: bool, persisted: bool, reachable: bool, by: MailActor): Mailbox =
   { ...m, outbox: m.outbox.append({ operationId: operationId, snapshot: currentDraft(m), status: Waiting, evidence: "" }),
-    issuedSends: m.issuedSends.union(Set(operationId)), retiredDrafts: retireCurrentDraft(m), sentDrafts: sentDraft(m),
+    issuedSends: m.issuedSends.union(Set(operationId)), retiredDrafts: retireCurrentDraft(m),
     choosing: NoChoice, ccOpen: false, draft: emptyContent, autoSubject: "", replyTo: "", draftAttachments: List(), draftId: "", draftVersion: 0,
     composeVisible: false, sendStatus: NoDraft, approvedRevision: -1, draftStorage: DraftUnstored, storedRevision: -1,
     operationId: "", sendEvidence: "", sendResultSaved: false }
@@ -943,7 +943,9 @@ pure def canQueuedResult(m: Mailbox, operationId: str, resultStatus: SendStatus,
   (queuedIn(m.outbox, operationId).status == Dispatching or queuedIn(m.outbox, operationId).status == DispatchUnknown) and
   (resultStatus == SendUnknown or ((resultStatus == Sent or resultStatus == SendFailed) and evidence != ""))
 pure def queuedResult(m: Mailbox, operationId: str, resultStatus: SendStatus, evidence: str, persisted: bool, by: MailActor): Mailbox =
-  if (resultStatus == Sent and persisted) { ...m, outbox: withoutQueued(m.outbox, operationId), outboxSent: m.outboxSent + 1 }
+  val sentId = queuedIn(m.outbox, operationId).snapshot.id
+  if (resultStatus == Sent and persisted) { ...m, outbox: withoutQueued(m.outbox, operationId), outboxSent: m.outboxSent + 1,
+    sentDrafts: if (sentId == "") m.sentDrafts else m.sentDrafts.union(Set(sentId)) }
   else if (resultStatus == SendFailed and persisted) { ...m, outbox: withStatus(m.outbox, operationId, DispatchFailed, evidence) }
   else { ...m, outbox: withStatus(m.outbox, operationId, DispatchUnknown, "") }
 pure def canReopenQueued(m: Mailbox, operationId: str, by: MailActor): bool =
@@ -952,7 +954,7 @@ pure def canReopenQueued(m: Mailbox, operationId: str, by: MailActor): bool =
   not(draftRetired(m, queuedIn(m.outbox, operationId).snapshot.id, queuedIn(m.outbox, operationId).snapshot.version + 1))
 pure def reopenQueued(m: Mailbox, operationId: str, by: MailActor): Mailbox =
   val queued = queuedIn(m.outbox, operationId).snapshot
-  { ...m, outbox: withoutQueued(m.outbox, operationId), sentDrafts: m.sentDrafts.exclude(Set(queued.id)),
+  { ...m, outbox: withoutQueued(m.outbox, operationId),
     draftId: queued.id, draftVersion: queued.version + 1, draft: queued.content, autoSubject: "",
     draftAttachments: queued.attachments, replyTo: queued.replyTo, composeVisible: true,
     sendStatus: Composing, draftStorage: DraftUnstored, storedRevision: -1, revision: m.revision + 1,
@@ -1177,13 +1179,14 @@ pure def sometimesDraftRetired(m: Mailbox): bool = m.draftId != "" and retiredVe
 
 A draft she saved, or reopened from Drafts, leaves the provider's Drafts once
 its email goes, as in the prototype (`prototype/Grace Prototype.html:2342`):
-only once the provider's Sent is durably recorded, or the approved email is
-waiting in Outbox, is its draft ID put in `sentDrafts`; sending,
-uncertainty or failure never removes it. While the tablet is online the host
-asks the provider to delete each one once and then forgets it
-(`forgetSentDraft`), whether it was deleted or was already gone, and Drafts is
-counted again. An expired sign-in keeps it until she signs in again. A failed Outbox
-email reopened in the composer is no longer sent, so its draft is not deleted.
+only once the provider's Sent is durably recorded, for an email sent at once
+or one that waited in Outbox, is its draft ID put in `sentDrafts`; sending,
+waiting in Outbox, uncertainty or failure never removes it. While the tablet is online the host
+asks the provider to delete each one, asking again after a failure, until it
+is deleted or the provider says it is already gone, then forgets it
+(`forgetSentDraft`), and Drafts is counted again. An expired sign-in keeps it until she signs in again. A failed Outbox
+email reopened in the composer was never sent, so its draft is still there to
+save again.
 
 ```quint
 pure def sentDraft(m: Mailbox): Set[str] = if (m.draftId == "") m.sentDrafts else m.sentDrafts.union(Set(m.draftId))
@@ -1192,7 +1195,7 @@ pure def forgetSentDraft(m: Mailbox, draftId: str, by: MailActor): Mailbox = { .
 pure def stepDraftIsRemovedOnlyOnceItsEmailWent(before: Mailbox, via: str, after: Mailbox): bool =
   not(after.sentDrafts.subseteq(before.sentDrafts)) implies
     (((via == "sendResult" or via == "persistSendResult") and after.sendStatus == Sent and after.sendResultSaved) or
-      (via == "queueSend" and after.outbox.length() > before.outbox.length()))
+      (via == "queuedResult" and after.outboxSent > before.outboxSent))
 pure def alwaysSentDraftsHaveMailbox(m: Mailbox): bool =
   m.sentDrafts.size() > 0 implies (m.owner != "" and m.provider != "" and m.account != "" and not(m.sentDrafts.contains("")))
 pure def sometimesSentDraftAwaitsRemoval(m: Mailbox): bool = m.sentDrafts.size() > 0
