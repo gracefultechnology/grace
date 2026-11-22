@@ -338,6 +338,7 @@ configured scopes are in `knip.config.js`, `.madgerc`, `.jscpd.json` and
 Each row's budget is in [Seeds and budgets](#seeds-and-budgets). A failing
 run keeps `test/counterexamples/` and `test/__traces__/`, where a broken
 exploration is, as an artifact.
+The run summary lists Turbo task times, cache status and exit codes.
 
 Each run installs Dafny from its pinned release, checked against its SHA-256,
 and restores pnpm's store, the spec cache of the root, each workspace package
@@ -345,6 +346,7 @@ and each example, and Quint's evaluator. Each tool runner restores its fixture c
 Turborepo shares task results through the private Cloudflare/R2 cache.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
+The product runner installs full Chromium and its headless shell. Tool shard A installs full Chromium for Bombadil. Shards B and rest run without a browser.
 Pull requests read shared results; only branch pushes receive the publishing
 credential, protected by the `turbo-cache-publish` environment's branch
 policy. A pull request keeps its own Turborepo results in the GitHub cache
