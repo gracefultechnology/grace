@@ -12,7 +12,7 @@ import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
 import { hasHostedNavigation } from "./test/browser-receipt.ts";
 import { fleetFixture, fleetStatement, fleetStatementCases } from "./test/fleet.fixture.ts";
-import { webArena } from "./test/webarena.ts";
+import { webArena, webArenaPluginName, WebArenaEvaluatorError } from "./test/webarena.ts";
 
 const base = project({ root: import.meta.dirname, plugins: [tailwindcss()] });
 
@@ -47,14 +47,14 @@ const byId = new Map(runs.map((item) => [item.taskId, item]));
 if (byId.size !== runs.length || new Set(runs.map(({ receipt }) => receipt)).size !== runs.length)
   throw new Error("Benchmark task IDs and receipt paths must be unique");
 const officialCases = runs.filter(({ evaluator }) => evaluator === "webarena");
-const officialGrades = new Map<string, ReturnType<ReturnType<typeof webArena>>>();
-if (officialCases.length) {
+function prepareOfficialCases() {
+  if (!officialCases.length) return;
   const checkout = process.env.GRACE_WEBARENA_UPSTREAM;
   const python = process.env.GRACE_WEBARENA_PYTHON;
   if (!checkout || !python) throw new Error("WebArena grading needs GRACE_WEBARENA_UPSTREAM and GRACE_WEBARENA_PYTHON");
-  const prepare = webArena({ checkout, python });
-  for (const fixture of officialCases) officialGrades.set(fixture.taskId, prepare(fixture));
+  return webArena({ checkout, python, cases: officialCases });
 }
+const official = prepareOfficialCases();
 type SiteAction =
   | { kind: "begin"; taskId: string }
   | { kind: "open"; url: string }
@@ -174,9 +174,9 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       };
       const guided = hasHostedNavigation(observation, run.site?.page.url());
       const grade = await fleet?.grade(definition.taskId, run.site?.page, guided);
-      const webArenaGrade = await officialGrades.get(definition.taskId)?.(action.outcome, {
+      const webArenaGrade = definition.evaluator === "webarena" ? await official?.grade(definition.taskId, action.outcome, {
         guided, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
-      }).catch(() => ({ failure: "The official WebArena evaluation failed" }));
+      }).catch((error: unknown) => ({ failure: error instanceof WebArenaEvaluatorError ? error.message : "The official WebArena evaluation failed" })) : undefined;
       const receipt = { ...observation, grade, webArena: webArenaGrade };
       if (fleet) fleet.record(definition.taskId, receipt);
       else writeFileSync(definition.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
@@ -526,8 +526,9 @@ export default defineConfig(async (env) => {
     typeof entry === "object" && "test" in entry && entry.test?.browser
       ? {
           ...entry,
+          ...(official && { plugins: [{ name: webArenaPluginName, api: official }] }),
           optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto", "effect/testing", "pdf-lib"] },
-          test: { ...entry.test, browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement, realModel } } },
+          test: { ...entry.test, ...(official && { globalSetup: ["test/webarena.ts"] }), browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement, realModel } } },
         }
       : entry);
   const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
