@@ -336,6 +336,12 @@ and organization before recovery. The standalone profile uses Grace Cloud’s
 browser approval and the native secure-store client. Each APK registers one
 `GraceAccount` implementation.
 
+This release pins Eliza `0633f633`, which includes the shared Android client
+and the protected Passwords approval return. Upstream retired `cloud-auth` in
+favor of `packages/os/android/sign-in`. Moving to that module requires
+migrating Grace’s shared account bridge and verifying backup approval and the
+registered callbacks in both shared deployments. [Upstream release decision](https://github.com/elizaOS/eliza/pull/39975#issuecomment-7073379611)
+
 `android/agent.json` names the admitted agent routes, `agent/character.json`
 supplies the character, and `agent/policy.json` owns the action allowlist. The upstream agent
 provides storage, the selected Cloud deployment's models and the message service. The APK check rejects
