@@ -78,7 +78,7 @@ type Kinds = { camera: bool, microphone: bool, location: bool }
 type AppHandoff = SendToApp | DialApp | ViewInApp | ComposeEmail | RefusedLink
 type Ask = WebsiteMessage({ dialog: MessageKind }) | DownloadOffer({ fileName: str })
   | FileChoice | SitePermission({ origin: str, kinds: Kinds })
-  | OtherApp({ handoff: AppHandoff }) | BlockedSignIn({ provider: str })
+  | OtherApp({ handoff: AppHandoff, fallback: str }) | BlockedSignIn({ provider: str })
 type WebsiteRequest = { id: int, tab: int, ask: Ask }
 type HostReport = { tab: int, ask: Ask, fromTap: bool, topFrame: bool }
 type DownloadStatus = Saving | Saved | SaveFailed | NotSaved
@@ -212,11 +212,12 @@ pure val reportValues = Set(
   { ...reportedOnFirstPage, ask: SitePermission({ origin: "https://clinic.example", kinds: clinicCall }), topFrame: false },
   { ...reportedOnFirstPage, ask: SitePermission({ origin: "https://maps.example", kinds: whereIAm }) },
   { ...reportedOnFirstPage, ask: SitePermission({ origin: "https://maps.example", kinds: noKinds }) },
-  { ...reportedOnFirstPage, ask: OtherApp({ handoff: DialApp }) },
-  { ...reportedOnFirstPage, ask: OtherApp({ handoff: SendToApp }), fromTap: false },
-  { ...reportedOnFirstPage, ask: OtherApp({ handoff: ViewInApp }) },
-  { ...reportedOnFirstPage, ask: OtherApp({ handoff: ComposeEmail }) },
-  { ...reportedOnFirstPage, ask: OtherApp({ handoff: RefusedLink }) },
+  { ...reportedOnFirstPage, ask: OtherApp({ handoff: DialApp, fallback: "" }) },
+  { ...reportedOnFirstPage, ask: OtherApp({ handoff: SendToApp, fallback: "" }), fromTap: false },
+  { ...reportedOnFirstPage, ask: OtherApp({ handoff: ViewInApp, fallback: "" }) },
+  { ...reportedOnFirstPage, ask: OtherApp({ handoff: ViewInApp, fallback: "https://clinic.example/book" }) },
+  { ...reportedOnFirstPage, ask: OtherApp({ handoff: ComposeEmail, fallback: "" }) },
+  { ...reportedOnFirstPage, ask: OtherApp({ handoff: RefusedLink, fallback: "" }) },
   { ...reportedOnFirstPage, ask: BlockedSignIn({ provider: "Google" }) },
   { ...reportedOnFirstPage, ask: BlockedSignIn({ provider: "Facebook" }) },
   { ...reportedOnFirstPage, tab: 2, ask: WebsiteMessage({ dialog: AlertMessage }) },
@@ -405,10 +406,11 @@ navigation, Back, Forward or reload: Grace's own navigation waits on it like
 the page's. OK (Leave) lets that navigation go on, and the page start that
 follows ends the tab's other requests. Cancel (Stay) keeps the page, and the
 surface drops the navigation: no page start and no finished load follow. This
-module changes no tab record: Grace's load for that navigation never ends, so
-the [browser](./browser.md) shows it as a page that did not open, with
-Reload, once its wait has passed ("A load that never starts or never ends
-becomes the failure view with Reload").
+module changes no tab record: when the navigation was Grace's, the host
+reports at once that the person stayed, and the [browser](./browser.md)
+returns the tab to the page she stayed on, loaded, with Back, Forward and
+Reload acting on it ("Stay on a leave-page warning keeps the page she was
+on"). While a message waits, the browser's wait for a load does not count.
 
 ```quint
 pure def messageFits(dialog: MessageKind, choice: Choice): bool =
@@ -766,9 +768,9 @@ pure def appOpens(ask: Ask): bool = match ask { | OtherApp(o) => opensApp(o.hand
 pure def lawALinkThatCannotOpenOffersNoContinue(ask: Ask, choice: Choice): bool =
   isOtherApp(ask) and not(appOpens(ask)) and fits(ask, choice) implies
     (not(choice.accept) and answerFor(ask, choice) == Declined)
-pure val askValues = Set(OtherApp({ handoff: DialApp }), OtherApp({ handoff: RefusedLink }), FileChoice)
+pure val askValues = Set(OtherApp({ handoff: DialApp, fallback: "" }), OtherApp({ handoff: RefusedLink, fallback: "" }), FileChoice)
 pure def sometimesAnotherAppIsConfirmed(s: WebsiteRequests): bool = appOpens(presented(s).ask)
-pure def sometimesAnEmailLinkIsConfirmed(s: WebsiteRequests): bool = presented(s).ask == OtherApp({ handoff: ComposeEmail })
+pure def sometimesAnEmailLinkIsConfirmed(s: WebsiteRequests): bool = presented(s).ask == OtherApp({ handoff: ComposeEmail, fallback: "" })
 pure def sometimesALinkThatCannotOpenIsExplained(s: WebsiteRequests): bool =
   isOtherApp(presented(s).ask) and not(appOpens(presented(s).ask))
 ```
@@ -780,7 +782,14 @@ sign-in, is a call Grace makes, which Android can still fail: another file
 picker is already open (`FILE_CHOOSER_BUSY`) or none is available
 (`FILE_CHOOSER_UNAVAILABLE`), no app on the tablet opens the link, no other
 browser is installed, Android refuses the launch, or the page moved on first.
-The host reports how that call ended for the request it answered. When it
+The host reports how that call ended for the request it answered. An
+`intent:` link can name a secure web page to show when no app opens it
+(`fallback`, empty when it names none). The host keeps only an `https://`
+address with a host name and no user name or password in it, and the
+question names that page. When no app on the tablet opens such a link, the
+host shows that page in the same tab, as a link the website followed by
+itself, and the call counts as opened. Any other failure, or a link with no
+such page, is a call that did not open. When it
 opened, nothing more is said; when it did not, the person is told plainly
 what did not open until they close the notice, and a file request that got
 no picker gets no file. Leaving the page, hiding the browser and Close

@@ -240,20 +240,8 @@ lemma finishPageLoad_ensures(b: Browser, id: int, loadVersion: int, result: Load
   if inv(b) && canFinishPageLoad(b, id, loadVersion, result, endedAt) { FinishedLoadKeepsRules(b, id, loadVersion, result, secure, endedAt); }
 }
 
-lemma finishLoad_ensures(b: Browser, id: int, loadVersion: int, result: Load)
-  ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> alwaysTabsAreWellFormed(finishLoad(b, id, loadVersion, result)))
-  ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> alwaysTabIdentifiersAreUnique(finishLoad(b, id, loadVersion, result)))
-  ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> alwaysBrowserCountersAreValid(finishLoad(b, id, loadVersion, result)))
-  ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> alwaysSelectedTabExists(finishLoad(b, id, loadVersion, result)))
-  ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> alwaysOnlyALoadedPageIsSecure(finishLoad(b, id, loadVersion, result)))
-  ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> alwaysRecentDestinationsAreDistinct(finishLoad(b, id, loadVersion, result)))
-  ensures (inv(b) ==> canFinishLoad(b, id, loadVersion, result) ==> stepRevisionNeverMovesBack(b, finishLoad(b, id, loadVersion, result)))
-{
-  if inv(b) && canFinishLoad(b, id, loadVersion, result) { FinishedLoadKeepsRules(b, id, loadVersion, result, false, ""); }
-}
-
 lemma FinishedLoadKeepsRules(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: string)
-  requires inv(b) && canFinishLoad(b, id, loadVersion, result)
+  requires inv(b) && loadIsCurrent(b, id, loadVersion, result)
   ensures inv(finishPageLoad(b, id, loadVersion, result, secure, endedAt))
   ensures stepRevisionNeverMovesBack(b, finishPageLoad(b, id, loadVersion, result, secure, endedAt))
 {

@@ -132,7 +132,7 @@ pure val rValues = Set(WR::initial, WR::exampleShown, WR::exampleTwoAsk, WR::exa
   askedOnTab1(WR::WebsiteMessage({ dialog: WR::AlertMessage })),
   askedOnTab1(WR::WebsiteMessage({ dialog: WR::PromptMessage })),
   askedOnTab1(WR::DownloadOffer({ fileName: "form.pdf" })), askedOnTab1(WR::FileChoice),
-  askedOnTab1(WR::OtherApp({ handoff: WR::RefusedLink })), askedOnTab1(WR::BlockedSignIn({ provider: "Google" })),
+  askedOnTab1(WR::OtherApp({ handoff: WR::RefusedLink, fallback: "" })), askedOnTab1(WR::BlockedSignIn({ provider: "Google" })),
   { ...askedOnTab1(WR::BlockedSignIn({ provider: "Google" })), shown: false })
 ```
 
@@ -186,7 +186,7 @@ pure val askValues = Set(alertMessage, WR::WebsiteMessage({ dialog: WR::ConfirmM
   WR::WebsiteMessage({ dialog: WR::PromptMessage }), WR::WebsiteMessage({ dialog: WR::LeavePageMessage }),
   WR::DownloadOffer({ fileName: "form.pdf" }), WR::FileChoice,
   WR::SitePermission({ origin: "https://clinic.example", kinds: WR::clinicCamera }),
-  WR::OtherApp({ handoff: WR::DialApp }), WR::OtherApp({ handoff: WR::RefusedLink }),
+  WR::OtherApp({ handoff: WR::DialApp, fallback: "" }), WR::OtherApp({ handoff: WR::RefusedLink, fallback: "" }),
   WR::BlockedSignIn({ provider: "Google" }))
 ```
 
