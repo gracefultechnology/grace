@@ -143,8 +143,8 @@ pure def lawOnlyTheCurrentInboxRequestCanOfferAMessage(m: Mailbox, active: Inbox
     (m.connection == Connected and m.canRead and by == MailConnector and
       (match found {
         | NoInboxCodeMatch => false
-        | OneInboxCodeMatch(item) => item.request == active and item.identity == messageIdentity(m, item.identity.ref) and
-          item.request.generation == m.generation and item.receivedAt <= now and now < item.expiresAt
+        | OneInboxCodeMatch(matchedMessage) => matchedMessage.request == active and matchedMessage.identity == messageIdentity(m, matchedMessage.identity.ref) and
+          matchedMessage.request.generation == m.generation and matchedMessage.receivedAt <= now and now < matchedMessage.expiresAt
       }))
 ```
 
