@@ -274,8 +274,8 @@ pure def lawOldAnswersAndRetirementsAreRefused(b: Prep, expectedVersion: int, fi
     (not(canRetire(b, expectedVersion, by)) and not(canDecideFill(b, fillBy, expectedVersion, by)))
 pure def stepRetireEndsTheRun(before: Prep, via: str, after: Prep): bool =
   via == "retire" implies (after.phase == NoTask and after.key == before.key and after.facts == K::NoFacts and
-    not(after.factsConfirmed) and after.choice == T::NoTerms and after.fillBy == NotAsked and after.live and
-    after.version > before.version)
+    not(after.factsConfirmed) and after.choice == T::NoTerms and after.fillBy == NotAsked and
+    after.evidence == "" and after.reason == "" and after.live and after.version > before.version)
 pure def stepVersionNeverGoesBack(before: Prep, after: Prep): bool = after.version >= before.version
 pure def sometimesRetired(b: Prep): bool = b.phase == NoTask and b.version > 0
 ```
