@@ -1011,7 +1011,7 @@ function agentEvents(listeners: Map<string, (input: unknown) => void>): Pick<Emb
   };
 }
 
-it('Ask the embedded agent for help connecting email (spec/app/conversation.md, "A turn may start without her words, marked with where it came from")', async () => {
+it('Ask for email help (spec/app/conversation.md, "A turn may start without her words, marked with where it came from")', async () => {
   const { agent, requests, answer } = deviceAgent();
   const runtime = ManagedRuntime.make(application(undefined, undefined, { native: true, agent }));
   const view = tabletView(runtime);
@@ -1026,7 +1026,7 @@ it('Ask the embedded agent for help connecting email (spec/app/conversation.md, 
     await expect.poll(() => sentTurn(requests[0]?.body).text).toContain("help connecting their email");
     expect(sentTurn(requests[0].body).said).toBeUndefined();
     expect(conversation().messages).toEqual([]);
-    await answer(0, { text: "Which email do you use?", isQuestion: true, answers: ["Gmail"] });
+    await answer(0, { text: "Which email do you use?", isQuestion: true, answers: ["Gmail", "Outlook"] });
     await act(() => page.getByRole("button", { name: "Gmail", exact: true }).click());
     await expect.poll(() => sentTurn(requests[1]?.body).said).toBe("Gmail");
     await answer(1, { text: "Would you like to open Calendar?", isQuestion: true, answers: ["Yes", "No"] });
