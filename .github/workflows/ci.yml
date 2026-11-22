@@ -664,14 +664,14 @@ jobs:
             "| Status | Unique simulator websites | Portal templates |",
             "| --- | ---: | ---: |",
             ...Object.entries(coverage.totals).map(([status, { websites, templates }]) =>
-              `| ${status} | ${websites} | ${templates} |`),
+              `| ${status === "expectedRefusalsGraded" ? "expected refusals graded" : status} | ${websites} | ${templates} |`),
             "",
             `Fleet catalog websites: ${coverage.catalogWebsites}`,
             `Eligible templates without a passing receipt: ${coverage.templatesWithoutPassingReceipt.join(", ") || "none"}`,
-            `Required websites without a passing receipt: ${coverage.requiredWebsitesWithoutPassingReceipt.join(", ") || "none"}`,
+            `Required websites with an unmet expectation: ${coverage.requiredWebsitesWithUnmetExpectation.join(", ") || "none"}`,
           ];
           appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary.join("\n") + "\n");
-          if (!coverage.requiredComplete) throw new Error("Fleet view-bill cases or negative controls are missing, duplicated, or failed");
+          if (!coverage.requiredComplete) throw new Error("Fleet view-bill grades or controls are missing, duplicated, or differ from their expectations");
           JS
       - if: always()
         uses: actions/upload-artifact@v7
@@ -679,6 +679,7 @@ jobs:
           name: billworld-fleet-view-bill
           path: |
             ${{ github.workspace }}/.cache/grace-released-billworld-results/fleet-view-bill-*/
+            ${{ github.workspace }}/.cache/grace-released-billworld-results/fleet-statement-refusal-*/
             ${{ github.workspace }}/.cache/grace-released-billworld-results/fleet-view-bill-qualification.json
           if-no-files-found: error
   checks:

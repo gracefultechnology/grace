@@ -286,6 +286,11 @@ export const fleetStatementRefusals = [
   { billerId: "accura-healthcare-2b95c9", template: "rent-portal" },
 ];
 
+const fleetStatementSelections = [
+  ...fleetStatementCases.map((item) => ({ ...item, expected: "pass" as const })),
+  ...fleetStatementRefusals.map((item) => ({ ...item, expected: "refusal" as const })),
+];
+
 const StatementRoutes = Schema.Struct({ routes: Schema.Struct({
   login: Schema.NonEmptyString, loginPassword: Schema.optional(Schema.NonEmptyString), bill: Schema.NonEmptyString,
 }) });
@@ -353,13 +358,13 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
   const groups = new Map<string, number>();
   for (const { template } of eligible.values()) groups.set(template, (groups.get(template) ?? 0) + 1);
 
-  const selected = new Map(fleetStatementCases.map(({ billerId, template }) => [billerId, template]));
-  for (const [billerId, template] of selected)
+  const selected = new Map(fleetStatementSelections.map((item) => [item.billerId, item]));
+  for (const [billerId, { template }] of selected)
     if (eligible.get(billerId)?.template !== template) throw new Error(`Ineligible required Fleet biller ${billerId}`);
-  if (selected.size !== fleetStatementCases.length) throw new Error("Duplicate required Fleet biller");
+  if (selected.size !== fleetStatementSelections.length) throw new Error("Duplicate required Fleet biller");
 
   const attempts = (existsSync(results) ? readdirSync(results, { withFileTypes: true }) : [])
-    .filter((entry) => entry.isDirectory() && entry.name.startsWith("fleet-view-bill-"))
+    .filter((entry) => entry.isDirectory() && (entry.name.startsWith("fleet-view-bill-") || entry.name.startsWith("fleet-statement-refusal-")))
     .map(({ name }) => name).sort().map((name) => {
       const read = (file: string) => {
         const path = join(results, name, file + ".json");
@@ -386,7 +391,9 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
           malformed = true;
         }
       }
-      const result = (status: "incomplete" | "invalid" | "official-failure" | "passed") => ({ directory: name, ...identity, status });
+      const expected = identity && selected.get(identity.billerId)?.expected;
+      const result = (status: "incomplete" | "invalid" | "official-failure" | "passed" | "expected-refusal" | "unexpected-pass",
+        officialScore?: 0 | 1) => ({ directory: name, ...identity, expected, status, officialScore });
       if (malformed) return result("invalid");
       if (!identity) return result("incomplete");
       const { billerId, taskId } = identity;
@@ -401,34 +408,42 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
         if ((noAction !== undefined && !noActionRejected) || (wrongAnswer !== undefined && !wrongAnswerRejected))
           return result("invalid");
         if (answer === undefined) return result("incomplete");
-        const positive = Schema.decodeUnknownSync(StatementAnswerReceipt)(answer);
-        const { grade } = positive;
+        const finished = Schema.decodeUnknownSync(StatementAnswerReceipt)(answer);
+        const { grade } = finished;
         if (grade.taskId !== taskId || !viewBillChecks(grade, billerId) || grade.success !== grade.results.every(({ pass }) => pass))
           return result("invalid");
-        if (!grade.success) return result("official-failure");
-        if (!/^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u.test(positive.answer))
+        if (!grade.success) {
+          if (expected !== "refusal" || finished.answer !== "" || !rejectsStatementControl(grade, billerId, "wrongAnswer"))
+            return result("official-failure", 0);
+          return result(noActionRejected && wrongAnswerRejected ? "expected-refusal" : "incomplete", 0);
+        }
+        if (expected === "refusal") return result("unexpected-pass", 1);
+        if (!/^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u.test(finished.answer))
           return result("invalid");
-        return result(noActionRejected && wrongAnswerRejected ? "passed" : "incomplete");
+        return result(noActionRejected && wrongAnswerRejected ? "passed" : "incomplete", 1);
       } catch {
         return result("invalid");
       }
     });
 
   const templates = [...groups.entries()].sort(([left], [right]) => left.localeCompare(right, "en")).map(([template, eligibleWebsites]) => {
-    const selectedWebsites = fleetStatementCases.filter((item) => item.template === template).map(({ billerId }) => billerId);
+    const selectedWebsites = fleetStatementSelections.filter((item) => item.template === template).map(({ billerId }) => billerId);
     const siteAttempts = attempts.filter((attempt) => attempt.template === template);
     const attemptedWebsites = [...new Set(siteAttempts.flatMap(({ billerId }) => billerId === undefined ? [] : [billerId]))].sort();
     const passingWebsites = attemptedWebsites.filter((id) =>
       siteAttempts.some((attempt) => attempt.billerId === id && attempt.status === "passed"));
-    return { template, eligibleWebsites, selectedWebsites, attemptedWebsites, passingWebsites };
+    const expectedRefusalWebsites = attemptedWebsites.filter((id) =>
+      siteAttempts.some((attempt) => attempt.billerId === id && attempt.status === "expected-refusal"));
+    return { template, eligibleWebsites, selectedWebsites, attemptedWebsites, passingWebsites, expectedRefusalWebsites };
   });
   const attemptCounts = new Map<string, number>();
   for (const { billerId } of attempts)
     if (billerId !== undefined) attemptCounts.set(billerId, (attemptCounts.get(billerId) ?? 0) + 1);
   const duplicateAttemptWebsites = [...attemptCounts.keys()].filter((id) => (attemptCounts.get(id) ?? 0) > 1).sort();
-  const requiredComplete = attempts.length === selected.size &&
-    attempts.every(({ billerId, status }) => billerId !== undefined && selected.has(billerId) && status === "passed") &&
-    duplicateAttemptWebsites.length === 0;
+  const metExpectation = new Set(attempts.flatMap(({ billerId, expected, status }) => billerId !== undefined &&
+    ((expected === "pass" && status === "passed") || (expected === "refusal" && status === "expected-refusal"))
+    ? [billerId] : []));
+  const requiredComplete = attempts.length === selected.size && metExpectation.size === selected.size && duplicateAttemptWebsites.length === 0;
   const coverageCounts = (counts: number[]) => ({ websites: counts.reduce((sum, count) => sum + count, 0), templates: counts.filter(Boolean).length });
   return {
     productRevision, fixtureRevision: revision, catalogWebsites: billers.size, requiredComplete,
@@ -437,9 +452,11 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
       selected: coverageCounts(templates.map((row) => row.selectedWebsites.length)),
       attempted: coverageCounts(templates.map((row) => row.attemptedWebsites.length)),
       passed: coverageCounts(templates.map((row) => row.passingWebsites.length)),
+      expectedRefusalsGraded: coverageCounts(templates.map((row) => row.expectedRefusalWebsites.length)),
     },
     templatesWithoutPassingReceipt: templates.filter((row) => !row.passingWebsites.length).map(({ template }) => template),
-    requiredWebsitesWithoutPassingReceipt: templates.flatMap((row) => row.selectedWebsites.filter((id) => !row.passingWebsites.includes(id))),
+    requiredWebsitesWithoutPassingReceipt: fleetStatementCases.map(({ billerId }) => billerId).filter((id) => !metExpectation.has(id)),
+    requiredWebsitesWithUnmetExpectation: [...selected.keys()].filter((id) => !metExpectation.has(id)),
     duplicateAttemptWebsites, templates, attempts,
     cases: attempts.flatMap(({ taskId, template, status }) => status === "passed"
       ? [{ taskId, template, checks: requiredStatementChecks.length, controlsRejected: 2 }] : []),
@@ -447,11 +464,11 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
 }
 
 export async function fleetStatement(directory: string, billerId: string, receipts: string) {
-  const selected = [...fleetStatementCases, ...fleetStatementRefusals].find((item) => item.billerId === billerId);
+  const selected = fleetStatementSelections.find((item) => item.billerId === billerId);
   if (!selected) throw new Error("Unknown Fleet statement biller");
   const taskId = billerId + ":view-bill";
   const record = (id: string, receipt: object) =>
-    writeFileSync(join(receipts, id + ".json"), JSON.stringify({ revision, ...selected, taskId, ...receipt }, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+    writeFileSync(join(receipts, id + ".json"), JSON.stringify({ revision, billerId, template: selected.template, taskId, ...receipt }, null, 2) + "\n", { flag: "wx", mode: 0o600 });
   record("attempt", {});
   const loginPaths = new Set<string>();
   const { fleet, origin, close } = await openFleetServer(pinnedFleet(directory), loginPaths);
