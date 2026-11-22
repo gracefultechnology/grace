@@ -10,7 +10,7 @@ export type StatementAnswer =
 const facts: readonly StatementFact[] = ["RemainingBalance", "AmountDue", "StatementBalance", "DueDate"];
 const labels: Record<StatementFact, string> = {
   RemainingBalance: String.raw`remaining\s+(?:statement\s+balance|balance\s+due)`,
-  AmountDue: String.raw`(?:your\s+)?(?:(?:total|current|new)\s+)?amount\s+due|(?:your\s+)?(?:(?:total|current)\s+)?balance\s+due|(?:your\s+)?total\s+due`,
+  AmountDue: String.raw`(?:account\s+|current\s+)?balance\s+\(\s*amount\s+due\s*\)|(?:your\s+)?(?:(?:total|current|new)\s+)?amount\s+due|(?:your\s+)?(?:(?:total|current)\s+)?balance\s+due|(?:your\s+)?total\s+due`,
   StatementBalance: String.raw`(?:your\s+)?(?:new|(?:last\s+)?statement)\s+balance(?:\s+due)?`,
   DueDate: String.raw`(?:next\s+)?(?:(?:payment|bill)\s+)?due\s+date|(?:payment\s+)?due\s+(?:by|on)|payment\s+due|(?:please\s+)?pay\s+by|due`,
 };
@@ -42,8 +42,14 @@ function statementLabels(text: string): Labeled[] {
     const words = fact === undefined ? undefined : match.groups?.[fact];
     if (fact === undefined || words === undefined) return [];
     const rest = line.slice(match.index + match[0].length);
-    const value = (fact === "DueDate" ? date : money).exec(rest === "" ? lines[index + 1] ?? "" : rest)?.[0];
-    return value === undefined ? [] : [{ fact, label: words.replace(/\s+/gu, " "), value: value.replace(/\s+/gu, " ") }];
+    const candidate = rest === "" ? lines[index + 1] ?? "" : rest;
+    const paymentAmount = fact === "DueDate" && /^payment\s+due$/iu.test(words) ? money.exec(candidate)?.[0] : undefined;
+    const value = paymentAmount ?? (fact === "DueDate" ? date : money).exec(candidate)?.[0];
+    return value === undefined ? [] : [{
+      fact: paymentAmount === undefined ? fact : "AmountDue",
+      label: words.replace(/\s+/gu, " "),
+      value: value.replace(/\s+/gu, " "),
+    }];
   }));
 }
 
