@@ -184,6 +184,13 @@ effect function fetched(shelf: Instances.Shape, mail: MailConnection, id: number
 
 error AttachmentChanged
 
+function nameIn(names: ReadonlyMap<string, string>, shelf: Instances.Shape, to: string, replied?: Replied) {
+  const first = recipientsOf(to)[0] ?? ""
+  const held = replied === undefined || replied.ref === "" ? undefined : shelf.held(replied.id, replied.ref)
+  const sender = held !== undefined && [held.content.fromAddress, held.reply?.address].some((a) => a?.toLowerCase() === first.toLowerCase()) ? held.content.from : ""
+  return names.get(first.toLowerCase()) ?? (sender || first)
+}
+
 export const mailing = Layer.effect(Mail, effect {
   const registry = try Accounts
   const shelf = try Instances
@@ -201,12 +208,7 @@ export const mailing = Layer.effect(Mail, effect {
     board = { ...board, ...next }
     listeners.forEach((listener) => listener())
   }
-  const nameOf = (to: string, replied?: Replied) => {
-    const first = recipientsOf(to)[0] ?? ""
-    const held = replied === undefined || replied.ref === "" ? undefined : shelf.held(replied.id, replied.ref)
-    const sender = held !== undefined && [held.content.fromAddress, held.reply?.address].some((a) => a?.toLowerCase() === first.toLowerCase()) ? held.content.from : ""
-    return names.get(first.toLowerCase()) ?? (sender || first)
-  }
+  const nameOf = (to: string, replied?: Replied) => nameIn(names, shelf, to, replied)
   const undeleted = (id: number, failed: boolean) => {
     if (board.undeleted.has(id) === failed) return
     post({ undeleted: new Set(failed ? [...board.undeleted, id] : [...board.undeleted].filter((x) => x !== id)) })
