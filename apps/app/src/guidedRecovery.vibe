@@ -346,14 +346,14 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
           endedDurably = true
         }
       }
+      const stillSelected = (now: Workspace) => now.assistant.taskId === fence.task && now.plan.owner === state.plan.owner &&
+        (endedDurably || now.assistant.workVersion === fence.version)
       const after = try workspace.get()
-      if (after.assistant.taskId !== fence.task || after.plan.owner !== state.plan.owner ||
-          (!endedDurably && after.assistant.workVersion !== fence.version))
-        throw new Rejected({ event, state: after, by: "Person" })
+      if (!stillSelected(after)) throw new Rejected({ event, state: after, by: "Person" })
       const result = endedDurably && after.assistant.activity === "Finished" ? { state: after, out: [] }
         : endedDurably && after.assistant.presentation === "Closed"
-          ? try workspace.send({ type: "discardGuidedRecovery", fence: { task: fence.task, version: after.assistant.workVersion } }, "Host")
-          : try workspace.send(event, "Person")
+          ? try workspace.send({ type: "discardGuidedRecovery", fence: { task: fence.task, version: after.assistant.workVersion } }, "Host", stillSelected)
+          : try workspace.send(event, "Person", stillSelected)
       if (current !== undefined) {
         checked.delete(current.scope)
         binding = undefined

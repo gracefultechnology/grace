@@ -1,7 +1,7 @@
 // spec/app/deviceKeys.md, "Story: Answer a website before Grace goes on"
 import { taskMayAdvance } from "../gen/app__deviceKeys.effect.vibe"
-import { decodeEvent as websiteEvent, Machine as WebsiteRequests, type Event as RequestEvent, type WebsiteActor } from "../gen/app__websiteRequests.effect.vibe"
-import { decodeEvent as workspaceEvent, enabled, step, Machine as Workspaces, Rejected, type Event, type WorkspaceActor } from "../gen/app__workspace.effect.vibe"
+import { decodeEvent as websiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe"
+import { decodeEvent as workspaceEvent, enabled, step, Machine as Workspaces, Rejected, type Event } from "../gen/app__workspace.effect.vibe"
 
 export service WebsiteTask {
   readonly clear: boolean!!
@@ -18,7 +18,7 @@ const progress = {
   receiveProgress: "Step", journalCommitment: "Independent", observeCommitmentTap: "Step", observeGuidedCalendar: "Receipt",
   recordCommitment: "Evidence", reconcilePriorCommitment: "Evidence",
   setAvailability: "Independent", changeLifecycle: "Independent", setBrowserObservation: "Independent", closeGrace: "Independent",
-  abandonTask: "Independent", purgePrivate: "Independent", visit: "Independent", returnToApplication: "Independent", closeBrowser: "Independent",
+  abandonTask: "Independent", purgePrivate: "Independent", visit: "Independent", returnToApplication: "Independent", closeBrowser: "Independent", openReleasedEmailLink: "Independent",
   openGrace: "Independent", stop: "Independent", talk: "Independent", newConversation: "Independent", requestReplacement: "Independent",
   keepTask: "Independent", replaceTask: "Independent", continueTask: "Independent", interact: "Independent", invalidateGuidance: "Independent",
   chooseHomePage: "Independent", chooseSettingsPage: "Independent", togglePopover: "Independent", dismissPopover: "Independent",
@@ -43,17 +43,17 @@ export const websiteTask = Layer.unwrap(effect {
     if (!(try clear)) return "Held" as const
     return try Effect.forkChild(run, { startImmediately: true })
   })
-  effect function send(event: Event, by: WorkspaceActor) {
+  const send: Workspaces.Shape["send"] = effect (event, by, isCurrent) => {
     const kind = progress[event.type]
-    if (kind === "Independent") return try serial(workspace.send(event, by))
+    if (kind === "Independent") return try serial(workspace.send(event, by, isCurrent))
     while (true) {
       const result = try serial(effect {
         const state = try workspace.get()
         const admitted = enabled(state, event, by)
-        if (taskMayAdvance(try requests.get(), admitted)) return try workspace.send(event, by)
+        if (taskMayAdvance(try requests.get(), admitted)) return try workspace.send(event, by, isCurrent)
         if (admitted && kind === "Evidence") {
           const after = step(state, event, by).state.assistant
-          if (after.activity === state.assistant.activity && after.workVersion === state.assistant.workVersion) return try workspace.send(event, by)
+          if (after.activity === state.assistant.activity && after.workVersion === state.assistant.workVersion) return try workspace.send(event, by, isCurrent)
         }
         if (!admitted || kind === "Step" || (kind === "Evidence" && by !== "Store")) throw new Rejected({ state, event, by })
         return undefined
@@ -62,7 +62,7 @@ export const websiteTask = Layer.unwrap(effect {
       try Effect.interruptible(released)
     }
   }
-  const answer = (event: RequestEvent, by: WebsiteActor) => serial(requests.send(event, by))
+  const answer: WebsiteRequests.Shape["send"] = (event, by, isCurrent) => serial(requests.send(event, by, isCurrent))
   return Layer.mergeAll(
     Layer.succeed(Workspaces, { ...workspace, send, receive: effect (input, by) => try send(try workspaceEvent(input), by) }),
     Layer.succeed(WebsiteRequests, { ...requests, send: answer, receive: effect (input, by) => try answer(try websiteEvent(input), by) }),

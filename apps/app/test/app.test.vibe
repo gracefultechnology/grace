@@ -150,6 +150,9 @@ schema GoogleAccountSession { sessionId: string; pageUrl: string }
 schema GoogleAccountGrant { connectionId: string; connected: boolean; identity: { email: string } }
 schema GoogleAccess { access_token: string; token_type: "Bearer"; scope: string }
 schema GoogleOwner { email: string; email_verified: true }
+schema DeliveryReceipt { id: Schema.NonEmptyString }
+schema MailSearchResult { messages: { externalId: string }[] }
+schema MailReadResult { message: { externalId: string }; bodyText: string }
 
 effect function googleSession(key: string) {
   const request = HttpClientRequest.post(`${cloud}/api/v1/eliza/connections/google/sessions`).pipe(
@@ -183,6 +186,12 @@ it.live("Connect the email I already use: Google denies missing consent, reused 
     const first = (try signIn(cloud, false)).secret
     const other = (try signIn(cloud, false)).secret
     const address = "owner@grace.test"
+    const subject = "Delivery after consent"
+    const body = "The appointment was moved to the north entrance."
+    const deliver = (key: string, to: string) => HttpClient.execute(HttpClientRequest.post(cloud + "/fake/gmail/incoming").pipe(
+      HttpClientRequest.bearerToken(key), HttpClientRequest.bodyJsonUnsafe({ to, from: "Reception", fromEmail: "desk@clinic.test", subject, body })
+    ))
+    const beforeLink = (try deliver(first, address)).status
     const denied = try googleSession(first)
     const cancelled = try submit(denied.pageUrl, { address, choice: "cancel" })
     const deniedSession = try sessions(cloud, first)
@@ -199,9 +208,23 @@ it.live("Connect the email I already use: Google denies missing consent, reused 
     const replayedCode = (try exchangeGoogle(code)).status
 
     const [grant] = try googleOwnerGrants(first)
-    const mail = `${cloud}/api/v1/eliza/google/gmail/search?query=clinic&grantId=${grant.connectionId}`
+    const inbox = cloud + googleRoute + "gmail"
+    const mail = `${inbox}/search?query=${encodeURIComponent(subject)}&grantId=${grant.connectionId}`
     const withKey = (url: string, key: string) => HttpClient.execute(HttpClientRequest.bearerToken(HttpClientRequest.get(url), key))
-    const ownerRead = (try withKey(mail, first)).status
+    const search = () => effect {
+      const result = try withKey(mail, first)
+      try Effect.try(() => assert.equal(result.status, 200))
+      return try Schema.decodeUnknownEffect(MailSearchResult)(try result.json)
+    }
+    const beforeDelivery = try search()
+    const wrongSenderAccount = (try deliver(other, address)).status
+    const wrongRecipient = (try deliver(first, "other@grace.test")).status
+    const delivery = try deliver(first, address)
+    const { id } = try Schema.decodeUnknownEffect(DeliveryReceipt)(try delivery.json)
+    const afterDelivery = try search()
+    const read = `${inbox}/read?messageId=${encodeURIComponent(id)}&grantId=${grant.connectionId}`
+    const ownerMessage = try Schema.decodeUnknownEffect(MailReadResult)(try (try withKey(read, first)).json)
+    const foreignMessage = (try withKey(read, other)).status
     const foreignRead = (try withKey(mail, other)).status
 
     const rawPage = try googleSession(first)
@@ -213,11 +236,17 @@ it.live("Connect the email I already use: Google denies missing consent, reused 
     try expire(cloud, first, address)
     const expiredToken = (try withKey(userinfo, access.access_token)).status
     const expiredConnection = (try withKey(mail, first)).status
+    const afterExpiry = (try deliver(first, address)).status
 
     try Effect.try(() => assert.deepStrictEqual(
-      { cancelled, deniedSession, beforeConsent, wrongState, afterWrongState, consented, replayedCallback, replayedCode, ownerRead, foreignRead, identity, expiredToken, expiredConnection },
+      { cancelled, deniedSession, beforeConsent, wrongState, afterWrongState, consented, replayedCallback, replayedCode, foreignRead, identity, expiredToken, expiredConnection },
       { cancelled: 200, deniedSession: ["cancelled"], beforeConsent: [], wrongState: 401, afterWrongState: [], consented: 200, replayedCallback: 401, replayedCode: 401,
-        ownerRead: 200, foreignRead: 404, identity: { email: address, email_verified: true }, expiredToken: 401, expiredConnection: 409 }
+        foreignRead: 404, identity: { email: address, email_verified: true }, expiredToken: 401, expiredConnection: 409 }
+    ))
+    try Effect.try(() => assert.deepStrictEqual(
+      { beforeLink, wrongSenderAccount, wrongRecipient, beforeDelivery, delivered: delivery.status, afterDelivery, ownerMessage, foreignMessage, afterExpiry },
+      { beforeLink: 404, wrongSenderAccount: 404, wrongRecipient: 404, beforeDelivery: { messages: [] }, delivered: 200,
+        afterDelivery: { messages: [{ externalId: id }] }, ownerMessage: { message: { externalId: id }, bodyText: body }, foreignMessage: 404, afterExpiry: 404 }
     ))
   }
 })
@@ -572,6 +601,7 @@ it.live("Read the Google mail and calendar I connected: the pinned Eliza Cloud r
   const env = { PUBLIC_API_ORIGIN: "https://api.grace.test", WEB_ORIGIN: "https://app.grace.test" }
   const storage = try Effect.try(() => new Client())
   try tryPromise(() => storage.end())
+  const unconnectedProvider = async () => { throw new Error("This route check has no connected Google account") }
   const requests = [
     ...googleReads.map((route) => [googleRoute + route, "GET"] as const),
     ...googleChanges.map((route) => [googleRoute + route, "POST"] as const),
@@ -580,7 +610,7 @@ it.live("Read the Google mail and calendar I connected: the pinned Eliza Cloud r
   const unrouted = try Effect.forEach(requests, ([path, method]) => effect {
     const sent = HttpClientRequest.make(method)(env.PUBLIC_API_ORIGIN + path, { headers: { origin: env.WEB_ORIGIN } })
     const request = try HttpServerRequest.toWeb(HttpServerRequest.fromClientRequest(sent))
-    const response = try tryPromise(() => googleRequest(request, env, storage, "account"))
+    const response = try tryPromise(() => googleRequest(request, env, storage, "account", unconnectedProvider))
     const { error } = try Schema.decodeUnknownEffect(Schema.Struct({ error: Schema.optional(Schema.String) }))(try tryPromise(() => response.json()))
     return error === "route_not_found" ? [method + " " + path] : []
   })

@@ -1,0 +1,44 @@
+// spec/app/email.md, "A scam warning needs current evidence and holds that message's links"; spec/app/handoffs.md, "A link Email released opens in a new Browser tab, and no other link does"
+import { parseBrowserAddressInput } from "@elizaos/os/browser/address"
+
+export function linkDestination(text: string) {
+  if (!/^https?:\/\//i.test(text)) return undefined
+  const address = parseBrowserAddressInput(text, { defaultProtocol: "https:" })
+  return address.kind === "url" ? address.href : undefined
+}
+
+type LinkPart = string | { readonly start: number; readonly text: string; readonly href: string | undefined }
+
+function linkText(candidate: string) {
+  let end = 0
+  let parentheses = 0
+  let brackets = 0
+  for (let i = 0; i < candidate.length; i++) {
+    const c = candidate[i]
+    if (c === "(") parentheses++
+    if (c === "[") brackets++
+    if (c === ")") {
+      if (parentheses === 0) continue
+      parentheses--
+    }
+    if (c === "]") {
+      if (brackets === 0) continue
+      brackets--
+    }
+    if (!/[.,;:!?'"’]/.test(c)) end = i + 1
+  }
+  return candidate.slice(0, end)
+}
+
+export function messageLinkParts(body: string): LinkPart[] {
+  const parts: LinkPart[] = []
+  let end = 0
+  for (const match of body.matchAll(/https?:\/\/[^\s<>"“”]+/gi)) {
+    const text = linkText(match[0])
+    if (match.index > end) parts.push(body.slice(end, match.index))
+    parts.push({ start: match.index, text, href: linkDestination(text) })
+    end = match.index + text.length
+  }
+  if (end < body.length) parts.push(body.slice(end))
+  return parts
+}

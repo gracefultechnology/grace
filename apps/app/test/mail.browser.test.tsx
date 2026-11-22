@@ -5,11 +5,12 @@ import { act } from "react";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { type Accounts, type Event as AccountEvent, Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
-import { addAccount, allowedUse, chooseProvider, goBack, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
+import { addAccount, goBack, initial } from "../gen/app__accounts.ts";
 import { tabUrl } from "../gen/app__browser.ts";
 import { approveSave, create, initial as emptyOccurrence, noDetails, noIdentity, save } from "../gen/app__calendar.ts";
 import { bindCalendar, initial as emptyCalendar, publishOccurrence, type CalendarView } from "../gen/app__calendarView.ts";
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
+import { parseState as parseMail } from "../gen/app__email.ts";
+import { type Event as WorkspaceEvent, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { Email } from "../src/Email.tsx";
 import { RuntimeContext } from "../src/useApp.ts";
 import { application } from "../src/app.vibe";
@@ -17,7 +18,7 @@ import { Instances } from "../src/instances.vibe";
 import { chooseMailLink } from "../src/mailLink.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
-import { tabletView, actOnScreen, browserAccountResponse, connected } from "./screen.tsx";
+import { actOnScreen, allowOutlook, browserAccountResponse, connected, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -40,19 +41,7 @@ const Kept = Schema.Struct({
   changes: Schema.Array(Schema.Struct({ receipt: Schema.Struct({ requestId: Schema.String, kind: Schema.String, state: Schema.String }) })),
 });
 
-async function allowOutlook(key: string) {
-  const started = await fetch(new URL("/api/v1/eliza/connections/outlook/sessions", cloud), {
-    method: "POST", headers: { authorization: `Bearer ${key}`, "content-type": "application/json" }, body: JSON.stringify({ loginHint: "" }),
-  });
-  const { pageUrl } = await started.json() as { pageUrl: string };
-  await fetch(pageUrl, { method: "POST", body: new URLSearchParams({ address: outlook, choice: "allow" }) });
-}
-
 function kept(): Accounts {
-  const connected = (a: Accounts, provider: Provider, address: string, name: string) => {
-    const chosen = chooseProvider(a, provider, "AccountPerson");
-    return sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address, granted: allowedUse }, name, "AccountConnector");
-  };
   return connected(addAccount(goBack(connected(initial, "Gmail", gmail, "Gmail"), "AccountPerson"), "AccountPerson"), "Outlook", outlook, "Outlook");
 }
 
@@ -78,7 +67,7 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
       key === "sourceAccount" && value === 0 ? undefined : value));
   }
   if (withAccounts) {
-    await allowOutlook(secret);
+    await allowOutlook({ cloud, key: secret, address: outlook });
     localStorage.setItem("accounts", JSON.stringify(kept()));
   }
   const connectivity = vi.spyOn(window.navigator, "onLine", "get");
@@ -100,22 +89,35 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
       const key = `mail/${account}`;
       const raw = localStorage.getItem(key);
       if (raw === null) throw new Error("Missing the saved mailbox");
-      const box = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)))(raw);
-      expect(box.draftsTotal).toBeTypeOf("number");
-      const { draftsTotal: _, ...earlier } = box;
-      localStorage.setItem(key, JSON.stringify(earlier));
+      const box = parseMail(JSON.parse(raw));
+      if (box === undefined) throw new Error("Invalid stored mailbox");
+      const { draftsTotal: _, bill: _bill, ...earlier } = box;
+      expect(box.messageRef).not.toBe("");
+      const oldBill = { ref: "prior-invoice", origin: "https://billing.example", account: "prior-utility", confirmed: true };
+      localStorage.setItem(key, JSON.stringify({ ...earlier, bill: oldBill }));
       runtime = open();
       view = tabletView(runtime);
       await view.render();
+      const restored = await runtime.runPromise(Effect.gen(function*() {
+        const mail = yield* (yield* Instances).mail(account);
+        return yield* mail.get();
+      }));
+      expect(restored).toMatchObject({
+        operationId: box.operationId, issuedSends: box.issuedSends, retiredDrafts: box.retiredDrafts,
+        outbox: box.outbox, draft: box.draft, draftAttachments: box.draftAttachments, bill: { ref: "", sourceRef: "", confirmed: false },
+      });
+      expect(restored.messages.map((message) => message.identity)).toEqual(expect.arrayContaining(box.messages.map((message) => message.identity)));
     },
-    browserTabs: () => runtime.runPromise(Effect.flatMap(Workspaces, (desk) => Effect.map(desk.get(), (w) => w.browser.tabs.map((tab) => [tab.id, tabUrl(tab)])))),
+    workspaceEvent: (event: WorkspaceEvent) => act(() => runtime.runPromise(Effect.flatMap(Workspaces, (desk) => desk.send(event, "Person")))),
+    browserTabs: () => runtime.runPromise(Effect.flatMap(Workspaces, (desk) => Effect.map(desk.get(), (w) => w.browser.tabs.map((tab) => [tab.id, tabUrl(tab), tab.manualSignIn])))),
     pendingLink: (account: number) => runtime.runPromise(Effect.gen(function*() {
       const shelf = yield* Instances;
       const box = yield* shelf.mail(account);
       const { generation, messageRef: ref, link } = yield* box.get();
       const read = shelf.held(account, ref)?.read;
+      const { device, browser } = yield* (yield* Workspaces).get();
       if (!read || link.status !== "LinkHeld") throw new Error("No email link is waiting for confirmation");
-      return () => runtime.runPromise(chooseMailLink({ account, ref, generation, version: read.version, link: link.link }, "confirm"));
+      return () => runtime.runPromise(chooseMailLink({ account, ref, generation, version: read.version, link: link.link, deviceVersion: device.contextVersion, browserRevision: browser.revision }, "confirm"));
     })),
     appointments: (key: number) => runtime.runPromise(Effect.gen(function*() {
       const shelf = yield* Instances;
@@ -157,6 +159,10 @@ const forgotten = (owner: string) => new Promise<void>((resolve, reject) => {
   request.onsuccess = () => resolve();
   request.onerror = () => reject(new Error("The test could not delete the file library", { cause: request.error }));
 });
+const writeTo = async (name: string) => {
+  await click(page.getByRole("button", { name: "Write" }));
+  await click(page.getByRole("button", { name, exact: true }));
+};
 const opened = async (from: RegExp, title: string) => {
   await click(email(from));
   await expect.element(page.getByRole("heading", { name: title })).toBeVisible();
@@ -436,16 +442,21 @@ it("See all my email in one place", async () => {
   await expect.element(page.getByText(/^From Main St Clinic · Saved /)).toBeVisible();
   await click(page.getByRole("radio", { name: "Photos" }));
   await click(piano);
-  await click(page.getByRole("button", { name: "Share" }));
+  const share = page.getByRole("button", { name: "Share" });
+  const recipients = page.getByRole("heading", { name: "Who is it to?" });
+  await expect.element(share).toBeVisible();
+  await click(share);
   // spec/app/mailboxes.md, "Writing starts at Who is it to?, and Cc and Bcc show once opened or used"
+  await expect.element(recipients).toBeVisible();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
   await expect.element(row("Inbox")).toHaveAttribute("aria-current", "page");
   await click(page.getByRole("button", { name: "Close Email" }));
   await click(page.getByRole("button", { name: /^Files/ }));
   await click(piano);
-  await click(page.getByRole("button", { name: "Share" }));
-  await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
+  await expect.element(share).toBeVisible();
+  await click(share);
+  await expect.element(recipients).toBeVisible();
   await click(page.getByRole("button", { name: "Susan" }));
   await expect.element(subject()).toHaveValue("A photo");
   await expect.element(page.getByRole("img", { name: "Piano.png" })).toBeVisible();
@@ -484,8 +495,7 @@ it("Write or reply and confirm before sending", async () => {
   await expect.element(email(/^Main St Clinic.*You replied: “Thank you, I’ll be there\.…”/)).toBeVisible();
 
   // spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"
-  await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name: "Susan" }));
+  await writeTo("Susan");
   await act(() => userEvent.fill(subject(), "Sunday"));
   await act(() => userEvent.fill(words(), "See you on Sunday."));
   await click(page.getByRole("button", { name: "Add", exact: true }));
@@ -526,15 +536,13 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Write" }));
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
-  await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name: "Susan" }));
+  await writeTo("Susan");
   await act(() => userEvent.fill(words(), "Never mind."));
   await click(page.getByRole("button", { name: "Discard" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
 
   // spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"
-  await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name: "Susan" }));
+  await writeTo("Susan");
   await expect.element(page.getByRole("button", { name: outlook })).toBeVisible();
   await act(() => userEvent.fill(subject(), "Lunch next week"));
   await act(() => userEvent.fill(words(), "Shall we have lunch on Tuesday?"));
@@ -553,13 +561,13 @@ it("Write or reply and confirm before sending", async () => {
 
   // spec/app/email.md, "Back and Close keep a composer worth keeping and close an empty one"
   await click(row("All inboxes"));
-  await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name: "Susan" }));
+  await writeTo("Susan");
   await act(() => userEvent.fill(subject(), "Tea on Friday"));
   await act(() => userEvent.fill(words(), "Would you come for tea on Friday?"));
   await click(page.getByRole("button", { name: "Close Email" }));
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Tea on Friday").map((m) => m.labels))).toEqual([["DRAFT"]]);
   await click(page.getByRole("button", { name: /^Email/ }));
+  await expect.element(row("Drafts 2")).toBeVisible();
   await click(row("Drafts"));
   await expect.element(email(/^To Susan.*Tea on Friday/)).toBeVisible();
   await expect.element(row("Drafts 2")).toBeVisible();
@@ -569,6 +577,7 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Discard" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
   await expect.element(email(/^To Susan.*Lunch next week/)).not.toBeInTheDocument();
+  await expect.element(row("Drafts 1")).toBeVisible();
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Lunch next week"))).toEqual([]);
 
   // spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"
@@ -710,7 +719,7 @@ it('Review an unsent reply (spec/app/email.md, "Only the current approved draft 
 
 it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email released opens in a new Browser tab, and no other link does")', async () => {
   // spec/app/email.md, "A scam warning needs current evidence and holds that message's links"
-  const { person, company, browserTabs, pendingLink } = await start();
+  const { person, company, browserTabs, pendingLink, workspaceEvent } = await start();
   const before = await browserTabs();
   const sent = async () => (await company()).boxes.flatMap((box) => box.mail.filter((message) => message.labels.includes("SENT")).map((message) => message.externalId));
   const priorMail = await sent();
@@ -720,6 +729,7 @@ it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email rele
   const warning = page.getByRole("dialog", { name: "Open this link?" });
   await openEmail();
   await opened(/Account Security/, "Urgent: confirm your password");
+  await expect.element(flagged).toBeVisible();
   await expect.element(page.getByRole("link", { name: /invalid\.example/ })).not.toBeInTheDocument();
   const target = flagged.element().textContent;
   await click(flagged);
@@ -735,19 +745,35 @@ it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email rele
   expect(await browserTabs()).toEqual(before);
   await person({ type: "setUse", id: 1, use: { mail: true, calendar: true, contacts: true } });
   await expect.element(warning.getByText(target ?? "", { exact: true })).toBeVisible();
+  await workspaceEvent({ type: "visit", destination: "Browser" });
+  await workspaceEvent({ type: "changePage", browserInput: { tag: "NewTab" } });
+  const changedTabs = await browserTabs();
+  await workspaceEvent({ type: "visit", destination: "Home" });
+  await openEmail();
+  await expect.element(warning).toBeVisible();
+  expect(await confirmEarlier()).toBe(false);
+  expect(await browserTabs()).toEqual(changedTabs);
   await click(warning.getByRole("button", { name: "Open in Browser" }));
   await expect.element(address).toHaveValue(target ?? "");
   const first = await browserTabs();
-  expect(first.slice(0, -1)).toEqual(before);
-  await click(page.getByRole("button", { name: "Home", exact: true }));
+  expect(first.slice(0, -1)).toEqual(changedTabs);
+  await workspaceEvent({ type: "changePage", browserInput: { tag: "OpenPrivateSignIn", url: "https://utility.example" } });
+  await expect.element(page.getByRole("textbox", { name: "Private website address" })).toBeVisible();
+  const withPrivateTab = await browserTabs();
+  expect(withPrivateTab.at(-1)?.[2]).toBe(true);
+  await workspaceEvent({ type: "visit", destination: "Home" });
   await openEmail();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await opened(/Riverside Power/, "Your Riverside Power bill is ready");
-  const ordinary = page.getByRole("link", { name: /bill\// });
+  await expect.element(page.getByRole("link", { name: /\/statement\/\[print\]$/ })).toBeVisible();
+  const ordinary = page.getByRole("link", { name: /\/bill\/#statement_\(journal\)$/ });
+  await expect.element(ordinary).toBeVisible();
   const destination = ordinary.element().textContent;
   await click(ordinary);
   await expect.element(address).toHaveValue(destination ?? "");
-  expect((await browserTabs()).slice(0, -1)).toEqual(first);
+  const after = await browserTabs();
+  expect(after.slice(0, -1)).toEqual(withPrivateTab);
+  expect(after.at(-1)).toEqual([expect.any(Number), destination, false]);
   expect(await sent()).toEqual(priorMail);
 });
 
