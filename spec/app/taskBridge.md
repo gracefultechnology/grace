@@ -352,7 +352,9 @@ pure def journaledTaskAttempt(preparation: P::Prep, w: W::Workspace, accepted: A
   val c = w.commitment
   val captured = accepted.transfer.captured
   if (preparationMatchesHandoff(preparation, accepted.transfer) and W::currentCommitmentContext(w) and
-      accepted.task != "" and accepted.task == w.commitmentTask and c.stage == CM::Guarded and
+      accepted.task != "" and accepted.task == w.commitmentTask and c.stage == CM::Guarded and c.fresh and
+      w.device.contextVersion == captured.deviceVersion and w.browser.revision == captured.browserRevision and
+      w.assistant.workVersion == captured.taskVersion and
       c.key == preparation.key and c.proposal == preparation.choice and c.evidence == preparation.evidence and
       c.revision == captured.revision + 1 and c.attempt == captured.attempt + 1)
     Following({ link: { task: accepted.task, key: c.key, preparationVersion: preparation.version, attempt: c.attempt } })
