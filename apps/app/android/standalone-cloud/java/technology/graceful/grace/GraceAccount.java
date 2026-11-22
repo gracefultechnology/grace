@@ -189,7 +189,7 @@ public final class GraceAccount extends Plugin {
      throw new IllegalStateException("Invalid Google credential type");
     String idToken = GoogleIdTokenCredential.createFrom(custom.getData()).getIdToken();
     changeAccount(() -> {
-     if (!account.finishNativeGoogle(pending.attempt(), idToken)) throw new IllegalStateException("Google sign-in expired");
+     if (!account.finishNativeGoogle(pending.attempt(), idToken, null)) throw new IllegalStateException("Google sign-in expired");
      GracePasswordsOwner.confirmVerifiedAccount(getContext(), account.session());
      return null;
     });
@@ -222,6 +222,7 @@ public final class GraceAccount extends Plugin {
   });
  }
 
+ @PluginMethod public void inboxArrival(PluginCall call) { guide.inboxArrival(call); }
  @PluginMethod public void browserGuideLease(PluginCall call) { guide.browserGuideLease(call); }
 
  @PluginMethod public void chooseBrowserLink(PluginCall call) { guide.chooseBrowserLink(call); }

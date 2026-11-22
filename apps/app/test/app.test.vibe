@@ -150,6 +150,9 @@ schema GoogleAccountSession { sessionId: string; pageUrl: string }
 schema GoogleAccountGrant { connectionId: string; connected: boolean; identity: { email: string } }
 schema GoogleAccess { access_token: string; token_type: "Bearer"; scope: string }
 schema GoogleOwner { email: string; email_verified: true }
+schema DeliveryReceipt { id: Schema.NonEmptyString }
+schema MailSearchResult { messages: { externalId: string }[] }
+schema MailReadResult { message: { externalId: string }; bodyText: string }
 
 effect function googleSession(key: string) {
   const request = HttpClientRequest.post(`${cloud}/api/v1/eliza/connections/google/sessions`).pipe(
@@ -183,6 +186,12 @@ it.live("Connect the email I already use: Google denies missing consent, reused 
     const first = (try signIn(cloud, false)).secret
     const other = (try signIn(cloud, false)).secret
     const address = "owner@grace.test"
+    const subject = "Delivery after consent"
+    const body = "The appointment was moved to the north entrance."
+    const deliver = (key: string, to: string) => HttpClient.execute(HttpClientRequest.post(cloud + "/fake/gmail/incoming").pipe(
+      HttpClientRequest.bearerToken(key), HttpClientRequest.bodyJsonUnsafe({ to, from: "Reception", fromEmail: "desk@clinic.test", subject, body })
+    ))
+    const beforeLink = (try deliver(first, address)).status
     const denied = try googleSession(first)
     const cancelled = try submit(denied.pageUrl, { address, choice: "cancel" })
     const deniedSession = try sessions(cloud, first)
@@ -199,9 +208,23 @@ it.live("Connect the email I already use: Google denies missing consent, reused 
     const replayedCode = (try exchangeGoogle(code)).status
 
     const [grant] = try googleOwnerGrants(first)
-    const mail = `${cloud}/api/v1/eliza/google/gmail/search?query=clinic&grantId=${grant.connectionId}`
+    const inbox = cloud + googleRoute + "gmail"
+    const mail = `${inbox}/search?query=${encodeURIComponent(subject)}&grantId=${grant.connectionId}`
     const withKey = (url: string, key: string) => HttpClient.execute(HttpClientRequest.bearerToken(HttpClientRequest.get(url), key))
-    const ownerRead = (try withKey(mail, first)).status
+    const search = () => effect {
+      const result = try withKey(mail, first)
+      try Effect.try(() => assert.equal(result.status, 200))
+      return try Schema.decodeUnknownEffect(MailSearchResult)(try result.json)
+    }
+    const beforeDelivery = try search()
+    const wrongSenderAccount = (try deliver(other, address)).status
+    const wrongRecipient = (try deliver(first, "other@grace.test")).status
+    const delivery = try deliver(first, address)
+    const { id } = try Schema.decodeUnknownEffect(DeliveryReceipt)(try delivery.json)
+    const afterDelivery = try search()
+    const read = `${inbox}/read?messageId=${encodeURIComponent(id)}&grantId=${grant.connectionId}`
+    const ownerMessage = try Schema.decodeUnknownEffect(MailReadResult)(try (try withKey(read, first)).json)
+    const foreignMessage = (try withKey(read, other)).status
     const foreignRead = (try withKey(mail, other)).status
 
     const rawPage = try googleSession(first)
@@ -213,11 +236,17 @@ it.live("Connect the email I already use: Google denies missing consent, reused 
     try expire(cloud, first, address)
     const expiredToken = (try withKey(userinfo, access.access_token)).status
     const expiredConnection = (try withKey(mail, first)).status
+    const afterExpiry = (try deliver(first, address)).status
 
     try Effect.try(() => assert.deepStrictEqual(
-      { cancelled, deniedSession, beforeConsent, wrongState, afterWrongState, consented, replayedCallback, replayedCode, ownerRead, foreignRead, identity, expiredToken, expiredConnection },
+      { cancelled, deniedSession, beforeConsent, wrongState, afterWrongState, consented, replayedCallback, replayedCode, foreignRead, identity, expiredToken, expiredConnection },
       { cancelled: 200, deniedSession: ["cancelled"], beforeConsent: [], wrongState: 401, afterWrongState: [], consented: 200, replayedCallback: 401, replayedCode: 401,
-        ownerRead: 200, foreignRead: 404, identity: { email: address, email_verified: true }, expiredToken: 401, expiredConnection: 409 }
+        foreignRead: 404, identity: { email: address, email_verified: true }, expiredToken: 401, expiredConnection: 409 }
+    ))
+    try Effect.try(() => assert.deepStrictEqual(
+      { beforeLink, wrongSenderAccount, wrongRecipient, beforeDelivery, delivered: delivery.status, afterDelivery, ownerMessage, foreignMessage, afterExpiry },
+      { beforeLink: 404, wrongSenderAccount: 404, wrongRecipient: 404, beforeDelivery: { messages: [] }, delivered: 200,
+        afterDelivery: { messages: [{ externalId: id }] }, ownerMessage: { message: { externalId: id }, bodyText: body }, foreignMessage: 404, afterExpiry: 404 }
     ))
   }
 })
@@ -308,7 +337,7 @@ it.live("Delete a message and recover it safely: Trash, Restore, unread and Dele
   }
 })
 
-it.live("Write or reply and confirm before sending: contacts resolve, drafts keep their attachments, a send goes once per operation, a reply keeps its thread and Bcc, a forward carries the email's own attachment, and one sent while the cloud is down goes later", () => effect {
+it.live("Write or reply and confirm before sending: contacts resolve, drafts keep their attachments, a send goes once per operation, a reply keeps its thread and Bcc, a forward carries the email's own attachment, a photo taken on the tablet goes as its own bytes and one with no bytes is refused, a reply carries an attachment, and one sent while the cloud is down goes later", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
     provide connectorAt(secret) {
@@ -331,23 +360,26 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
       const restored = try mail.draft("draft-sunday", 2)
       const removed = try mail.deleteDraft("draft-sunday")
       const empty = try mail.draftCount()
-      const sends = [try mail.send("operation-1", reply), try mail.send("operation-1", reply)]
+      const none = new Map<string, { mimeType: string; data: string }>()
+      const sends = [try mail.send("operation-1", reply, none), try mail.send("operation-1", reply, none)]
       const sent = try listed(gmail, "SentFolder")
       const answered = (try Stream.runCollect(mail.list(scope(gmail, "InboxFolder"), () => 0))).filter((m) => m.receipt.seed.answered).map((m) => [m.content.ref, m.content.replied, m.content.attachment])
       const looked = [try mail.lookup("operation-1"), try mail.lookup("operation-never")]
       try outage(cloud, secret, true)
-      const offline = try mail.send("operation-2", draft)
+      const offline = try mail.send("operation-2", draft, none)
       try outage(cloud, secret, false)
-      const later = [try mail.lookup("operation-2"), try mail.send("operation-2", draft), try mail.send("operation-2", draft)]
-      const copied = try mail.send("operation-3", withBcc)
-      const unsendable = try mail.send("operation-4", { ...draft, attachments: [camera] })
+      const later = [try mail.lookup("operation-2"), try mail.send("operation-2", draft, none), try mail.send("operation-2", draft, none)]
+      const copied = try mail.send("operation-3", withBcc, none)
+      const unsendable = try mail.send("operation-4", { ...draft, attachments: [camera] }, none)
+      const photo = try mail.send("operation-5", { ...draft, attachments: [camera] }, new Map([["capture", { mimeType: "image/jpeg", data: btoa("\xff\xd8\xff\xe0garden") }]]))
+      const withForm = try mail.send("operation-6", { ...reply, attachments: [visitForm] }, none)
       const carried = (try sentMail(cloud, secret)).filter((m) => m.labels.includes("SENT")).map((m) => [m.subject, m.bcc, m.attachments.map((a) => a.filename)])
       const evidence = (s: { readonly evidence: string }) => s.evidence.startsWith("message:")
       try Effect.try(() => assert.deepStrictEqual({
         people, resolved, saved, drafts, reopened, removed, counts: [both, empty],
         restored: [restored.verified, restored.snapshot.content, restored.snapshot.attachments.map((a) => [a.name, a.sourceRef]), restored.snapshot.version], sends: sends.map((s) => [s.resultStatus, evidence(s)]), same: sends[0].evidence === sends[1].evidence && looked[0].evidence === sends[0].evidence,
         sent, answered, looked: looked.map((s) => s.resultStatus), never: looked[1], offline, later: later.map((s) => s.resultStatus), again: later[1].evidence === later[2].evidence,
-        copied: copied.resultStatus, unsendable, carried
+        copied: copied.resultStatus, unsendable, uploaded: [photo.resultStatus, withForm.resultStatus], carried
       }, {
         people: 6,
         resolved: [{ address: "susan@family.test", verified: true }, { address: "", verified: false }],
@@ -360,7 +392,8 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
         later: ["SendUnknown", "Sent", "Sent"], again: true,
         copied: "Sent",
         unsendable: { resultStatus: "SendFailed", evidence: "refused:422" },
-        carried: [["Re: Lunch on Sunday?", [], []], ["Sunday", [], ["Visit form.pdf"]], ["Re: Lunch on Sunday?", ["david@family.test"], []]]
+        uploaded: ["Sent", "Sent"],
+        carried: [["Re: Lunch on Sunday?", [], []], ["Sunday", [], ["Visit form.pdf"]], ["Re: Lunch on Sunday?", ["david@family.test"], []], ["Sunday", [], ["Garden.jpg"]], ["Re: Lunch on Sunday?", [], ["Visit form.pdf"]]]
       }))
     }
   }
@@ -577,12 +610,17 @@ it.live("Read the Google mail and calendar I connected: the pinned Eliza Cloud r
     ...googleChanges.map((route) => [googleRoute + route, "POST"] as const),
     ...Object.entries(accountRequests).filter(([path]) => path.startsWith(googleRoute)),
   ]
+  const providerCalls: string[] = []
+  const denyProvider: typeof fetch = async (input) => {
+    providerCalls.push(String(input))
+    throw new Error("Unexpected provider request")
+  }
   const unrouted = try Effect.forEach(requests, ([path, method]) => effect {
     const sent = HttpClientRequest.make(method)(env.PUBLIC_API_ORIGIN + path, { headers: { origin: env.WEB_ORIGIN } })
     const request = try HttpServerRequest.toWeb(HttpServerRequest.fromClientRequest(sent))
-    const response = try tryPromise(() => googleRequest(request, env, storage, "account"))
+    const response = try tryPromise(() => googleRequest(request, env, storage, "account", denyProvider))
     const { error } = try Schema.decodeUnknownEffect(Schema.Struct({ error: Schema.optional(Schema.String) }))(try tryPromise(() => response.json()))
     return error === "route_not_found" ? [method + " " + path] : []
   })
-  try Effect.try(() => assert.deepStrictEqual(unrouted.flat(), []))
+  try Effect.try(() => assert.deepStrictEqual({ unrouted: unrouted.flat(), providerCalls }, { unrouted: [], providerCalls: [] }))
 })

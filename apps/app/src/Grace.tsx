@@ -32,11 +32,22 @@ function keyedSteps(steps: readonly GuidedStep[]) {
   });
 }
 
+function recordCriteria(step: Extract<GuidedStep, { tag: "ReadLatestRecord" }>): string {
+  return `Latest record in “${step.collection}” with status “${step.status}”`;
+}
+
+function stepInstruction(step: GuidedStep): string {
+  if (step.tag === "ReachNamedPage") return `Find and check “${step.subject}”.`;
+  if (step.tag === "ReadLatestRecord") return recordCriteria(step);
+  return guidedDetails(step).outcome;
+}
+
 const checks: Record<GuidedStep["tag"], { label: string; item: string; missing: string }> = {
   ReadMail: { label: "Check email", item: "email", missing: "I couldn’t read an open email. Open the one you want me to check." },
   ReadBrowser: { label: "Check page", item: "page", missing: "I couldn’t read the page in this tab. Wait for it to load, then check again." },
   ReadChangedBrowser: { label: "Check page", item: "page", missing: "Open the page you want me to read, then check again." },
   ReachNamedPage: { label: "Check page", item: "page", missing: "" },
+  ReadLatestRecord: { label: "Check page", item: "page", missing: "I couldn’t verify the latest matching record here. Open the record I pointed to, then check again." },
   ReadStatement: { label: "Read statement", item: "page", missing: "I couldn’t find one amount due and one due date on this page." },
   ReadCalendar: { label: "Check appointment", item: "appointment", missing: "I couldn’t read an open appointment. Open the one you want me to check." },
   SaveMailAppointment: { label: "Check saved appointment", item: "appointment", missing: "I couldn’t verify the saved appointment. Open it on your calendar and try again." },
@@ -239,7 +250,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <blockquote className="text-body">{review.request.goal}</blockquote>
               <p className="text-body">I can check the items you open. These checks leave any requested changes for separate review.</p>
               <ol aria-label="Read plan" className="list-decimal pl-6">
-                {keyedSteps(review.request.steps).map(({ step, key }) => <li key={key}>{guidedDetails(step).subject}</li>)}
+                {keyedSteps(review.request.steps).map(({ step, key }) => <li key={key}>{step.tag === "ReadLatestRecord" ? recordCriteria(step) : guidedDetails(step).subject}</li>)}
               </ol>
               {startFailure === review.revision && <p role="status">Grace couldn’t start this plan. Check your account and device storage, then try again.</p>}
               <AnswerChips><AnswerChip onClick={() => {
@@ -262,12 +273,12 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
                     {keyedSteps(plan.steps).map(({ step, key }, index) => {
                       const displayed = index === next && currentStep ? currentStep : step;
                       return <li key={key} aria-current={index === next ? "step" : undefined}>
-                        {index < next ? plan.receipts[index]?.evidence : index === next && recoveryInstruction ? recoveryInstruction : displayed.tag === "ReachNamedPage" ? `Find and check “${displayed.subject}”.` : guidedDetails(displayed).outcome}
+                        {index < next ? plan.receipts[index]?.evidence : index === next && recoveryInstruction ? recoveryInstruction : stepInstruction(displayed)}
                       </li>;
                     })}
                   </ol>
                 </>
-              ) : <p aria-current={currentStep ? "step" : undefined}>{recoveryInstruction ?? (stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : stepKind === "ReachNamedPage" ? `Find and check “${details?.subject}”.` : details?.outcome ?? plan.receipts.at(-1)?.evidence)}</p>}
+              ) : <p aria-current={currentStep ? "step" : undefined}>{recoveryInstruction ?? (stepKind === "SaveMailAppointment" && plan.savedOccurrence ? "Check the appointment saved to your calendar." : currentStep ? stepInstruction(currentStep) : plan.receipts.at(-1)?.evidence)}</p>}
               {recoveredSave && <AnswerChips>
                 {device.surface !== "Calendar" && can(calendar) && <AnswerChip onClick={() => void openRecoveryCalendar()}>Open Calendar</AnswerChip>}
                 {can(abandon) && <AnswerChip onClick={endTask}>End this task</AnswerChip>}

@@ -495,8 +495,10 @@ session authorizes a tablet only after the person confirms the tablet
 sign-in in the browser.
 
 Each source reports through its own event. The tablet's own Grace session
-reports only whether this tablet is signed in, and the Grace service's
-authenticated response only the web account, its plan and its Google
+reports whether this tablet is signed in, signed out, or needs to clear a
+previous sign-in whose owner could not be verified because the credential
+expired or the service rejected it. The Grace service's
+authenticated response reports only the web account, its plan and its Google
 connection; either may report that the account could not be checked. Only a
 signed-in web account carries any Google link state. Every change to the
 account shown comes from one of these two reports, each carrying only what
@@ -511,22 +513,28 @@ the account she is shown, and may confirm again for that same account while
 her earlier confirmation still holds, as after a sign-in that did not
 finish. She can cancel while Grace checks the account or waits for a sign-in
 code. The tablet must then ask again before she can confirm. The model records
-her confirmation. Just before it opens the tablet callback, the browser
-checks that the same request still has her confirmation. This runtime check,
-which no rule here makes, prevents a late reply from reopening a cancelled
+her confirmation. The browser opens the tablet's callback only when the
+service's reply is the registered callback with the request's own state and
+one code, the check isTheRequestsOwnReturn under "Browser approval needs an
+explicit choice for the shown account". Just before it opens that callback,
+the browser checks again that the same request still has her confirmation,
+through tabletSignInConfirmed, so a late reply cannot reopen a cancelled
 request.
 
 A tablet signed in with its own session never offers checkout or the payment
 provider: it opens Grace's web account to manage the subscription. That
 Settings opens Account without a network connection is [the device
 shell](./shell.md)'s "Settings and rail popovers preserve the surface
-underneath": no connectivity check gates opening Settings. Keeping account
-details out of captures is the Settings account page's sensitive marking,
-which no rule checks yet.
+underneath": no connectivity check gates opening Settings. Nothing yet keeps
+account details out of screenshots: the Settings account page marks itself
+sensitive, but no code reads that marking and no rule checks it. Account settings offers to clear the old tablet
+sign-in when the device reports that it needs cleanup. Until the person
+confirms and the tablet reports an ordinary signed-out state, new sign-in
+is unavailable. Cleanup does not verify an owner.
 
 ```quint
 type GracePlan = PlanUnknown | PlanInactive | PlanInactiveBlocked | PlanActive | PlanInactiveManaged | PlanInactiveManagedCheckout | PlanActiveManaged
-type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignedIn | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
+type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignInNeedsCleanup | GraceDeviceSignedIn | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
 type AccountSource = TabletSession | GraceService
 type TabletSignIn = NoTabletSignIn | TabletSignInAsked | TabletSignInConfirmed({ accountId: str })
 pure def mayStartCheckout(account: GraceAccount): bool = match account {
@@ -540,11 +548,17 @@ pure def mayOpenBillingPortal(account: GraceAccount): bool = match account {
 pure def reportedBy(source: AccountSource, report: GraceAccount): bool = match report {
   | GraceDeviceSignedIn => source == TabletSession
   | GraceDeviceSignedOut => source == TabletSession
+  | GraceDeviceSignInNeedsCleanup => source == TabletSession
   | GraceSignedIn(_) => source == GraceService
   | GraceSignedOut(_) => source == GraceService
   | AccountUnavailable => source == TabletSession or source == GraceService
   | CheckingAccount => false
 }
+pure def mayBeginDeviceSignIn(account: GraceAccount): bool = account == GraceDeviceSignedOut
+pure def mayCleanupLegacySignIn(account: GraceAccount): bool = account == GraceDeviceSignInNeedsCleanup
+pure def lawASignInNeedingCleanupCannotBeginANewSignIn(account: GraceAccount): bool =
+  mayCleanupLegacySignIn(account) implies not(mayBeginDeviceSignIn(account))
+pure def sometimesLegacySignInNeedsCleanup(s: Setup): bool = mayCleanupLegacySignIn(s.graceAccount)
 pure def mayCheckAccountAgain(account: GraceAccount): bool = match account {
   | AccountUnavailable => true
   | GraceSignedIn(info) => info.plan == PlanUnknown
@@ -612,7 +626,7 @@ pure def stepTheAccountComesOnlyFromItsOwnSource(before: Setup, via: str, after:
 pure def alwaysOnlyAWebAccountCarriesAGoogleConnection(s: Setup): bool =
   linkUnknown(s.googleLink) or webAccountId(s.graceAccount) != ""
 pure val reportValues: Set[GraceAccount] = Set(
-  CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignedIn, AccountUnavailable,
+  CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignInNeedsCleanup, GraceDeviceSignedIn, AccountUnavailable,
   GraceSignedOut({ google: true, emailCode: true, smsCode: false }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactive }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveManaged }),
@@ -674,6 +688,11 @@ from the connected account's provider. The calendar opens on the current
 week. Changing the week, month or selected day shows appointments from the
 chosen dates. Both views start with read access. A message opens into a
 plain-text preview for the chosen reference, never executable HTML.
+When the person opens a web address in that preview, Grace checks the selected
+message’s current Gmail revision, displayed body, account and grant. A Gmail
+Spam label holds the destination for a separate confirmation. A checked read
+without that label releases the address on tap. An incomplete read grants no
+link action. The Browser opens the released address in one new tab.
 A preview carries no authority to inspect attachments, reply or forward.
 The application checks the account bound to each provider result. A
 tablet's hosted handoff retains the selected view through sign-in, and
@@ -727,7 +746,8 @@ pure def lawADeviceSessionAloneDoesNotSendGoogle(link: GoogleLink, accountId: st
 
 ### Trash and Calendar changes use the exact selected version
 
-The owner may separately enable Trash and Undo, and appointment changes. Undo
+The owner may separately enable Trash and Undo, and appointment changes. Gmail
+offers Move to Trash when the opened message still carries the Inbox label. Undo
 is available only once the provider confirms moving the selected message to
 Trash. Appointments are read back to the person before confirmation. For a
 new weekly or monthly appointment, the review includes its frequency and
@@ -737,25 +757,51 @@ calendar. For a repeating appointment, the person chooses a single occurrence
 or reviews and confirms the entire series separately. Grace checks provider
 evidence before showing success.
 
-The two Setup laws below cover permission and selection. A managed change
-requires the signed-in web account, its current grant and the permission for
-that operation. Trash requires both mail and Trash access. An appointment
-change requires both calendar access and permission to change appointments.
-The selection check accepts only the exact, nonempty ID and version the
-person reviewed.
+A managed change requires the signed-in web account, its current grant and
+the permission for that operation. Trash requires both mail and Trash
+access. An appointment change requires both calendar access and permission
+to change appointments. The selection check accepts only the exact,
+nonempty ID and version the person reviewed, and the managed Google shell
+applies it twice, when it stages the proposal and again before sending.
+A message is offered for Trash only with its version, and that version is
+empty unless the opened message is outside the Trash folder, carries the
+Inbox label and does not carry the Trash label, so no other message can be
+selected for Trash.
 
-The managed Google shell enforces the remaining steps at runtime. It checks
-the ID and version when it stages the proposal and again before sending.
-For a whole-series change it opens review only while the selection that
-requested the series is still on screen. A new appointment starts with a new
-item. Undo names the confirmed Trash operation. Before showing success, Grace
-checks that the provider receipt names the same account, item and operation.
+A whole-series change opens review only while the occurrence that asked
+for the series is still selected and its series is the one under review.
+A new appointment carries no selected ID or version, so it cannot change an
+existing item, and its receipt must name the item this operation made.
+Before showing success, Grace checks that the provider receipt names the
+same account, item and operation. Undo is built only from a Trash receipt
+that passed that check, and it names that receipt's operation as the one it
+reverses.
 
-These runtime steps, including read-back of frequency and time zone, skipping
-months without the selected day and choosing one occurrence or the whole
-series, are outside the two Setup laws. The [Email](./email.md) and
-[Calendar view](./calendarView.md) rules cover the corresponding local
-mailbox and calendar operations.
+An appointment change is read back before it is sent: the review the person
+sees is the change itself, held by the managed Google shell, and Grace sends
+only the change that is under review, with the same item, version, series,
+frequency, time zone and details. A repeating appointment can be under
+review only as a new appointment that names its time zone, so the review
+shows both its frequency and its time zone. A change to the entire series
+names the occurrence that asked for it, so a review of one occurrence never
+sends a change to its series, and a series change needs a review of its own.
+The review of a new monthly series warns that months are skipped exactly
+when its day is past the 28th, since every month has its first 28 days and
+some lack the 29th, 30th or 31st.
+
+Grace names no calendar in a change and checks no calendar in its receipt:
+the hosted service reads and changes only the primary calendar, and it, not
+a rule here, computes the series and checks that Google saved the frequency
+and time zone. No rule in this spec checks that the calendar is the primary
+one. The local mailbox and calendar have their own rules for the same steps:
+"Only an authorized current selection can begin a provider mutation" in
+[Email item](./emailItem.md), and in [Calendar](./calendar.md) and
+[Calendar view](./calendarView.md) "Recurrence creates another occurrence
+rather than changing an existing identity", "Saving a repeating event
+updates its whole series through the same form", "The deletion question
+binds its selected occurrence and explicit scope", "Grace's deletion takes
+effect only for the occurrence and scope the person agreed to" and "A
+provider's create receipt names the saved occurrence".
 
 ```quint
 type ManagedChange = ManagedTrash | ManagedAppointmentChange
@@ -773,6 +819,50 @@ pure def isSelectedVersion(selectedId: str, selectedVersion: str, id: str, versi
 pure def lawOnlyTheSelectedVersionIsChanged(selectedId: str, selectedVersion: str, id: str, version: str): bool =
   (isSelectedVersion(selectedId, selectedVersion, selectedId, selectedVersion) == (selectedId != "" and selectedVersion != "")) and
   (isSelectedVersion(selectedId, selectedVersion, id, version) implies (id == selectedId and version == selectedVersion))
+pure def trashableVersion(inTrashFolder: bool, inboxLabel: bool, trashLabel: bool, version: str): str =
+  if (not(inTrashFolder) and inboxLabel and not(trashLabel)) version else ""
+pure def lawOnlyAnInboxMessageOutsideTrashCanBeSelectedForTrash(inTrashFolder: bool, inboxLabel: bool, trashLabel: bool, id: str, version: str): bool =
+  isSelectedVersion(id, trashableVersion(inTrashFolder, inboxLabel, trashLabel, version), id, version) implies
+    (not(inTrashFolder) and inboxLabel and not(trashLabel) and version != "")
+pure def isTheSelectedSeries(selectedId: str, selectedSeriesId: str, seriesFor: str, seriesId: str): bool =
+  seriesFor != "" and selectedId == seriesFor and selectedSeriesId != "" and selectedSeriesId == seriesId
+pure def lawASeriesChangeNeedsItsOccurrenceStillSelected(selectedId: str, selectedSeriesId: str, seriesFor: str, seriesId: str): bool =
+  isTheSelectedSeries(selectedId, selectedSeriesId, seriesFor, seriesId) implies
+    (seriesFor != "" and seriesFor == selectedId and seriesId != "" and seriesId == selectedSeriesId)
+type AppointmentReview = { id: str, version: str, seriesFor: str, frequency: str, timeZone: str, details: str }
+pure def isTheReviewedAppointment(reviewed: AppointmentReview, sent: AppointmentReview): bool =
+  reviewed.id == sent.id and reviewed.version == sent.version and reviewed.seriesFor == sent.seriesFor and
+  reviewed.frequency == sent.frequency and reviewed.timeZone == sent.timeZone and
+  reviewed.details != "" and reviewed.details == sent.details and
+  (reviewed.frequency == "" or (reviewed.id == "" and reviewed.timeZone != ""))
+pure val appointmentReviewSample: AppointmentReview = { id: "", version: "", seriesFor: "", frequency: "Weekly", timeZone: "Europe/Paris", details: "Lunch" }
+pure val reviewedValues: Set[AppointmentReview] = Set(appointmentReviewSample)
+  .union(Set({ ...appointmentReviewSample, timeZone: "" }))
+  .union(Set({ ...appointmentReviewSample, frequency: "Monthly" }))
+  .union(Set({ ...appointmentReviewSample, details: "Dentist" }))
+  .union(Set({ ...appointmentReviewSample, id: "visit", version: "v1", frequency: "", timeZone: "" }))
+  .union(Set({ ...appointmentReviewSample, id: "visit", version: "v1" }))
+  .union(Set({ ...appointmentReviewSample, id: "series", version: "v1", seriesFor: "visit", frequency: "", timeZone: "" }))
+pure val sentValues: Set[AppointmentReview] = reviewedValues
+pure def lawARepeatingAppointmentIsSentWithTheFrequencyAndTimeZoneItsReviewShowed(reviewed: AppointmentReview, sent: AppointmentReview): bool =
+  (isTheReviewedAppointment(reviewed, sent) and sent.frequency != "") implies
+    (sent.frequency == reviewed.frequency and sent.timeZone == reviewed.timeZone and sent.timeZone != "" and sent.id == "")
+pure def lawASeriesChangeNeedsAReviewOfTheSeries(reviewed: AppointmentReview, sent: AppointmentReview): bool =
+  (reviewed.seriesFor != sent.seriesFor or reviewed.id != sent.id or reviewed.version != sent.version or reviewed.details != sent.details) implies
+    not(isTheReviewedAppointment(reviewed, sent))
+pure val shortestMonthDays = 28
+pure def skipsMonthsWithoutItsDay(frequency: str, dayOfMonth: int): bool =
+  frequency == "Monthly" and dayOfMonth > shortestMonthDays
+pure val frequencyValues: Set[str] = Set("", "Weekly", "Monthly")
+pure val dayOfMonthValues: Set[int] = Set(1, 28, 29, 30, 31)
+pure def lawAMonthlySeriesWarnsOnlyWhenSomeMonthLacksItsDay(frequency: str, dayOfMonth: int): bool =
+  (dayOfMonth >= 1 and dayOfMonth <= 31) implies
+    (skipsMonthsWithoutItsDay(frequency, dayOfMonth) == (frequency == "Monthly" and dayOfMonth >= 29))
+pure def changeReceiptMatches(accountId: str, receiptAccountId: str, itemId: str, receiptItemId: str, operation: str, receiptOperation: str): bool =
+  managedReadMatches(accountId, receiptAccountId, itemId, receiptItemId) and operation != "" and operation == receiptOperation
+pure def lawAChangeReceiptNamesTheSameAccountItemAndOperation(accountId: str, receiptAccountId: str, itemId: str, receiptItemId: str, operation: str, receiptOperation: str): bool =
+  changeReceiptMatches(accountId, receiptAccountId, itemId, receiptItemId, operation, receiptOperation) implies
+    (accountId != "" and accountId == receiptAccountId and itemId == receiptItemId and operation != "" and operation == receiptOperation)
 pure def grantOf(link: GoogleLink): str = match link {
   | GoogleLinkConnected(g) => g.grant
   | _ => ""
@@ -808,19 +898,22 @@ screens.
 The rules below take the page registration, the freshness of the sign-in and
 the match to the shown account as inputs. All three must hold to offer
 Approve. Counting the action as approved also requires the person's explicit
-confirmation.
+confirmation, which is her tap on Approve. A request is registered only when
+it names the registered page and carries no field beyond the registered
+ones, so a request cannot add a field for the recovery key or a password.
+The page does not inspect the values of the registered fields. The service
+reports a stale sign-in or a changed account when it receives the action and
+shown account together.
 
-The browser checks that the native request belongs to its registered page,
-shows the action and account, and closes the approval on Cancel. The service
-checks the current account and sign-in freshness when it receives the action
-and shown account together. The browser accepts only the registered callback
-with the request's own state and exactly one code. The request carries
-neither the recovery key nor a password. The service and tablet bind the
-code to the original native request and enforce its single use. Native
-recovery checks that the exchange completed and was verified before using
-the approval. These browser, service and tablet checks run outside the two
-Setup laws below, which take registration, freshness, account match and
-confirmation as inputs.
+The browser follows a return, for a backup approval and for a tablet
+sign-in, only to the registered callback, with exactly one state that is the
+request's own and exactly one well-formed code. Cancel clears the saved request, so no later
+sign-in return resumes it, as "Google sign-in can resume only a pending
+browser approval" below requires. Binding the approval to the original
+native request and its single use are mayUsePasswordBackupGrant and
+consumePasswordBackupGrant under "A grant can be used once for the current
+request". That only a completed, verified and unexpired exchange yields an
+approval the native operation can use is exchangedApprovalIsUsable there.
 
 ```quint
 pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
@@ -833,6 +926,14 @@ pure def lawOnlyApproveOnTheRegisteredPageForTheShownAccountApprovesABackup(regi
   not(mayApprovePasswordBackup(false, recentSignIn, sameAccount, confirmed)) and
   not(mayApprovePasswordBackup(registered, recentSignIn, sameAccount, false)) and
   not(mayApprovePasswordBackup(registered, recentSignIn, false, confirmed))
+pure def isTheRequestsOwnReturn(registeredCallback: bool, ownState: bool, states: int, codes: int, wellFormedCode: bool): bool =
+  registeredCallback and ownState and states == 1 and codes == 1 and wellFormedCode
+pure def lawOnlyTheRegisteredCallbackWithItsOwnStateAndOneCodeReturns(registeredCallback: bool, ownState: bool, states: int, codes: int, wellFormedCode: bool): bool =
+  not(isTheRequestsOwnReturn(false, ownState, states, codes, wellFormedCode)) and
+  not(isTheRequestsOwnReturn(registeredCallback, false, states, codes, wellFormedCode)) and
+  not(isTheRequestsOwnReturn(registeredCallback, ownState, states, codes, false)) and
+  (states != 1 implies not(isTheRequestsOwnReturn(registeredCallback, ownState, states, codes, wellFormedCode))) and
+  (codes != 1 implies not(isTheRequestsOwnReturn(registeredCallback, ownState, states, codes, wellFormedCode)))
 ```
 
 ### Google sign-in can resume only a pending browser approval
@@ -918,7 +1019,8 @@ pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool
 
 > As a tablet owner, I can save an encrypted copy of my passwords to the
 > cloud deployment my tablet uses, restore them on a replacement tablet
-> with my recovery key, or remove the copy from my cloud account.
+> with my recovery key, or remove the copy from my cloud account while
+> keeping the passwords on my tablet.
 
 ### A backup belongs to the signed-in owner and has its own approval
 
@@ -950,16 +1052,24 @@ pure def lawProductionBuildCannotOpenStagingPasswordRecovery(screenSecure: bool,
 
 Each verify, save, restore or remove action starts a new approval for the
 current native account. Shared Eliza Cloud asks the owner for fresh native
-Google verification through Steward and for consent to the action in the
-native flow. The selected Google identity must resolve to the same verified
-account and organization. Standalone Grace Cloud uses its registered
-browser approval and gives the same tablet a bound device grant. A grant
-from either flow is usable only in that flow's deployment.
+Google verification and for consent to the action in the native flow.
+Grace uses the Eliza sign-in package to check that its registered app,
+environment and callback support native backup approval. The package binds
+the Google proof to the acknowledged device credential and the requested
+action. The selected Google identity must resolve to the same verified
+account and organization. If the registered service cannot issue this
+approval, the person can still use the local vault.
+Standalone Grace Cloud uses its registered browser approval and gives the
+same tablet a bound device grant. A grant from either flow is usable only
+in that flow's deployment.
 
 ```quint
 type PasswordBackupPurpose = VerifyPasswordOwner | SavePasswordBackup | RestorePasswordBackup | DeletePasswordBackup
 type PasswordBackupBinding = { profile: PasswordCloudProfile, issuer: str, registrationId: str, accountId: str, organizationId: str, generationId: str, requestId: str, purpose: PasswordBackupPurpose }
 type PasswordBackupApproval = SharedNativePasswordApproval({ binding: PasswordBackupBinding }) | StandaloneBrowserPasswordApproval({ binding: PasswordBackupBinding })
+pure def lawSharedBackupNeedsAdvertisedAuthority(acknowledgedAccounts: int, debugBuild: bool, screenSecure: bool): bool =
+  not(passwordRecoveryOffered(SharedElizaProduction, acknowledgedAccounts, debugBuild, screenSecure, false)) and
+  not(passwordRecoveryOffered(SharedElizaStaging, acknowledgedAccounts, debugBuild, screenSecure, false))
 pure def mayApproveSharedPasswordBackup(freshNativeGoogle: bool, sameAccount: bool, confirmed: bool): bool =
   freshNativeGoogle and sameAccount and confirmed
 pure def validPasswordBackupBinding(binding: PasswordBackupBinding): bool =
@@ -996,7 +1106,11 @@ Grace consumes the matching approval before starting the authorized
 operation. Cancel, sign-out, and replacement of the request or the account
 credentials close the pending operation. A credential change also closes
 the recovery screen. Later approvals for a closed operation are unusable.
-Expired or unverified approval material never becomes approval evidence.
+Expired or unverified approval material never becomes approval evidence:
+the browser's approval reaches the native operation only from an exchange
+that finished, was verified and has not expired, and then only when it
+matches the pending request. The native exchange in the Android app is not
+generated from this rule.
 
 ```quint
 type PasswordBackupRequest = PendingPasswordBackupRequest({ binding: PasswordBackupBinding }) | ClosedPasswordBackupRequest
@@ -1051,17 +1165,28 @@ pure def lawPasswordBackupGrantCannotBeReused(pending: PasswordBackupRequest, ap
     not(mayUsePasswordBackupGrant(consumePasswordBackupGrant(pending, approval), approval))
 pure def lawCancelledPasswordBackupRequestCannotBeApproved(pending: PasswordBackupRequest, approval: PasswordBackupApproval): bool =
   not(mayUsePasswordBackupGrant(cancelPasswordBackupRequest(pending), approval))
+type BackupExchange = ExchangeUnfinished | ExchangeRejected | ExchangeVerified({ binding: PasswordBackupBinding, expired: bool })
+pure def exchangedApprovalIsUsable(pending: PasswordBackupRequest, exchange: BackupExchange): bool =
+  match exchange {
+    | ExchangeVerified(done) => not(done.expired) and mayUsePasswordBackupGrant(pending, StandaloneBrowserPasswordApproval({ binding: done.binding }))
+    | _ => false
+  }
+pure def lawOnlyAVerifiedCurrentExchangeApprovesNativeRecovery(pending: PasswordBackupRequest, binding: PasswordBackupBinding): bool =
+  not(exchangedApprovalIsUsable(pending, ExchangeUnfinished)) and
+  not(exchangedApprovalIsUsable(pending, ExchangeRejected)) and
+  not(exchangedApprovalIsUsable(pending, ExchangeVerified({ binding: binding, expired: true }))) and
+  not(exchangedApprovalIsUsable(cancelPasswordBackupRequest(pending), ExchangeVerified({ binding: binding, expired: false }))) and
+  (exchangedApprovalIsUsable(pending, ExchangeVerified({ binding: binding, expired: false })) implies
+    not(exchangedApprovalIsUsable(consumePasswordBackupGrant(pending, StandaloneBrowserPasswordApproval({ binding: binding })), ExchangeVerified({ binding: binding, expired: false }))))
 ```
 
 ### Restore fills an empty vault after a fresh unlock
 
 Verifying ownership, saving and restoring require a fresh Android unlock
 confirmation for that operation, even when the foreground Passwords screen is already open.
-A tablet with saved passwords asks the owner before linking those
-passwords to the account. Passwords and the recovery key stay in the
-protected native flow and are kept out of the agent. The cloud receives
-only the encrypted snapshot. Restore fills an empty vault in one step.
-Removing a cloud copy leaves local passwords available.
+Passwords and the recovery key stay in the protected native flow and are
+kept out of the agent. The cloud receives only the encrypted snapshot.
+Restore fills an empty vault in one step.
 
 ```quint
 type RecoveryPresence = ForegroundVaultAccess | ConfirmedRecoveryUnlock | EndedRecoveryUnlock
@@ -1073,4 +1198,77 @@ pure def lawStaleUnlockCannotRestorePasswords(ownerMatches: bool, recoveryKeyMat
   not(passwordRestoreAdmitted(ownerMatches, EndedRecoveryUnlock, recoveryKeyMatches, vaultEmpty))
 pure def lawForegroundVaultCannotAuthorizeRestore(ownerMatches: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
   not(passwordRestoreAdmitted(ownerMatches, ForegroundVaultAccess, recoveryKeyMatches, vaultEmpty))
+```
+
+### Removing the cloud copy keeps the tablet's passwords
+
+A removal starts only with an approval for the current remove request.
+Starting it consumes that approval and remembers the operation's binding.
+The native host records the cloud copy as removed only when the selected
+deployment acknowledges that operation. A refusal or an unconfirmed result
+does not change the last confirmed cloud status. A reply for another
+operation cannot complete the current one, and a finished operation cannot
+be completed again. Every password on the tablet stays as it was.
+
+```quint
+type PasswordCloudCopy = StoredPasswordBackup | NoPasswordBackup
+type PasswordStores = { tabletEntries: List[str], lastConfirmedCloudCopy: PasswordCloudCopy }
+type PasswordRemoval = NoPasswordRemoval | AwaitingPasswordRemoval({ binding: PasswordBackupBinding })
+type PasswordRemovalReply = { binding: PasswordBackupBinding, acknowledged: bool }
+type PasswordRemovalStart = { request: PasswordBackupRequest, removal: PasswordRemoval }
+type PasswordRemovalResult = { stores: PasswordStores, removal: PasswordRemoval }
+pure def beginPasswordBackupRemoval(removalRequest: PasswordBackupRequest, removalApproval: PasswordBackupApproval): PasswordRemovalStart =
+  val closed = { request: removalRequest, removal: NoPasswordRemoval }
+  match removalRequest {
+    | PendingPasswordBackupRequest(request) =>
+      if (request.binding.purpose == DeletePasswordBackup and mayUsePasswordBackupGrant(removalRequest, removalApproval))
+        { request: consumePasswordBackupGrant(removalRequest, removalApproval), removal: AwaitingPasswordRemoval({ binding: request.binding }) }
+      else closed
+    | ClosedPasswordBackupRequest => closed
+  }
+pure def finishPasswordBackupRemoval(stores: PasswordStores, removal: PasswordRemoval, removalReply: PasswordRemovalReply): PasswordRemovalResult =
+  val unchanged = { stores: stores, removal: removal }
+  match removal {
+    | AwaitingPasswordRemoval(active) =>
+      if (samePasswordBackupBinding(active.binding, removalReply.binding))
+        { stores: if (removalReply.acknowledged) { ...stores, lastConfirmedCloudCopy: NoPasswordBackup } else stores, removal: NoPasswordRemoval }
+      else unchanged
+    | NoPasswordRemoval => unchanged
+  }
+pure val removalBindingSample: PasswordBackupBinding = { ...sharedPasswordBackupSample, purpose: DeletePasswordBackup }
+pure val standaloneRemovalSample: PasswordBackupBinding = { ...standalonePasswordBackupSample, purpose: DeletePasswordBackup }
+pure val storesValues: Set[PasswordStores] = Set({ tabletEntries: List(), lastConfirmedCloudCopy: StoredPasswordBackup })
+  .union(Set({ tabletEntries: List("bank", "pharmacy"), lastConfirmedCloudCopy: StoredPasswordBackup }))
+  .union(Set({ tabletEntries: List("bank"), lastConfirmedCloudCopy: NoPasswordBackup }))
+pure val removalRequestValues: Set[PasswordBackupRequest] = pendingValues
+  .union(Set(PendingPasswordBackupRequest({ binding: removalBindingSample }), PendingPasswordBackupRequest({ binding: standaloneRemovalSample })))
+pure val removalApprovalValues: Set[PasswordBackupApproval] = approvalValues
+  .union(Set(SharedNativePasswordApproval({ binding: removalBindingSample }), StandaloneBrowserPasswordApproval({ binding: standaloneRemovalSample })))
+pure val removalValues: Set[PasswordRemoval] = Set(NoPasswordRemoval,
+  AwaitingPasswordRemoval({ binding: removalBindingSample }), AwaitingPasswordRemoval({ binding: standaloneRemovalSample }))
+pure val removalReplyValues: Set[PasswordRemovalReply] = Set(
+  { binding: removalBindingSample, acknowledged: true }, { binding: removalBindingSample, acknowledged: false },
+  { binding: standaloneRemovalSample, acknowledged: true }, { binding: standaloneRemovalSample, acknowledged: false },
+  { binding: { ...removalBindingSample, requestId: "old" }, acknowledged: true })
+pure def lawOnlyCurrentDeleteApprovalStartsRemoval(removalRequest: PasswordBackupRequest, removalApproval: PasswordBackupApproval): bool =
+  val started = beginPasswordBackupRemoval(removalRequest, removalApproval)
+  match removalRequest {
+    | PendingPasswordBackupRequest(pending) =>
+      if (pending.binding.purpose == DeletePasswordBackup and mayUsePasswordBackupGrant(removalRequest, removalApproval))
+        started.removal == AwaitingPasswordRemoval({ binding: pending.binding }) and started.request == ClosedPasswordBackupRequest
+      else started == { request: removalRequest, removal: NoPasswordRemoval }
+    | ClosedPasswordBackupRequest => started == { request: removalRequest, removal: NoPasswordRemoval }
+  }
+pure def lawRemovingBackupKeepsTabletPasswords(stores: PasswordStores, removal: PasswordRemoval, removalReply: PasswordRemovalReply): bool =
+  finishPasswordBackupRemoval(stores, removal, removalReply).stores.tabletEntries == stores.tabletEntries
+pure def lawOnlyMatchingRemovalAcknowledgementClearsCopy(stores: PasswordStores, removal: PasswordRemoval, removalReply: PasswordRemovalReply): bool =
+  val result = finishPasswordBackupRemoval(stores, removal, removalReply)
+  match removal {
+    | AwaitingPasswordRemoval(active) =>
+      if (samePasswordBackupBinding(active.binding, removalReply.binding))
+        result.removal == NoPasswordRemoval and result.stores.lastConfirmedCloudCopy ==
+          (if (removalReply.acknowledged) NoPasswordBackup else stores.lastConfirmedCloudCopy)
+      else result == { stores: stores, removal: removal }
+    | NoPasswordRemoval => result == { stores: stores, removal: removal }
+  }
 ```

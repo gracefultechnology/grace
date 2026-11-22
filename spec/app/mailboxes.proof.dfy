@@ -234,7 +234,7 @@ lemma AttachedKeepsDraft(g: (app__email_Mailbox, app__files_SavedFile) -> app__e
 }
 
 lemma MovedDraftOpened(drafting: app__email_Mailbox, chosen: app__email_Mailbox)
-  requires canMoveDraft(drafting, chosen)
+  requires draftMovable(drafting, chosen)
   ensures moveDraft(drafting, chosen).MovedDraft?
   ensures moveDraft(drafting, chosen).opened_.draft == drafting.draft
   ensures moveDraft(drafting, chosen).opened_.draftAttachments == drafting.draftAttachments
@@ -252,7 +252,7 @@ lemma MovedDraftOpened(drafting: app__email_Mailbox, chosen: app__email_Mailbox)
 lemma lawMovedDraftKeepsContent_ensures(drafting: app__email_Mailbox, chosen: app__email_Mailbox)
   ensures (lawMovedDraftKeepsContent(drafting, chosen) == true)
 {
-  if canMoveDraft(drafting, chosen) {
+  if draftMovable(drafting, chosen) {
     MovedDraftOpened(drafting, chosen);
   }
 }
@@ -260,7 +260,7 @@ lemma lawMovedDraftKeepsContent_ensures(drafting: app__email_Mailbox, chosen: ap
 lemma lawMovedDraftIsUnapproved_ensures(drafting: app__email_Mailbox, chosen: app__email_Mailbox)
   ensures (lawMovedDraftIsUnapproved(drafting, chosen) == true)
 {
-  if canMoveDraft(drafting, chosen) {
+  if draftMovable(drafting, chosen) {
     MovedDraftOpened(drafting, chosen);
   }
 }

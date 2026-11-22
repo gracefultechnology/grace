@@ -142,9 +142,10 @@ pure def closeBrowser(b: Browser): Browser = {
 ## Story: Sign in privately on a website
 
 > On a secure website, I can ask Grace to open a separate private sign-in tab
-> and fill a saved password through Android. I choose the login and press the
-> site's sign-in button myself. If the site asks for a code by email, I open my
-> mail app and return to this private tab to enter the code myself.
+> and choose a saved login through Android, or type my own. I submit on the
+> site. If it asks for verification, I can open Grace Email to find mail that
+> has already arrived. I can also watch for new mail or use another email app,
+> messages, an authenticator or another device. I return to the same website to finish.
 
 ### A private sign-in tab keeps its purpose until it closes
 
@@ -586,6 +587,8 @@ The new-tab view renders at most two rows of these records according to its
 available width. Each nonempty destination appears once. Removing a shortcut
 does not close its tab or delete the provider's records. Cancelling Clear
 keeps the list unchanged; a changed history invalidates the pending question.
+The simulation includes the destination recorded after a completed visit so
+it can exercise removing that recent website.
 
 ```quint
 pure def canRemoveRecent(b: Browser, url: str): bool = b.recent.includes(url)
@@ -601,4 +604,5 @@ pure def alwaysRecentDestinationsAreDistinct(b: Browser): bool =
   b.recent.every(url => url != "" and b.recent.select(visit => visit == url).length() == 1)
 pure def stepRevisionNeverMovesBack(before: Browser, after: Browser): bool = after.revision >= before.revision
 pure def sometimesRecentWebsiteExists(b: Browser): bool = b.recent.length() > 0
+pure val urlValues = Set("", "a", "b", redirectedTo)
 ```

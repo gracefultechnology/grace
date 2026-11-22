@@ -16,6 +16,7 @@ import { graceTurns } from "./graceTurns.vibe"
 import { graceSpeech } from "./graceSpeech.vibe"
 import type { EmbeddedAgent } from "./agentPlugin.ts"
 import { machine as pageLayers } from "../gen/app__surface.effect.vibe"
+import { machine as mailChoices } from "../gen/app__mailboxes.effect.vibe"
 import { machine as websiteRequests } from "../gen/app__websiteRequests.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
@@ -30,10 +31,10 @@ import { fileStorage, library } from "./files.vibe"
 import { instances, reading } from "./instances.vibe"
 import { mailing } from "./mail.vibe"
 import { nativePage } from "./nativePage.vibe"
-import { type SurfacePlugin, type WiFiPlugin, type PasswordBackupPlugin, webView } from "./surfacePlugin.ts"
+import { type SurfacePlugin, type WiFiPlugin, type PasswordBackupPlugin, type OpenPrivateVerificationApp, webView } from "./surfacePlugin.ts"
 import { websiteTask } from "./websiteTask.vibe"
 import { pageHost } from "./page.vibe"
-import { reminderPlugin, type ReminderPlugin } from "./accountPlugin.ts"
+import { reminderPlugin, type AccountBridge, type ReminderPlugin } from "./accountPlugin.ts"
 import { notices } from "./notices.vibe"
 
 // spec/app/shell.md, "Startup distinguishes a usable shell from a recoverable startup failure": the interface is up.
@@ -107,7 +108,7 @@ const services = (cloud: CloudLink | undefined) => cloud === undefined
   ? Layer.mergeAll(signIns, calendars(false))
   : Layer.provide(Layer.mergeAll(reading, signIns, mailing, Layer.provideMerge(calendarFeeds, calendars(true))), linked(cloud))
 
-type TabletPlatform = { native: boolean; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; display?: PreferenceDevice; reminders?: ReminderPlugin; vault?: PasswordVault; backup?: PasswordBackupPlugin; openPrivateEmail?: () => Promise<void> }
+type TabletPlatform = { native: boolean; account?: AccountBridge; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; display?: PreferenceDevice; reminders?: ReminderPlugin; vault?: PasswordVault; backup?: PasswordBackupPlugin; openPrivateVerificationApp?: OpenPrivateVerificationApp }
 
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision; guidedTasks?: GuidedTaskRecords } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin) {
   const platform = "native" in host ? host : { native: false }
@@ -116,12 +117,12 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), tabletStorage))
   const records = platform.native ? platform.preferences ?? preferenceRecords : undefined
   const workspaceAndRequests = Layer.provide(websiteTask, Layer.merge(preferenceWorkspace(records), websiteRequests()))
-  const machines = Layer.provideMerge(library, Layer.mergeAll(storage, workspaceAndRequests, pageLayers(), nativePage(plugin), kept, setup(), passwordViews()))
+  const machines = Layer.provideMerge(library, Layer.mergeAll(storage, workspaceAndRequests, pageLayers(), nativePage(plugin), kept, setup(), passwordViews(), mailChoices()))
   const recoverable = Layer.provideMerge(guidedRecovery(platform.native, host.guidedTasks ?? (platform.native ? guidedTaskRecords : undefined)), machines)
   const guidance = Layer.provideMerge(agent, services(cloud))
   const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup))
   const noticed = Layer.provideMerge(notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), recoverable)
-  const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateEmail), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native, cloud !== undefined), voice), noticed)
+  const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateVerificationApp), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native, cloud !== undefined, platform.account), voice), noticed)
   const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary), shell)
   const controlled = Layer.provideMerge(Layer.mergeAll(replyControls(platform.native), conversation(cloud)), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)

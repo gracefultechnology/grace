@@ -1,16 +1,18 @@
-// spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"; spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Switching folders clears the old query and starts a scoped listing"; spec/app/mailboxes.md, "With no account’s Email on, Email offers only Connect your email and Ask Grace"; spec/app/mailboxes.md, "The Home Email card says Not connected, Waiting for the internet, or how many are new"; spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"; spec/app/mailboxes.md, "Drafts counts the shown accounts’ saved drafts"
+// spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"; spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Switching folders clears the old query and starts a scoped listing"; spec/app/mailboxes.md, "With no account’s Email on, Email offers only Connect your email and Ask Grace"; spec/app/mailboxes.md, "The Home Email card says Waiting for the internet, Not connected, or how many are new"; spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"; spec/app/mailboxes.md, "Drafts counts the shown accounts’ saved drafts"
 import { BrowserDialog, BrowserDialogText, Button, type Guide, type GuidePointing, type HomeEmailCardProps, type HomeMail, MailApp, type MailContact, type MailFolder, MailLink, type MailMessageTarget, MailMessageView, type MailPhoto, type MailSaveStatus, MailSignInBanner, type MailSummary, MailSyncingRow, PdfViewer, PhotoViewer, Toast } from "@repo/ui";
 import { Exit } from "effect";
 import { type ReactNode, Suspense, useState } from "react";
+import { useMachine as useMailChoices } from "../gen/app__mailboxes.react.ts";
 import type { Accounts } from "../gen/app__accounts.ts";
 import { canReplyToMessage, emptyContent, enabled, type Event as MailEvent, mayExportAttachments, messageRecord, photoAssets, readable, showsScamWarning } from "../gen/app__email.ts";
 import type { Folder, MessageChange } from "../gen/app__emailItem.ts";
 import { type Files, hasFile, type SavedFile } from "../gen/app__files.ts";
-import { type HomeMailStatus, type MailBanner, type MailSource, type Row, accountRows, banners, draftsIn, folderRows, fromChoices, homeRows, homeStatus, openSource, outboxCount, outboxRows, showsConnect, showsMail, showsOutbox, undoable, unreadIn } from "../gen/app__mailboxes.ts";
+import { type HomeMailStatus, type MailBanner, type MailSource, type Row, accountRows, banners, draftsIn, folderRows, fromChoices, homeRows, homeStatus, openSource, outboxCount, outboxRows, showsConnect, showsMail, showsOutbox, startFrom, undoable, unreadIn } from "../gen/app__mailboxes.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import type { Attached, MailContent } from "./connector.vibe";
-import { EmailCompose, type Picking, thumbnail } from "./EmailCompose.tsx";
-import { chooseMailLink, linkDestination, type LinkChoice, messageLinks } from "./mailLink.vibe";
+import { EmailCompose, thumbnail } from "./EmailCompose.tsx";
+import { chooseMailLink, type LinkChoice } from "./mailLink.vibe";
+import { messageLinkParts } from "./messageLinks.vibe";
 import { answerable, headerFor, queuedAt, recipientsOf } from "./mail.vibe";
 import { type MailInstance, type MailWriter, useAccounts, useFiles, useMail, useMailContent, useMailFile, useMailHeld, useRuntime, useWorkspace, WithMailboxes } from "./useApp.ts";
 
@@ -25,20 +27,9 @@ const folderOf = (folder: Folder) => (Object.keys(folders) as (keyof typeof fold
 const sourcesOf = (boxes: readonly MailInstance[]): MailSource[] => boxes.map((b) => ({ account: b.id, mailbox: b.state }));
 const pages = (n: number) => `${n} page${n === 1 ? "" : "s"}`;
 const close = "Close Email";
-const unlinked = (body: string) => body.replace(new RegExp(messageLinks.source, "gi"), "(link removed)");
 const tones = [1, 2, 3, 4, 5, 6] as const;
 const toneOf = (key: string) => tones[[...key.trim().toLowerCase()].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 0) % tones.length];
 const contact = (name: string, address: string): MailContact => ({ name, tone: toneOf(address || name) });
-const linked = (body: string, guide: GuidePointing | undefined, open: (link: string) => void) => {
-  const parts = body.split(new RegExp(`(${messageLinks.source})`, "gi"));
-  let offset = 0;
-  return parts.map((part, i) => {
-    const key = offset;
-    offset += part.length;
-    const link = i % 2 ? linkDestination(part) : undefined;
-    return link ? <MailLink key={key} guide={i === 1 ? guide : undefined} onOpen={() => open(link)}>{part}</MailLink> : part;
-  });
-};
 const unshown = "This attachment couldn’t be shown";
 const unrendered = "This PDF can’t be shown on this tablet.";
 
@@ -137,10 +128,9 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const held = useMailFile();
   const files = useFiles();
   const mail = useMail();
-  const [picking, setPicking] = useState<Picking | null>(null);
-  const [outboxChosen, setOutboxChosen] = useState(false);
+  const { state: choices, send: tell } = useMailChoices(runtime);
   const sources = sourcesOf(boxes);
-  if (!workspace) return null;
+  if (!workspace || !choices) return null;
   const now = new Date();
   const online = workspace.device.connectivity === "Online";
   const fire = (event: WorkspaceEvent) => (can(event) ? () => void send(event) : undefined);
@@ -160,10 +150,10 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const sender = (b: MailInstance) => read(b.id, b.state.replyTo)?.from ?? "";
 
   const composing = shown.find((b) => b.state.composeVisible);
-  if (mail && (composing || picking))
+  if (mail && composing)
     return (
       <Suspense fallback={null}>
-        <EmailCompose key={composing?.id ?? 0} registry={registry} boxes={shown} box={composing} picking={picking} onPicking={setPicking} mail={mail} sender={sender} frame={frame} />
+        <EmailCompose key={composing.id} registry={registry} boxes={shown} box={composing} mail={mail} sender={sender} frame={frame} />
       </Suspense>
     );
 
@@ -173,16 +163,17 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     const ready = m.view !== "Inbox";
     const ref = ready ? m.messageRef : m.requestedRef;
     const c = read(opening.id, ref);
-    const forwarded = (sent: ReturnType<MailInstance["send"]>) => void sent.then((exit) => Exit.isSuccess(exit) && setPicking({ field: "to", query: "" }));
     const saver = saverOf(opening, mail, files);
     const unopened = m.view === "Message" && m.readKind === "OpenAttachment" && m.readStatus === "ReadFailed";
     const toast = unopened ? <Toast placement="screen">{unshown}</Toast> : mail?.note ? <Toast key={mail.note.id} placement="screen">{mail.note.text}</Toast> : undefined;
     if (m.view === "Attachment")
-      return <Attachment box={opening} held={held} saver={saver} sender={c?.from ?? ""} subject={c?.subject ?? ""} onForward={forwarded} toast={toast} frame={frame} />;
+      return <Attachment box={opening} held={held} saver={saver} sender={c?.from ?? ""} subject={c?.subject ?? ""} toast={toast} frame={frame} />;
     const open: MailEvent = { type: "readMail", kind: "OpenMessage", ref, approved: true };
     const target = { ref, revision: messageRecord(m, ref).revision };
     const change = (kind: MessageChange) => offer(opening, { type: "changeSelectedMessage", target, change: kind });
-    const forward: MailEvent = { type: "forwardMessage", content: { ...emptyContent, subject: `Fwd: ${c?.subject ?? ""}`, body: unlinked(c?.body ?? "") } };
+    const body = messageLinkParts(c?.body ?? "");
+    const firstLink = body.find((part) => typeof part !== "string" && part.href !== undefined);
+    const forward: MailEvent = { type: "forwardMessage", content: { ...emptyContent, subject: `Fwd: ${c?.subject ?? ""}`, body: body.map((part) => typeof part === "string" ? part : "(link removed)").join("") } };
     const photos = photoAssets(m);
     const pdfs = m.assets.filter((a) => a.kind === "Pdf");
     const attachment = (file: SavedFile): MailEvent => ({ type: "readMail", kind: "OpenAttachment", ref: file.sourceRef, approved: true });
@@ -196,18 +187,22 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     const follow = (link: string, choice: LinkChoice) => {
       if (!ready) return;
       setUnopenedLink(undefined);
-      void runtime.runPromiseExit(chooseMailLink({ account: opening.id, ref, generation: m.generation, version: reviewed?.version, link }, choice)).then((result) => {
+      void runtime.runPromiseExit(chooseMailLink({ account: opening.id, ref, generation: m.generation, version: reviewed?.version, link, deviceVersion: workspace.device.contextVersion, browserRevision: workspace.browser.revision }, choice)).then((result) => {
         if (!Exit.isSuccess(result) || !result.value) setUnopenedLink(source);
       });
     };
     const saveAll = saver.offer(allPhotos);
     const present: Record<Ringed, boolean> = {
-      caution: scam, mbody: ready, saveall: ready && photos.length > 0 && saveAll !== undefined, file: ready && pdfs.length > 0, link: ready && messageLinks.test(c?.body ?? ""),
+      caution: scam, mbody: ready, saveall: ready && photos.length > 0 && saveAll !== undefined, file: ready && pdfs.length > 0, link: ready && firstLink !== undefined,
     };
     const pointing = aimed(guide((target) => (isRinged(target) && present[target] ? target : undefined)));
     return (
       <>
-      <MailMessageView from={contact(c?.from ?? "", c?.fromAddress ?? "")} address={scam ? c?.fromAddress : undefined} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={linked(c?.body ?? "", pointing.link, (link) => follow(link, "open"))} guide={pointing.message}
+      <MailMessageView from={contact(c?.from ?? "", c?.fromAddress ?? "")} address={scam ? c?.fromAddress : undefined} time={c ? when(c.receivedAt, now) : ""} subject={c?.subject ?? ""} body={body.map((part) => {
+          if (typeof part === "string") return part;
+          const { href } = part;
+          return href ? <MailLink key={part.start} guide={part === firstLink ? pointing.link : undefined} onOpen={() => follow(href, "open")}>{part.text}</MailLink> : part.text;
+        })} guide={pointing.message}
         scam={scam} inTrash={messageRecord(m, ref).folder === "TrashFolder"}
         photos={ready ? photos.map((p) => picture(p, held(opening.id, p))) : undefined} onOpenPhoto={opener(photos)}
         onSaveAll={saveAll} saveAllStatus={saver.status(photos)} onRetrySaveAll={saver.offer(allPhotos)}
@@ -215,7 +210,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
         status={ready ? "ready" : m.readStatus === "Reading" ? "loading" : "failed"}
         onRetry={offer(opening, open)}
         onReply={replying ? () => void mail.reply(opening.id) : undefined}
-        onForward={m.folder !== "DraftsFolder" && opening.can(forward) ? () => forwarded(opening.send(forward)) : undefined}
+        onForward={m.folder !== "DraftsFolder" ? offer(opening, forward) : undefined}
         onDelete={change("TrashMessage")} onRestore={change("RestoreMessage")} onDeleteForever={change("PurgeMessage")}
         backLabel={backTo[m.folder]} onBack={offer(opening, { type: "showInbox" })} {...frame} />
       {ready && m.link.status === "LinkHeld" && <BrowserDialog title="Open this link?" tone="caution" onEscape={() => follow(m.link.link, "cancel")} actions={<>
@@ -232,12 +227,12 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const folder: Folder = lead?.folder ?? "InboxFolder";
   const rows = accountRows(registry, sources);
   const waitingCount = outboxCount(registry, sources);
-  const outbox = showsOutbox(registry, sources, outboxChosen);
+  const outbox = showsOutbox(registry, sources, choices);
   const untitled = (subject: string | undefined) => subject === "" ? "(no subject)" : subject ?? "";
   const waiting: MailSummary[] = outboxRows(registry, sources).map((r) => {
     const at = queuedAt(r.queued.operationId);
     return {
-      id: `${r.account}/${r.queued.operationId}`, from: contact(mail?.nameOf(r.queued.snapshot.content.to) ?? recipientsOf(r.queued.snapshot.content.to)[0] ?? "", recipientsOf(r.queued.snapshot.content.to)[0] ?? ""),
+      id: `${r.account}/${r.queued.operationId}`, from: contact(mail?.nameOf(r.queued.snapshot.content.to, { id: r.account, ref: r.queued.snapshot.replyTo }) ?? recipientsOf(r.queued.snapshot.content.to)[0] ?? "", recipientsOf(r.queued.snapshot.content.to)[0] ?? ""),
       subject: untitled(r.queued.snapshot.content.subject), time: Number.isNaN(at) ? "" : when(at, now), attachment: r.queued.snapshot.attachments.length > 0,
       account: rows.length ? name(r.account) : undefined,
     };
@@ -282,18 +277,18 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   return (
     <MailApp folder={outbox ? "outbox" : folderOf(folder)} counts={{ inbox: unreadIn(registry, sources, 0), drafts: draftsIn(registry, sources), outbox: waitingCount }}
       guide={rowGuide} accounts={rows} account={registry.inboxFilter || undefined} banners={notes.length ? notes : undefined} messages={outbox ? waiting : listed} toast={toast}
-      onWrite={writable ? () => setPicking({ field: "to", query: "" }) : undefined}
+      onWrite={writable ? offer(shown.find((b) => b.id === startFrom(registry, sources, "")) ?? shown[0], { type: "startDraft", reply: false }) : undefined}
       status={shownBanners.some((b) => b.kind === "OfflineBanner") ? "offline" : failed.length ? "failed" : "ready"}
       query={lead?.query ?? ""}
       onQueryChange={(query) => shown.forEach((b) => replace(b, search(query)))}
       onRetry={failed.some((b) => b.can(search(b.state.query))) ? () => failed.forEach((b) => offer(b, search(b.state.query))?.()) : undefined}
       onSelectFolder={(chosen) => {
-        setOutboxChosen(chosen === "outbox");
+        void tell({ type: chosen === "outbox" ? "chooseOutbox" : "chooseFolderList" });
         if (chosen === "outbox") return;
         if (registry.inboxFilter !== 0) filter(0);
         show(folders[chosen]);
       }}
-      onAccount={(id) => { setOutboxChosen(false); filter(id); show("InboxFolder"); }}
+      onAccount={(id) => { void tell({ type: "chooseFolderList" }); filter(id); show("InboxFolder"); }}
       onOpen={(id) => {
         const [owner, ...rest] = id.split("/");
         const box = shown.find((b) => b.id === Number(owner));
@@ -307,10 +302,10 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
 
 type AttachmentProps = {
   box: MailInstance; held: (id: number, file: SavedFile) => Attached | undefined; saver: Saver; sender: string; subject: string;
-  onForward: (sent: ReturnType<MailInstance["send"]>) => void; toast: ReactNode; frame: Frame;
+  toast: ReactNode; frame: Frame;
 };
 
-function Attachment({ box, held, saver, sender, subject, onForward, toast, frame }: AttachmentProps) {
+function Attachment({ box, held, saver, sender, subject, toast, frame }: AttachmentProps) {
   const m = box.state;
   const ref = m.readKind === "OpenAttachment" && m.readStatus !== "ReadIdle" ? m.requestedRef : m.attachmentRef;
   const file = m.assets.find((a) => a.sourceRef === ref);
@@ -338,7 +333,7 @@ function Attachment({ box, held, saver, sender, subject, onForward, toast, frame
       <PhotoViewer title={`Photo ${at + 1} of ${photos.length}`} {...picture(file, shown)} first={at === 0} last={at === photos.length - 1}
         onPrevious={offer({ type: "movePhoto", direction: -1 })} onNext={offer({ type: "movePhoto", direction: 1 })}
         {...save} onRetrySave={save.onSave}
-        onForward={box.can(forward) ? () => onForward(box.send(forward)) : undefined} {...leave} />
+        onForward={box.can(forward) ? () => void box.send(forward) : undefined} {...leave} />
       {toast}
     </>
   );

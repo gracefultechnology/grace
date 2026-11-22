@@ -3,7 +3,7 @@ import { AccountFacts, Button, Checkbox, Input, PageHeading, PageText, RetryNoti
 import { Effect, Exit } from "effect";
 import { useId, useState, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
-import { managesOnTheWeb, mayCheckAccountAgain, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, showsTabletSignIn } from "../gen/app__setup.ts";
+import { managesOnTheWeb, mayBeginDeviceSignIn, mayCheckAccountAgain, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, showsTabletSignIn } from "../gen/app__setup.ts";
 import { AccountActions, type Operation } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
 import { GraceSignInCode } from "./GraceSignInCode.tsx";
@@ -22,7 +22,7 @@ export function GraceAccountSettings() {
     if (params.get("googleConnectionError") === "authorization_failed") return "Google didn’t connect. Check which account you chose and try again.";
     return "";
   });
-  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
+  const [confirmation, setConfirmation] = useState<"signOut" | "cleanupLegacySignIn">();
   const [provider, setProvider] = useState<"email" | "sms">();
   const [mail, setMail] = useState(false);
   const [trashMail, setTrashMail] = useState(false);
@@ -36,13 +36,16 @@ export function GraceAccountSettings() {
     setReturnFailed("");
     const result = await runtime.runPromiseExit(Effect.flatMap(AccountActions, (actions) => actions.run(operation)));
     if (Exit.isSuccess(result) && result.value) {
-      setConfirmingSignOut(false);
+      setConfirmation(undefined);
       onSuccess?.();
     }
     else setFailed(operation.kind);
   });
   const tabletRequested = setup !== undefined && showsTabletSignIn(setup.tabletSignIn);
   const signedIn = snapshot?.tag === "GraceSignedIn";
+  const needsCleanup = snapshot !== undefined && mayCleanupLegacySignIn(snapshot);
+  const accountAction = needsCleanup ? "cleanupLegacySignIn" : signedIn || snapshot?.tag === "GraceDeviceSignedIn" ? "signOut" : undefined;
+  const confirmingSignOut = accountAction !== undefined && confirmation === accountAction;
   const canRetry = snapshot !== undefined && mayCheckAccountAgain(snapshot);
   const active = signedIn && (snapshot.plan === "PlanActive" || snapshot.plan === "PlanActiveManaged");
   return (
@@ -62,7 +65,7 @@ export function GraceAccountSettings() {
         <GraceSignInCode provider={provider} pending={pending} run={run} onClose={() => setProvider(undefined)} />
       ))}
       {canRetry && <RetryNotice role="status" retrying={pending} onRetry={() => run({ kind: "refresh" })}>Grace couldn’t check your account.</RetryNotice>}
-      {snapshot?.tag === "GraceDeviceSignedOut" && (
+      {snapshot !== undefined && mayBeginDeviceSignIn(snapshot) && (
         <div className="flex flex-wrap gap-3">
           <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "signIn" })}>Sign in to Grace</Button>
           <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "signIn", method: "browser" })}>Other sign-in options</Button>
@@ -141,13 +144,13 @@ export function GraceAccountSettings() {
           )}
         </>
       )}
-      {(signedIn || snapshot?.tag === "GraceDeviceSignedIn") && (confirmingSignOut ? (
+      {accountAction && (confirmingSignOut ? (
         <div className="flex flex-wrap gap-3">
-          <Button variant="capsule" size="pill" disabled={pending} onClick={() => setConfirmingSignOut(false)}>Stay signed in</Button>
-          <Button variant="warn" size="pill" disabled={pending} onClick={() => run({ kind: "signOut" })}>Confirm sign out</Button>
+          <Button variant="capsule" size="pill" disabled={pending} onClick={() => setConfirmation(undefined)}>{needsCleanup ? "Cancel" : "Stay signed in"}</Button>
+          <Button variant="warn" size="pill" disabled={pending} onClick={() => run({ kind: accountAction })}>{needsCleanup ? "Confirm clearing old sign-in" : "Confirm sign out"}</Button>
         </div>
       ) : (
-        <Button variant="warn" size="pill" disabled={pending} onClick={() => setConfirmingSignOut(true)}>Sign out</Button>
+        <Button variant="warn" size="pill" disabled={pending} onClick={() => setConfirmation(accountAction)}>{needsCleanup ? "Clear old sign-in" : "Sign out"}</Button>
       ))}
     </section>
   );

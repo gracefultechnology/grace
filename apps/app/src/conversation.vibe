@@ -15,9 +15,10 @@ import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type GuidedEvidenceUse, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type GraceAction } from "./agent.vibe"
+import { BrowserGuide } from "./browserGuide.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
-import { type Help, helpWith, type Last, looker, render, sendable, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
+import { confidentialMail, type Help, helpWith, type Last, looker, render, sendable, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
 import { Instances, tablet } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
 import { withhold } from "./private.ts"
@@ -67,7 +68,7 @@ function screened(text: string, answers: readonly string[], actions: readonly Gr
 }
 
 effect function ask(link: CloudLink, messages: readonly { role: string; content: string }[]) {
-  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), { model: policy.model, messages, stream: true })
+  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), { model: policy.model, messages, stream: true, response_format: { type: "json_object" } })
   const response = try HttpClient.execute(HttpClientRequest.bearerToken(request, link.key))
   if (response.status !== 200) throw new Unanswered({ status: response.status })
   const lines = Stream.filter(Stream.splitLines(Stream.decodeText(response.stream)), (line) => line.startsWith("data: ") && line !== "data: [DONE]")
@@ -121,7 +122,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
   if (read === "ReadMail" || read === "ReadCalendar" || read === "SaveMailAppointment") {
     const selected = try managed.guidedSelection()
     if (selected.kind !== "legacy") {
-      if (selected.kind === "unavailable" || workspace.plan.steps.some((step) => step.tag === "SaveMailAppointment")) return undefined
+      if ((selected.kind !== "mail" && selected.kind !== "calendar") || workspace.plan.steps.some((step) => step.tag === "SaveMailAppointment")) return undefined
       const identity = [selected.accountId, selected.googleEmail, selected.id]
       const { grant, version } = selected
       if (read === "ReadMail" && selected.kind === "mail")
@@ -144,7 +145,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const { identity, revision, loaded } = messageRecord(box, box.messageRef)
       const content = scene.content(account, box.messageRef)
       if (!loaded || identity.owner !== box.owner || identity.account !== box.account || identity.provider !== box.provider ||
-          identity.ref !== box.messageRef || content === undefined) return undefined
+          identity.ref !== box.messageRef || content === undefined || confidentialMail(content)) return undefined
       return receipt({ tag: "CurrentMessage", account, owner: identity.owner, address: identity.account,
         ref: identity.ref, generation: box.generation, revision, version: content.version },
         [identity.provider, identity.owner, identity.account, identity.ref], content.subject === "" ? "The open message has no subject." : "Open message: " + content.subject)
@@ -160,6 +161,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       if (statement.tag === "Unread") return statement.reason
       return receipt({ tag: "CurrentStatement", tab: tab.id, loadVersion: tab.loadVersion, document: statement.document }, [address], statement.text)
     }
+    case "ReadLatestRecord": return undefined
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
@@ -251,6 +253,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const workspace = try Workspaces
   const agent = try Agent
   const native = try NativePage
+  const guide = try BrowserGuide
   const managed = try ManagedReads
   const accepting = try Semaphore.make(1)
   const asked = try Ref.make<{ generation: number; source: TurnSource } | undefined>(undefined)
@@ -325,12 +328,11 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const scene = try look()
     const w = scene.workspace
     if (privateSurfaceActive(w)) return
-    const window = try Effect.orDie(Effect.try(() => sendable(w.assistant.conversation)))
-    if (window === undefined) {
+    const outgoing = try Effect.orDie(Effect.try(() => sendable(w.assistant.conversation)))
+    if (outgoing === undefined) {
       workspace.send({ type: "purgePrivate", token, messageIndex: w.assistant.conversation.messages.length - 1, purgeDraft: false }, "Host") catch () => undefined
       return
     }
-    const outgoing = window.map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: text }))
     const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
     const news = try Ref.get(told)
     const source = try turnSource(token)
@@ -338,6 +340,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const system = { role: "system", content: `${character.system}\n\n${noControls}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(last), news, try managed.guidedSelection()).text}${help}` }
     const { origin } = w.assistant.conversation
     const started = origin === "HerRequest" ? [] : [{ role: "user", content: origin === "AskedForHelp" ? helpAsked : hostStarted }]
+    if (privateSurfaceActive(try workspace.get())) return
     const said = ask(link, [system, ...outgoing, ...started]) catch () => undefined
     const reply = try decoded(said)
     if (said === undefined || reply === undefined) return try fail(token, w.assistant.workVersion)
@@ -428,6 +431,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         return (try browserReadAccount()) === account && (try currentBrowserWorkspace())
       }
       if (browserScope !== undefined && !(try currentBrowserWorkspace())) return "Refused"
+      if (read === "ReadLatestRecord") return try guide.checkLatestRecord()
       const found = try guidedReceipt(scene, step, native, managed)
       if (found === undefined) return "NotFound"
       if (found === "PrivateForm") return (try ownsBrowserRead()) ? found : "Refused"

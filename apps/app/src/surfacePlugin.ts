@@ -19,10 +19,14 @@ export const devicePlugin = Capacitor.isNativePlatform() ? registerPlugin<ElizaS
 export const passwordClient = Capacitor.isPluginAvailable("ElizaPasswords")
   ? createPasswordsClient(registerPlugin<ElizaPasswordsPlugin>("ElizaPasswords")) : undefined;
 
+export type PrivateVerificationApp = "email" | "messages";
+
 type PrivateViewPlugin = {
   protect(input: { view: "vault" | "browser"; active: boolean }): Promise<void>;
-  openEmail(): Promise<void>;
+  openVerificationApp(input: { app: PrivateVerificationApp }): Promise<void>;
 };
+
+export type OpenPrivateVerificationApp = PrivateViewPlugin["openVerificationApp"];
 
 export const androidHost = Capacitor.isNativePlatform();
 export const privateViewPlugin = androidHost ? registerPlugin<PrivateViewPlugin>("GracePrivateView") : undefined;

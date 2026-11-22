@@ -3,7 +3,7 @@ import { Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.v
 import { WebsiteTask } from "./websiteTask.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
-import { Machine as Workspaces, canConfirmGuidedNameCorrection, mayGuideReadLink, nextOutcome, publicGuidedLink, type GuidedNameCorrection, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, canConfirmGuidedNameCorrection, guidedRecordReceipt, mayAssist, mayGuideReadLink, uniqueLatestRecordIndex, nextOutcome, publicGuidedLink, type GuidedNameCorrection, type GuidedStep, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { CLEF_DECISION_LIMITS, clefUnavailability, createClefDecisionsClient, decodeClefResult, type ClefDecisionRequest, type ClefDecisionResponse } from "@elizaos/cloud/clef-decisions"
 import { accountFetch, apiOrigin, browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
@@ -12,6 +12,7 @@ import { GuidedRecovery } from "./guidedRecovery.vibe"
 import { guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
 import { comparableName, NativePage, guidedPageState, privateFormRecovery } from "./nativePage.vibe"
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
+import { collectionLabels, comparableStatus, observeRecordCollection, sameCollectionAddress, sameCollectionPage, sameRecordAccount, verifyRecordDetail, type CollectionObservation, type ObservedRecord, type RecordCollection, type RecordLink, type RecordSiteScope } from "./browserRecords.vibe"
 import { withhold } from "./private.ts"
 
 export type BrowserGuidance = { kind: "Link"; words: string } | { kind: "Menu" | "Unavailable"; words: string; alternateHref?: string; tryAnotherMenu?: boolean }
@@ -19,6 +20,7 @@ export type BrowserGuidance = { kind: "Link"; words: string } | { kind: "Menu" |
 export service BrowserGuide {
   point(onMenu: (guidance: BrowserGuidance) => void): BrowserGuidance!!
   confirmName(correction: GuidedNameCorrection): boolean!!
+  checkLatestRecord(): ("Confirmed" | "NotFound" | "PrivateForm" | "Refused")!!
 }
 
 function unavailableBecause(words: string): BrowserGuidance { return { kind: "Unavailable", words } }
@@ -31,7 +33,8 @@ const choiceContext = " Compare the meaning of the links rather than requiring e
 const statementContext = " Prefer a page that shows the bill, statement or account activity. Avoid a link that only starts a payment, such as Make a payment."
 
 function context(w: Workspace, authority: GuidedAuthority) {
-  if (!mayGuideReadLink(w) || w.plan.owner !== guidedOwner(authority, w.plan.steps)) return undefined
+  if (nextOutcome(w.plan).tag === "ReadLatestRecord" || !mayGuideReadLink(w) ||
+      w.plan.owner !== guidedOwner(authority, w.plan.steps)) return undefined
   const tab = activeTab(w.browser)
   const address = tabUrl(tab)
   if (!URL.canParse(address)) return undefined
@@ -46,6 +49,61 @@ function context(w: Workspace, authority: GuidedAuthority) {
     goal: w.plan.originalAsk, target: outcome.tag === "ReachNamedPage" ? outcome.subject : "",
     instruction: outcome.tag === "ReadStatement" ? choiceContext + statementContext : choiceContext }
 }
+
+type RecordContext = {
+  scope: string
+  activity: Workspace["assistant"]["activity"]
+  step: { owner: string; task: string; version: number; generation: number; deviceVersion: number; stepIndex: number; tabId: number }
+  outcome: Extract<GuidedStep, { tag: "ReadLatestRecord" }>
+  url: URL; cursor: number; history: readonly string[]; id: PageId; loadVersion: number; loaded: boolean; browserRevision: number
+}
+
+function recordContext(w: Workspace, authority: GuidedAuthority): RecordContext | undefined {
+  const outcome = nextOutcome(w.plan)
+  const tab = activeTab(w.browser)
+  const url = URL.parse(tabUrl(tab))
+  if (outcome.tag !== "ReadLatestRecord" || !mayAssist(w) || w.device.surface !== "Browser" ||
+      w.plan.owner !== guidedOwner(authority, w.plan.steps) || tab.manualSignIn || !url ||
+      url.protocol !== "https:" || url.username || url.password) return undefined
+  const step = {
+    owner: w.plan.owner, task: w.assistant.taskId, version: w.assistant.workVersion,
+    generation: w.assistant.conversation.generation, deviceVersion: w.device.contextVersion,
+    stepIndex: w.plan.receipts.length, tabId: tab.id
+  }
+  return {
+    scope: JSON.stringify(step), activity: w.assistant.activity, step, outcome, url, cursor: tab.cursor, history: tab.history,
+    id: PageId.make(`tab-${tab.id}`), loadVersion: tab.loadVersion, loaded: tab.load === "Loaded" && tab.secure,
+    browserRevision: w.browser.revision
+  }
+}
+
+type PendingRecordVisit = { from: RecordContext; href: string }
+type RecordScan = {
+  visit: PendingRecordVisit; total: number; first: number; last: number; account: RecordSiteScope
+  records: readonly ObservedRecord[]; selected?: ObservedRecord
+}
+type RecordSelection = { visit: PendingRecordVisit; key: string; identity: string; documentId: string; account: RecordSiteScope }
+
+function directRecordVisit(visit: PendingRecordVisit, current: RecordContext): boolean {
+  const { from } = visit
+  if (current.loadVersion === from.loadVersion) {
+    return current.scope === from.scope && current.browserRevision === from.browserRevision && current.url.href === from.url.href
+  }
+  const { version, generation, ...visitStep } = from.step
+  const { version: currentVersion, generation: currentGeneration, ...currentStep } = current.step
+  const afterPause = current.activity === "Paused" && currentVersion === version + 1
+  const afterResume = current.activity === "Rechecking" && currentVersion === version + 2
+  return (afterPause || afterResume) && currentGeneration === generation + 1 &&
+    JSON.stringify(currentStep) === JSON.stringify(visitStep) &&
+    current.url.href === visit.href && current.loadVersion === from.browserRevision + 1 &&
+    current.browserRevision === from.browserRevision + (current.loaded ? 2 : 1) &&
+    current.cursor === from.cursor + 1 &&
+    from.history.slice(0, from.cursor + 1).every((url, index) => current.history[index] === url)
+}
+
+const insufficientRecords = unavailableBecause("I can’t verify which matching record is newest on this list.")
+const compareAllRecords = "Look for the next page of records. Ask me to show the link again there."
+const compareEarlierRecords = "Go back one page in this list. Ask me to show the link again there."
 
 function publicWords(text: string): string {
   const plain = text.normalize("NFC").replace(/[\p{Cc}\p{Cf}]/gu, " ").replace(/\s+/gu, " ").trim()
@@ -185,11 +243,149 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
   const setup = try Setup
   const recovery = try GuidedRecovery
   const authority = effect () => guidedAuthority(try setup.get(), webView.window.location.hash)
-  const currentContext = effect () => (try website.clear) ? context(try workspace.get(), try authority()) : undefined
+  const clear: boolean!! = website.clear
+  const currentContext = effect () => (try clear) ? context(try workspace.get(), try authority()) : undefined
+  const currentRecord = effect (): (RecordContext | undefined)!! => (try clear) ? recordContext(try workspace.get(), try authority()) : undefined
+  let scan: RecordScan | undefined
+  let selectedRecord: RecordSelection | undefined
+  let recordRing: { id: PageId; scope: string; loadVersion: number } | undefined
+  let recordAttempt: symbol | undefined
+  const pointRecord = effect (start: RecordContext) => {
+    const attempt = Symbol()
+    recordAttempt = attempt
+    const prior = recordRing
+    recordRing = undefined
+    selectedRecord = undefined
+    if (prior !== undefined) page.clearGuide(prior.id) catch () => undefined
+    const stillHere = effect () => {
+      const live = try currentRecord()
+      return recordAttempt === attempt && live?.scope === start.scope && live.loaded &&
+        live.loadVersion === start.loadVersion && live.browserRevision === start.browserRevision && live.url.href === start.url.href
+    }
+    const showRecord = effect (snapshot: { documentId: string; snapshotId: string }, link: RecordLink, text: string) => {
+      const expiresAt = (try Clock.currentTimeMillis) + 20000
+      const pointing = try website.start(stillHere(), page.pointAt(start.id, snapshot.documentId, {
+        kind: "show", id: snapshot.snapshotId, snapshotId: snapshot.snapshotId, nodeId: link.id,
+        origin: start.url.origin, expiresAt, text, assistantName: "Grace"
+      }))
+      if (typeof pointing === "string") return false
+      const shown = Fiber.join(pointing) catch () => false
+      if (!shown || !(try stillHere())) return false
+      recordRing = { id: start.id, scope: start.scope, loadVersion: start.loadVersion }
+      return true
+    }
+    const collection: CollectionObservation = try observeRecordCollection(page, start.id, start.url, start.outcome.collection, stillHere())
+    if (!(try stillHere())) return changed
+    if (collection.kind === "PrivateForm") return privateForm
+    if (collection.kind === "NoCollection") {
+      scan = undefined
+      const observed: LinkObservation | undefined = page.observeLinks(start.id) catch () => undefined
+      if (!observed || !["Ordinary", "PublicOnly"].includes(guidedPageState(observed, start.url.href, "GuidePublicLinks"))) return unobservable
+      const publicLabels = collectionLabels(start.outcome.collection)
+      const safeNavigation: PublicLink[] = links(observed, start.url, start.outcome.collection, true)
+      const allowed: PublicLink[] = safeNavigation.filter((link): boolean => !link.samePage && link.pointable && Boolean(link.selector) &&
+        (publicLabels.includes(comparableName(link.label)) || /^(?:my account|account)$/u.test(comparableName(link.label))))
+      const target: PublicLink[] = allowed.filter((link): boolean => publicLabels.includes(comparableName(link.label)))
+      const candidate = target.length === 1 ? target[0] : target.length === 0 && allowed.length === 1 ? allowed[0] : undefined
+      if (!candidate?.selector) return unavailableBecause("Open the website’s record history, then ask me to show the link again.")
+      const nav = page.readRecordText(start.id, `:is(${candidate.selector}):not(table *, [role="row"] *, form *)`) catch () => undefined
+      const fresh: LinkObservation | undefined = page.observeLinks(start.id) catch () => undefined
+      if (nav?.url !== start.url.href || !fresh || fresh.documentId !== observed.documentId ||
+          fresh.result.domRevision !== observed.result.domRevision || !(try stillHere())) return changed
+      const link = links(fresh, start.url, start.outcome.collection, true).find((item) =>
+        item.pointable && item.href === candidate.href && item.selector === candidate.selector)
+      if (!link || !(try showRecord({ documentId: fresh.documentId, snapshotId: fresh.result.snapshotId }, link, "Open the record history"))) return changed
+      return { kind: "Link" as const, words: "Open the highlighted section, then ask me again." }
+    }
+    if (collection.kind === "NeedsScope") {
+      scan = undefined
+      return unavailableBecause("I can’t verify which website account these records belong to. Open your account’s record list or a clearly marked public list, then ask again.")
+    }
+    if (collection.kind !== "Collection") {
+      scan = undefined
+      return insufficientRecords
+    }
+    const current: RecordCollection = collection.page
+    const walking: RecordScan | undefined = scan && directRecordVisit(scan.visit, start) && start.url.href === scan.visit.href ? scan : undefined
+    scan = undefined
+    if (walking && (!sameRecordAccount(walking.account, current.account) || current.total !== walking.total ||
+        !sameCollectionAddress(walking.visit.from.url, start.url)))
+      return unavailableBecause("The website account or record list changed. Open the first page to check it again.")
+    let records: readonly ObservedRecord[] = current.records
+    if (walking?.selected !== undefined) {
+      const witnessedRows: readonly ObservedRecord[] = walking.records.slice(current.first - 1, current.last)
+      const compared = new Map<string, ObservedRecord>(witnessedRows.map((record): [string, ObservedRecord] => [record.identity, record]))
+      const samePage = start.loadVersion === walking.visit.from.loadVersion
+      const expectedPage = samePage ? current.first === walking.first && current.last === walking.last :
+        current.last + 1 === walking.first && current.next !== undefined && sameCollectionPage(new URL(current.next.href), walking.visit.from.url)
+      if (!expectedPage || compared.size !== current.records.length ||
+          !current.records.every((record): boolean => {
+            const prior = compared.get(record.identity)
+            return prior !== undefined && prior.date === record.date &&
+              prior.status === record.status && prior.link.href === record.link.href
+          })) return unavailableBecause("The record list changed. Open the first page to check it again.")
+      records = walking.records
+    } else {
+      if (walking ? current.first !== walking.last + 1 || !current.previous ||
+          !sameCollectionPage(new URL(current.previous.href), walking.visit.from.url) : current.first !== 1) return insufficientRecords
+      records = walking ? [...walking.records, ...records] : records
+      if (new Set(records.map((record) => record.identity)).size !== records.length) return insufficientRecords
+      if (current.next) {
+        if (!(try showRecord(current, current.next, "Next page"))) return changed
+        scan = { visit: { from: start, href: current.next.href }, first: current.first, last: current.last,
+          total: current.total, records, account: current.account }
+        return { kind: "Link" as const, words: compareAllRecords }
+      }
+      if (records.length !== current.total) return insufficientRecords
+    }
+    const matching = records.filter((record) => record.status === comparableStatus(start.outcome.status))
+    const chosen = walking?.selected ?? matching[uniqueLatestRecordIndex(matching.map((record) => record.date))]
+    if (!chosen) return insufficientRecords
+    const onPage = current.records.find((record) => record.identity === chosen.identity)
+    if (!onPage) {
+      if (!current.previous || !(try showRecord(current, current.previous, "Previous page"))) return insufficientRecords
+      scan = { visit: { from: start, href: current.previous.href }, first: current.first, last: current.last,
+        total: current.total, records, selected: chosen, account: current.account }
+      return { kind: "Link" as const, words: compareEarlierRecords }
+    }
+    if (onPage.date !== chosen.date || onPage.status !== chosen.status || onPage.link.href !== chosen.link.href) return insufficientRecords
+    if (!(try showRecord(current, onPage.link, "Latest matching record"))) {
+      if (!(try stillHere())) return changed
+      scan = { visit: { from: start, href: start.url.href }, first: current.first, last: current.last,
+        total: current.total, records, selected: chosen, account: current.account }
+      return unavailableBecause("Make sure the record’s detail links are visible, then ask me to show the link again.")
+    }
+    const nonce = Effect.try(() => webView.window.crypto.randomUUID()) catch () => undefined
+    if (!nonce || !(try stillHere())) {
+      if (recordAttempt === attempt) page.clearGuide(start.id) catch () => undefined
+      return changed
+    }
+    const recorded = workspace.send({ type: "stageGuidedRecord", selection: {
+      ...start.step, browserRevision: start.browserRevision, loadVersion: start.loadVersion, documentId: current.documentId,
+      domRevision: current.domRevision, key: nonce, coverage: { observed: records.length, total: current.total }, matches: 1
+    } }, "Host") catch () => undefined
+    if (recorded === undefined || !(try stillHere())) {
+      page.clearGuide(start.id) catch () => undefined
+      return changed
+    }
+    selectedRecord = { visit: { from: start, href: onPage.link.href }, key: nonce, identity: onPage.identity, documentId: current.documentId, account: current.account }
+    return { kind: "Link" as const, words: "Open the highlighted record. Choose Resume, then Check page." }
+  }
   let triedMenus: { key: string; documentId: string; menus: PublicMenu[] } | undefined
   let active: { id: PageId; key: string; account: DecisionSession; alternateHref?: string; branch?: readonly PublicMenu[] } | undefined
   const changes = Stream.merge(Stream.as(workspace.changes, undefined), Stream.as(requests.changes, undefined))
   try fork.scoped Stream.runForEach(changes, effect () => {
+    const observed = try workspace.get()
+    const live = (try clear) ? recordContext(observed, try authority()) : undefined
+    if (scan && observed.browser.revision >= scan.visit.from.browserRevision && (!live || !directRecordVisit(scan.visit, live))) scan = undefined
+    if (selectedRecord && observed.browser.revision >= selectedRecord.visit.from.browserRevision &&
+        (!live || !directRecordVisit(selectedRecord.visit, live))) selectedRecord = undefined
+    const ring = recordRing
+    if (ring && observed.browser.revision >= ring.loadVersion && (!live || ring.scope !== live.scope || ring.loadVersion !== live.loadVersion)) {
+      recordRing = undefined
+      if (!live || live.id !== ring.id || live.loadVersion === ring.loadVersion)
+        page.clearGuide(ring.id) catch () => undefined
+    }
     const old = active
     if (old !== undefined && (try currentContext())?.key !== old.key && active === old) {
       active = undefined
@@ -205,8 +401,38 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       page.clearGuide(shown.id) catch () => undefined
     }
   })
-  try addFinalizer(() => active === undefined ? Effect.void : Effect.ignore(page.clearGuide(active.id)))
+  try addFinalizer(() => {
+    const id = active?.id ?? recordRing?.id
+    return id === undefined ? Effect.void : Effect.ignore(page.clearGuide(id))
+  })
   return {
+    checkLatestRecord: effect () => {
+      const picked = selectedRecord
+      const current = try currentRecord()
+      if (!(try recovery.canAccess(try workspace.get()))) return "Refused"
+      if (!picked || !current || !current.loaded || current.url.href !== picked.visit.href ||
+          !directRecordVisit(picked.visit, current) || current.loadVersion === picked.visit.from.loadVersion) return "NotFound"
+      const samePage = effect () => {
+        const live = try currentRecord()
+        return picked === selectedRecord && live?.scope === current.scope && live.loadVersion === current.loadVersion &&
+          live.browserRevision === current.browserRevision && live.url.href === current.url.href
+      }
+      const detail = try verifyRecordDetail(page, current.id, current.url, picked.identity, picked.account, current.outcome.collection, samePage())
+      if (detail === "PrivateForm") return detail
+      if (!detail || detail.documentId === picked.documentId) return "NotFound"
+      const w = try workspace.get()
+      if (!(try recovery.canAccess(w)) || !(try samePage())) return "Refused"
+      const receipt = guidedRecordReceipt(w)
+      const recorded = workspace.send({ type: "confirmGuidedRecord", recordCheck: {
+        report: { owner: current.step.owner, task: current.step.task, version: current.step.version,
+          deviceVersion: current.step.deviceVersion, browserRevision: current.browserRevision, step: current.outcome, ...receipt },
+        key: picked.key, tabId: current.step.tabId, documentId: detail.documentId, loadVersion: current.loadVersion
+      } }, "Host") catch () => undefined
+      if (recorded === undefined) return "Refused"
+      selectedRecord = undefined
+      try recovery.keepProgress()
+      return "Confirmed"
+    },
     confirmName: effect (correction) => {
       const shown = active
       if (!(try recovery.canAccess(try workspace.get()))) return false
@@ -244,7 +470,12 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       const previous = active
       active = undefined
       if (previous !== undefined) page.clearGuide(previous.id) catch () => undefined
-      if (!(try recovery.canAccess(try workspace.get()))) return changed
+      const w = try workspace.get()
+      if (!(try recovery.canAccess(w))) return changed
+      if (nextOutcome(w.plan).tag === "ReadLatestRecord") {
+        const record = try currentRecord()
+        return record?.loaded && mayGuideReadLink(try workspace.get()) ? (try pointRecord(record)) : changed
+      }
       const start = (try currentContext())
       if (start === undefined) return changed
       const account = decisionSession(native, fixture) catch () => null

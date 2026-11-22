@@ -48,8 +48,9 @@ type SendStatus = NoDraft | Composing | Reviewing | Sending | Sent | SendFailed 
 type DraftStorage = DraftUnstored | DraftSaving | DraftDeleting | DraftSaved | DraftStoreFailed
 type DraftContent = { to: str, cc: Set[str], bcc: Set[str], subject: str, body: str }
 type DraftSnapshot = { id: str, version: int, content: DraftContent, attachments: List[F::SavedFile], replyTo: str }
+type ComposeChoice = NoChoice | PickNewEmail | PickTo | PickCc | PickBcc | ChoosePhoto | ChooseFile
 type MessageTarget = { ref: str, revision: int }
-type Bill = { ref: str, origin: str, account: str, confirmed: bool }
+type Bill = { ref: str, sourceRef: str, origin: str, account: str, confirmed: bool }
 type Warning = { ref: str, generation: int, evidence: str }
 type LinkStatus = NoLink | LinkHeld | LinkReleased
 type LinkRequest = { ref: str, link: str, status: LinkStatus }
@@ -64,6 +65,7 @@ type Mailbox = {
   messages: List[I::MessageRecord], messageRefs: Set[str], assets: List[F::SavedFile],
   draft: DraftContent, autoSubject: str, replyTo: str,
   draftAttachments: List[F::SavedFile], draftId: str, draftVersion: int, retiredDrafts: str -> int, composeVisible: bool, draftStorage: DraftStorage, storedRevision: int, draftRequest: int,
+  choosing: ComposeChoice, ccOpen: bool, sentDrafts: Set[str],
   revision: int, approvedRevision: int, sendStatus: SendStatus,
   operationId: str, issuedSends: Set[str], sendEvidence: str, sendResultSaved: bool,
   outbox: List[QueuedSend], outboxSent: int, draftsTotal: int,
@@ -71,7 +73,7 @@ type Mailbox = {
 }
 pure val noRetiredDrafts: str -> int = Map()
 pure val emptyContent: DraftContent = { to: "", cc: Set(), bcc: Set(), subject: "", body: "" }
-pure val noBill: Bill = { ref: "", origin: "", account: "", confirmed: false }
+pure val noBill: Bill = { ref: "", sourceRef: "", origin: "", account: "", confirmed: false }
 pure val noWarning: Warning = { ref: "", generation: -1, evidence: "" }
 pure val noLink: LinkRequest = { ref: "", link: "", status: NoLink }
 pure val initial: Mailbox = {
@@ -82,6 +84,7 @@ pure val initial: Mailbox = {
   messages: List(), messageRefs: Set(), assets: List(),
   draft: emptyContent, autoSubject: "", replyTo: "",
   draftAttachments: List(), draftId: "", draftVersion: 0, retiredDrafts: Map(), composeVisible: false, draftStorage: DraftUnstored, storedRevision: -1, draftRequest: 0,
+  choosing: NoChoice, ccOpen: false, sentDrafts: Set(),
   revision: 0, approvedRevision: -1, sendStatus: NoDraft,
   operationId: "", issuedSends: Set(), sendEvidence: "", sendResultSaved: false,
   outbox: List(), outboxSent: 0, draftsTotal: 0,
@@ -410,14 +413,17 @@ The Drafts row in the folder list shows how many drafts the account has
 saved (`prototype/Grace Prototype.html:2030–2038`), before she ever opens Drafts.
 The mailbox keeps that number as the provider reports it: the connector
 reports the account's draft count with each listing, and again after a draft
-is saved or deleted, for the mailbox's current read generation; a count from
-an earlier generation is refused, and the count is never negative. Reporting
-it changes nothing else in the mailbox.
+is saved, deleted or removed after its email went, for the mailbox's current
+read generation; a count from an earlier generation is refused, and the
+connector then counts again for the generation that replaced it, so opening
+an email while a count is on its way never leaves an old number. The count is
+never negative. Reporting it changes nothing else in the mailbox.
 
 ```quint
 pure def canCountDrafts(m: Mailbox, generation: int, total: int, by: MailActor): bool =
   by == MailConnector and readable(m) and generation == m.generation and total >= 0
 pure def countDrafts(m: Mailbox, generation: int, total: int, by: MailActor): Mailbox = { ...m, draftsTotal: total }
+pure def alwaysDraftCountIsNonnegative(m: Mailbox): bool = m.draftsTotal >= 0
 pure def lawStaleDraftCountIsRefused(m: Mailbox, generation: int, total: int, by: MailActor): bool =
   (generation != m.generation or total < 0) implies not(canCountDrafts(m, generation, total, by))
 pure def sometimesDraftsCountedElsewhere(m: Mailbox): bool = m.draftsTotal > 0 and m.folder != I::DraftsFolder
@@ -532,25 +538,27 @@ choice; a different source, account, invoice, origin or read generation needs a
 fresh displayed confirmation. The host authenticates the complete person's
 choice; planner or connector identity cannot supply it.
 
-The bill belongs to the selected message: its source is always `messageRef`,
-so it holds no separate source reference. A message Grace flags as a scam never
-becomes a bill source (next rule).
+The connector names the message it read. Grace keeps that reference with the
+bill and checks it against the current selection before confirmation and
+handoff. An older stored candidate without a verified source is cleared
+without disturbing the mailbox or its outgoing sends. A message Grace flags
+as a scam never becomes a bill source (next rule).
 
 ```quint
 type BillSelection = { source: I::MessageIdentity, generation: int, billRef: str, origin: str, account: str }
 pure def billSelection(m: Mailbox): BillSelection = {
-  source: messageIdentity(m, m.messageRef), generation: m.generation,
+  source: messageIdentity(m, m.bill.sourceRef), generation: m.generation,
   billRef: m.bill.ref, origin: m.bill.origin, account: m.bill.account
 }
-pure def canReceiveBill(m: Mailbox, generation: int, billRef: str, origin: str, billAccount: str, verified: bool, by: MailActor): bool =
+pure def canReceiveBill(m: Mailbox, generation: int, ref: str, billRef: str, origin: str, billAccount: str, verified: bool, by: MailActor): bool =
   by == MailConnector and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and selectedMessageIsCurrent(m) and m.readStatus == ReadIdle and
-  generation == m.generation and m.messageRef != "" and billRef != "" and origin != "" and billAccount != "" and verified and
+  generation == m.generation and ref == m.messageRef and ref != "" and billRef != "" and origin != "" and billAccount != "" and verified and
   m.warning.evidence == ""
-pure def receiveBill(m: Mailbox, generation: int, billRef: str, origin: str, billAccount: str, verified: bool, by: MailActor): Mailbox =
-  { ...m, bill: { ref: billRef, origin: origin, account: billAccount, confirmed: false } }
+pure def receiveBill(m: Mailbox, generation: int, ref: str, billRef: str, origin: str, billAccount: str, verified: bool, by: MailActor): Mailbox =
+  { ...m, bill: { ref: billRef, sourceRef: ref, origin: origin, account: billAccount, confirmed: false } }
 pure def canConfirmBill(m: Mailbox, selection: BillSelection, confirmed: bool, by: MailActor): bool =
   by == MailUser and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and selectedMessageIsCurrent(m) and m.readStatus == ReadIdle and
-  m.bill.ref != "" and confirmed and selection == billSelection(m)
+  m.bill.ref != "" and m.bill.sourceRef == m.messageRef and confirmed and selection == billSelection(m)
 pure def confirmBill(m: Mailbox, selection: BillSelection, confirmed: bool, by: MailActor): Mailbox =
   { ...m, bill: { ...m.bill, confirmed: true } }
 pure def lawStaleBillSelectionCannotConfirm(m: Mailbox, selection: BillSelection, confirmed: bool, by: MailActor): bool =
@@ -559,9 +567,9 @@ pure def lawConfirmationKeepsDisplayedBill(m: Mailbox, selection: BillSelection,
   canConfirmBill(m, selection, confirmed, by) implies
     billSelection(confirmBill(m, selection, confirmed, by)) == selection
 pure def billReady(m: Mailbox): bool =
-  m.bill.confirmed and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and m.readStatus == ReadIdle and selectedMessageIsCurrent(m)
+  m.bill.confirmed and m.bill.sourceRef == m.messageRef and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and m.readStatus == ReadIdle and selectedMessageIsCurrent(m)
 pure def alwaysBillProvenance(m: Mailbox): bool =
-  (m.bill.ref != "" implies (m.messageRef != "" and m.bill.origin != "" and m.bill.account != "")) and
+  (m.bill.ref != "" implies (m.messageRef != "" and m.bill.sourceRef == m.messageRef and m.bill.origin != "" and m.bill.account != "")) and
   (m.bill.confirmed implies m.bill.ref != "")
 pure def sometimesBillReady(m: Mailbox): bool = billReady(m)
 ```
@@ -649,16 +657,17 @@ pure def replyable(m: Mailbox): bool =
 pure def openComposer(replyTo: str, m: Mailbox): Mailbox =
   { ...m, sendStatus: Composing, draft: emptyContent, autoSubject: "",
     draftAttachments: List(), draftId: "", draftVersion: 0, composeVisible: true, draftStorage: DraftUnstored, storedRevision: -1,
-    replyTo: replyTo, revision: m.revision + 1,
+    replyTo: replyTo, revision: m.revision + 1, choosing: NoChoice, ccOpen: false,
     approvedRevision: -1, operationId: "", sendEvidence: "", sendResultSaved: false }
 pure def canStartDraft(m: Mailbox, reply: bool, by: MailActor): bool =
   by == MailUser and not(reply) and composerFree(m)
-pure def startDraft(m: Mailbox, reply: bool, by: MailActor): Mailbox = openComposer("", m)
+pure def startDraft(m: Mailbox, reply: bool, by: MailActor): Mailbox = { ...openComposer("", m), choosing: PickNewEmail }
 pure def canEditDraft(m: Mailbox, by: MailActor): bool =
   (by == MailUser) and not(terminalUnsaved(m)) and not(draftStoreBusy(m)) and m.composeVisible and
   (m.sendStatus == Composing or m.sendStatus == Reviewing or m.sendStatus == SendFailed)
 pure def editDraft(m: Mailbox, content: DraftContent, by: MailActor): Mailbox =
   { ...m, draft: content,
+    choosing: if (pickingRecipient(m.choosing) and not(sameRecipients(content, m.draft))) NoChoice else m.choosing,
     draftStorage: DraftUnstored, draftVersion: m.draftVersion + 1, sendResultSaved: false,
     revision: m.revision + 1, approvedRevision: -1, sendStatus: Composing }
 pure def canReviewDraft(m: Mailbox, by: MailActor): bool =
@@ -680,13 +689,53 @@ pure def discardDraft(m: Mailbox, confirmed: bool, by: MailActor): Mailbox =
     replyTo: if (m.draftId == "") "" else m.replyTo,
     draftAttachments: if (m.draftId == "") List() else m.draftAttachments,
     sendStatus: if (m.draftId == "") NoDraft else Composing,
-    composeVisible: false, draftStorage: if (m.draftId == "") DraftUnstored else DraftDeleting,
+    composeVisible: false, choosing: NoChoice, ccOpen: false, draftStorage: if (m.draftId == "") DraftUnstored else DraftDeleting,
     storedRevision: m.revision, draftRequest: m.draftRequest + 1, approvedRevision: -1, operationId: "", sendEvidence: "", sendResultSaved: false }
 pure def draftStoreBusy(m: Mailbox): bool = m.draftStorage == DraftSaving or m.draftStorage == DraftDeleting
 pure def currentDraft(m: Mailbox): DraftSnapshot = {
   id: m.draftId, version: m.draftVersion, content: m.draft,
   attachments: m.draftAttachments, replyTo: m.replyTo
 }
+```
+
+### The composer remembers who she is choosing for, Cc and Bcc, and where she attaches from
+
+What the composer is asking her is the mailbox's, so Grace is told it too
+(`prototype/Grace Prototype.html:2228`): the recipient picker and which row
+it fills, whether she tapped Add next to "Cc/Bcc", and whether she is
+choosing a photo or a file to attach (lines 2016–2021, 2329–2340). Write,
+Forward (Grace's too) and Share from Files open the new email at its
+recipient picker (`PickNewEmail`). Otherwise only the person opens or closes
+them, only while she can edit the draft: + next to To, Cc or Bcc opens the
+picker for that row, and Back closes it. Choosing or giving a recipient
+closes the picker, and attaching closes the photo or file chooser. Every way
+the composer closes forgets them, so a draft opened again starts at the
+composer itself. The words typed into the picker's search are the screen's
+own.
+
+```quint
+pure def pickingRecipient(choice: ComposeChoice): bool =
+  choice == PickNewEmail or choice == PickTo or choice == PickCc or choice == PickBcc
+pure def choosingAttachment(choice: ComposeChoice): bool = choice == ChoosePhoto or choice == ChooseFile
+pure def sameRecipients(one: DraftContent, other: DraftContent): bool =
+  one.to == other.to and one.cc.subseteq(other.cc) and other.cc.subseteq(one.cc) and
+    one.bcc.subseteq(other.bcc) and other.bcc.subseteq(one.bcc)
+pure def canOpenChooser(m: Mailbox, choice: ComposeChoice, by: MailActor): bool =
+  canEditDraft(m, by) and choice != NoChoice and choice != PickNewEmail and m.choosing == NoChoice
+pure def openChooser(m: Mailbox, choice: ComposeChoice, by: MailActor): Mailbox =
+  { ...m, choosing: choice, ccOpen: m.ccOpen or choice == PickCc or choice == PickBcc }
+pure def canCloseChooser(m: Mailbox, by: MailActor): bool = by == MailUser and m.composeVisible and m.choosing != NoChoice
+pure def closeChooser(m: Mailbox, by: MailActor): Mailbox = { ...m, choosing: NoChoice }
+pure def canShowCopies(m: Mailbox, by: MailActor): bool = canEditDraft(m, by) and not(m.ccOpen)
+pure def showCopies(m: Mailbox, by: MailActor): Mailbox = { ...m, ccOpen: true }
+pure def alwaysChoosingNeedsComposer(m: Mailbox): bool =
+  not(m.composeVisible) implies (m.choosing == NoChoice and not(m.ccOpen))
+pure def stepOnlyThePersonOpensAChooser(before: Mailbox, via: str, after: Mailbox): bool =
+  (after.choosing != NoChoice and after.choosing != before.choosing) implies
+    (via == "openChooser" or ((via == "startDraft" or via == "forwardMessage" or via == "forwardAttachment" or via == "assistMail") and
+      after.choosing == PickNewEmail))
+pure def sometimesChoosingWhoToWriteTo(m: Mailbox): bool = m.composeVisible and m.choosing == PickNewEmail
+pure def sometimesChoosingAFile(m: Mailbox): bool = m.composeVisible and m.choosing == ChooseFile
 ```
 
 ### A reply is addressed to the selected message's verified reply-to
@@ -798,12 +847,15 @@ pure def canSendResult(m: Mailbox, operationId: str, resultStatus: SendStatus, e
 pure def sendResult(m: Mailbox, operationId: str, resultStatus: SendStatus, evidence: str, persisted: bool, by: MailActor): Mailbox =
   { ...m, sendStatus: resultStatus, sendResultSaved: resultStatus != SendUnknown and persisted,
     retiredDrafts: if (resultStatus == Sent and persisted) retireCurrentDraft(m) else m.retiredDrafts, composeVisible: if (resultStatus == Sent) false else m.composeVisible,
+    sentDrafts: if (resultStatus == Sent and persisted) sentDraft(m) else m.sentDrafts,
+    choosing: if (resultStatus == Sent) NoChoice else m.choosing, ccOpen: if (resultStatus == Sent) false else m.ccOpen,
     sendEvidence: if (resultStatus == SendUnknown) "" else evidence }
 pure def canPersistSendResult(m: Mailbox, operationId: str, by: MailActor): bool =
   by == MailHost and terminalUnsaved(m) and operationId == m.operationId
 pure def persistSendResult(m: Mailbox, operationId: str, persisted: bool, by: MailActor): Mailbox =
   { ...m, sendResultSaved: persisted,
-    retiredDrafts: if (persisted and m.sendStatus == Sent) retireCurrentDraft(m) else m.retiredDrafts }
+    retiredDrafts: if (persisted and m.sendStatus == Sent) retireCurrentDraft(m) else m.retiredDrafts,
+    sentDrafts: if (persisted and m.sendStatus == Sent) sentDraft(m) else m.sentDrafts }
 pure def alwaysResultPersistenceHasTerminal(m: Mailbox): bool =
   m.sendResultSaved implies (m.sendStatus == Sent or m.sendStatus == SendFailed)
 pure def sometimesResultSaveFailed(m: Mailbox): bool = terminalUnsaved(m)
@@ -881,7 +933,7 @@ pure def canQueueSend(m: Mailbox, operationId: str, recipientValid: bool, persis
 pure def queueSend(m: Mailbox, operationId: str, recipientValid: bool, persisted: bool, reachable: bool, by: MailActor): Mailbox =
   { ...m, outbox: m.outbox.append({ operationId: operationId, snapshot: currentDraft(m), status: Waiting, evidence: "" }),
     issuedSends: m.issuedSends.union(Set(operationId)), retiredDrafts: retireCurrentDraft(m),
-    draft: emptyContent, autoSubject: "", replyTo: "", draftAttachments: List(), draftId: "", draftVersion: 0,
+    choosing: NoChoice, ccOpen: false, draft: emptyContent, autoSubject: "", replyTo: "", draftAttachments: List(), draftId: "", draftVersion: 0,
     composeVisible: false, sendStatus: NoDraft, approvedRevision: -1, draftStorage: DraftUnstored, storedRevision: -1,
     operationId: "", sendEvidence: "", sendResultSaved: false }
 pure def canDispatchQueued(m: Mailbox, operationId: str, reachable: bool, by: MailActor): bool =
@@ -894,7 +946,9 @@ pure def canQueuedResult(m: Mailbox, operationId: str, resultStatus: SendStatus,
   (queuedIn(m.outbox, operationId).status == Dispatching or queuedIn(m.outbox, operationId).status == DispatchUnknown) and
   (resultStatus == SendUnknown or ((resultStatus == Sent or resultStatus == SendFailed) and evidence != ""))
 pure def queuedResult(m: Mailbox, operationId: str, resultStatus: SendStatus, evidence: str, persisted: bool, by: MailActor): Mailbox =
-  if (resultStatus == Sent and persisted) { ...m, outbox: withoutQueued(m.outbox, operationId), outboxSent: m.outboxSent + 1 }
+  val sentId = queuedIn(m.outbox, operationId).snapshot.id
+  if (resultStatus == Sent and persisted) { ...m, outbox: withoutQueued(m.outbox, operationId), outboxSent: m.outboxSent + 1,
+    sentDrafts: if (sentId == "") m.sentDrafts else m.sentDrafts.union(Set(sentId)) }
   else if (resultStatus == SendFailed and persisted) { ...m, outbox: withStatus(m.outbox, operationId, DispatchFailed, evidence) }
   else { ...m, outbox: withStatus(m.outbox, operationId, DispatchUnknown, "") }
 pure def canReopenQueued(m: Mailbox, operationId: str, by: MailActor): bool =
@@ -975,7 +1029,7 @@ pure def canPreserveDraft(m: Mailbox, draftId: str, by: MailActor): bool =
   (m.draftId == "" or m.draftId == draftId)
 pure def preserveDraft(m: Mailbox, draftId: str, by: MailActor): Mailbox =
   { ...m, draftId: draftId, draftStorage: DraftSaving, storedRevision: m.revision, draftRequest: m.draftRequest + 1,
-    composeVisible: false, sendStatus: Composing, approvedRevision: -1, sendResultSaved: false }
+    composeVisible: false, choosing: NoChoice, ccOpen: false, sendStatus: Composing, approvedRevision: -1, sendResultSaved: false }
 pure def canDraftStoreResult(m: Mailbox, draftId: str, revision: int, request: int, by: MailActor): bool =
   by == MailHost and draftStoreBusy(m) and draftId == m.draftId and revision == m.storedRevision and request == m.draftRequest
 pure def draftStoreResult(m: Mailbox, draftId: str, revision: int, request: int, persisted: bool, by: MailActor): Mailbox =
@@ -1037,7 +1091,7 @@ pure def worthPreserving(m: Mailbox): bool =
 pure def canCloseEmptyComposer(m: Mailbox, by: MailActor): bool = canEditDraft(m, by) and not(worthPreserving(m))
 pure def closeEmptyComposer(m: Mailbox, by: MailActor): Mailbox =
   { ...m, draft: emptyContent, autoSubject: "", replyTo: "", draftAttachments: List(), sendStatus: NoDraft,
-    composeVisible: false, draftStorage: DraftUnstored, approvedRevision: -1, operationId: "", sendEvidence: "", sendResultSaved: false }
+    composeVisible: false, choosing: NoChoice, ccOpen: false, draftStorage: DraftUnstored, approvedRevision: -1, operationId: "", sendEvidence: "", sendResultSaved: false }
 pure def stepWorthyComposerIsNotDropped(before: Mailbox, via: str, after: Mailbox): bool =
   (before.sendStatus != NoDraft and after.sendStatus == NoDraft and worthPreserving(before)) implies
     (via == "discardDraft" or via == "queueSend" or (via == "draftStoreResult" and before.draftStorage == DraftDeleting))
@@ -1124,6 +1178,32 @@ pure def lawRetirementPreservesValidVersion(m: Mailbox, draftId: str): bool =
 pure def sometimesDraftRetired(m: Mailbox): bool = m.draftId != "" and retiredVersion(m, m.draftId) >= 0
 ```
 
+### Sending a saved draft takes it out of Drafts
+
+A draft she saved, or reopened from Drafts, leaves the provider's Drafts once
+its email goes, as in the prototype (`prototype/Grace Prototype.html:2342`):
+only once the provider's Sent is durably recorded, for an email sent at once
+or one that waited in Outbox, is its draft ID put in `sentDrafts`; sending,
+waiting in Outbox, uncertainty or failure never removes it. While the tablet is online the host
+asks the provider to delete each one, asking again after a failure, until it
+is deleted or the provider says it is already gone, then forgets it
+(`forgetSentDraft`), and Drafts is counted again. An expired sign-in keeps it until she signs in again. A failed Outbox
+email reopened in the composer was never sent, so its draft is still there to
+save again.
+
+```quint
+pure def sentDraft(m: Mailbox): Set[str] = if (m.draftId == "") m.sentDrafts else m.sentDrafts.union(Set(m.draftId))
+pure def canForgetSentDraft(m: Mailbox, draftId: str, by: MailActor): bool = by == MailHost and m.sentDrafts.contains(draftId)
+pure def forgetSentDraft(m: Mailbox, draftId: str, by: MailActor): Mailbox = { ...m, sentDrafts: m.sentDrafts.exclude(Set(draftId)) }
+pure def stepDraftIsRemovedOnlyOnceItsEmailWent(before: Mailbox, via: str, after: Mailbox): bool =
+  not(after.sentDrafts.subseteq(before.sentDrafts)) implies
+    (((via == "sendResult" or via == "persistSendResult") and after.sendStatus == Sent and after.sendResultSaved) or
+      (via == "queuedResult" and after.outboxSent > before.outboxSent))
+pure def alwaysSentDraftsHaveMailbox(m: Mailbox): bool =
+  m.sentDrafts.size() > 0 implies (m.owner != "" and m.provider != "" and m.account != "" and not(m.sentDrafts.contains("")))
+pure def sometimesSentDraftAwaitsRemoval(m: Mailbox): bool = m.sentDrafts.size() > 0
+```
+
 ### Attachment actions preserve exact asset and message identity
 
 The gallery shows the selected photo and moves only within this message's
@@ -1138,6 +1218,12 @@ and a trusted host grant for this owner; no sample photo is injected. Canceling
 any picker leaves the draft unchanged. Its result must match the exact composer
 revision captured at launch, so a delayed result cannot attach to a later draft. Forwarding copies sanitized selected
 content and attachments into a new editable draft and never sends it.
+
+When adding a file and preparing the message for delivery, the connector
+checks which formats and filenames the provider accepts. The draft can
+carry up to ten attachments with different filenames, ignoring case.
+An older draft with an incompatible attachment stays editable. Its
+attachments are never renamed or converted during delivery.
 
 Saving is dispatched to [Files](./files.md). `mayExportAttachments`
 is the source authorization check before the host constructs its `FileImport`;
@@ -1183,6 +1269,7 @@ pure def canAttachAsset(m: Mailbox, owner: str, asset: F::SavedFile, draftRevisi
   canEditDraft(m, MailUser) and m.draftAttachments.every(a => a.id != asset.id and not(F::sameSource(a, asset)))
 pure def attachAsset(m: Mailbox, owner: str, asset: F::SavedFile, draftRevision: int, selected: bool, by: MailActor): Mailbox =
   { ...m, draftAttachments: m.draftAttachments.append(asset), draftVersion: m.draftVersion + 1, revision: m.revision + 1,
+    choosing: if (choosingAttachment(m.choosing)) NoChoice else m.choosing,
     approvedRevision: -1, sendStatus: Composing, draftStorage: DraftUnstored, sendResultSaved: false }
 pure def lawStalePickerCannotAttach(m: Mailbox, owner: str, asset: F::SavedFile, draftRevision: int, selected: bool, by: MailActor): bool =
   draftRevision != m.revision implies not(canAttachAsset(m, owner, asset, draftRevision, selected, by))
@@ -1220,7 +1307,8 @@ pure def validMailbox(m: Mailbox): bool =
   alwaysSendHasRecipient(m) and alwaysSendEvidence(m) and alwaysApprovalIsCurrent(m) and
   alwaysDraftHasAccount(m) and alwaysDraftStoreHasRevision(m) and alwaysRetirementHasMailbox(m) and
   alwaysDraftVersions(m) and alwaysEditableDraftIsNotRetired(m) and alwaysDraftAssetsAreValid(m) and
-  alwaysMessageAssetsAreBound(m) and alwaysQueuedSendsAreIssued(m)
+  alwaysMessageAssetsAreBound(m) and alwaysQueuedSendsAreIssued(m) and alwaysChoosingNeedsComposer(m) and
+  alwaysSentDraftsHaveMailbox(m)
 ```
 
 ### Simulation samples cover message and attachment lifecycles
@@ -1280,6 +1368,7 @@ pure val billRefValues = Set("billA")
 pure val originValues = Set("https://biller.example")
 pure val billAccountValues = Set("billerAccount")
 pure val draftIdValues = Set("draftA")
+pure val choiceValues = Set(PickTo, PickCc, PickBcc, ChoosePhoto, ChooseFile, NoChoice, PickNewEmail)
 pure val generationValues = Set(1, 3, 4, 5)
 pure val revisionValues = Set(1, 2, 3)
 pure val requestValues = Set(1, 2)

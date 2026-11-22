@@ -1,9 +1,9 @@
-// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/email.md, "A scam warning needs current evidence and holds that message's links"
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/email.md, "A scam warning needs current evidence and holds that message's links"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"
 import type { WebsiteTask } from "./websiteTask.vibe"
 import { Digest } from "effect/crypto"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import type { OtherReport, Provider, SheetReport, Use } from "../gen/app__accounts.effect.vibe"
-import { approveDelete, approveSave, beginEdit, confirmDelete, create, edit, initial as noEntry, requestDelete, save, validDetails, validIdentity, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
+import { approveDelete, approveSave, beginEdit, confirmDelete, create, edit, initial as noEntry, requestDelete, save, validDetails, validIdentity, type Calendar, type EntryDetails, type Recurrence } from "../gen/app__calendar.effect.vibe"
 import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calendarView.effect.vibe"
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
@@ -67,7 +67,7 @@ export type MailConnection = {
   readonly change: (op: ChangeOp) => ChangeReceipt!NeedsSignIn
   readonly saveDraft: (snapshot: DraftSnapshot) => DraftStored!NeedsSignIn
   readonly deleteDraft: (draftId: string) => boolean!NeedsSignIn
-  readonly send: (operationId: string, snapshot: DraftSnapshot) => SendOutcome!NeedsSignIn
+  readonly send: (operationId: string, snapshot: DraftSnapshot, held: ReadonlyMap<string, Attached>) => SendOutcome!NeedsSignIn
   readonly lookup: (operationId: string) => SendOutcome!NeedsSignIn
 }
 
@@ -146,8 +146,23 @@ const served: Record<string, { readonly kind: "Photo" | "Pdf"; readonly name: Re
   "image/webp": { kind: "Photo", name: /\.webp$/i, magic: "UklGR" }
 }
 const attachmentLimit = 5 * 1024 * 1024
+const maxMailParts = 10
+const maxMailMimeBytes = 8 * 1024 * 1024
 const byteLength = (base64: string) => Math.floor(base64.length * 3 / 4) - (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0)
 const bare = (address: string) => /<([^>]+)>/.exec(address)?.[1] ?? address.trim()
+
+export function sendableAttachments(files: readonly SavedFile[]) {
+  return files.length <= maxMailParts &&
+    new Set(files.map((file) => file.name.toLowerCase())).size === files.length &&
+    files.every(({ name, kind }) => name.length <= 120 && Array.from(name).every((char) =>
+      char !== "/" && char !== "\\" && char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127) &&
+      Object.values(served).some((format) => format.kind === kind && format.name.test(name)))
+}
+
+export function sendableAttachment(file: SavedFile, content: Attached) {
+  const format = served[content.mimeType]
+  return format?.kind === file.kind && format.name.test(file.name) && content.data.startsWith(format.magic)
+}
 
 function asset(account: AccountRef, m: Message, savedAt: number, a: Attachment): SavedFile[] {
   const type = served[a.mimeType]
@@ -204,8 +219,37 @@ function participantOf(e: ProviderEvent) {
   return other?.displayName ?? other?.email ?? ""
 }
 
-function details(e: ProviderEvent, startAt: number, endAt: number, timezone: string, known: EntryDetails | undefined): EntryDetails {
-  const kept = known ?? { participant: participantOf(e), seriesId: "", recurrence: "Once" as const, reminderEnabled: false, leadTime: 0, important: false }
+type Reminder = { readonly method: string; readonly minutes: number }
+const weekdays = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+
+function repeatsOf(zones: ReadonlySet<string>, lines: readonly string[], startAt: number, timeZone: string): Recurrence {
+  const rule = lines.length === 1 && zones.has(timeZone) ? /^RRULE:(.+)$/.exec(lines[0]) : null
+  if (rule === null) return "Once"
+  const parts = new Map(rule[1].split(";").map((part) => part.split("=") as [string, string]))
+  const date = dateIn(startAt, timeZone)
+  const allowed: Record<string, string | undefined> = {
+    FREQ: parts.get("FREQ"), INTERVAL: "1", WKST: parts.get("WKST"),
+    BYDAY: parts.get("FREQ") === "WEEKLY" ? weekdays[new Date(`${date}T00:00:00Z`).getUTCDay()] : undefined,
+    BYMONTHDAY: parts.get("FREQ") === "MONTHLY" ? String(Number(date.slice(8))) : undefined
+  }
+  if (![...parts].every(([key, value]) => value !== undefined && allowed[key] === value)) return "Once"
+  return parts.get("FREQ") === "WEEKLY" ? "Weekly" : parts.get("FREQ") === "MONTHLY" ? "Monthly" : "Once"
+}
+
+function reminderOf(e: ProviderEvent, defaults: readonly Reminder[]) {
+  const set = e.reminders === undefined ? [] : e.reminders.useDefault ? defaults : e.reminders.overrides ?? []
+  const lead = Math.max(-1, ...set.filter((r) => r.method === "popup" && r.minutes >= 0).map((r) => r.minutes))
+  return lead < 0 ? { reminderEnabled: false, leadTime: 0 } : { reminderEnabled: true, leadTime: lead * 60_000 }
+}
+
+type Kept = Pick<EntryDetails, "participant" | "seriesId" | "recurrence" | "reminderEnabled" | "leadTime" | "important">
+
+function providerFields(zones: ReadonlySet<string>, e: ProviderEvent, startAt: number, timezone: string, defaults: readonly Reminder[]): Kept {
+  const recurrence = repeatsOf(zones, e.recurrence ?? [], startAt, timezone)
+  return { participant: participantOf(e), seriesId: recurrence === "Once" ? "" : e.externalId, recurrence, ...reminderOf(e, defaults), important: false }
+}
+
+function details(e: ProviderEvent, startAt: number, endAt: number, timezone: string, kept: Kept): EntryDetails {
   return {
     title: e.title, location: e.location, notes: e.description, startAt, endAt, timezone, allDay: e.isAllDay,
     participant: kept.participant, seriesId: kept.seriesId, recurrence: kept.recurrence, reminderEnabled: kept.reminderEnabled, leadTime: kept.leadTime, important: kept.important
@@ -230,7 +274,7 @@ function refreshed(known: Calendar | undefined, view: CalendarView, e: ProviderE
 
 const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(known, "CalendarUser"), "CalendarUser"), true, "CalendarStore")
 
-function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[], bindings: ReadonlyMap<string, Calendar>, waiting: ReadonlySet<Calendar>): Published[] {
+function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[], defaults: readonly Reminder[], bindings: ReadonlyMap<string, Calendar>, waiting: ReadonlySet<Calendar>): Published[] {
   const own = view.entries.filter((c) => c.identity.owner === view.owner && c.identity.calendarId === view.calendarId)
   const listed = (c: Calendar) => events.some((e) => e.externalId === c.identity.occurrenceId)
   const kept = new Set(waiting)
@@ -240,7 +284,7 @@ function published(zones: ReadonlySet<string>, view: CalendarView, events: reado
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
     const created = known === undefined ? bindings.get(e.externalId) : undefined
     if (created?.phase === "Editing") return []
-    const entry = details(e, startAt, endAt, timezone, (known ?? created)?.committed)
+    const entry = details(e, startAt, endAt, timezone, (known ?? created)?.committed ?? providerFields(zones, e, startAt, timezone, defaults))
     const incoming = validDetails(entry) ? refreshed(known, view, e, entry, created) : undefined
     if (incoming === undefined && created !== undefined) kept.add(created)
     return incoming === undefined ? [] : [{ incoming, seriesVersion: seriesVersionOf(view, entry.seriesId), scheduleVerified: verified }]
@@ -450,13 +494,14 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
   effect function readEvents(view: CalendarView, from: number, until: number, grantId: string) {
     const params = { calendarId: view.calendarId, timeZone: view.timezone, timeMin: iso(from), timeMax: iso(until), grantId }
     if (view.owner !== account.address) throw new ProviderRefused({ status: 409 })
-    return (try fetched(get(`${at}/feed`, params), Feed)).events.filter((e) => e.calendarId === view.calendarId)
+    const { events, defaultReminders } = try fetched(get(`${at}/feed`, params), Feed)
+    return { events: events.filter((e) => e.calendarId === view.calendarId), defaults: defaultReminders ?? [] }
   }
 
   return {
     feed: (view) => Stream.unwrap(effect {
       const grantId = try grantOf(account)
-      const feed = try readEvents(view, view.window.fromTime, view.window.untilTime, grantId)
+      const { events: feed, defaults } = try readEvents(view, view.window.fromTime, view.window.untilTime, grantId)
       const bindings = new Map<string, Calendar>()
       const waiting = new Set<Calendar>()
       for (const c of view.entries) {
@@ -470,12 +515,12 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
           if (!feed.some((e) => e.externalId === bound.providerId)) waiting.add(c)
         } else if (bound._tag === "Pending" || (c.phase === "Saved" && legacyCalendarDraft.test(c.identity.occurrenceId))) waiting.add(c)
       }
-      return Stream.fromIterable(published(zones, view, feed, bindings, waiting))
+      return Stream.fromIterable(published(zones, view, feed, defaults, bindings, waiting))
     }),
     isGuidedCreateFenced: (identity, task) => creates.isFenced(account, identity, task),
     fenceGuidedCreate: (identity, task) => creates.fence(account, identity, task),
     verifySaved: effect (view, occurrence, expected) => {
-      const feed = try readEvents(view, expected.startAt, expected.endAt, try grantOf(account))
+      const { events: feed } = try readEvents(view, expected.startAt, expected.endAt, try grantOf(account))
       const saved = feed.find((row) => row.externalId === occurrence)
       if (saved === undefined) return undefined
       const timezone = saved.timezone ?? view.timezone
@@ -549,45 +594,35 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
 
   function mail(account: AccountRef): MailConnection {
     const at = routes[account.provider].mail
-    const asked = effect (path: string, params: Record<string, string>) => try get(`${at}${path}`, { ...params, grantId: try grantOf(account) })
+    const asked = effect (path: string, params: Record<string, string>, grantId?: string) => try get(`${at}${path}`, { ...params, grantId: grantId ?? (try grantOf(account)) })
     const posted = effect (path: string, body: object) => try post(`${at}${path}`, { ...body, grantId: try grantOf(account) })
     const removed = effect (path: string) =>
       HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(`${link.url}${path}`), { grantId: try grantOf(account) })
     const requestOf = (purpose: string) => requestIdOf(`${account.provider}:${account.address}:${purpose}`)
 
-    effect function read(ref: string) {
-      return try fetched(asked("/read", { messageId: ref }), ReadResponse)
+    effect function read(ref: string, grantId?: string) {
+      return try fetched(asked("/read", { messageId: ref }, grantId), ReadResponse)
     }
 
-    function draftPage(grantId: string, pageToken?: string) {
-      return fetched(get(`${at}/inbox-v1/drafts`, pageToken === undefined ? { grantId } : { grantId, pageToken }), DraftList)
-    }
-
-    effect function draftOf(ref: string, grantId: string, pageToken?: string): string!ConnectorFailure {
-      const page = try draftPage(grantId, pageToken)
-      const found = page.drafts.find((d) => d.messageId === ref)
-      if (found !== undefined) return found.draftId
-      if (page.nextPageToken === null) throw new ProviderRefused({ status: 404 })
-      return try draftOf(ref, grantId, page.nextPageToken)
+    function drafts(grantId: string) {
+      const cursors = new Set<string>()
+      return Stream.paginate(undefined, effect (pageToken: string | undefined) => {
+        const page = try fetched(asked("/inbox-v1/drafts", pageToken === undefined ? {} : { pageToken }, grantId), DraftList)
+        if (page.nextPageToken !== null) {
+          if (cursors.has(page.nextPageToken)) throw new ProviderRefused({ status: 502 })
+          cursors.add(page.nextPageToken)
+        }
+        return [page.drafts, Option.fromNullishOr(page.nextPageToken)] as const
+      })
     }
 
     effect function draftCount() {
       const grantId = try grantOf(account)
-      const drafts = new Set<string>()
-      const cursors = new Set<string>()
-      let pageToken: string | undefined
-      while (true) {
-        const page = draftPage(grantId, pageToken) catch effect (e) => match (e) {
-          when ProviderRefused: undefined;
-          default: throw e;
-        }
-        if (page === undefined) return undefined
-        for (const draft of page.drafts) drafts.add(draft.draftId)
-        if (page.nextPageToken === null) return (try grantOf(account)) === grantId ? drafts.size : undefined
-        if (cursors.has(page.nextPageToken)) return undefined
-        pageToken = page.nextPageToken
-        cursors.add(pageToken)
+      const ids = Stream.runFold(drafts(grantId), () => new Set<string>(), (seen, d) => seen.add(d.draftId)) catch effect (e) => match (e) {
+        when ProviderRefused: undefined;
+        default: throw e;
       }
+      return ids !== undefined && (try grantOf(account)) === grantId ? ids.size : undefined
     }
 
     effect function contacts(query: string) {
@@ -599,14 +634,29 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       return receipt.state !== "prepared" ? receipt : (try fetched(posted(`/inbox-v1/operations/${requestId}/dispatch`, { reviewDigest: receipt.reviewDigest, proposal }), Operation)).receipt
     }
 
-    effect function outgoing({ content: c, replyTo, attachments }: DraftSnapshot) {
-      const recipients = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body }
-      const sources = [...new Set(attachments.map((f) => f.container))]
-      if (attachments.length > 0) {
-        if (sources.length !== 1 || attachments.some((f) => f.origin !== account.provider || f.account !== account.address)) throw new ProviderRefused({ status: 422 })
-        const { message } = try read(sources[0])
-        return { kind: "send", mode: "forward", ...recipients, forwardAttachments: { messageId: sources[0], historyId: message.metadata.historyId ?? "", partIds: attachments.map((f) => f.contentRef) } }
+    effect function attachmentOf(file: SavedFile, version: string) {
+      const got = try fetched(asked("/inbox-v1/attachment", { messageId: file.container, partId: file.contentRef, historyId: version }), AttachmentContent)
+      const type = served[got.mimeType]
+      if (type?.kind !== file.kind || !got.dataBase64.startsWith(type.magic) || byteLength(got.dataBase64) !== got.size) throw new ProviderRefused({ status: 502 })
+      return { mimeType: got.mimeType, data: got.dataBase64 }
+    }
+
+    effect function uploaded(file: SavedFile, held: Attached | undefined) {
+      let got = held
+      if (got === undefined) {
+        if (file.origin !== account.provider || file.account !== account.address) throw new ProviderRefused({ status: 422 })
+        const { message } = try read(file.container)
+        got = try attachmentOf(file, message.metadata.historyId ?? "")
       }
+      if (!sendableAttachment(file, got)) throw new ProviderRefused({ status: 422 })
+      return { name: file.name, mimeType: got.mimeType, dataBase64: got.data }
+    }
+
+    effect function outgoing({ content: c, replyTo, attachments }: DraftSnapshot, held: ReadonlyMap<string, Attached>) {
+      if (!sendableAttachments(attachments)) throw new ProviderRefused({ status: 422 })
+      const files = try Effect.forEach(attachments, (file) => uploaded(file, held.get(file.id)))
+      if (files.reduce((length, file) => length + file.dataBase64.length, 0) >= maxMailMimeBytes) throw new ProviderRefused({ status: 413 })
+      const recipients = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, ...files.length > 0 ? { attachments: files } : {} }
       if (replyTo === "") return { kind: "send", mode: "compose", ...recipients }
       const { message } = try read(replyTo)
       const threaded = c.subject === (/^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`)
@@ -647,17 +697,16 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
         const address = (sent ? (message.to.length === 1 ? [bare(message.to[0])] : []) : [message.replyTo, message.fromEmail]).find((a) => a?.includes("@"))
         return { ref, generation, address: address ?? "", subject: /^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`, verified: address !== undefined && message.externalId === ref }
       },
-      attachment: effect (file, version) => {
-        const got = try fetched(asked("/inbox-v1/attachment", { messageId: file.container, partId: file.contentRef, historyId: version }), AttachmentContent)
-        const type = served[got.mimeType]
-        if (type?.kind !== file.kind || !got.dataBase64.startsWith(type.magic) || byteLength(got.dataBase64) !== got.size) throw new ProviderRefused({ status: 502 })
-        return { mimeType: got.mimeType, data: got.dataBase64 }
-      },
+      attachment: attachmentOf,
       draftCount,
       draft: effect (ref, version) => {
-        const draftId = try draftOf(ref, try grantOf(account))
-        const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId, content: "1" }), DraftRead)
-        const opened = d.attachmentCount === 0 ? undefined : try read(messageId)
+        const grantId = try grantOf(account)
+        const found = try Stream.runHead(Stream.filter(drafts(grantId), (d) => d.messageId === ref))
+        if (Option.isNone(found)) throw new ProviderRefused({ status: 404 })
+        const { draftId } = found.value
+        const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId, content: "1" }, grantId), DraftRead)
+        const opened = d.attachmentCount === 0 ? undefined : try read(messageId, grantId)
+        if ((try grantOf(account)) !== grantId) throw new ProviderRefused({ status: 409 })
         const files = opened === undefined ? [] : manifest(account, messageId, opened.message, opened.attachments)
         const content = { to: d.to.join(", "), cc: [...d.cc], bcc: [...d.bcc], subject: d.subject, body: d.bodyText }
         const verified = id === draftId && messageId === ref && d.plainText && !d.threaded && files !== undefined && files.length === d.attachmentCount
@@ -692,14 +741,15 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       deleteDraft: effect (draftId) => {
         return Effect.as(call(removed(`${at}/drafts/${encodeURIComponent(draftId)}`)), true) catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
+          when ProviderRefused: e.status === 404;
           default: false;
         }
       },
-      send: effect (operationId, snapshot) => {
+      send: effect (operationId, snapshot, held) => {
         const requestId = requestOf(`send:${operationId}`)
         const preflight = effect {
           const grantId = try grantOf(account)
-          const proposal = try outgoing(snapshot)
+          const proposal = try outgoing(snapshot, held)
           const { receipt } = try fetched(post(`${at}/inbox-v1/operations`, { grantId, requestId, proposal }), Operation)
           if (receipt.state !== "prepared") return { kind: "receipt" as const, result: sendOutcome(receipt) }
           const request = try post(`${at}/inbox-v1/operations/${requestId}/dispatch`, { grantId, reviewDigest: receipt.reviewDigest, proposal })

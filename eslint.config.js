@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs"
-import { relative } from "node:path"
+import { relative, sep } from "node:path"
 import js from "@eslint/js"
 import designTokens from "@repo/design-system/tokens.json" with { type: "json" }
 import react from "@eslint-react/eslint-plugin"
@@ -58,7 +58,7 @@ const guarded = (parser) => ({
 const within = (node) => Boolean(node) && (/Function/.test(node.type) || within(node.parent))
 const documented = (context, comment) => context.options[0]?.jsdoc && comment.type === "Block" && comment.value.startsWith("*") && !within(context.sourceCode.getNodeByRangeIndex(comment.range[0]))
 const left = { type: "object", additionalProperties: { type: "integer", minimum: 1 } }
-const excess = (context, found) => found.length > (context.options[0]?.left?.[relative(context.cwd, context.filename)] ?? 0) && found.forEach((problem) => context.report(problem))
+const excess = (context, found) => found.length > (context.options[0]?.left?.[relative(context.cwd, context.filename).split(sep).join("/")] ?? 0) && found.forEach((problem) => context.report(problem))
 const comments = {
   meta: { type: "problem", schema: [{ type: "object", properties: { jsdoc: { type: "boolean" }, left }, additionalProperties: false }] },
   create: (context) => ({
@@ -89,7 +89,7 @@ const loose = Object.fromEntries(["no-explicit-any", "no-unsafe-argument", "no-u
 
 export default defineConfig(
   // Generated, disposable or vendored, and .claude/worktrees holds other checkouts of this repository.
-  globalIgnores(["vendor/", "apps/app/artifacts/", "**/gen/", "!vibestack/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
+  globalIgnores(["vendor/", "apps/app/artifacts/", "**/gen/", "!vibestack/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.wrangler/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
   { linterOptions: { reportUnusedDisableDirectives: "error", reportUnusedInlineConfigs: "error" } },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,

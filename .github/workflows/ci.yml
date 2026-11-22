@@ -58,6 +58,8 @@ jobs:
       SHOPPING_IMAGE: docker.io/am1n3e/webarena-verified-shopping@sha256:3e8cb9b945ea9b1c94ab26dba53e8d12dd0406abbf4bf686fd3bb2b6a5908feb
       SHOPPING_ORIGIN: https://127.0.0.1:7770
       GRACE_WEBARENA_UPSTREAM: ${{ github.workspace }}/.cache/webarena-upstream
+      WEBARENA_TASKS: '[260,261,262,263,264,298,299]'
+      WEBARENA_REQUIRED: '[260,261,262,263]'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,6 +72,33 @@ jobs:
           ref: dce04686a56253aefba7b18a4fa0937cf1dc987b
           path: .cache/webarena-upstream
           persist-credentials: false
+      - name: Inventory the pinned WebArena corpus
+        run: |
+          results_dir="$RUNNER_TEMP/grace-webarena-results"
+          install -d -m 700 "$results_dir"
+          catalog_object=HEAD:config_files/test.raw.json
+          revision=$(git -C "$GRACE_WEBARENA_UPSTREAM" rev-parse HEAD)
+          catalog_sha256=$(git -C "$GRACE_WEBARENA_UPSTREAM" show "$catalog_object" | sha256sum | cut -d' ' -f1)
+          git -C "$GRACE_WEBARENA_UPSTREAM" show "$catalog_object" |
+            jq -e --arg revision "$revision" --arg sha256 "$catalog_sha256" \
+              --argjson configured "$WEBARENA_TASKS" --argjson required "$WEBARENA_REQUIRED" '
+              def ids: map(.task_id) | sort;
+              def members($cohort): map(select(.task_id as $id | $cohort | index($id) != null));
+              def coverage:
+                {catalog: length, authenticated: (map(select(.require_login)) | length),
+                 configuredTaskIds: (members($configured) | ids),
+                 requiredTaskIds: (members($required) | ids),
+                 unconfigured: (length - (members($configured) | length))};
+              select(length > 0 and (ids | length == (unique | length))) |
+              select((members($configured) | ids) == ($configured | sort) and
+                (members($required) | ids) == ($required | sort) and
+                ($required - $configured | length) == 0) |
+              {evaluatorRevision: $revision, catalogSha256: $sha256, total: coverage,
+               groups: (group_by([(.sites | sort), (.eval.eval_types | sort)]) |
+                 map({sites: (.[0].sites | sort), evaluatorTypes: (.[0].eval.eval_types | sort)} + coverage))}
+            ' > "$results_dir/corpus-coverage.json"
+          jq -r '.total | "The pinned catalog has \(.catalog) tasks. This run configures \(.configuredTaskIds | length) tasks, of which \(.requiredTaskIds | length) are required. \(.unconfigured) tasks are outside this run."' \
+            "$results_dir/corpus-coverage.json" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/setup-python@v6
         with:
           python-version: "3.10"
@@ -172,21 +201,45 @@ jobs:
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
         run: |
           test -n "$GRACE_BENCHMARK_CLEF_ORIGIN" && test -n "$GRACE_BENCHMARK_CLEF_KEY"
-          tasks='[260,261,262,263,264,298,299]'
-          required='[260,261,262,263]'
+          tasks="$WEBARENA_TASKS"
+          required="$WEBARENA_REQUIRED"
+          records='[298,299]'
           git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
             jq -e --arg start "$SHOPPING_ORIGIN/" --arg results "$WEBARENA_RESULTS" \
-              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$tasks" --argjson required "$required" \
+              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$tasks" --argjson required "$required" --argjson records "$records" \
               '[.[] | select(.task_id as $id | $tasks | index($id)) |
                 {taskId: (.task_id | tostring), intent, startUrl: $start, receipt: ($results + "/task-" + (.task_id | tostring) + ".json"),
                  siteStorageState: $state, evaluator: "webarena"} +
                 (if .task_id as $id | $required | index($id) then {} else {exploratory: true} end) +
-                (if .task_id == 260 then {} else {chat: "upstream", requiredStep: "ReachNamedPage"} end)] |
+                (if .task_id == 260 then {} else {chat: "upstream", requiredStep:
+                  (if .task_id as $id | $records | index($id) then "ReadLatestRecord" else "ReachNamedPage" end)} end)] |
                 select(map(.taskId | tonumber) == $tasks)' > "$GRACE_BROWSER_BENCHMARK_FILE"
           browser_exit=0
           pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' |
             tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
-          jq -es --argjson tasks "$tasks" --argjson required "$required" '
+          jq -es --argjson tasks "$tasks" --argjson required "$required" --argjson records "$records" '
+            def checked_record:
+              .outcome as $out | $out.checkedRecord as $record |
+              (($out.reviewedSteps // []) | map(.kind)) == ["ReadLatestRecord"] and
+              ($record.collectionDocument | type == "string" and length > 0) and
+              ($record.detailDocument | type == "string" and length > 0) and
+              $record.detailDocument != $record.collectionDocument and
+              $record.detailDocument == $out.destination.documentId and
+              $record.detailDocument == $out.hops[-1].documentId and
+              $record.collectionDocument == ([$out.start] + $out.hops)[-2].documentId;
+            def witnessed_record_refusal:
+              .outcome as $out | $out.recordRefusal as $refusal |
+              ((.taskId | tonumber) as $id | $records | index($id) != null) and
+              .chatStatus == 200 and $out.chatProvider == "upstream" and .decisionProvider == "hosted" and
+              ($out.reviewedSteps | map(.kind)) == ["ReadLatestRecord"] and
+              $out.ringTap == true and .webArena.groundedNavigation == true and
+              .webArena.officialScore == 0 and .webArena.qualifiedHostedGuidance == false and
+              $out.destination.url == (.startUrl + "sales/order/history/") and
+              ($refusal.documentId | type == "string" and length > 0) and $refusal.documentId != $out.start.documentId and
+              $refusal.documentId == $out.destination.documentId and $refusal.documentId == $out.hops[-1].documentId and
+              $out.destination.url == $out.hops[-1].url and all($out.hops[]; .checked == false) and
+              $refusal.instruction == "I can\u2019t verify which matching record is newest on this list." and $refusal.visibleAction == "View Order" and
+              $refusal.selection == "NoGuidedRecordSelection" and $refusal.receiptCount == 0 and $out.checkedRecord == null;
             def verified_action_budget:
               .outcome as $out |
               ($out.disclosures // []) as $menus |
@@ -226,11 +279,16 @@ jobs:
                 ($offer.branchMatches == false or $offer.leafMatches == false) and
                 $offer.offeredControl == ("Use “" + $offer.leaf + "” for this step")
                 else false end),
+              refusedRecord: (.outcome.miss == "insufficient-record-evidence" and witnessed_record_refusal),
               exhaustedBudget: (.outcome.miss == "action-budget-exhausted" and verified_action_budget),
               officialScore: .webArena.officialScore, noActionScore: .webArena.noActionScore,
               hostedGuidance: (.webArena.qualifiedHostedGuidance == true),
-              checkedPlan: (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
-                (.outcome.reviewedDestination | length) > 0 and .outcome.hops[-1].checked == true))})
+              checkedPlan: (.outcome.hops[-1].checked == true and
+                (.outcome.destination.documentId | type == "string" and length > 0) and
+                .outcome.hops[-1].documentId == .outcome.destination.documentId and
+                .outcome.start.documentId != .outcome.destination.documentId and
+                (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
+                  (if (.taskId | tonumber) as $id | $records | index($id) then checked_record else (.outcome.reviewedDestination | length) > 0 end))))})
           ' "$WEBARENA_RESULTS"/task-*.json > "$WEBARENA_RESULTS/scorecard.json"
           jq -r '
             "### WebArena Shopping",
@@ -243,8 +301,10 @@ jobs:
             all(.[]; (.failed | not) and (.completed == (.miss == null)) and (.completed or (.cohort == "exploratory" and
               (.miss == "missing-reviewed-step" or .miss == "target-absent-from-open-menu" or .miss == "repeated-address" or
                 (.miss == "rejected-scoped-leaf" and .rejectedLeaf) or
+                (.miss == "insufficient-record-evidence" and .refusedRecord) or
                 (.miss == "action-budget-exhausted" and .exhaustedBudget)))) and
-              .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1)) and
+              .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1) and
+              (.completed == false or (.checkedPlan and .officialScore == 1))) and
             all(.[] | select(.cohort == "required"); .officialScore == 1 and .hostedGuidance and .checkedPlan)
           ' "$WEBARENA_RESULTS/scorecard.json"
           test "$browser_exit" -eq 0
@@ -254,6 +314,7 @@ jobs:
           name: webarena-shopping
           path: |
             ${{ runner.temp }}/grace-webarena-results/shopping-image.json
+            ${{ runner.temp }}/grace-webarena-results/corpus-coverage.json
             ${{ runner.temp }}/grace-webarena-results/task-*.json
             ${{ runner.temp }}/grace-webarena-results/scorecard.json
             ${{ runner.temp }}/grace-webarena-results/grace-browser.log
@@ -619,12 +680,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: ${{ fromJSON(inputs.cross_app_only && '["product"]' || '["product","selftest-a","selftest-b","selftest-rest"]') }}
-    environment: ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
-    env:
+        lane: [product]
+    environment: &cache-environment ${{ github.event_name == 'push' && 'turbo-cache-publish' || 'turbo-cache-read' }}
+    env: &cache-env
       TURBO_TOKEN: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN || '' }}
-      TURBO_CACHE: ${{ inputs.cross_app_only && 'local:rw' || (github.event_name == 'push' && 'local:rw,remote:rw' || 'local:rw,remote:r') }}
-    steps:
+      TURBO_CACHE: ${{ !inputs.cross_app_only && secrets.TURBO_TOKEN && (github.event_name == 'push' && 'local:rw,remote:rw' || 'local:rw,remote:r') || 'local:rw' }}
+    steps: &verification-steps
       # apps/app/scripts import upstream Eliza's Android tools from the vendor/eliza submodule.
       - uses: actions/checkout@v7
         with:
@@ -633,28 +694,78 @@ jobs:
         uses: ./.github/actions/setup
         with:
           job: ${{ matrix.lane }}
-      - name: Exercise Google consent and guided tasks across apps with local fixtures
+      - name: Verify local Gmail delivery and account isolation
+        if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm --filter @repo/app test --project node test/app.test.vibe -t "Google denies missing consent"
+      - name: Verify the pinned Worker against synthetic Gmail history
         if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm --dir vendor/eliza --filter @elizaos/cloud exec vitest run test/cloud.test.vibe -t "watch for new mail"
+      - name: Exercise Google consent and guided tasks across apps with local fixtures
+        if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
           -t "Gmail signup to Calendar|Follow one reviewed plan across apps|An authenticated restart restores the reviewed plan paused at its next outcome|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
-      - if: ${{ matrix.lane == 'product' && !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue --summarize
+      - id: verify-tasks
+        if: ${{ matrix.lane == 'product' && !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue=dependencies-successful --concurrency=100% --summarize
       - if: ${{ matrix.lane != 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         env:
           LANE: ${{ matrix.lane }}
-        run: pnpm all "//#selftest:tools:${LANE#selftest-}" --continue --summarize
-      - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != ''
+        run: pnpm all "//#selftest:tools:${LANE#selftest-}" --only --continue=dependencies-successful --summarize
+      - name: Report Turbo task timings
+        if: ${{ !cancelled() }}
+        run: |
+          for report in .turbo/runs/*.json; do
+            [[ -f "$report" ]] || continue
+            jq -r '
+              select(.version == "1" and (.tasks | type == "array"))
+              | .execution as $run
+              | select([$run.startTime, $run.endTime, $run.cached, $run.attempted] | all(type == "number"))
+              | "### Turbo task timings", "",
+                "Wall time \(($run.endTime - $run.startTime) / 1000) s. Cache hits \($run.cached) of \($run.attempted) attempted tasks.",
+                "",
+                "| Task | Wall time (s) | Cache | Exit code |",
+                "| --- | ---: | --- | ---: |",
+                ([.tasks[]
+                  | select([.execution.startTime, .execution.endTime] | all(type == "number"))
+                  | {id: .taskId, elapsed: ((.execution.endTime - .execution.startTime) / 1000), cache: .cache.status, exit: .execution.exitCode}]
+                  | sort_by(-.elapsed) | .[]
+                  | "| \(.id) | \(.elapsed) | \(.cache // "-") | \(.exit // "-") |"),
+                ""
+            ' "$report" >> "$GITHUB_STEP_SUMMARY" || echo "::warning::Could not read the Turbo run summary"
+          done
+      - id: superseded-spec-cache
+        if: >-
+          cancelled() && matrix.lane == 'product' && steps.verify-tasks.conclusion == 'cancelled' &&
+          steps.setup.outputs.spec-cache-key != '' &&
+          github.event_name == 'push' && github.run_attempt == '1' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        shell: bash
+        run: |
+          current=$(GIT_TERMINAL_PROMPT=0 timeout 4s git ls-remote --refs --exit-code origin "$GITHUB_REF") || exit 0
+          [[ $current != *$'\n'* ]] || exit 0
+          IFS=$'\t' read -r tip ref <<< "$current"
+          [[ $tip =~ ^[0-9a-f]{40}$ && $ref == "$GITHUB_REF" && $tip != "$GITHUB_SHA" ]] || exit 0
+          echo 'skip=true' >> "$GITHUB_OUTPUT"
+          echo "Skipping the spec cache upload for superseded commit $GITHUB_SHA."
+      - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != '' && steps.superseded-spec-cache.outputs.skip != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ steps.setup.outputs.spec-cache-path }}
           key: ${{ steps.setup.outputs.spec-cache-key }}
-      - if: always() && !inputs.cross_app_only && steps.setup.outputs.turbo-cache-key != ''
+      - id: prune-turbo-cache
+        if: always() && !inputs.cross_app_only && steps.setup.outputs.turbo-cache-key != ''
         run: |
-          mkdir -p .turbo/cache
+          [[ -d .turbo/cache ]] || exit 0
           cat .turbo/runs/*.json 2>/dev/null | jq -r '.tasks[] | select(.cache.status == "HIT") | .hash' | while read -r hash; do find .turbo/cache -name "$hash*" -exec touch {} +; done
           find .turbo/cache -type f -mtime +7 -delete
-      - if: always() && !inputs.cross_app_only && steps.setup.outputs.turbo-cache-key != ''
+          for archive in .turbo/cache/*.tar.zst; do
+            metadata="${archive%.tar.zst}-meta.json"
+            [[ -f "$archive" && -s "$archive" && -f "$metadata" && -s "$metadata" ]] || continue
+            echo "populated=true" >> "$GITHUB_OUTPUT"
+            break
+          done
+      - if: always() && steps.prune-turbo-cache.outputs.populated == 'true'
         uses: actions/cache/save@v6
         with:
           path: .turbo/cache
@@ -686,12 +797,25 @@ jobs:
             vibestack/examples/*/test/__traces__/
           if-no-files-found: ignore
           include-hidden-files: true
+  vibestack-fixture-selftests:
+    name: ${{ matrix.lane }}
+    if: ${{ !inputs.cross_app_only && (github.event_name != 'workflow_dispatch' || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena)) }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [selftest-a, selftest-b, selftest-rest]
+    environment: *cache-environment
+    env: *cache-env
+    steps: *verification-steps
   verify:
-    needs: checks
+    needs: [checks, vibestack-fixture-selftests]
     if: always() && needs.checks.result != 'skipped'
     runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
     steps:
       - name: Require every selected verification job to pass
         env:
-          RESULT: ${{ needs.checks.result }}
-        run: test "$RESULT" = success
+          CHECKS: ${{ needs.checks.result }}
+          FIXTURES: ${{ needs.vibestack-fixture-selftests.result }}
+          EXPECTED_FIXTURES: ${{ inputs.cross_app_only && 'skipped' || 'success' }}
+        run: test "$CHECKS" = success && test "$FIXTURES" = "$EXPECTED_FIXTURES"

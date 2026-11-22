@@ -11,7 +11,7 @@ import { entryAt, type EntrySeed } from "../gen/app__calendarView.effect.vibe"
 import { calendarContext, sourceAt, targetCalendar } from "../gen/app__calendars.effect.vibe"
 import { emptyContent, type Mailbox, messageRecord, type Recipient } from "../gen/app__email.effect.vibe"
 import { mailContext, openSource, showsMail, startFrom, undoable, type MailSource } from "../gen/app__mailboxes.effect.vibe"
-import { asking, Machine as Proposal } from "../gen/app__proposal.effect.vibe"
+import { turnDrops, Machine as Proposal } from "../gen/app__proposal.effect.vibe"
 import { mayAct, type Moment, type Request } from "../gen/app__request.effect.vibe"
 import { Machine as Workspaces, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type Applied, type GraceAction, type Outcome, type Step, settingSteps, visitSteps, workspaceSteps } from "./agent.vibe"
@@ -289,7 +289,21 @@ export const agent = Layer.effect(Agent, effect {
       const at = quotedAt(words, target)
       return at < 0 ? undefined : { tag: "ReachNamedPage", subject: words.slice(at, at + target.length) }
     }
-    const offered = action.steps.map((step): GuidedStep | undefined => typeof step === "string" ? { tag: step } : named(step.target))
+    const offered = action.steps.map((step): GuidedStep | undefined => {
+      if (typeof step === "string") return { tag: step }
+      if (step.kind === "ReachNamedPage") return named(step.target)
+      const status = lower(step.status)
+      const collection = lower(step.collection)
+      const connectors = ["marked", "marked as", "that was", "that is", "that has been", "with status", "with a status of", "whose status is"]
+      const phrases = [`${status} ${collection}`, ...connectors.map((connector) => `${collection} ${connector} ${status}`)]
+      const clauses: string[] = words.toLowerCase().split(/[.!?;:\n]+/u)
+      const quoted = clauses.some((clause): boolean => {
+        const requestWords = ` ${clause.replace(/[^\p{L}]+/gu, " ").trim()} `
+        return ["latest", "newest", "most recent"].some((rank) =>
+          phrases.some((criteria) => requestWords.includes(` ${rank} ${criteria} `)))
+      })
+      return quoted ? { tag: "ReadLatestRecord", collection, status } : undefined
+    })
     const steps = offered.filter((step) => step !== undefined)
     if (steps.length !== offered.length) return "OwnerRefused"
     const owner = request.authority === undefined ? undefined : guidedOwner(request.authority, steps)
@@ -320,7 +334,7 @@ export const agent = Layer.effect(Agent, effect {
     const s = try look()
     const p = s.pending
     const answered = actions.some((a) => a.kind === "confirmProposal" || a.kind === "cancelProposal")
-    if (!answered && mayAct(request, momentOf(s)) && asking(p) && p.agreed === 0 && p.generation < request.generation)
+    if (!answered && p.generation < request.generation && turnDrops(p, "Correction", request, momentOf(s), "Host"))
       proposals.send({ type: "withdraw", interruption: "Correction" }, "Host") catch () => undefined
   }
 

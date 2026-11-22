@@ -101,7 +101,10 @@ pure def editsRecent(browserInput: BrowserInput): bool = match browserInput {
 pure def lawRecentEditsKeepPage(b: B::Browser, browserInput: BrowserInput, by: BrowserControlActor): bool =
   editsRecent(browserInput) implies
     (control(b, browserInput, by).revision == b.revision and control(b, browserInput, by).tabs == b.tabs)
-pure val bValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"))
+pure val privateVisit = B::openPrivateSignIn(B::initial, "https://utility.example")
+pure val loadedPrivateVisit = B::finishPageLoad(privateVisit, privateVisit.selected,
+  B::activeTab(privateVisit).loadVersion, B::Loaded, true, "https://utility.example")
+pure val bValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"), loadedPrivateVisit)
 pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAddress, DismissAddress,
   RequestClearHistory, SelectTab({ id: 1 }), SelectTab({ id: 2 }), CloseTab({ id: 1 }),
   OpenPrivateSignIn({ url: "https://utility.example" }),
@@ -126,6 +129,8 @@ The tablet receives a current request from the person and derives the HTTPS orig
 
 A few fixed phrases open it at once, even while Cloud reasoning is unavailable. Any other way she asks goes to Grace, whose reply can offer Private sign-in as a control for the secure page selected when she asked, named by that site. Her tap on it is the request, for that page and revision; Grace never sends it herself.
 
+Before showing the control, the tablet checks the person’s complete request. She can ask to sign in here or name the open website by its exact host or HTTPS origin. If she names another website or the destination is unclear, she sees no sign-in button for the open site.
+
 When the conversation has no reply controls, Grace directs her to the website’s own sign-in form.
 
 ```quint
@@ -146,25 +151,85 @@ pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str)
   not(canControl(b, RequestPrivateSignIn({ id: b.selected, revision: b.revision, origin: origin }), BrowserControlHost))
 ```
 
-### Only the person can open their mail app from the current private tab
+### Only the person can open a verification app from the current private tab
 
-If the website asks for a code by email, the person taps **Check email** on
-the loaded private sign-in tab. Android opens a mail app through its normal
-app selection. Grace sends no address, search, message or code and receives
-no mail result. A stale request, another tab or a host request cannot open
-mail. The handoff leaves the private tab open and grants no website work or
-completion. If Android cannot open a mail app, the person can check on another
-device. Back or Android's app switcher returns to the same private tab, where
-the person enters the code directly on the website.
+On a loaded, secure private tab, **Sign-in help** explains how to choose a
+saved login or type it. When the site asks for verification, the person can
+open Grace Email immediately to check an existing message in their connected
+inbox. This choice starts no watch. They can also open their email or messages
+app, use an authenticator, or check another account or device. Only their choice on the current tab and revision can
+launch an app. Android receives the chosen app category alone. Back returns
+to the website where the person requested the code. The website decides
+whether to accept what the person submits. Opening or returning from another
+app leaves the guided task paused.
 
 ~~~quint
-pure def canCheckPrivateEmail(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
+pure def canOpenPrivateVerificationApp(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
   by == BrowserControlUser and id == b.selected and revision == b.revision and
-  B::activeTab(b).manualSignIn and B::activeTab(b).load == B::Loaded
-pure def lawPrivateEmailRequiresTheCurrentPersonTab(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
-  (by != BrowserControlUser or id != b.selected or revision != b.revision or
-    not(B::activeTab(b).manualSignIn) or B::activeTab(b).load != B::Loaded) implies
-    not(canCheckPrivateEmail(b, id, revision, by))
+  B::activeTab(b).manualSignIn and B::activeTab(b).secure and B::activeTab(b).load == B::Loaded
+pure def lawPrivateVerificationRequiresTheCurrentPersonTab(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
+  canOpenPrivateVerificationApp(b, id, revision, by) implies
+    (by == BrowserControlUser and id == b.selected and revision == b.revision and
+     B::activeTab(b).manualSignIn and B::activeTab(b).secure and B::activeTab(b).load == B::Loaded)
+~~~
+
+### A new-mail hint belongs to one approved private visit
+
+When the website requests an email and the person chooses to watch their
+connected inbox, Grace starts with the inbox as it is now. For up to five
+minutes it can report one new arrival. The hint says new mail arrived and
+offers to open email. It cannot identify a verification code, name its
+sender, complete sign-in or advance a task. Old mail gives no hint. The
+person can stop at any time. Closing help, leaving the foreground, reloading,
+switching accounts or grants, and changing tabs or documents end the watch.
+A new watch starts from a new baseline. Neither the cursor nor a hint is
+saved or sent to the model.
+
+~~~quint
+type PrivateInboxVisit = { tab: int, revision: int, loadVersion: int }
+pure val visitValues = Set({ tab: 2, revision: 2, loadVersion: 1 },
+  { tab: 1, revision: 2, loadVersion: 1 }, { tab: 2, revision: 1, loadVersion: 1 },
+  { tab: 2, revision: 2, loadVersion: 2 })
+pure def canWatchPrivateInbox(b: B::Browser, visit: PrivateInboxVisit): bool =
+  canOpenPrivateVerificationApp(b, visit.tab, visit.revision, BrowserControlUser) and
+  B::activeTab(b).loadVersion == visit.loadVersion
+pure def lawPrivateInboxRequiresTheSameDocument(b: B::Browser, visit: PrivateInboxVisit): bool =
+  canWatchPrivateInbox(b, visit) ==
+    (B::activeTab(b).load == B::Loaded and b.selected == visit.tab and b.revision == visit.revision and
+     B::activeTab(b).loadVersion == visit.loadVersion and B::activeTab(b).manualSignIn and B::activeTab(b).secure)
+~~~
+
+### Only the person can fill the current private website field
+
+During private sign-in the person enters a code on the website. Android
+manages any system suggestion for the focused field. A choice for a different
+field, document, tab or origin has no authority over the current field.
+Entering a value leaves the guided task pending until the person resumes and
+Grace checks the ordinary page.
+
+~~~quint
+type PrivateCodeField = { tab: int, revision: int, loadVersion: int, document: int, fieldId: int, topOrigin: str, fieldOrigin: str }
+pure val testCodeField: PrivateCodeField = {
+  tab: loadedPrivateVisit.selected, revision: loadedPrivateVisit.revision,
+  loadVersion: B::activeTab(loadedPrivateVisit).loadVersion, document: 1, fieldId: 1,
+  topOrigin: "https://utility.example", fieldOrigin: "https://utility.example"
+}
+pure val offeredValues = Set(testCodeField, { ...testCodeField, fieldOrigin: "https://other.example" })
+pure val focusedValues = offeredValues.union(Set({ ...testCodeField, document: 2 }, { ...testCodeField, fieldId: 2 }))
+pure def currentPrivateCodeField(b: B::Browser, focused: PrivateCodeField): bool = {
+  val tab = B::activeTab(b)
+  focused.tab == b.selected and focused.revision == b.revision and focused.loadVersion == tab.loadVersion and
+    tab.manualSignIn and tab.load == B::Loaded and tab.secure and focused.topOrigin != "" and
+    focused.topOrigin == B::tabUrl(tab) and focused.fieldOrigin == focused.topOrigin
+}
+pure def mayFillPrivateCodeField(b: B::Browser, offered: PrivateCodeField, focused: PrivateCodeField, by: BrowserControlActor): bool =
+  by == BrowserControlUser and offered == focused and currentPrivateCodeField(b, focused)
+pure def lawOnlyThePersonCanFillTheCurrentPrivateCodeField(b: B::Browser, offered: PrivateCodeField, focused: PrivateCodeField, by: BrowserControlActor): bool =
+  mayFillPrivateCodeField(b, offered, focused, by) implies
+    (by == BrowserControlUser and offered == focused and focused.tab == b.selected and focused.revision == b.revision and
+     focused.loadVersion == B::activeTab(b).loadVersion and B::activeTab(b).manualSignIn and
+     B::activeTab(b).load == B::Loaded and B::activeTab(b).secure and focused.fieldOrigin != "" and
+     focused.fieldOrigin == B::tabUrl(B::activeTab(b)))
 ~~~
 
 ### A private sign-in tab keeps its address and page position to itself

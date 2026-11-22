@@ -63,6 +63,17 @@ The deployment targets `app.graceforseniors.com` for Grace and
 Use `pnpm --filter @grace/cloud bundle` to build the UI and dry-run the Worker.
 The production command is `pnpm --filter @grace/cloud deploy` after the Grace
 database, Cloudflare bindings, provider registrations and launch journeys are ready.
+
+For the first upgrade from Grace’s stock Cloud to Eliza’s current device-grant
+schema, take a database backup and drain HTTP writes, scheduled jobs and webhook
+consumers on the old Worker before migrating. Let the new Worker write only
+after the migration completes. The old Worker can overwrite a migrated device
+grant, so a traffic split or switching only the Worker back can break device
+sign-in. Existing active devices and browser sessions can continue after the
+upgrade. Restart any tablet pairing that was still in progress. If the new
+Worker has accepted writes, preserve them and reconcile any provider effects
+before recovering.
+
 The reference documentation for Vibestack follows.
 
 <div align="center">

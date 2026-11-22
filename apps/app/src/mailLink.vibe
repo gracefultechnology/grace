@@ -1,24 +1,15 @@
 // spec/app/email.md, "A scam warning needs current evidence and holds that message's links"; spec/app/handoffs.md, "A link Email released opens in a new Browser tab, and no other link does"
-import { parseBrowserAddressInput } from "@elizaos/os/browser/address"
+import { linkDestination, messageLinkParts } from "./messageLinks.vibe"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
-import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
-import { type Event as MailEvent, selectedMessageIsCurrent } from "../gen/app__email.effect.vibe"
+import { enabled as mailEnabled, type Event as MailEvent, type Mailbox, selectedMessageIsCurrent, step as previewMail } from "../gen/app__email.effect.vibe"
 import { openEmailLink } from "../gen/app__handoffs.effect.vibe"
 import { openSource, showsMail } from "../gen/app__mailboxes.effect.vibe"
-import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, type ReleasedEmailLink } from "../gen/app__workspace.effect.vibe"
 import { Instances } from "./instances.vibe"
 import { ManagedReads } from "./managedReads.vibe"
 
-type LinkSelection = { account: number; ref: string; generation: number; version?: string; link: string }
+type LinkSelection = ReleasedEmailLink & { account: number; ref: string; generation: number; version?: string }
 export type LinkChoice = "open" | "confirm" | "cancel"
-export const messageLinks = /https?:\/\/\S*[^\s.,;:!?)\]'"]/i
-
-export function linkDestination(text: string) {
-  if (!/^https?:\/\//i.test(text)) return undefined
-  const address = parseBrowserAddressInput(text, { defaultProtocol: "https:" })
-  return address.kind === "url" ? address.href : undefined
-}
-
 export effect function chooseMailLink(selection: LinkSelection, choice: LinkChoice) {
   const accounts = try Accounts
   const managed = try ManagedReads
@@ -28,13 +19,22 @@ export effect function chooseMailLink(selection: LinkSelection, choice: LinkChoi
   const destination = linkDestination(link)
   if (destination === undefined) return false
   const startingVersion = shelf.content(account, ref)?.version
-  const box = try shelf.mail(account)
+  const initial = try accounts.get()
+  const sources = try Effect.forEach(initial.accounts.filter((a) => showsMail(initial, a.id)), effect (a) =>
+    [a.id, try shelf.mail(a.id)] as const)
+  const machines = new Map(sources)
+  const box = machines.get(account)
+  if (!box) return false
 
   const selected = effect {
     if (try managed.ownsSurfaces()) return undefined
     const registry = try accounts.get()
-    const visible = try Effect.forEach(registry.accounts.filter((a) => showsMail(registry, a.id)), effect (a) =>
-      ({ account: a.id, mailbox: try (try shelf.mail(a.id)).get() }))
+    const visible = []
+    for (const a of registry.accounts.filter((candidate) => showsMail(registry, candidate.id))) {
+      const mailbox = machines.get(a.id)
+      if (!mailbox) return undefined
+      visible.push({ account: a.id, mailbox: try mailbox.get() })
+    }
     const reader = visible.find((view) => view.account === account)?.mailbox
     if (openSource(registry, visible) !== account || visible.some((view) => view.mailbox.composeVisible) ||
       reader?.view !== "Message" || reader.messageRef !== ref || reader.generation !== generation) return undefined
@@ -43,33 +43,42 @@ export effect function chooseMailLink(selection: LinkSelection, choice: LinkChoi
     return reader.connection === "Connected" && reader.canRead && reader.readStatus === "ReadIdle" &&
       selectedMessageIsCurrent(reader) && held?.read?.generation === generation &&
       held.read.version === version && held.read.evidence === reader.warning.evidence && held.content.version === startingVersion &&
-      held.content.body.match(new RegExp(messageLinks.source, "gi"))?.some((text) => linkDestination(text) === destination) ? reader : undefined
+      messageLinkParts(held.content.body).some((part) => typeof part !== "string" && part.href === destination) ? reader : undefined
   }
 
-  const prior = try selected
-  if (!prior || (try workspace.get()).device.surface !== "Email" || (choice !== "open" && prior.link.link !== destination)) return false
-  const event: MailEvent = choice === "open" ? { type: "openLink", link: destination } : choice === "confirm" ? { type: "confirmLink", link: destination, confirmed: true } : { type: "cancelLink" }
-  try box.send(event, "MailUser")
-  if (choice === "cancel") return true
-  const reader = try selected
-  if (!reader || reader.link.link !== destination) return false
-  if (reader.link.status === "LinkHeld") return true
   const current = try workspace.get()
-  const result = openEmailLink(current.device, reader, current.browser, destination)
-  if (result.tag !== "OpenedLink") return false
-
-  try box.send({ type: "linkOpened", link: destination }, "MailHost")
-  if (!(try selected) || (try workspace.get()).device.surface !== "Email") return false
-  const visited = try workspace.send({ type: "visit", destination: "Browser" }, "Person")
-  const browser = visited.state.browser
-  if (!(try selected) || visited.state.device.surface !== "Browser" || browser.nextId !== result.browser.selected) return false
-  if (!activeTab(browser).manualSignIn) {
-    try workspace.send({ type: "changePage", browserInput: { tag: "OpenWindow", url: destination } }, "Host")
-  } else {
-    const fresh = try workspace.send({ type: "changePage", browserInput: { tag: "NewTab" } }, "Person")
-    const shown = try workspace.get()
-    if (shown.device.surface !== "Browser" || fresh.state.browser.selected !== result.browser.selected || shown.browser.selected !== result.browser.selected || tabUrl(activeTab(shown.browser)) !== "" || !(try selected)) return false
-    try workspace.send({ type: "changePage", browserInput: { tag: "Navigate", url: destination } }, "Person")
+  if (current.device.surface !== "Email" || current.device.contextVersion !== selection.deviceVersion ||
+    current.browser.revision !== selection.browserRevision) return false
+  const reader = try selected
+  if (!reader || (choice !== "open" && reader.link.link !== destination)) return false
+  const sameRelease = (expected: Mailbox) => () => {
+    const live = Effect.runSyncExit(selected)
+    if (!Exit.isSuccess(live) || !live.value) return false
+    const held = live.value
+    return held.link.status === expected.link.status && held.link.link === expected.link.link &&
+      held.link.ref === expected.link.ref && held.warning.evidence === expected.warning.evidence
+  }
+  const stillReading = () => {
+    const { device, browser } = Effect.runSync(workspace.get())
+    return device.surface === "Email" && device.contextVersion === selection.deviceVersion &&
+      browser.revision === selection.browserRevision && sameRelease(reader)()
+  }
+  if (choice === "cancel") {
+    return Effect.as(box.send({ type: "cancelLink" }, "MailUser", stillReading), true) catch () => false
+  }
+  const event: MailEvent = choice === "open" ? { type: "openLink", link: destination } : { type: "confirmLink", link: destination, confirmed: true }
+  if (!mailEnabled(reader, event, "MailUser")) return false
+  const released = previewMail(reader, event, "MailUser")
+  if (released.link.status === "LinkHeld") {
+    return Effect.as(box.send(event, "MailUser", stillReading), true) catch () => false
+  }
+  if (openEmailLink(current.device, released, current.browser, destination).tag !== "OpenedLink") return false
+  const publication = { link: destination, deviceVersion: selection.deviceVersion, browserRevision: selection.browserRevision }
+  const opened = Effect.as(workspace.send({ type: "openReleasedEmailLink", release: publication }, "Host", sameRelease(reader)), true) catch () => false
+  if (!opened) return false
+  const marked = box.send(event, "MailUser", sameRelease(reader)) catch () => undefined
+  if (marked?.link.status === "LinkReleased") {
+    box.send({ type: "linkOpened", link: destination }, "MailHost", sameRelease(marked)) catch () => undefined
   }
   return true
 }

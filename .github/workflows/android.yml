@@ -16,7 +16,11 @@ on:
       - packages/design-system/**
       - vendor/eliza
       - .gitmodules
+      - .nvmrc
       - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - patches/**
+      - tsconfig.base.json
       - .github/workflows/android.yml
       - .github/actions/setup/**
   push:
@@ -33,6 +37,8 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-24.04
+    env:
+      TURBO_CACHE: local:rw
     strategy:
       fail-fast: false
       matrix:
@@ -42,23 +48,35 @@ jobs:
       - uses: actions/checkout@v7
         with:
           submodules: true
-      - uses: ./.github/actions/setup
-        with:
-          verification: "false"
-      # Caches ~/.gradle (Gradle 8.13 and the dependencies), keyed by the generated host's inputs.
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
-          cache: gradle
-          cache-dependency-path: |
-            apps/app/android/host.json
-            vendor/eliza/packages/os/android/host-templates/**
+      - uses: ./.github/actions/setup
+        with:
+          job: product
+          verification: "false"
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper/dists
+          key: gradle-${{ runner.os }}-${{ runner.arch }}-jdk21-${{ hashFiles('apps/app/node_modules/@capacitor/android/package.json', 'apps/app/node_modules/@capacitor/android/capacitor/build.gradle', 'apps/app/android/host.json', 'vendor/eliza/packages/os/android/host-templates/**', 'vendor/eliza/packages/os/android/*/build.gradle') }}
+          restore-keys: gradle-${{ runner.os }}-${{ runner.arch }}-jdk21-
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools platforms;android-36 build-tools;36.0.0
       # gen/ and @repo/ui's generated/ are git-ignored; the build imports both.
       - run: pnpm exec turbo run gen --filter=@repo/ui
+      - id: agent-source
+        run: |
+          echo "pin=$(git rev-parse HEAD:vendor/eliza)" >> "$GITHUB_OUTPUT"
+          echo "tools=$(node --version)-pnpm$(pnpm --version)" >> "$GITHUB_OUTPUT"
+      - name: Reuse the pinned agent bundle
+        uses: actions/cache@v6
+        with:
+          path: vendor/eliza/packages/agent/dist/bundle
+          key: android-agent-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.agent-source.outputs.pin }}-${{ steps.agent-source.outputs.tools }}-${{ hashFiles('apps/app/agent/policy.json', 'apps/app/scripts/android.ts', '.github/actions/setup/action.yml') }}
       - run: pnpm --filter @repo/app android --abi ${{ matrix.abi }}
       - name: Stage Cuttlefish launcher with the pinned Chromium APK
         if: matrix.abi == 'x86_64'

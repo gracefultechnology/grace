@@ -14,7 +14,7 @@ import { webView } from "./surfacePlugin.ts"
 
 const DigestHex = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
 const NativeStatus = Schema.Union([Schema.Struct({ kind: Schema.Literal("signedIn"), voiceDisclosureScope: DigestHex }),
-  Schema.Struct({ kind: Schema.Literal("signedOut") })])
+  Schema.Struct({ kind: Schema.Literal("signedOut"), legacySignInNeedsCleanup: Schema.optional(Schema.Literal(true)) })])
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const RecordValue = Schema.Struct({ revision: Revision, value: Schema.optional(Schema.NullOr(Schema.String)) })
 schema Written { revision: Revision }
@@ -32,7 +32,8 @@ function safeCheckpoint(checkpoint: GuidedCheckpoint) {
   const { request, receipts, correction, save } = checkpoint
   if (save.tag === "GuidedSaveReconcile" && save.detailsDigest !== "" && !Schema.is(DigestHex)(save.detailsDigest)) return false
   const publicText = (text: string) => text.length <= 32768 && withhold({ text, passwords: [] }) === text
-  if (!publicText(request.goal) || !request.steps.every((step) => publicText(guidedDetails(step).subject)) ||
+  if (!publicText(request.goal) || !request.steps.every((step) => publicText(guidedDetails(step).subject) &&
+      (step.tag !== "ReadLatestRecord" || publicText(step.status))) ||
       !receipts.every((receipt) => publicText(receipt.evidence))) return false
   if (correction.tag === "NoGuidedCheckpointCorrection") return true
   if (!publicText(correction.label) || !URL.canParse(correction.url)) return false
@@ -149,7 +150,7 @@ effect function nativeRecoveryIdentity(account: GraceAccount["tag"]) {
   const raw = try timeout(tryPromise(() => bridge.status()), "2 seconds")
   const status = try Schema.decodeUnknownEffect(NativeStatus)(raw)
   if (status.kind === "signedIn" && account === "GraceDeviceSignedIn") return "native/" + status.voiceDisclosureScope
-  if (status.kind === "signedOut" && account === "GraceDeviceSignedOut") return "local/native"
+  if (status.kind === "signedOut" && status.legacySignInNeedsCleanup !== true && account === "GraceDeviceSignedOut") return "local/native"
   return undefined
 }
 
@@ -345,14 +346,14 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
           endedDurably = true
         }
       }
+      const stillSelected = (now: Workspace) => now.assistant.taskId === fence.task && now.plan.owner === state.plan.owner &&
+        (endedDurably || now.assistant.workVersion === fence.version)
       const after = try workspace.get()
-      if (after.assistant.taskId !== fence.task || after.plan.owner !== state.plan.owner ||
-          (!endedDurably && after.assistant.workVersion !== fence.version))
-        throw new Rejected({ event, state: after, by: "Person" })
+      if (!stillSelected(after)) throw new Rejected({ event, state: after, by: "Person" })
       const result = endedDurably && after.assistant.activity === "Finished" ? { state: after, out: [] }
         : endedDurably && after.assistant.presentation === "Closed"
-          ? try workspace.send({ type: "discardGuidedRecovery", fence: { task: fence.task, version: after.assistant.workVersion } }, "Host")
-          : try workspace.send(event, "Person")
+          ? try workspace.send({ type: "discardGuidedRecovery", fence: { task: fence.task, version: after.assistant.workVersion } }, "Host", stillSelected)
+          : try workspace.send(event, "Person", stillSelected)
       if (current !== undefined) {
         checked.delete(current.scope)
         binding = undefined
@@ -388,7 +389,7 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
       const scopes = actualScopes(true) catch () => undefined
       const scope = scopeFor(scopes, request.steps)
       const account = (try setup.get()).graceAccount.tag
-      if (scope === undefined && (account === "GraceDeviceSignedIn" || account === "GraceSignedIn")) return false
+      if (account === "GraceDeviceSignInNeedsCleanup" || scope === undefined && (account === "GraceDeviceSignedIn" || account === "GraceSignedIn")) return false
       return try writer.withPermit(effect {
         const saved = scope === undefined ? undefined : (read(scope) catch () => undefined)
         const after = try workspace.get()

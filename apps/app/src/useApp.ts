@@ -16,6 +16,8 @@ import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
 import type { Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { useMachine as useProposalMachine } from "../gen/app__proposal.react.ts";
 import { Machine as PageLayers, historyFor } from "../gen/app__surface.effect.vibe";
+import type { Machine as MailChoices } from "../gen/app__mailboxes.effect.vibe";
+import type { PrivateVerificationApp } from "./surfacePlugin.ts";
 import type { HistoryDirection } from "../gen/app__deviceKeys.ts";
 import { useMachine as usePageLayers } from "../gen/app__surface.react.ts";
 import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe";
@@ -48,7 +50,7 @@ import { PageHost } from "./page.vibe";
 import type { NoticeServices } from "./notices.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | CalendarNews | Accounts | Proposal | Instances | SignIns | NoticeServices | Library, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | CalendarNews | Accounts | Proposal | Instances | SignIns | NoticeServices | Library | MailChoices, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
@@ -121,7 +123,7 @@ export function useWorkspace() {
     privateHistory: (tab: number) => runtime.runSync(Effect.flatMap(Effect.service(PageLayers), (layer) => Effect.map(layer.get(), (state) => historyFor(state, tab)))),
     stepPrivate: (tab: number, direction: HistoryDirection) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.stepPrivate(tab, direction))),
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
-    checkPrivateEmail: (tab: number, revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.checkPrivateEmail(tab, revision))),
+    openPrivateVerificationApp: (tab: number, revision: number, app: PrivateVerificationApp) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.openPrivateVerificationApp(tab, revision, app))),
     opensWebsites: runtime.runSync(Effect.map(Effect.service(PageHost), (host) => host.opensWebsites)),
     /** The person's Close browser, which the page host also tells what websites asked. */
     closeBrowser: () => runtime.runPromiseExit(Effect.flatMap(Effect.service(PageHost), (host) => host.closeBrowser())),
@@ -245,9 +247,10 @@ export function useMail() {
     reply: (id: number) => runtime.runPromise(mail.reply(id)),
     confirmSend: (id: number, revision: number) => runtime.runPromise(mail.confirmSend(id, revision)),
     moveDraft: (from: number, to: number) => runtime.runPromise(mail.moveDraft(from, to)),
-    discarded: () => runtime.runPromise(mail.discarded()),
     save: (id: number, refs: readonly string[]) => runtime.runPromise(mail.save(id, refs)),
     attach: (id: number, asset: SavedFile) => runtime.runPromise(mail.attach(id, asset)),
+    camera: mail.camera,
+    capture: (id: number) => runtime.runPromise(mail.capture(id)),
     contacts: (sources: string) => {
       const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();
       contactLists.set(mail, lists);

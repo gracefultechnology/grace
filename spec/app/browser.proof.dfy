@@ -154,7 +154,7 @@ lemma goBack_ensures(b: Browser)
   if inv(b) && canGoBack(b) {
     MappedTabKeys(b, goBack(b));
     forall t | t in b.tabs && t.id == b.selected ensures t.cursor > 0
-    { ActiveTabIsSelected(b, t); }
+    { TabByItsIdentifier(b, t); }
   }
 }
 
@@ -170,7 +170,7 @@ lemma goForward_ensures(b: Browser)
   if inv(b) && canGoForward(b) {
     MappedTabKeys(b, goForward(b));
     forall t | t in b.tabs && t.id == b.selected ensures t.cursor + 1 < |t.history|
-    { ActiveTabIsSelected(b, t); }
+    { TabByItsIdentifier(b, t); }
   }
 }
 
@@ -238,6 +238,40 @@ lemma finishPageLoad_ensures(b: Browser, id: int, loadVersion: int, result: Load
   ensures (inv(b) ==> canFinishPageLoad(b, id, loadVersion, result, endedAt) ==> stepRevisionNeverMovesBack(b, finishPageLoad(b, id, loadVersion, result, secure, endedAt)))
 {
   if inv(b) && canFinishPageLoad(b, id, loadVersion, result, endedAt) { FinishedLoadKeepsRules(b, id, loadVersion, result, secure, endedAt); }
+}
+
+lemma stayOnPage_ensures(b: Browser, id: int, loadVersion: int)
+  ensures (inv(b) ==> canStayOnPage(b, id, loadVersion) ==> alwaysTabsAreWellFormed(stayOnPage(b, id, loadVersion)))
+  ensures (inv(b) ==> canStayOnPage(b, id, loadVersion) ==> alwaysTabIdentifiersAreUnique(stayOnPage(b, id, loadVersion)))
+  ensures (inv(b) ==> canStayOnPage(b, id, loadVersion) ==> alwaysBrowserCountersAreValid(stayOnPage(b, id, loadVersion)))
+  ensures (inv(b) ==> canStayOnPage(b, id, loadVersion) ==> alwaysSelectedTabExists(stayOnPage(b, id, loadVersion)))
+  ensures (inv(b) ==> canStayOnPage(b, id, loadVersion) ==> alwaysOnlyALoadedPageIsSecure(stayOnPage(b, id, loadVersion)))
+  ensures (inv(b) ==> canStayOnPage(b, id, loadVersion) ==> alwaysRecentDestinationsAreDistinct(stayOnPage(b, id, loadVersion)))
+  ensures (inv(b) ==> canStayOnPage(b, id, loadVersion) ==> stepRevisionNeverMovesBack(b, stayOnPage(b, id, loadVersion)))
+{
+  if inv(b) && canStayOnPage(b, id, loadVersion) {
+    MappedTabKeys(b, stayOnPage(b, id, loadVersion));
+    forall t | t in b.tabs && t.id == id ensures 0 <= t.left.cursor < |t.left.history|
+    { TabByItsIdentifier(b, t); }
+  }
+}
+
+lemma lawStayingKeepsThePageSheWasOn_ensures(b: Browser, id: int, loadVersion: int)
+  ensures (lawStayingKeepsThePageSheWasOn(b, id, loadVersion) == true)
+{
+  if canStayOnPage(b, id, loadVersion) {
+    var after := stayOnPage(b, id, loadVersion);
+    ProofLib.FilterPointwise((t: Tab) => (t.id == id), (t: Tab) => (t.id == id),
+      (x: Tab, y: Tab) => (x.id == id ==> y == x.(history := x.left.history, cursor := x.left.cursor, load := Load.Loaded, secure := x.left.secure)),
+      b.tabs, after.tabs);
+    LookupFilter(b, id);
+    LookupFilter(after, id);
+    var member :| member in b.tabs && member.id == id;
+    ProofLib.FilterMember((t: Tab) => (t.id == id), b.tabs, member);
+    var matches := ProofLib.Filter((t: Tab) => (t.id == id), b.tabs);
+    var found := matches[|matches| - 1];
+    ProofLib.FilterMember((t: Tab) => (t.id == id), b.tabs, found);
+  }
 }
 
 lemma FinishedLoadKeepsRules(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: string)
@@ -346,17 +380,17 @@ lemma LookupFilter(b: Browser, id: int)
 {
 }
 
-lemma ActiveTabIsSelected(b: Browser, t: Tab)
-  requires inv(b) && t in b.tabs && t.id == b.selected
-  ensures activeTab(b) == t
+lemma TabByItsIdentifier(b: Browser, t: Tab)
+  requires inv(b) && t in b.tabs
+  ensures tabById(b, t.id) == t
 {
-  LookupFilter(b, b.selected);
+  LookupFilter(b, t.id);
   TabKeysBridge(b);
-  var matches := ProofLib.Filter((t: Tab) => (t.id == b.selected), b.tabs);
-  ProofLib.FilterMember((t: Tab) => (t.id == b.selected), b.tabs, t);
+  var matches := ProofLib.Filter((other: Tab) => (other.id == t.id), b.tabs);
+  ProofLib.FilterMember((other: Tab) => (other.id == t.id), b.tabs, t);
   assert |matches| > 0;
   var found := matches[|matches|-1];
-  ProofLib.FilterMember((t: Tab) => (t.id == b.selected), b.tabs, found);
+  ProofLib.FilterMember((other: Tab) => (other.id == t.id), b.tabs, found);
   var i :| 0 <= i < |b.tabs| && b.tabs[i] == t;
   var j :| 0 <= j < |b.tabs| && b.tabs[j] == found;
   assert i == j;

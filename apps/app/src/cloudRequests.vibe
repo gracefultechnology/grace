@@ -20,7 +20,8 @@ export const accountRequests = {
 export type AccountRequest = keyof typeof accountRequests
 
 export const googleRoute = "/api/v1/eliza/google/"
-export const googleReads = ["gmail/triage", "gmail/read", "gmail/attachment", "gmail/send/status", "calendar/feed", "calendar/series", "calendar/reminder/event"] as const
+export const inboxArrivalRoute = "gmail/inbox-v1/arrival"
+export const googleReads = [inboxArrivalRoute, "gmail/triage", "gmail/read", "gmail/attachment", "gmail/send/status", "calendar/feed", "calendar/series", "calendar/reminder/event"] as const
 export const googleChanges = ["gmail/trash", "gmail/send", "calendar/change", "calendar/reminder"] as const
 export type GoogleRead = typeof googleReads[number]
 export type GoogleChange = typeof googleChanges[number]

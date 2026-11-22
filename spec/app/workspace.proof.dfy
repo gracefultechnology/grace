@@ -141,6 +141,46 @@ lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: Workspac
   }
 }
 
+lemma openReleasedEmailLink_ensures(w: Workspace, release: ReleasedEmailLink, by_: WorkspaceActor)
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysDeviceRules(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysBrowserRules(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysAssistantRules(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysExecutionRules(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysCommitmentRules(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysCommitmentRegistryIsCanonical(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysCommitmentAssociation(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysPausedCommitmentCannotSubmit(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysOneTask(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysPausedTogether(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysRecordingHasPermission(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysOperationHasVisibleTask(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysEvidenceVersionsAreNonnegative(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysWakeRules(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysActiveWakePausesWebsiteWork(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysPreferencesRules(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysCommitmentUsesCanonicalIdentity(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysCurrentBeforeAction(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> alwaysCommitmentReviewUsesCurrentContext(openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> stepInterruptionsKeepTask(w, "openReleasedEmailLink", openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> stepWakeNeverDispatchesWebsite(w, "openReleasedEmailLink", openReleasedEmailLink(w, release, by_), []))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> stepEffectsRequireCurrentContext(w, openReleasedEmailLink(w, release, by_), []))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "openReleasedEmailLink", openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> stepCommitmentSwitchRetainsRecords(w, "openReleasedEmailLink", openReleasedEmailLink(w, release, by_)))
+{
+  if inv(w) && canOpenReleasedEmailLink(w, release, by_) {
+    ComponentInvariants(w);
+    app__shell_openSurface_ensures(w.device, app__shell_Surface.Browser);
+    app__browser_openTab_ensures(w.browser);
+    app__browser_navigate_ensures(app__browser_openTab(w.browser), release.link);
+    var target := app__handoffs_showEmailDestination(w.device, w.browser, release.link);
+    InterruptedInvariant(target.device, target.browser, w);
+    VisitTransitionFacts(w, app__shell_Surface.Browser, WorkspaceActor.Person);
+    var visited := visit(w, app__shell_Surface.Browser, WorkspaceActor.Person);
+    var linkResult := openReleasedEmailLink(w, release, by_);
+    assert linkResult.assistant == visited.assistant && linkResult.commitment == visited.commitment;
+  }
+}
+
 lemma PopoverInvariant(w: Workspace, popover: app__shell_RailPopover, by_: WorkspaceActor)
   requires inv(w)
   requires canTogglePopover(w, popover, by_)
@@ -1396,6 +1436,50 @@ if inv(w) && canReceiveLoad(w, loadReport, by_) {
 }
 }
 
+lemma stayOnPage_ensures(w: Workspace, stayed: StayedLoad, by_: WorkspaceActor)
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysDeviceRules(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysBrowserRules(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysAssistantRules(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysExecutionRules(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysCommitmentRules(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysCommitmentRegistryIsCanonical(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysCommitmentAssociation(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysPausedCommitmentCannotSubmit(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysOneTask(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysPausedTogether(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysRecordingHasPermission(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysOperationHasVisibleTask(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysEvidenceVersionsAreNonnegative(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysWakeRules(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysActiveWakePausesWebsiteWork(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysPreferencesRules(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysCommitmentUsesCanonicalIdentity(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysCurrentBeforeAction(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> alwaysCommitmentReviewUsesCurrentContext(stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> stepInterruptionsKeepTask(w, "stayOnPage", stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> stepWakeNeverDispatchesWebsite(w, "stayOnPage", stayOnPage(w, stayed, by_), []))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> stepEffectsRequireCurrentContext(w, stayOnPage(w, stayed, by_), []))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "stayOnPage", stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> stepCommitmentSwitchRetainsRecords(w, "stayOnPage", stayOnPage(w, stayed, by_)))
+{
+  if inv(w) && canStayOnPage(w, stayed, by_) {
+    ComponentInvariants(w);
+    var b := w.browser;
+    var after := app__browser_stayOnPage(b, stayed.id, stayed.version);
+    app__browser_stayOnPage_ensures(b, stayed.id, stayed.version);
+    if stayed.id == b.selected {
+      InterruptedInvariant(w.device, after, w);
+    } else {
+      var selected :| selected in b.tabs && selected.id == b.selected;
+      var i :| 0 <= i < |b.tabs| && b.tabs[i] == selected;
+      assert after.tabs[i] == selected;
+      BrowserLookupMember(b, b.selected, selected);
+      BrowserLookupMember(after, b.selected, selected);
+      assert app__browser_activeTab(after) == app__browser_activeTab(b);
+    }
+  }
+}
+
 lemma lawATabIsWhereItsLoadEnded_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceActor)
   ensures (lawATabIsWhereItsLoadEnded(w, loadReport, by_) == true)
 {
@@ -1417,6 +1501,19 @@ lemma lawATabIsWhereItsLoadEnded_ensures(w: Workspace, loadReport: LoadReport, b
     var found := matches[|matches|-1];
     ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, found);
     app__browser_lawALoadRecordsWhereItEnded_ensures(found, endedAt);
+  }
+}
+
+lemma lawAHighlightedLinkFollowsItsLoad_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceActor)
+  ensures (lawAHighlightedLinkFollowsItsLoad(w, loadReport, by_) == true)
+{
+  if app__browser_alwaysTabsAreWellFormed(w.browser) && canReceiveLoad(w, loadReport, by_) &&
+     loadReport.id == w.browser.selected && w.plan.linkStep == |w.plan.receipts| && w.plan.linkUrl != "" &&
+     app__browser_tabUrl(app__browser_activeTab(w.browser)) == w.plan.linkUrl {
+    lawATabIsWhereItsLoadEnded_ensures(w, loadReport, by_);
+    var after := receiveLoad(w, loadReport, by_);
+    assert after.browser.selected == loadReport.id;
+    assert after.plan.linkUrl == loadReport.endedAt;
   }
 }
 
@@ -1451,7 +1548,8 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
     if progress.destination == "" {
       app__browser_pageChanged_ensures(w.browser);
     } else {
-      app__browser_pageMoved_ensures(w.browser, progress.destination);
+      app__browser_navigate_ensures(w.browser, progress.destination);
+      assert app__browser_inv(app__browser_pageMoved(w.browser, progress.destination));
     }
     app__execution_invalidate_ensures(w.execution, app__execution_ExecutionActor.BrowserBridge);
     if app__commitment_canInvalidate(w.commitment, app__task_TaskActor.Host) {
@@ -1879,6 +1977,35 @@ lemma confirmGuidedNamedPage_ensures(w: Workspace, pageCheck: GuidedNamedPageChe
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuidedNamedPage", confirmGuidedNamedPage(w, pageCheck, by_)))
 {
   GuidedReceiptPreserves(w, pageCheck.report, by_);
+}
+
+lemma confirmGuidedRecord_ensures(w: Workspace, recordCheck: GuidedRecordCheck, by_: WorkspaceActor)
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysDeviceRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysBrowserRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysAssistantRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysExecutionRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCommitmentRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCommitmentRegistryIsCanonical(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCommitmentAssociation(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysPausedCommitmentCannotSubmit(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysOneTask(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysPausedTogether(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysRecordingHasPermission(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysOperationHasVisibleTask(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysEvidenceVersionsAreNonnegative(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysWakeRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysActiveWakePausesWebsiteWork(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysPreferencesRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCommitmentUsesCanonicalIdentity(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCurrentBeforeAction(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCommitmentReviewUsesCurrentContext(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepInterruptionsKeepTask(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepWakeNeverDispatchesWebsite(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuidedRecord(w, recordCheck, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_)))
+{
+  GuidedReceiptPreserves(w, recordCheck.report, by_);
 }
 
 lemma resume_ensures(w: Workspace, by_: WorkspaceActor)

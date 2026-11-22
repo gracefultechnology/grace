@@ -31,18 +31,28 @@ public final class PrivateViewPlugin extends Plugin {
   });
  }
 
- @PluginMethod public void openEmail(PluginCall call) {
+ @PluginMethod public void openVerificationApp(PluginCall call) {
+  String app = call.getString("app", "");
+  String category = switch (app) {
+   case "email" -> Intent.CATEGORY_APP_EMAIL;
+   case "messages" -> Intent.CATEGORY_APP_MESSAGING;
+   default -> null;
+  };
+  if (category == null) {
+   call.reject("Unknown verification app");
+   return;
+  }
   getActivity().runOnUiThread(() -> {
    if (!browser || vault || !getActivity().hasWindowFocus()) {
     call.reject("Private sign-in is unavailable");
     return;
    }
    try {
-    getActivity().startActivity(Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_EMAIL)
+    getActivity().startActivity(Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, category)
      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
     call.resolve();
    } catch (ActivityNotFoundException | SecurityException unavailable) {
-    call.reject("No mail app could open");
+    call.reject("No verification app could open");
    }
   });
  }

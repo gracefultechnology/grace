@@ -21,28 +21,39 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   const callback = new URL("https://app.graceforseniors.com/android/auth/callback");
   callback.searchParams.set("state", state);
   callback.searchParams.set("code", "c".repeat(64));
+  const proof = callback.pathname + callback.search;
   const ambiguous = new URL(callback);
   ambiguous.searchParams.append("code", "d".repeat(64));
+  const rejectedRedirects = [
+    new URL(proof, "http://localhost:5173"),
+    new URL(proof, "https://elsewhere.example.test"),
+    ambiguous,
+  ];
   const returns: string[] = [];
+  const returned = Latch.makeUnsafe();
   const browser = cdp();
   const captureReturn = async ({ request, requestId }: { request: { url: string }; requestId: string }) => {
     returns.push(request.url);
     await browser.send("Fetch.fulfillRequest", { requestId, responseCode: 204 });
+    returned.openUnsafe();
   };
   browser.on("Fetch.requestPaused", captureReturn);
   let accountId = "tablet-owner";
   const authorizations: unknown[] = [];
+  const authorizationArrived = Latch.makeUnsafe();
   let beforeReply: ((path: string) => Promise<void>) | undefined;
   const network = window.fetch.bind(window);
   const service = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
     const path = typeof input === "string" ? new URL(input, location.href).pathname : "";
     await beforeReply?.(path);
     if (path === "/api/auth/session") return Response.json({ account: { id: accountId, email: accountId + "@example.test" } });
+    if (path === "/api/v1/billing/subscription") return Response.json({ status: "inactive", canManage: false, canCheckout: false });
+    if (path === "/api/v1/eliza/google/status") return Response.json({ accountId, provider: "google", side: "owner", mode: "cloud_managed", configured: false, connected: false, grantedCapabilities: [], identity: null });
     if (path !== "/api/auth/device/authorize") return network(input, init);
     authorizations.push(await new Response(init?.body).json());
+    authorizationArrived.openUnsafe();
     if (authorizations.length === 1) return new Response(null, { status: 503 });
-    if (authorizations.length === 2) return Response.json({ redirectUrl: "https://elsewhere.example.test/android/auth/callback" });
-    return Response.json({ redirectUrl: authorizations.length === 3 ? ambiguous.href : callback.href });
+    return Response.json({ redirectUrl: (rejectedRedirects[authorizations.length - 2] ?? callback).href });
   });
   onTestFinished(async () => {
     browser.off("Fetch.requestPaused", captureReturn);
@@ -59,24 +70,30 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   await view.render();
 
   const signIn = page.getByRole("button", { name: "Sign in on tablet" });
+  const firstChoice = { challenge, state, expectedAccountId: accountId };
   await act(() => userEvent.click(signIn));
   await expect.element(page.getByRole("alert")).toBeVisible();
-  await act(() => userEvent.click(signIn));
-  const firstChoice = { challenge, state, expectedAccountId: accountId };
-  await expect.poll(() => authorizations).toEqual([firstChoice, firstChoice]);
-  await expect.element(page.getByRole("button", { name: "Cancel tablet sign-in" })).toBeVisible();
-  await act(() => userEvent.click(signIn));
-  const retries = [firstChoice, firstChoice, firstChoice];
-  await expect.poll(() => authorizations).toEqual(retries);
   await expect.element(signIn).toBeEnabled();
-  expect(returns).toEqual([]);
+  const retries = [firstChoice];
+  expect(authorizations).toEqual(retries);
+  for (let retried = 0; retried < rejectedRedirects.length; retried++) {
+    authorizationArrived.closeUnsafe();
+    await act(() => userEvent.click(signIn));
+    await Effect.runPromise(authorizationArrived.await);
+    retries.push(firstChoice);
+    expect(authorizations).toEqual(retries);
+    await expect.element(page.getByRole("button", { name: "Cancel tablet sign-in" })).toBeVisible();
+    await expect.element(signIn).toBeEnabled();
+    expect(returns).toEqual([]);
+  }
 
   accountId = "second-owner";
   await act(() => userEvent.click(signIn));
   await expect.element(page.getByText("Sign in on your tablet as second-owner@example.test?")).toBeVisible();
   expect(authorizations).toEqual(retries);
   await act(() => userEvent.click(signIn));
-  await expect.poll(() => returns).toEqual([callback.href]);
+  await Effect.runPromise(returned.await);
+  expect(returns).toEqual([callback.href]);
   expect(authorizations).toEqual([...retries, { challenge, state, expectedAccountId: accountId }]);
   await expect.element(signIn).not.toBeInTheDocument();
   const dispatched = [...returns];
@@ -124,4 +141,58 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
     expect(returns).toEqual(dispatched);
     expect(page.getByRole("alert").query()).toBeNull();
   }
+});
+
+it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
+  let needsCleanup = false;
+  let cleanupAttempts = 0;
+  const signInAttempts: unknown[] = [];
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    account: {
+      status: async () => needsCleanup ? { kind: "signedOut", legacySignInNeedsCleanup: true } : { kind: "signedOut" },
+      cleanupLegacySignIn: async () => {
+        cleanupAttempts += 1;
+        if (cleanupAttempts === 1) throw new Error("Cloud is unreachable");
+        needsCleanup = false;
+      },
+      beginSignIn: async (options) => {
+        signInAttempts.push(options);
+        if (signInAttempts.length === 1) {
+          needsCleanup = true;
+          throw new Error("The previous credential was rejected");
+        }
+      },
+      signOut: async () => { throw new Error("Legacy cleanup must use its dedicated action"); },
+      manageAccount: async () => { throw new Error("An unverified owner cannot manage an account"); },
+      addListener: async () => ({ remove: async () => undefined }),
+    },
+  }));
+  const view = tabletView(runtime);
+  onTestFinished(view.dispose);
+  await view.render();
+
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  await act(() => userEvent.click(button("Settings")));
+  await act(() => userEvent.click(button("Account")));
+  const clear = button("Clear old sign-in");
+  const confirm = button("Confirm clearing old sign-in");
+  await act(() => userEvent.click(button("Sign in to Grace")));
+  await expect.element(clear).toBeEnabled();
+  await expect.element(button("Sign in to Grace")).not.toBeInTheDocument();
+  await expect.element(button("Manage Grace account")).not.toBeInTheDocument();
+  await act(() => userEvent.click(clear));
+  await act(() => userEvent.click(button("Cancel")));
+  await expect.element(clear).toBeEnabled();
+  expect(cleanupAttempts).toBe(0);
+
+  await act(() => userEvent.click(clear));
+  await act(() => userEvent.click(confirm));
+  await expect.element(page.getByRole("alert")).toBeVisible();
+  expect(cleanupAttempts).toBe(1);
+  await act(() => userEvent.click(confirm));
+  await expect.element(clear).not.toBeInTheDocument();
+  await act(() => userEvent.click(button("Other sign-in options")));
+  expect(signInAttempts).toEqual([undefined, { method: "browser" }]);
+  expect(cleanupAttempts).toBe(2);
 });
