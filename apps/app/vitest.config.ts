@@ -133,13 +133,17 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         publicSearchQuery(definition.intent) !== action.query)
       throw new Error("The website search is outside its reviewed case");
     await site.page.bringToFront();
-    const roleOptions = { name: "Search", exact: true };
+    const searchName = /^[\s\p{Co}]*Search\b/iu;
+    const roleOptions = { name: searchName };
+    const semanticSearchField = site.page.locator('input:is([type="search"],[role="searchbox"],[role="combobox"])');
     const field = site.page.getByRole("searchbox", roleOptions).or(site.page.getByRole("combobox", roleOptions))
-      .or(site.page.getByRole("textbox", roleOptions));
+      .or(site.page.getByRole("textbox", roleOptions)).or(site.page.getByLabel(searchName))
+      .or(site.page.getByPlaceholder(searchName).and(semanticSearchField)).filter({ visible: true });
     if (await field.count() !== 1 || !await field.isVisible() || !await field.isEditable())
       throw new Error("The public website has no unique editable Search field");
     const form = await field.evaluate((input) => {
-      if (!(input instanceof HTMLInputElement) || !["search", "text"].includes(input.type) || input.value !== "") return null;
+      if (!(input instanceof HTMLInputElement) || !["search", "text"].includes(input.type) || input.value !== "" ||
+          /(?:^|\s)(?:username|one-time-code|(?:current|new)-password|cc-\S+)(?:\s|$)/iu.test(input.autocomplete)) return null;
       const form = input.form;
       return form?.method === "get" && ["", "_self"].includes(form.target) ? { action: form.action, field: input.name } : null;
     });
