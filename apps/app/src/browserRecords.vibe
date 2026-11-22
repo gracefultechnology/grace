@@ -37,12 +37,16 @@ function uniqueElement(selector: string): string {
   return `${match}:not(${match} *,:has(${match}),${preceded},${preceded} *,${followed},${followed} *)`
 }
 
-effect function accountOn(page: NativePage.Shape, id: PageId, address: URL, current: boolean!!): SiteAccount!! {
-  const read = effect (selector: string) => {
+function recordReader({ page, id, address, current }: { page: NativePage.Shape; id: PageId; address: URL; current: boolean!! }) {
+  return effect (selector: string) => {
     if (!(try current)) return undefined
     const reply = page.readRecordText(id, selector) catch () => undefined
     return reply?.url === address.href && reply.text.length <= 4096 && (try current) ? reply.text : undefined
   }
+}
+
+effect function accountOn(page: NativePage.Shape, id: PageId, address: URL, current: boolean!!): SiteAccount!! {
+  const read = recordReader({ page, id, address, current })
   const header = uniqueElement(banner) + ':not(:has([contenteditable]))'
   const text = try read(header)
   const publicHeading = `${main}[aria-label="Public records" i] ${majorHeading}`
@@ -203,11 +207,7 @@ export effect function observeRecordCollection(page: NativePage.Shape, id: PageI
     if (guidedPageState(snapshot, address.href, "CheckPublicDocument") !== "PublicOnly") return { kind: "PrivateForm" }
   } else if (state !== "Ordinary") return { kind: "Unverifiable" }
   if (!snapshot || snapshot.result.domRevision === undefined) return { kind: "Unverifiable" }
-  const read = effect (selector: string) => {
-    if (!(try current)) return undefined
-    const reply = page.readRecordText(id, selector) catch () => undefined
-    return reply?.url === address.href && reply.text.length <= 4096 && (try current) ? reply.text : undefined
-  }
+  const read = recordReader({ page, id, address, current })
   if (!(try current)) return { kind: "Unverifiable" }
   const heading = page.readPrimaryHeading(id) catch () => undefined
   if (heading?.url !== address.href || !heading.text.trim())

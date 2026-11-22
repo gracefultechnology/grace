@@ -150,22 +150,24 @@ it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.m
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     account: {
-      status: async () => needsCleanup ? { kind: "signedOut", legacySignInNeedsCleanup: true } : { kind: "signedOut" },
-      cleanupLegacySignIn: async () => {
+      status: () => Promise.resolve(needsCleanup ? { kind: "signedOut", legacySignInNeedsCleanup: true } : { kind: "signedOut" }),
+      cleanupLegacySignIn: () => {
         cleanupAttempts += 1;
-        if (cleanupAttempts === 1) throw new Error("Cloud is unreachable");
+        if (cleanupAttempts === 1) return Promise.reject(new Error("Cloud is unreachable"));
         needsCleanup = false;
+        return Promise.resolve();
       },
-      beginSignIn: async (options) => {
+      beginSignIn: (options) => {
         signInAttempts.push(options);
         if (signInAttempts.length === 1) {
           needsCleanup = true;
-          throw new Error("The previous credential was rejected");
+          return Promise.reject(new Error("The previous credential was rejected"));
         }
+        return Promise.resolve();
       },
-      signOut: async () => { throw new Error("Legacy cleanup must use its dedicated action"); },
-      manageAccount: async () => { throw new Error("An unverified owner cannot manage an account"); },
-      addListener: async () => ({ remove: async () => undefined }),
+      signOut: () => Promise.reject(new Error("Legacy cleanup must use its dedicated action")),
+      manageAccount: () => Promise.reject(new Error("An unverified owner cannot manage an account")),
+      addListener: () => Promise.resolve({ remove: () => Promise.resolve() }),
     },
   }));
   const view = tabletView(runtime);

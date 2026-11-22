@@ -815,8 +815,9 @@ jobs:
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
           -t "Gmail signup to Calendar|Follow one reviewed plan across apps|An authenticated restart restores the reviewed plan paused at its next outcome|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
-      - if: ${{ matrix.lane == 'product' && !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue=dependencies-successful --summarize
+      - id: verify-tasks
+        if: ${{ matrix.lane == 'product' && !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue=dependencies-successful --concurrency=100% --summarize
       - if: ${{ matrix.lane != 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         env:
           LANE: ${{ matrix.lane }}
@@ -843,7 +844,21 @@ jobs:
                 ""
             ' "$report" >> "$GITHUB_STEP_SUMMARY" || echo "::warning::Could not read the Turbo run summary"
           done
-      - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != ''
+      - id: superseded-spec-cache
+        if: >-
+          cancelled() && matrix.lane == 'product' && steps.verify-tasks.conclusion == 'cancelled' &&
+          steps.setup.outputs.spec-cache-key != '' &&
+          github.event_name == 'push' && github.run_attempt == '1' &&
+          github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+        shell: bash
+        run: |
+          current=$(GIT_TERMINAL_PROMPT=0 timeout 4s git ls-remote --refs --exit-code origin "$GITHUB_REF") || exit 0
+          [[ $current != *$'\n'* ]] || exit 0
+          IFS=$'\t' read -r tip ref <<< "$current"
+          [[ $tip =~ ^[0-9a-f]{40}$ && $ref == "$GITHUB_REF" && $tip != "$GITHUB_SHA" ]] || exit 0
+          echo 'skip=true' >> "$GITHUB_OUTPUT"
+          echo "Skipping the spec cache upload for superseded commit $GITHUB_SHA."
+      - if: always() && !inputs.cross_app_only && steps.setup.outputs.spec-cache-key != '' && steps.superseded-spec-cache.outputs.skip != 'true'
         uses: actions/cache/save@v6
         with:
           path: ${{ steps.setup.outputs.spec-cache-path }}

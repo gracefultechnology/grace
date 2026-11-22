@@ -261,6 +261,12 @@ const BrowserControl = Schema.Struct({
 type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "submit-public-search" | "observe-search-landing" |
   "tap-guide-ring" | "observe-link-landing" | "bind-native-landing" |
   "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
+type PendingPageCheck = {
+  startedAt: number;
+  returnedAt?: number;
+  resumed: boolean;
+  snapshot: "not-requested" | "requested" | "returned" | "failed";
+};
 
 it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
@@ -275,6 +281,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
   let selected: string | null | undefined;
   let failureStage: BrowserJourneyStage = "prepare-journey";
+  let pendingCheck: PendingPageCheck | undefined;
   const outcome: Record<string, unknown> = {
     chatProvider: "fixture", observationPermission: "awaiting permission",
     operator: "trusted Chromium mouse input at visible guide ring",
@@ -306,7 +313,16 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     async controlPage(request) {
       if (request.id !== selected && request.command.guidance?.kind !== "hide")
         throw new Error("The benchmark site is not the selected Grace surface");
-      return Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "control", request }));
+      const check = request.command.subaction === "snapshot" ? pendingCheck : undefined;
+      if (check) check.snapshot = "requested";
+      try {
+        const observed = Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "control", request }));
+        if (check) check.snapshot = "returned";
+        return observed;
+      } catch (error) {
+        if (check) check.snapshot = "failed";
+        throw error;
+      }
     },
   });
   try {
@@ -572,12 +588,16 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       const resume = page.getByRole("button", { name: "Resume Grace" });
       const check = page.getByRole("button", { name: "Check page", exact: true });
       await expect.element(resume.or(check).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
-      if (resume.query() !== null) await userEvent.click(resume);
+      const resumed = resume.query() !== null;
+      if (resumed) await userEvent.click(resume);
       failureStage = "check-page";
+      const attempt: PendingPageCheck = { startedAt: performance.now(), resumed, snapshot: "not-requested" };
+      pendingCheck = attempt;
       await userEvent.click(check);
       failureStage = "observe-check-result";
-      const checkReturnedAt = performance.now();
+      const checkReturnedAt = attempt.returnedAt = performance.now();
       await expect.element(finished.or(continuing).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
+      pendingCheck = undefined;
       const checked = finished.query() !== null;
       const reason = continuing.query()?.textContent;
       hops.push({ url: landed.url, documentId: landed.documentId, checked, checkResultWaitMs: Math.round(performance.now() - checkReturnedAt), reason });
@@ -603,6 +623,15 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const failure = publicFailure(error, "Browser journey");
     outcome.failure = failure.message;
     outcome.failureStage = failureStage;
+    if (pendingCheck) {
+      const endedAt = performance.now();
+      const { startedAt, returnedAt, resumed, snapshot } = pendingCheck;
+      outcome.pageCheckFailure = {
+        elapsedMs: Math.round(endedAt - startedAt), resumed, snapshot,
+        ...(returnedAt === undefined ? {} : { checkResultWaitMs: Math.round(endedAt - returnedAt) }),
+      };
+      pendingCheck = undefined;
+    }
     if (failureStage === "tap-guide-ring") outcome.linkUnavailable = page.getByRole("status", { name: "Link unavailable", exact: true }).query() !== null;
     if (!gradeWholeCohort) throw failure;
   } finally {
@@ -611,6 +640,26 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     });
   }
 }, 240_000);
+
+async function startBrowserReadPlan(
+  { ui, workspace }: Pick<Awaited<ReturnType<typeof launch>>, "ui" | "workspace">,
+  { url, question, askWith }: { url: string; question: string; askWith: "keyboard" | "pointer" },
+) {
+  await userEvent.click(ui.getByRole("button", { name: "Internet", exact: true }));
+  await userEvent.fill(ui.getByRole("textbox", { name: "Address" }), url);
+  await userEvent.click(ui.getByRole("button", { name: "Go", exact: true }));
+  await expect.poll(() => workspace().browser.tabs[0]?.load).toBe("Loaded");
+  const ask = ui.getByRole("button", { name: "Ask Grace", exact: true });
+  if (askWith === "keyboard") await userEvent.type(ask, "{Enter}");
+  else await userEvent.click(ask);
+  await userEvent.click(ui.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
+  await expect.element(ui.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
+  await userEvent.fill(ui.getByRole("textbox", { name: "Message to Grace" }), question);
+  await userEvent.click(ui.getByRole("button", { name: "Send", exact: true }));
+  await expect.element(ui.getByRole("region", { name: "Review read plan" })).toBeVisible();
+  await userEvent.click(ui.getByRole("button", { name: "Collapse", exact: true }));
+  await userEvent.click(ui.getByRole("button", { name: "Start read plan" }));
+}
 
 async function prepareBillWorldStatement(attempt: string, billerId: string | undefined, context: TestContext) {
   const transport = async (action: Parameters<typeof commands.releasedStatement>[1]) => {
@@ -650,18 +699,7 @@ async function readBillWorldStatement(billerId: string | undefined, context: Tes
   });
   const { cloud, secret } = await proposeRead(question, "Review the statement read.", "ReadStatement", context.signal);
   const { ui, workspace } = await launch(native.plugin, { url: cloud, key: secret }, context);
-  await userEvent.click(ui.getByRole("button", { name: "Internet", exact: true }));
-  await userEvent.fill(ui.getByRole("textbox", { name: "Address" }), url);
-  await userEvent.click(ui.getByRole("button", { name: "Go", exact: true }));
-  await expect.poll(() => workspace().browser.tabs[0]?.load).toBe("Loaded");
-  await userEvent.type(ui.getByRole("button", { name: "Ask Grace", exact: true }), "{Enter}");
-  await userEvent.click(ui.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
-  await expect.element(ui.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
-  await userEvent.fill(ui.getByRole("textbox", { name: "Message to Grace" }), question);
-  await userEvent.click(ui.getByRole("button", { name: "Send", exact: true }));
-  await expect.element(ui.getByRole("region", { name: "Review read plan" })).toBeVisible();
-  await userEvent.click(ui.getByRole("button", { name: "Collapse", exact: true }));
-  await userEvent.click(ui.getByRole("button", { name: "Start read plan" }));
+  await startBrowserReadPlan({ ui, workspace }, { url, question, askWith: "keyboard" });
   const check = ui.getByRole("button", { name: "Read statement", exact: true });
   const complete = ui.getByRole("region", { name: "Task plan" }).getByText("Read checks complete", { exact: true });
   if (billerId !== undefined) {
@@ -926,18 +964,7 @@ it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mism
     },
   });
   const { ui, workspace } = await launch(native.plugin, decisions.host);
-  await userEvent.click(ui.getByRole("button", { name: "Internet", exact: true }));
-  await userEvent.fill(ui.getByRole("textbox", { name: "Address" }), url);
-  await userEvent.click(ui.getByRole("button", { name: "Go", exact: true }));
-  await expect.poll(() => workspace().browser.tabs[0]?.load).toBe("Loaded");
-  await userEvent.click(ui.getByRole("button", { name: "Ask Grace", exact: true }));
-  await userEvent.click(ui.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
-  await expect.element(ui.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
-  await userEvent.fill(ui.getByRole("textbox", { name: "Message to Grace" }), requested);
-  await userEvent.click(ui.getByRole("button", { name: "Send", exact: true }));
-  await expect.element(ui.getByRole("region", { name: "Review read plan" })).toBeVisible();
-  await userEvent.click(ui.getByRole("button", { name: "Collapse", exact: true }));
-  await userEvent.click(ui.getByRole("button", { name: "Start read plan" }));
+  await startBrowserReadPlan({ ui, workspace }, { url, question: requested, askWith: "pointer" });
   const show = ui.getByRole("button", { name: "Show me the link", exact: true });
   const check = ui.getByRole("button", { name: "Check page", exact: true });
   const next = (path: string) => new URL(path, url).href;
