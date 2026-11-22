@@ -1,12 +1,16 @@
 package technology.graceful.grace;
 
-import ai.eliza.auth.cloud.CloudCredentialSlots;
-import ai.eliza.auth.cloud.CloudPasswordBackup;
-import ai.eliza.auth.cloud.CloudSignInConfig;
-import ai.eliza.auth.cloud.CloudSignInEnvironment;
-import ai.eliza.auth.cloud.CloudSignInFlow;
-import ai.eliza.auth.cloud.CloudSignInPlugin;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
+import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
+import ai.eliza.plugins.signin.BrowserSignIn;
+import ai.eliza.plugins.signin.CredentialPolicy.Notice;
+import ai.eliza.plugins.signin.CredentialReader;
+import ai.eliza.plugins.signin.DeviceCustody;
+import ai.eliza.plugins.signin.ElizaSignInPlugin;
+import ai.eliza.plugins.signin.SignInCustody;
+import ai.eliza.plugins.signin.SignInPolicy.Failure;
+import ai.eliza.plugins.signin.SignInRegistration;
+import ai.eliza.plugins.signin.SignInRegistration.Environment;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -18,68 +22,50 @@ import java.net.URI;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 @CapacitorPlugin(name = "GraceAccount")
-public final class GraceAccount extends CloudSignInPlugin {
+public final class GraceAccount extends ElizaSignInPlugin {
  private static final ExecutorService ACCOUNT = Executors.newSingleThreadExecutor();
- private static final CloudSignInEnvironment ENVIRONMENT = environment();
- private static final CloudSignInConfig REGISTRATION = CloudSignInConfig.builder()
-  .clientId(BuildConfig.APPLICATION_ID)
-  .deviceName("Grace tablet")
-  .productName("Grace")
-  .googleClientId("grace")
-  .googleSignInMode("native")
-  .googleScope("email")
-  .logTag("GraceAccount")
-  .readinessPreferences("grace-shared-signin-" + BuildConfig.CLOUD_PROFILE)
-  .pendingSlot("shared-pending")
-  .receiptSlotPrefix("shared-ack:")
-  .retiringSlotPrefix("shared-retire:")
-  .credentialSlotPrefix("shared-key:")
-  .environment(ENVIRONMENT)
-  .build();
+ private static final Object CREDENTIAL_CHANGE = new Object();
+ private static final String ENVIRONMENT = switch (BuildConfig.CLOUD_PROFILE) {
+  case "shared-production" -> "production";
+  case "shared-staging" -> "staging";
+  default -> throw new IllegalArgumentException("Invalid shared Cloud profile");
+ };
+ private static final URI API = URI.create(BuildConfig.CLOUD_API_ORIGIN);
+ private static final Uri CALLBACK = Uri.parse(BuildConfig.CLOUD_WEB_ORIGIN + BuildConfig.CLOUD_CALLBACK_PATH);
 
- private record BackupOwner(CloudDeviceAccount.Session session, Runnable requireGeneration) {}
+ private record BackupAttempt(GracePasswordRecovery.Operation operation, CloudDeviceAccount.Session owner, long generation) {}
  private volatile GracePasswordsOwner.Enrollment enrollment;
- private SharedGraceCredentials account;
+ private volatile BackupAttempt backupAttempt;
+ private CloudPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
  private GraceBrowserGuide guide;
  private GraceSharedSpeech speech;
-
- private static CloudSignInEnvironment environment() {
-  String environment = switch (BuildConfig.CLOUD_PROFILE) {
-   case "shared-production" -> "production";
-   case "shared-staging" -> "staging";
-   default -> throw new IllegalArgumentException("Invalid shared Cloud profile");
-  };
-  String tenant = "production".equals(environment) ? "elizacloud" : "elizacloud-staging";
-  return new CloudSignInEnvironment(environment, host(BuildConfig.CLOUD_API_ORIGIN),
-   host(BuildConfig.CLOUD_WEB_ORIGIN), tenant, "Eliza Cloud", BuildConfig.CLOUD_CALLBACK_PATH);
- }
-
- private static String host(String origin) {
-  URI target = URI.create(origin);
-  if (target.getHost() == null || !origin.equals("https://" + target.getHost())) {
-   throw new IllegalArgumentException("Invalid shared Cloud origin");
-  }
-  return target.getHost();
- }
-
- private static SharedGraceCredentials credentialsFor(Context context) {
-  return new SharedGraceCredentials(context, REGISTRATION, ENVIRONMENT);
- }
+ private CredentialReader.Subscription custodySubscription;
 
  static CloudDeviceAccount.Session session(Context context) throws Exception {
   if (GracePasswordsOwner.accountChanging()) throw new IllegalStateException("Account change in progress");
-  return credentialsFor(context).session();
+  long generation = GracePasswordsOwner.generation();
+  var current = DeviceCustody.reader(context, API.toString()).current();
+  if (current == null || new SharedGraceCredentials(context).legacyOwner() != null) return null;
+  var owner = new SharedGraceCredentials.Owner(current.account().userId(), current.account().organizationId());
+  if (GracePasswordsOwner.accountChanging() || generation != GracePasswordsOwner.generation()) {
+   throw new IllegalStateException("Account change in progress");
+  }
+  return new CloudDeviceAccount.Session(current.value(), owner.accountId(), owner.organizationId());
  }
 
- static boolean deviceOnly(Context context) throws Exception { return credentialsFor(context).deviceOnly(); }
+ static boolean deviceOnly(Context context) throws Exception {
+  return !GracePasswordsOwner.accountChanging() && new SharedGraceCredentials(context).legacyOwner() == null
+   && DeviceCustody.deviceOnly(context, API.toString());
+ }
 
  static boolean handles(Context context, Uri address) {
-  return address != null && CloudSignInFlow.parseCallback(address.toString(), ENVIRONMENT) != null;
+  return address != null && CALLBACK.getScheme().equals(address.getScheme())
+   && CALLBACK.getEncodedAuthority().equals(address.getEncodedAuthority())
+   && CALLBACK.getEncodedPath().equals(address.getEncodedPath());
  }
 
  static Uri hostedView(Context context, String view) throws Exception {
@@ -88,56 +74,125 @@ public final class GraceAccount extends CloudSignInPlugin {
  }
 
  @Override public void load() {
-  account = credentialsFor(getContext());
+  passwordBackup = new CloudPasswordBackup(() -> GracePasswordsOwner.stableSession(getContext()), API, CALLBACK,
+   BuildConfig.APPLICATION_ID, ENVIRONMENT);
   recovery = new GracePasswordRecovery(getActivity(), this);
   guide = new GraceBrowserGuide(getContext());
   speech = new GraceSharedSpeech(getContext());
   super.load();
+  custodySubscription = DeviceCustody.reader(getContext(), API.toString()).listen(notice -> {
+   if (!GracePasswordsOwner.accountChanging() && (notice instanceof Notice.SignedOutNotice || notice instanceof Notice.ExpiredNotice)) {
+    ACCOUNT.execute(this::retireUnconfirmedOwner);
+   }
+  });
  }
 
- @Override protected CloudSignInConfig registration() { return REGISTRATION; }
- @Override protected CloudCredentialSlots credentials(Runnable guard) { return account.slots(guard); }
- @Override protected <T> T withCredentialRead(Callable<T> read) throws Exception { return SharedGraceCredentials.withRead(read); }
- @Override protected Runnable reserveCredentialCommit() { return account.reserve(); }
- @Override protected Runnable observeCredentialCommit() { return account.observe(); }
- @Override protected String credentialGeneration() { return account.generation(); }
+ @Override protected SignInCustody custody(Context context, SignInRegistration registration) {
+  Environment expected = registration.environment(ENVIRONMENT);
+  if (expected == null || !BuildConfig.APPLICATION_ID.equals(registration.clientId)
+    || !API.toString().equals(expected.apiOrigin) || !CALLBACK.toString().equals(expected.redirectUri)) {
+   throw new IllegalStateException("Mismatched shared Cloud registration");
+  }
+  SignInCustody delegate = DeviceCustody.custody(context, registration);
+  SharedGraceCredentials legacy = new SharedGraceCredentials(context);
+  return new SignInCustody() {
+   @Override public int beginSignIn(Environment environment) throws Refused {
+    if (environment != expected || enrollment == null) throw new Refused(Failure.REJECTED);
+    return delegate.beginSignIn(environment);
+   }
 
- @Override protected Runnable adoptCredentialCommit(String generation) {
-  return generation != null && generation.equals(account.generation()) ? account.guard(generation) : null;
+   @Override public void signInEnded(Environment environment, int attempt) {
+    if (environment == expected) delegate.signInEnded(environment, attempt);
+   }
+
+   @Override public Proof connect(int attempt, Environment environment, String token) throws Refused {
+    if (environment != expected) throw new Refused(Failure.REJECTED);
+    return delegate.connect(attempt, environment, token);
+   }
+
+   @Override public String redeem(int attempt, Environment environment, Proof proof) throws Refused {
+    if (environment != expected) throw new Refused(Failure.REJECTED);
+    try {
+     return changeAccount(context, () -> {
+      String credentialId = delegate.redeem(attempt, environment, proof);
+      Held held = delegate.held(environment);
+      boolean verified = false;
+      try {
+       verified = held != null && credentialId.equals(held.credentialId()) && legacy.acceptCanonical(
+        new SharedGraceCredentials.Owner(held.account().userId(), held.account().organizationId()));
+      } finally {
+       if (!verified) delegate.signOut(environment);
+      }
+      if (!verified) throw new Refused(Failure.REJECTED);
+      return credentialId;
+     });
+    } catch (Refused refused) { throw refused; }
+    catch (Exception unavailable) { throw new Refused(Failure.UNAVAILABLE); }
+   }
+
+   @Override public Held held(Environment environment) {
+    if (environment != expected) return null;
+    try {
+     if (session(context) != null) return delegate.held(environment);
+    } catch (Exception unavailable) { return null; }
+    return null;
+   }
+
+   @Override public boolean grantSession(Environment environment, Session session) {
+    return environment == expected && delegate.grantSession(environment, session);
+   }
+
+   @Override public void signOut(Environment environment) {
+    if (environment != expected) throw new IllegalStateException("Mismatched shared Cloud profile");
+    try {
+     changeAccount(context, () -> {
+      delegate.signOut(environment);
+      return null;
+     });
+    } catch (Exception unavailable) { throw new IllegalStateException("Cloud sign-out could not be confirmed", unavailable); }
+   }
+  };
  }
 
- @Override protected void savedKeyRenewed(CloudSignInEnvironment environment, String credentialId) throws Exception {
-  readOwner();
+ private <T> T changeAccount(Context context, Callable<T> change) throws Exception {
+  synchronized (CREDENTIAL_CHANGE) {
+   try {
+    GracePasswordsOwner.enteringAccountChange(context);
+    GraceAgentService.retire();
+    recovery.accountChanged();
+    return change.call();
+   } finally {
+    GracePasswordsOwner.leavingAccountChange();
+    try {
+     var owner = session(context);
+     if (owner != null) GracePasswordsOwner.confirmVerifiedAccount(context, owner);
+    } finally {
+     GraceAgentService.finishAccountChange(context);
+     ManagedCalendarReminders.reconcile(context);
+     ACCOUNT.execute(this::publishSession);
+    }
+   }
+  }
+ }
+
+ private void retireUnconfirmedOwner() {
+  try {
+   if (session(getContext()) == null) changeAccount(getContext(), () -> null);
+  } catch (Exception unavailable) { publishSession(); }
  }
 
  void acceptCallback(Uri data) {
-  if (handles(getContext(), data)) super.handleOnNewIntent(new Intent(Intent.ACTION_VIEW, data));
+  if (!handles(getContext(), data)) return;
+  if (CloudPasswordBackup.isBackupReturn(data)) acceptPasswordBackup(data);
+  else BrowserSignIn.arrived(data.toString());
  }
 
  @Override protected void notifyListeners(String name, JSObject data, boolean retainUntilConsumed) {
-  if ("signInCompleted".equals(name) || "signInRenewed".equals(name) || "signInIncomplete".equals(name)) {
-   ACCOUNT.execute(this::publishSession);
-  } else if ("sessionChanged".equals(name)) {
-   super.notifyListeners(name, data, retainUntilConsumed);
-  }
- }
-
- private CloudDeviceAccount.Session readOwner() throws Exception {
-  try { return session(getContext()); }
-  catch (Exception pending) {
-   if (GracePasswordsOwner.accountChanging()) throw pending;
-   var verified = account.verifyOwner();
-   if (verified != null) {
-    GracePasswordsOwner.confirmVerifiedAccount(getContext(), verified);
-    GraceAgentService.resume(getContext());
-    ManagedCalendarReminders.reconcile(getContext());
-   }
-   return verified;
-  }
+  if ("sessionChanged".equals(name)) super.notifyListeners(name, data, retainUntilConsumed);
  }
 
  private void publishSession() {
-  try { notifyListeners("sessionChanged", projection(readOwner()), true); }
+  try { notifyListeners("sessionChanged", projection(session(getContext())), true); }
   catch (Exception unavailable) { }
  }
 
@@ -147,7 +202,7 @@ public final class GraceAccount extends CloudSignInPlugin {
 
  @Override @PluginMethod public void status(PluginCall call) {
   ACCOUNT.execute(() -> {
-   try { call.resolve(projection(readOwner())); }
+   try { call.resolve(projection(session(getContext()))); }
    catch (Exception unavailable) { call.reject("Device account is unavailable"); }
   });
  }
@@ -157,44 +212,44 @@ public final class GraceAccount extends CloudSignInPlugin {
   if (call.getData().has("method") && !"browser".equals(method)) { call.reject("Unknown sign-in method"); return; }
   ACCOUNT.execute(() -> {
    try {
-    if (readOwner() != null) { call.reject("Sign out before adding another account"); return; }
+    if (session(getContext()) != null) { call.reject("Sign out before adding another account"); return; }
+    new SharedGraceCredentials(getContext()).legacyOwner();
     var lease = GracePasswordsOwner.beginEnrollment(getContext());
     enrollment = lease;
     try {
-     super.startGoogle(accountCall(call, data -> finishEnrollment(call, data), lease), "browser".equals(method) || !hasGooglePlayServices());
+     PluginCall requested = accountCall(call, data -> {
+      if (!"signed-in-as".equals(data.optString("verdict"))) { call.reject("Cloud sign-in could not complete"); return; }
+      ACCOUNT.execute(() -> finishEnrollment(call));
+     }, lease);
+     if ("browser".equals(method) || !hasGooglePlayServices()) super.startGoogleInBrowser(requested);
+     else super.startGoogle(requested);
     } catch (RuntimeException refused) {
-     lease.close();
+     closeEnrollment(lease);
      throw refused;
     }
    } catch (Exception unavailable) { call.reject("Couldn't open sign-in"); }
   });
  }
 
- private void finishEnrollment(PluginCall call, JSObject data) {
-  if (!"authenticated".equals(data.optString("status"))) {
-   try { super.cancel(accountCall(call, ignored -> call.reject("Complete sign-in in your browser"))); }
-   catch (RuntimeException unavailable) { call.reject("Cloud sign-in could not complete"); }
-   return;
-  }
-  final Runnable current;
-  try { current = account.observe(); }
-  catch (RuntimeException unavailable) { call.reject("Sign-in could not be verified"); return; }
-  ACCOUNT.execute(() -> {
-   try {
-    current.run();
-    var owner = readOwner();
-    SharedGraceCredentials.withRead(() -> {
-     current.run();
-     if (owner == null || !owner.equals(session(getContext()))) throw new IllegalStateException("Account changed");
-     notifyListeners("sessionChanged", projection(owner), true);
-     call.resolve();
-     return null;
-    });
-   } catch (Exception unavailable) { call.reject("Sign-in could not be verified"); }
-  });
+ private void finishEnrollment(PluginCall call) {
+  try {
+   var owner = session(getContext());
+   if (owner == null) { call.reject("Sign-in could not be verified"); return; }
+   notifyListeners("sessionChanged", projection(owner), true);
+   call.resolve();
+  } catch (Exception unavailable) { call.reject("Sign-in could not be verified"); }
  }
 
  @Override @PluginMethod public void startGoogle(PluginCall call) { beginSignIn(call); }
+
+ @Override public void startEmail(PluginCall call) { unsupportedSignIn(call); }
+ @Override public void startPhone(PluginCall call) { unsupportedSignIn(call); }
+ @Override public void reauthenticate(PluginCall call) { unsupportedSignIn(call); }
+ @Override public void resend(PluginCall call) { unsupportedSignIn(call); }
+ @Override public void verify(PluginCall call) { unsupportedSignIn(call); }
+ @Override public void sendFactorCode(PluginCall call) { unsupportedSignIn(call); }
+
+ private static void unsupportedSignIn(PluginCall call) { call.reject("This sign-in method is unavailable in Grace"); }
 
  @Override @PluginMethod public void signOut(PluginCall call) {
   recovery.accountChanged();
@@ -202,30 +257,32 @@ public final class GraceAccount extends CloudSignInPlugin {
    super.signOut(accountCall(call, ignored -> {
     notifyListeners("sessionChanged", projection(null), true);
     call.resolve();
-   }));
+   }, null));
   } catch (RuntimeException unavailable) { call.reject("Couldn't sign out on this device"); }
  }
 
  @Override protected void handleOnDestroy() {
+  if (custodySubscription != null) custodySubscription.close();
   super.handleOnDestroy();
   var lease = enrollment;
-  if (lease != null) lease.close();
+  if (lease != null) closeEnrollment(lease);
  }
 
- private static PluginCall accountCall(PluginCall caller, Consumer<JSObject> resolved) {
-  return accountCall(caller, resolved, null);
+ private void closeEnrollment(GracePasswordsOwner.Enrollment lease) {
+  if (enrollment == lease) enrollment = null;
+  lease.close();
  }
 
- private static PluginCall accountCall(PluginCall caller, Consumer<JSObject> resolved, GracePasswordsOwner.Enrollment lease) {
-  var input = new JSObject().put("environment", ENVIRONMENT.name);
+ private PluginCall accountCall(PluginCall caller, Consumer<JSObject> resolved, GracePasswordsOwner.Enrollment lease) {
+  var input = new JSObject().put("environment", ENVIRONMENT);
   return new PluginCall(null, caller.getPluginId(), caller.getCallbackId(), caller.getMethodName(), input) {
    @Override public void resolve(JSObject data) {
-    if (lease != null) lease.close();
+    if (lease != null) closeEnrollment(lease);
     resolved.accept(data);
    }
    @Override public void resolve() { resolve(new JSObject()); }
    @Override public void reject(String message, String code, Exception ignored, JSObject data) {
-    if (lease != null) lease.close();
+    if (lease != null) closeEnrollment(lease);
     caller.reject("Cloud account operation could not complete", code);
    }
   };
@@ -234,7 +291,7 @@ public final class GraceAccount extends CloudSignInPlugin {
  @PluginMethod public void manageAccount(PluginCall call) {
   ACCOUNT.execute(() -> {
    try {
-    if (readOwner() == null) { call.reject("Sign in to manage your account"); return; }
+    if (session(getContext()) == null) { call.reject("Sign in to manage your account"); return; }
     open(Uri.parse(BuildConfig.CLOUD_WEB_ORIGIN), call);
    } catch (Exception unavailable) { call.reject("Couldn't open your account"); }
   });
@@ -266,8 +323,7 @@ public final class GraceAccount extends CloudSignInPlugin {
  }
 
  private boolean passwordRecoveryReady() {
-  try { return recovery.deviceReady() && hasGooglePlayServices() && session(getContext()) != null
-   && CloudPasswordBackup.available(REGISTRATION, ENVIRONMENT); }
+  try { return recovery.deviceReady() && GracePasswordsOwner.stableSession(getContext()) != null && passwordBackup.available(); }
   catch (Exception unavailable) { return false; }
  }
 
@@ -287,47 +343,52 @@ public final class GraceAccount extends CloudSignInPlugin {
   call.resolve();
  }
 
- void cancelPasswordBackup() { cancelNativePasswordBackup(); }
+ void cancelPasswordBackup() {
+  backupAttempt = null;
+  passwordBackup.cancel();
+ }
 
- void authorizePasswordBackup(GracePasswordRecovery controller, GracePasswordRecovery.Operation request) {
+ void authorizePasswordBackup(GracePasswordRecovery controller, GracePasswordRecovery.Operation operation) {
   ACCOUNT.execute(() -> {
+   if (!controller.isCurrent(operation)) return;
    try {
-    if (!controller.isCurrent(request)) return;
-    BackupOwner owner = SharedGraceCredentials.withRead(() -> new BackupOwner(session(getContext()), account.observe()));
-    BooleanSupplier current = () -> {
-     try {
-      owner.requireGeneration().run();
-      return controller.isCurrent(request) && recovery.deviceReady() && owner.session() != null
-       && owner.session().equals(session(getContext()));
-     } catch (Exception changed) { return false; }
-    };
-    if (!current.getAsBoolean() || !hasGooglePlayServices() || !CloudPasswordBackup.available(REGISTRATION, ENVIRONMENT)) {
-     controller.failed(request, "Sign in to Grace to use cloud backup.");
+    var attempt = new BackupAttempt(operation, GracePasswordsOwner.stableSession(getContext()), GracePasswordsOwner.generation());
+    if (!backupCurrent(attempt) || !passwordBackup.available()) {
+     controller.failed(operation, "Sign in to Grace to use cloud backup.");
      return;
     }
-    var purpose = CloudPasswordBackup.Purpose.valueOf(request.purpose.name());
-    boolean started = startNativePasswordBackup(ENVIRONMENT, purpose, current, new NativePasswordBackupCallback() {
-     @Override public void approved(CloudPasswordBackup.Approval grant) {
-      if (!grant.current() || !owner.session().accountId().equals(grant.ownerId())
-        || !owner.session().organizationId().equals(grant.organizationId())) {
-       controller.failed(request, "Choose the Google account you already use with Grace.");
-       return;
-      }
-      controller.run(request, new GracePasswordRecovery.Approval(grant.scope(), grant.ownerId(),
-       grant.revision(), grant.present(), grant::current,
-       (revision, ciphertext) -> {
-        var result = grant.run(revision, ciphertext);
-        return new ai.eliza.plugins.securestore.nativeonly.PasswordBackupApproval.Response(
-         result.status(), result.revision(), result.ciphertext());
-       }));
-     }
-
-     @Override public void refused(String reason) {
-      controller.failed(request, "cancelled".equals(reason) ? null : "Grace could not confirm your account.");
-     }
+    Uri address = passwordBackup.begin(operation.purpose);
+    backupAttempt = attempt;
+    getActivity().runOnUiThread(() -> {
+     if (!backupCurrent(attempt)) return;
+     try { getActivity().startActivity(new Intent(Intent.ACTION_VIEW, address)); }
+     catch (RuntimeException unavailable) { controller.failed(operation, "Couldn't open secure password backup approval."); }
     });
-    if (!started) controller.failed(request, "Grace could not start password backup.");
-   } catch (Exception unavailable) { controller.failed(request, "Sign in to Grace to use cloud backup."); }
+   } catch (Exception unavailable) { controller.failed(operation, "Sign in to Grace to use cloud backup."); }
+  });
+ }
+
+ private boolean backupCurrent(BackupAttempt attempt) {
+  try {
+   return recovery.isCurrent(attempt.operation()) && recovery.deviceReady() && attempt.owner() != null
+    && attempt.generation() == GracePasswordsOwner.generation()
+    && attempt.owner().equals(GracePasswordsOwner.stableSession(getContext()));
+  } catch (Exception changed) { return false; }
+ }
+
+ private void acceptPasswordBackup(Uri data) {
+  var attempt = backupAttempt;
+  if (attempt == null || !passwordBackup.accepts(data)) return;
+  ACCOUNT.execute(() -> {
+   if (backupAttempt != attempt || !backupCurrent(attempt)) return;
+   try {
+    var grant = passwordBackup.exchange(data, attempt.operation().purpose, () -> backupCurrent(attempt));
+    backupAttempt = null;
+    recovery.run(attempt.operation(), new GracePasswordRecovery.Approval(grant.scope(), grant.ownerId(), grant.revision(),
+     grant.present(), grant::current, grant::run));
+   } catch (Exception unavailable) {
+    recovery.failed(attempt.operation(), "This password backup approval has ended. Try again.");
+   }
   });
  }
 
