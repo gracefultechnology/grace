@@ -392,6 +392,7 @@ restore their shared fixture runs and the product runner restores verification
 results from the root, workspace packages and standalone examples. The result
 cache keys include the job, commit and run attempt. Nightly verification restores
 only the pinned evaluator and runs fresh checks.
+The default branch's product job publishes the pnpm store after its frozen installs. All jobs can restore public dependencies with the same workspace, vendored Eliza and example lockfiles. Fork pull requests can read this cache.
 Turborepo shares task results through the private Cloudflare/R2 cache.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
