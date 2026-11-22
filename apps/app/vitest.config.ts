@@ -502,7 +502,7 @@ async function googleConsent(context: BrowserCommandContext, endpoint: string, a
   }
 }
 
-type RecordCase = "later winner" | "earlier winner" | "tied latest" | "changed scope" | "mismatched detail" | "wrong record kind" | "ambiguous collection" | "private form" | "unverified account" | "public list";
+type RecordCase = "later winner" | "earlier winner" | "tied latest" | "changed scope" | "mismatched detail" | "wrong record kind" | "ambiguous collection" | "conflicting counts" | "unclear count" | "conflicting account" | "private form" | "unverified account" | "public list";
 type RecordAction = { kind: "open"; scenario: RecordCase; decisionUrl: string } | { kind: "close" } | { kind: "requests" } | SiteObservation;
 const recordSites = new WeakMap<Page, { site: Site; decisionUrl: string; chatUrl: string; requests: { count: number; leaked: boolean } }>();
 
@@ -523,7 +523,9 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
         const later = url.searchParams.get("page") === "2";
         const account = later && action.scenario === "changed scope" ? "acct-a" : "acct-A";
         const index = later ? 2 : 1;
-        const single = action.scenario === "public list" || action.scenario === "unverified account";
+        const unbound = action.scenario === "public list" || action.scenario === "unverified account";
+        const conflictingCount = action.scenario === "conflicting counts" || action.scenario === "unclear count";
+        const single = unbound || conflictingCount;
         const detail = url.pathname.startsWith("/view/");
         const label = action.scenario === "mismatched detail" ? "private-canary-wrong" : "private-canary-" + url.pathname.split("/").at(-1);
         const newer = action.scenario === "earlier winner" ? !later : later;
@@ -531,19 +533,23 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
         const date = action.scenario === "earlier winner" ? `<time datetime="2026-10-${day}">10/${day}/26</time>` : `2026-10-${day}`;
         const status = action.scenario === "earlier winner" ? "Canceled" : "Complete";
         const homepage = '<h1>Store</h1><nav><a id="orders" href="/list">My Orders</a></nav>';
+        const totals = conflictingCount
+          ? `<div><p>1 Item</p><section><p>${action.scenario === "unclear count" ? "Showing part of 8" : "Showing 1–1 of 8"}</p></section></div>`
+          : `<p>${single ? "1 Item" : `Items ${index} to ${index} of 2 total`}</p>`;
         const content = detail ? `<h1>${action.scenario === "wrong record kind" ? "Invoice" : "Order"} #${label}</h1>` : url.pathname === "/home" ?
           homepage + (action.scenario === "private form" ?
             '<form aria-label="Sign in"><label>Username<input name="username"></label><label>Password<input name="password" type="password"></label><button type="submit">Sign in</button></form>' :
             '<form><label>Newsletter email<input type="email"></label><button type="submit">Subscribe</button></form>') :
-          `<h1>Orders</h1><p>${single ? "1 Item" : `Items ${index} to ${index} of 2 total`}</p><table>
+          `<h1>Orders</h1>${totals}<table>
           <thead><tr><th>Order number</th><th>Order date</th><th>Status</th><th>Action</th></tr></thead>
           <tbody><tr><td>private-canary-${index}</td><td>${date}</td><td>${status}</td><td><a id="details" href="/view/${index}">View order</a></td></tr></tbody>
         </table><nav aria-label="Pages">${single ? "" : later ? '<a id="previous" href="/list">Previous</a>' : '<a id="next" href="/list?page=2">Next</a>'}</nav>`;
         const decoy = action.scenario === "ambiguous collection" ?
           '<section><p>1 Item</p><table><thead><tr><th>Order number</th><th>Order date</th><th>Status</th></tr></thead><tbody><tr><td>private-canary-decoy</td><td>2026-10-20</td><td>Complete</td></tr></tbody></table></section>' : "";
-        const banner = single ? "" : `<header>Account ID: ${account}</header>`;
+        const badge = action.scenario === "conflicting account" ? '<span aria-label="Account">#acct-B</span>' : "";
+        const banner = unbound ? "" : `<header>Account ID: ${account}${badge}</header>`;
         const scope = action.scenario === "public list" ? ' aria-label="Public records"' : "";
-        return route.fulfill({ contentType: "text/html", body: `<!doctype html><title>Record fixture</title>${banner}<main${scope}>${content}${decoy}</main>` });
+        return route.fulfill({ contentType: "text/html; charset=utf-8", body: `<!doctype html><title>Record fixture</title>${banner}<main${scope}>${content}${decoy}</main>` });
       });
       await context.page.route(action.decisionUrl, async (route) => {
         requests.count++;

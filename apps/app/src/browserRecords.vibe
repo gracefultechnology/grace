@@ -1,5 +1,5 @@
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
-import { comparableName, guidedPageState, NativePage } from "./nativePage.vibe"
+import { comparableName, guidedPageState, type NativePage } from "./nativePage.vibe"
 import type { LinkObservation, PageId } from "./nativePage.schema.ts"
 
 export type RecordSiteScope = { kind: "Bound"; marker: string } | { kind: "Public" }
@@ -26,35 +26,49 @@ const dateFields = ["date", "created", "created on", "placed on", "issued", "iss
 const identifierFields = ["id", "number", "#", "record id", "reference"]
 const detailLinksLabels = ["view", "details", "view details", "open details"]
 
-const accountField = ':is(header,[role="banner"]) :is([aria-label="Account" i],[aria-label="Profile" i],[aria-label="Signed-in account" i],[aria-label^="Signed in as " i]):not(form *):not(:has(input,textarea,[contenteditable]))'
-const siteHeader = ':is(header,[role="banner"]):not(:has([contenteditable]))'
+const banner = ':is(header,[role="banner"])'
+const badgeName = ':is([aria-label="Account" i],[aria-label="Profile" i],[aria-label="Signed-in account" i],[aria-label^="Signed in as " i])'
+const badgeInBanner = `${banner} ${badgeName}:not(form *)`
+
+function uniqueElement(selector: string): string {
+  const match = `:is(${selector})`
+  const preceded = `:is(${match},:has(${match})) ~ *`
+  const followed = `:has(~ ${match},~ * ${match})`
+  return `${match}:not(${match} *,:has(${match}),${preceded},${preceded} *,${followed},${followed} *)`
+}
 
 effect function accountOn(page: NativePage.Shape, id: PageId, address: URL, current: boolean!!): SiteAccount!! {
-  if (!(try current)) return { kind: "Ambiguous" }
-  const badge = page.readRecordText(id, accountField) catch () => undefined
-  if (!(try current)) return { kind: "Ambiguous" }
-  const header = page.readRecordText(id, siteHeader) catch () => undefined
-  if (!(try current)) return { kind: "Ambiguous" }
-  const values = new Set<string>()
-  if (header?.url === address.href && header.text.length <= 4096) {
-    const lines = header.text.split("\n")
-    for (const [index, line] of lines.entries()) {
-      const marker = /^(?:account (?:id|email))(?:\s*[:#]\s*|\s+|$)(.{0,95})$/iu.exec(line.trim())
-      if (marker) {
-        const label = (marker[1] || lines[index + 1] || "").trim()
-        if (/^[^\s\p{Cc}\p{Cf}]{1,95}$/u.test(label)) values.add(label)
-      }
-    }
+  const read = effect (selector: string) => {
+    if (!(try current)) return undefined
+    const reply = page.readRecordText(id, selector) catch () => undefined
+    return reply?.url === address.href && reply.text.length <= 4096 && (try current) ? reply.text : undefined
   }
-  if (values.size === 1) return { kind: "Bound", marker: [...values][0] }
-  if (values.size > 1) return { kind: "Ambiguous" }
-  const label = badge?.url === address.href ? badge.text.trim() : ""
-  const email = /^(?:signed in as\s+)?([^\s@]+@[^\s@]+\.[^\s@]+)$/iu.exec(label)?.[1]
-  const listed = /^#([^\s\p{Cc}\p{Cf}]{1,95})$/u.exec(label)?.[1]
-  const marker = email ?? listed
-  if (marker && marker.length <= 95) return { kind: "Bound", marker }
-  const publicRecord = page.readRecordText(id, `${main}[aria-label="Public records" i] ${majorHeading}`) catch () => undefined
-  return publicRecord?.url === address.href && (try current) ? { kind: "Public" } : { kind: "Absent" }
+  const header = uniqueElement(banner) + ':not(:has([contenteditable]))'
+  const text = try read(header)
+  const publicHeading = `${main}[aria-label="Public records" i] ${majorHeading}`
+  if (text === undefined) return (try read(`html:not(:has(${banner})) ${publicHeading}`)) ? { kind: "Public" } : { kind: "Absent" }
+  const ids = new Set<string>()
+  const emails = new Set<string>()
+  const lines = text.split("\n")
+  for (const [index, line] of lines.entries()) {
+    const marker = /^(?:account (id|email))(?:\s*[:#]\s*|\s+|$)(.{0,95})$/iu.exec(line.trim())
+    if (!marker) continue
+    const label = (marker[2] || lines[index + 1] || "").trim()
+    if (!/^[^\s\p{Cc}\p{Cf}]{1,95}$/u.test(label)) return { kind: "Ambiguous" }
+    if (marker[1].toLowerCase() === "id") ids.add(label)
+    else emails.add(label)
+  }
+  if (!(try read(`${header}:not(:has(${badgeName}))`))) {
+    const label = (try read(uniqueElement(badgeInBanner) + ':not(:has(input,textarea,[contenteditable]))'))?.trim() ?? ""
+    const email = /^(?:signed in as\s+)?([^\s@]+@[^\s@]+\.[^\s@]+)$/iu.exec(label)?.[1]
+    const listed = /^#([^\s\p{Cc}\p{Cf}]{1,95})$/u.exec(label)?.[1]
+    if (email && email.length <= 95) emails.add(email)
+    else if (listed) ids.add(listed)
+    else return { kind: "Ambiguous" }
+  }
+  if (ids.size > 1 || emails.size > 1) return { kind: "Ambiguous" }
+  if (ids.size || emails.size) return { kind: "Bound", marker: JSON.stringify([[...ids], [...emails]]) }
+  return (try read(publicHeading)) ? { kind: "Public" } : { kind: "Absent" }
 }
 
 export function sameRecordAccount(first: RecordSiteScope, second: SiteAccount): boolean {
@@ -101,14 +115,45 @@ function fullDateWitnesses(text: string): string[] {
   return [...new Set(["19", "20"].flatMap((century) =>
     [`${century}${year}-${left}-${right}`, `${century}${year}-${right}-${left}`]))]
 }
-function rangeOf(text: string): RecordRange | undefined {
-  const phrase = text.trim().replace(/\s+/gu, " ")
-  const listed = /^(?:showing\s+)?(?:items?\s+)?(\d+)\s*(?:[-–]|to)\s*(\d+)\s+of\s+(\d+)(?:\s+(?:items?|records?|results?|total))?$/iu.exec(phrase)
-  const all = /^(\d+)\s+(?:items?|item\(s\)|records?|results?)$/iu.exec(phrase)
-  const range: RecordRange | undefined = listed ? { first: Number(listed[1]), last: Number(listed[2]), total: Number(listed[3]) } :
-    all ? { first: 1, last: Number(all[1]), total: Number(all[1]) } : undefined
-  return range && range.first >= 1 && range.first <= range.last && range.last <= range.total &&
-    [range.first, range.last, range.total].every(Number.isSafeInteger) ? range : undefined
+const countPhrase = /(?:showing\s+)?(?:items?\s+)?(\d+)\s*(?:[-–]|to)\s*(\d+)\s+of\s+(\d+)(?:\s+(?:items?|records?|results?|total))?|(\d+)\s+(?:item\(s\)|items?|records?|results?)/iu
+const exactCount = new RegExp(`^\\s*(?:${countPhrase.source})\\s*$`, "iu")
+const nearbyCounts = new RegExp(`(?<![\\p{L}\\d])(?:${countPhrase.source})(?![\\p{L}\\d])`, "giu")
+
+function rangeFrom(match: RegExpMatchArray): RecordRange {
+  const [, first, last, total, all] = match
+  return all ? { first: 1, last: Number(all), total: Number(all) } : { first: Number(first), last: Number(last), total: Number(total) }
+}
+
+effect function collectionRange(page: NativePage.Shape, id: PageId, address: URL, current: boolean!!, scope: string, table: string) {
+  const counter = ':is(p,output,[role="status"])'
+  const adjacent = ':is(:has(+ table),:is(div,section):has(+ table) *,:is(div,section):has(+ div table) *,table + :is(div,section) *,div:has(table) + :is(div,section) *)'
+  const candidate = page.readRecordText(id, `${scope} ${counter}${adjacent}:not(table *,form *):not(:has(input,textarea,select,[contenteditable]))`) catch () => undefined
+  if (!candidate || candidate.url !== address.href || candidate.text.length > 4096 || !(try current)) return undefined
+  const witness = exactCount.exec(candidate.text)
+  if (!witness) return undefined
+  const range = rangeFrom(witness)
+  if (![range.first, range.last, range.total].every(Number.isSafeInteger) || range.first < 1 || range.first > range.last || range.last > range.total) return undefined
+  const group = `:is(${counter},:is(div,section):has(${counter})):not(:has(table,form,input,textarea,[contenteditable]))`
+  const wrapper = ':is(div,section)'
+  const before = (next: string) => [`${scope} ${group}:has(+ ${next})`, `${scope} ${group} + ${group}:has(+ ${next})`]
+  const after = (previous: string) => [`${previous} + ${group}`, `${previous} + ${group} + ${group}`]
+  const regions = [before("table"), after(table), before(`${wrapper} > table`), after(`${scope} ${wrapper}:has(> table)`)]
+  let covered = false
+  for (const [selector, adjacentGroup] of regions) {
+    if (!(try current)) return undefined
+    const summary = page.readRecordText(id, selector) catch () => undefined
+    if (!summary) continue
+    const unscoped = page.readRecordText(id, adjacentGroup) catch () => undefined
+    if (unscoped || summary.url !== address.href || summary.text.length > 4096 || !(try current)) return undefined
+    const leftover = summary.text.replace(nearbyCounts, " ")
+    if (/\bshowing\b|\bof\s+\d+\b|\d+[^\n]*\btotal\b/iu.test(leftover)) return undefined
+    for (const match of summary.text.matchAll(nearbyCounts)) {
+      const next = rangeFrom(match)
+      if (range.first !== next.first || range.last !== next.last || range.total !== next.total) return undefined
+      covered = true
+    }
+  }
+  return covered ? range : undefined
 }
 
 export function sameCollectionAddress(from: URL, to: URL): boolean {
@@ -200,10 +245,7 @@ export effect function observeRecordCollection(page: NativePage.Shape, id: PageI
   })
   if (indices.some((index) => index === undefined))
     return { kind: "Unverifiable" }
-  const counter = ':is([role="status"],p,output):not(table *,form *):not(:has(input,textarea,select,[contenteditable]))'
-  const adjacent = ':is(:has(+ table),:is(div,section):has(+ table) *,:is(div,section):has(+ div table) *,table + :is(div,section) *,div:has(table) + :is(div,section) *)'
-  const counters = try read(`${scope} ${counter}${adjacent}`)
-  const range: RecordRange | undefined = counters === undefined ? undefined : rangeOf(counters)
+  const range = try collectionRange(page, id, address, current, scope, table)
   if (!range) return { kind: "Unverifiable" }
   const account = try accountOn(page, id, address, current)
   if (account.kind !== "Bound" && account.kind !== "Public") return { kind: "NeedsScope" }
