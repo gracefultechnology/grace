@@ -905,6 +905,8 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
     const shown = pending(root, readSpecs(root)[0]).filter((p) => p.cited).map(showPending);
     const line = read("spec/index.md", root).split("\n").indexOf("### No more can be removed than the order holds") + 1;
     assert.deepEqual(shown, [`spec/index.md:${line}  Story: Change my mind / No more can be removed than the order holds\n      prose changed: update the model to match, or confirm it already does\n      cited by test/app.test.vibe:19: read them again against it`]);
+    fs.writeFileSync(path.join(root, "test/app.test.vibe"), "\n" + read("test/app.test.vibe", root));
+    assert.deepEqual(pending(root, readSpecs(root)[0]).flatMap((p) => p.cited ?? []), ["test/app.test.vibe:20"]);
   });
 
   test("a shell written for a transition the spec has since renamed no longer fits the generated contract", async () => {
@@ -2211,7 +2213,7 @@ function eachCheck() {
   });
 
   test("a process that outlives a reinstall of Quint, as watch does, keys what it runs and simulates by the Quint installed now, and remembers its runs again", { skip: process.platform === "win32" }, async () => {
-    const root = toolchain(scratch({}));
+    const root = toolchain(scratch({}), "lsc");
     const log = path.join(root, "quint.log");
     const shim = path.join(root, "node_modules/.bin/quint");
     const scope = path.join(root, "node_modules/@informalsystems");
@@ -2219,20 +2221,31 @@ function eachCheck() {
     const original = fs.readFileSync(path.join(nodeModules, "@informalsystems/quint/package.json"), "utf8");
     fs.unlinkSync(scope);
     fs.mkdirSync(path.dirname(manifest), { recursive: true });
-    fs.writeFileSync(manifest, original);
+    const direct = JSON.parse(original);
+    fs.writeFileSync(manifest, JSON.stringify({ ...direct, dependencies: { ...direct.dependencies, "quint-dependency": "*" } }));
+    const dependency = path.join(scope, "quint/node_modules/quint-dependency/package.json");
+    fs.mkdirSync(path.dirname(dependency), { recursive: true });
+    fs.writeFileSync(dependency, JSON.stringify({ name: "quint-dependency", version: "1.0.0" }));
+    const source = path.join(path.dirname(dependency), "index.js");
+    fs.writeFileSync(source, "export const version = 1;\n");
     const install = (build: string) => fs.writeFileSync(shim, `#!/bin/sh\necho ${build} >> '${log}'\necho '{}' > ir.json\n`, { mode: 0o755 });
     install("first");
     const script = [
       'const fs = await import("node:fs");',
       `const { act } = await import(${JSON.stringify(path.join(root, "vibestack/action.ts"))});`,
-      `const { entry } = await import(${JSON.stringify(path.join(root, "vibestack/cache.ts"))});`,
+      `const { entry, steady } = await import(${JSON.stringify(path.join(root, "vibestack/cache.ts"))});`,
       'const memory = { root: ".", fresh: false, used: new Set() };',
       `const runs = async () => { await act(memory, "quint", ["typecheck"], "typed", { "a.qnt": { text: "module a {}", key: "a" } }); return fs.readFileSync(${JSON.stringify(log)}, "utf8").trim().split("\\n"); };`,
       'const simulation = async () => (await entry(".", "simulate", ["same"])).name;',
       'const said = { before: [await runs(), await runs()], simulation: await simulation() };',
       `fs.writeFileSync(${JSON.stringify(shim)}, fs.readFileSync(${JSON.stringify(shim)}, "utf8").replace("first", "second"));`,
       `fs.writeFileSync(${JSON.stringify(manifest)}, JSON.stringify({ ...JSON.parse(fs.readFileSync(${JSON.stringify(manifest)}, "utf8")), version: "0.0.0-reinstalled" }));`,
-      'console.log(JSON.stringify({ ...said, after: [await runs(), await runs()], reinstalled: await simulation() }));',
+      'const reinstalled = await steady(async () => ({ after: [await runs(), await runs()], reinstalled: await simulation(), proof: (await entry(".", "prove", ["same"])).name }));',
+      `fs.writeFileSync(${JSON.stringify(dependency)}, JSON.stringify({ name: "quint-dependency", version: "1.0.1" }));`,
+      'const dependency = await steady(async () => ({ runs: [await runs(), await runs()], simulation: await simulation(), proof: (await entry(".", "prove", ["same"])).name }));',
+      `fs.writeFileSync(${JSON.stringify(source)}, "export const version = 2;\\n");`,
+      'const patched = await steady(async () => ({ runs: [await runs(), await runs()], simulation: await simulation() }));',
+      'console.log(JSON.stringify({ ...said, ...reinstalled, dependency, patched }));',
     ].join("\n");
     const r = await exec(process.execPath, ["--input-type=module", "--eval", script], root);
     assert.equal(r.status, 0, r.stderr);
@@ -2240,6 +2253,13 @@ function eachCheck() {
     assert.deepEqual(said.before, [["first"], ["first"]], "a run is remembered");
     assert.deepEqual(said.after, [["first", "second"], ["first", "second"]], "the Quint installed since runs, and its run is remembered");
     assert.notEqual(said.reinstalled, said.simulation, "a simulation is keyed by the Quint installed now");
+
+    assert.notEqual(said.dependency.simulation, said.reinstalled, "a dependency reinstalled under the same Quint launcher changes the simulation identity");
+    assert.equal(said.dependency.proof, said.proof, "the independent LemmaScript proof stays current");
+    assert.deepEqual(said.dependency.runs, [["first", "second", "second"], ["first", "second", "second"]], "Quint runs again for the changed dependency, once");
+
+    assert.notEqual(said.patched.simulation, said.dependency.simulation, "a same-version change to installed dependency code invalidates the simulation");
+    assert.deepEqual(said.patched.runs, [said.dependency.runs[1].concat("second"), said.dependency.runs[1].concat("second")]);
 
     const shims = path.join(scratch({}), "node_modules/.bin");
     fs.mkdirSync(shims, { recursive: true });
@@ -2250,7 +2270,7 @@ function eachCheck() {
     fs.mkdirSync(path.dirname(explorer), { recursive: true });
     const identities = async (version?: string) => {
       fs.writeFileSync(explorer, JSON.stringify({ ...JSON.parse(shipped), version }));
-      const r = await exec(process.execPath, ["--input-type=module", "--eval", `const { installedPackages } = await import(${JSON.stringify(path.join(root, "vibestack/action.ts"))});
+      const r = await exec(process.execPath, ["--input-type=module", "--eval", `const { installedPackages } = await import(${JSON.stringify(path.join(root, "vibestack/cache.ts"))});
         console.log(JSON.stringify([installedPackages(${JSON.stringify(path.join(shims, "lsc"))}, "lemmascript"), installedPackages(${JSON.stringify(path.join(shims, "bombadil"))}, "@antithesishq/bombadil")]));`], root);
       return r.status === 0 ? JSON.parse(r.stdout) : r.stderr;
     };
@@ -3086,19 +3106,24 @@ describe("the documents name what exists", () => {
     const tracked = (await trackedEntries()).filter(({ mode, file }) =>
       mode !== "160000" && fs.lstatSync(path.join(project, file), { throwIfNoEntry: false })?.isFile()).map(({ file }) => file);
     const missed = (hashed: Set<string>, read: (file: string) => boolean) => tracked.filter((file) => read(file) && !hashed.has(file));
+    const workspace = (file: string) => /^(apps|packages|spec)\//.test(file);
+    const [shardA, shardB, packed] = tools;
     assert.deepEqual({
       docs: missed(docs, () => true),
       examples: missed(examples, (file) => /^vibestack\/(examples\/|(?!studio\/|fixtures\/|(testing|stories|design)\/test\/))/.test(file)),
-      tools: tools.flatMap((hashed) => missed(hashed, (file) => PACKED.includes(file) || /^(vibestack\/(?!examples\/)|vibestack\/examples\/order\/|packages\/|apps\/[^/]+\/package\.json$|spec\/|\.agents\/skills\/)/.test(file))),
+      tools: tools.flatMap((hashed) => missed(hashed, (file) => (!workspace(file) && PACKED.includes(file)) || /^(vibestack\/(?!examples\/)|vibestack\/examples\/order\/|\.agents\/skills\/)/.test(file))),
+      packed: missed(packed, workspace),
+      workspaceInFixtures: [shardA, shardB].flatMap((hashed) => [...hashed].filter(workspace)),
       examplesInTools: tools.flatMap((hashed) => [...hashed]).filter((file) => /^vibestack\/examples\/(?!order\/)/.test(file)),
       selftestInGlobal: global.filter((file) => /^vibestack\/(selftest|remote-cache)\.ts$|\/test\//.test(file)),
-    }, { docs: [], examples: [], tools: [], examplesInTools: [], selftestInGlobal: [] });
+    }, { docs: [], examples: [], tools: [], packed: [], workspaceInFixtures: [], examplesInTools: [], selftestInGlobal: [] });
     assert.deepEqual([shards, listed("selftest").sort(), listed("verify").filter((task) => task.includes("selftest")).sort()],
       [["selftest:tools:a", "selftest:tools:b", "selftest:tools:rest"], selftests.map((task) => `//#${task}`), selftests.map((task) => `//#${task}`)], "pnpm selftest and pnpm verify run every selftest task");
     const ci = read(".github/workflows/ci.yml");
     const lanes: string[] = JSON.parse(ci.match(/^ +lane: .*\|\| '(\[[^']+\])'/m)?.[1] ?? "[]");
     const product = ci.match(/^ +run: pnpm all (build .+) --continue --summarize$/m)?.[1].split(" ") ?? [];
-    assert.deepEqual(lanes, ["product", ...shards.map((task) => `selftest-${task.split(":")[2]}`)], "each hosted tool shard has its own runner");
+    const fixtures = ci.match(/^  vibestack-fixture-selftests:\n[\s\S]*?^ +lane: \[(.+)\]$/m)?.[1].split(", ") ?? [];
+    assert.deepEqual([...lanes, ...fixtures].sort(), ["product", ...shards.map((task) => `selftest-${task.split(":")[2]}`)].sort(), "each hosted tool shard has its own runner");
     assert.deepEqual([...product, ...shards.map((task) => `//#${task}`)].sort(), listed("verify").sort(), "the hosted jobs run each task of pnpm verify once");
     const each = "the tools each check catches its own kind of mistake";
     const inShards = Object.fromEntries(Object.keys(SHARDS).map((shard) => [`${each} ${shard}`, `selftest:tools:${shard.at(-1)}`]));
@@ -3111,8 +3136,8 @@ describe("the documents name what exists", () => {
     });
     assert.deepEqual(Object.fromEntries(titles.map((title) => [title, ranBy(title)])), Object.fromEntries(titles.map((title) => [title, [elsewhere[title] ?? "selftest:tools:rest"]])));
     assert.match(ci, /pnpm all "\/\/#selftest:tools:.*?--only --continue --summarize/, "a dedicated runner executes only its shard after setup");
-    const [first, ...others] = shards.map((task) => JSON.parse(read("turbo.json")).tasks[`//#${task}`]);
-    assert.deepEqual(others, others.map(() => first), "the shards wait for the same tasks and are keyed by the same files");
+    const [first, ...others] = shards.map((task) => JSON.parse(read("turbo.json")).tasks[`//#${task}`].dependsOn);
+    assert.deepEqual(others, others.map(() => first), "the shards wait for the same integration prerequisites");
   });
 
   test("a task waits for the root's gen unless its package can never own a root spec; Studio's dev waits for what its build does; prose, the selftest and a failed run's leftovers rerun no Studio task, and the fixtures its tests read do", async () => {
@@ -3213,7 +3238,7 @@ function theCommandLine() {
     fs.writeFileSync(path.join(root, "packages/app/package.json"), JSON.stringify({ name: "app" }));
     fs.symlinkSync(nodeModules, path.join(root, "node_modules"), "dir");
     fs.symlinkSync(path.dirname(script), path.join(root, "vibestack"), "dir");
-    const prepare = (hosted: boolean) => exec(process.execPath, [script, "gen", "--install"], root, { ...process.env, GITHUB_ACTIONS: String(hosted), TURBO_CACHE: "local:rw", TURBO_TOKEN: "" });
+    const prepare = (hosted: boolean, job = "verify") => exec(process.execPath, [script, "gen", "--install"], root, { ...process.env, GITHUB_ACTIONS: String(hosted), GITHUB_JOB: job, TURBO_CACHE: "local:rw", TURBO_TOKEN: "" });
     for (const hosted of [false, true]) {
       const invalid = await prepare(hosted);
       assert.equal(invalid.status, 0, invalid.stderr);
@@ -3221,6 +3246,10 @@ function theCommandLine() {
       assert.equal((await import(path.join(root, "gen/value.ts"))).answer, 42);
     }
     fs.writeFileSync(path.join(root, "spec/value.md"), ruleSpec("pure val answer = 43", "A value"));
+    fs.rmSync(path.join(root, "gen/value.ts"));
+    const fixtures = await prepare(true, "vibestack-fixture-selftests");
+    assert.equal(fixtures.status, 0, fixtures.stderr);
+    assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
     const installed = await prepare(true);
     assert.equal(installed.status, 0, installed.stderr);
     assert.doesNotMatch(installed.stdout, /gen\/ was not generated/);
@@ -3504,6 +3533,41 @@ const SHARDS = { "in shard a": eachCheckA, "in shard b": eachCheckB };
 describe("the tools", { concurrency: true }, () => {
   describe("the command line and what a failed proof leaves to start from", { concurrency: LANES }, theCommandLine);
   describe("each check catches its own kind of mistake", { concurrency: LANES }, eachCheck);
+});
+
+test("the same installed Quint shares verification results across checkouts and distinct launchers and patches keep their own", { skip: process.platform === "win32" }, async () => {
+  const install = (patch: string) => {
+    const root = toolchain(scratch({}));
+    const modules = path.join(root, "node_modules");
+    const store = path.join(modules, ".pnpm");
+    const locator = `@informalsystems+quint@1.0.0_patch_hash=${patch}/node_modules`;
+    const dir = path.join(store, locator, "@informalsystems/quint");
+    fs.unlinkSync(store);
+    fs.unlinkSync(path.join(modules, "@informalsystems"));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.symlinkSync(path.dirname(dir), path.join(modules, "@informalsystems"));
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@informalsystems/quint", version: "1.0.0", bin: "cli.js" }));
+    fs.writeFileSync(path.join(dir, "cli.js"), "export {};\n");
+    const shim = path.join(modules, ".bin/quint");
+    fs.writeFileSync(shim, `#!/bin/sh\nexport NODE_PATH="${store}/${locator}:${store}/node_modules:$NODE_PATH"\nexec node "$(dirname "$0")/../.pnpm/${locator}/@informalsystems/quint/cli.js" "$@"\n`, { mode: 0o755 });
+    return { root, shim };
+  };
+  const identity = async (root: string) => {
+    const { installedProgram }: typeof import("./cache.ts") = await import(path.join(root, "vibestack/cache.ts"));
+    const program = installedProgram(root, "quint");
+    assert.ok(program);
+    return program.id;
+  };
+  const left = install("first");
+  const right = install("first");
+  const expected = await identity(left.root);
+  assert.equal(await identity(right.root), expected);
+  assert.notEqual(await identity(install("second").root), expected);
+  const launcher = fs.readFileSync(right.shim, "utf8");
+  for (const changed of [launcher.replace("exec node", "exec node --no-warnings"), launcher.replace("/node_modules:$NODE_PATH", "/another-module-path:$NODE_PATH")]) {
+    fs.writeFileSync(right.shim, changed);
+    assert.notEqual(await identity(right.root), expected);
+  }
 });
 
 test("a trace integer of 16 or more digits that Quint wrote as a BigNumber decodes to the same integer", () => {
