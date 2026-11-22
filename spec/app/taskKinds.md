@@ -93,7 +93,7 @@ pure def lawFittingTermsAreValidForTheFactsKind(kind: T::TaskKind, facts: Facts,
 
 ### Grace types only what a choice says, for a bill its amount and day, for a booking its time and the kinds of detail asked
 
-No terms give nothing to type, and every chosen terms give something to type.
+No terms give nothing to type, and any chosen terms give something to type.
 
 ```quint
 type Fill = NoFill | PayFill({ payForm: BK::FormFill }) | BookFill({ bookForm: VK::VisitFill })
