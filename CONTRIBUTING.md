@@ -50,6 +50,8 @@ files and the `vibestack/fixtures/` they read, besides the tools every task is k
 `check` rewrites its owners' `gen/` too, so it waits for their tasks: name each owner's in `//#check` of `turbo.json`,
 as `@repo/app`'s are. `pnpm lint:js` on its own needs what `gen` and `typecheck` write (`gen/`, `.vibe/declarations`);
 `pnpm lint` runs them first.
+`pnpm all //#analyze` also runs or restores the application and Studio generators,
+the UI stories and the design theme before analysis reads their outputs.
 
 Pull requests go to `develop`, and `develop` to `main`; what CI runs on each is in
 [CI](#ci).
@@ -230,10 +232,13 @@ unchanged toolchain is not read again, nor Z3 asked its version. A check
 reads those times of Dafny's installation once, and reads them again after each
 run of Dafny, so a result is not remembered when the verifier was installed
 again during the run. The template install generates locally with `gen --if-valid`.
-Local installs and the product job run the CLI build and vendored Eliza
-generation in parallel. The three tool selftest jobs in `ci.yml` build the tools
-and generate their scratch projects on demand. The packaged CLI test rebuilds
-from a clean copy of the workspace. Other GitHub Actions jobs use the same strict root
+Local installs and the product job run the CLI build and vendored Eliza generation together.
+The tooling package sets `--skip-gen-on-pack` in its prepare script. A
+`pnpm pack` still builds the CLI and Studio. It skips the application's
+generated models, which the tools' tarball does not contain.
+The three tool selftest jobs in `ci.yml` run only the listed `//#build` task and generate their scratch
+projects on demand. The packaged CLI test rebuilds from a clean copy of the
+workspace. Other GitHub Actions jobs use the same strict root
 `gen` task as verification, so a successful install warms the task cache. A failed generation leaves the
 remaining checks runnable and is retried by verification. Generated stories,
 browser build artifacts, compiler declarations and successful test receipts
@@ -273,11 +278,12 @@ an identical installation does not invalidate it and replacing an executable
 with the same version does; tests, drivers and explorations are keyed by the
 verifier too, since they may run proofs, as Studio's do. A process that
 outlives a reinstall, as `spec watch` does, reads the installed toolchain
-again on the next check. Simulations and proofs include the resolved package
-versions and dependency links for Quint and LemmaScript respectively. Each
-check reads each package graph once and shares it with all runs of that tool. Short actions share an installation
-check before their results reach disk. The first action, long actions, completed stages and the end of the
-check flush pending results. A changed installation discards the pending results and stops the check. A
+again on the next check. Simulations and proofs include the resolved package files
+and dependency links for Quint and LemmaScript. Each check shares an installation
+inventory across runs of the same tool and validates its files before publishing a batch.
+The first action, long actions, completed stages and the end of the check flush pending results.
+If a concurrent installation changes these files, the check discards the pending results
+and retries under the same project lock. It stops after two unsuccessful retries. A
 simulation also depends on the bytes of Quint's installed Rust evaluator. A
 run that installs its evaluator can produce a result; the next run records it
 against the installed binary. The task runner supplies the evaluator fingerprint

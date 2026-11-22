@@ -9,6 +9,7 @@ import { stripTypeScriptTypes } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { gzipSync, zstdDecompressSync } from "node:zlib";
 import { Miniflare } from "miniflare";
@@ -24,7 +25,7 @@ import { BUILTINS, LIST_HELPERS, OPERATORS } from "./gen/print.ts";
 import { mirrorGen } from "./units.ts";
 import { conformance as checkTraces, conformanceFound } from "./conform.ts";
 import { explore, explored, pageInputs } from "./explore.ts";
-import { harnessFiles, search, simulate } from "./simulate.ts";
+import { harnessFiles, search, simulate, simulation } from "./simulate.ts";
 import { acceptContracts, acceptReviews, NODE, check, checkVerifiedSource, danglingCitations, expandListHelpers, generated, init, parseSpec, pending, pendingContracts, readSpecs, replay, show, typecheckAll, type Result, type Spec } from "./pipeline.ts";
 
 const project = path.join(import.meta.dirname, "..");
@@ -724,6 +725,41 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
     assert.equal(result.broken, true, result.again);
     assert.match(result.again, /--max-samples 32 --max-steps 40\b/);
     assert.equal(result.traces[0]?.at(-1)?.state, 38);
+  });
+
+  test("a concrete witness uses the original guards and rules and supplies its steps to replay", async () => {
+    const modelSource = `pure val initial: int = 0
+pure def publish(n: int, amount: int): int = amount
+pure def canPublish(n: int, amount: int): bool = n == 0 and amount > 0
+pure def finish(n: int): int = n + 1
+pure def canFinish(n: int): bool = n > 0 and n < 42
+pure def alwaysSafe(n: int): bool = n <= 42
+pure def sometimesDone(n: int): bool = n == 42
+pure val witnessIndex = 3
+pure val witnessSender = 4
+pure val witness_fixture = 5
+pure val witness_sometimesDone = 6
+pure def witnessStep_sometimesDone(n: int): int = n`;
+    const simulateExample = async (source: string, example: string) => {
+      const root = oneRule("journey", "Publish then finish", `${source}\npure val eval_witness_sometimesDone = ${example}`);
+      const spec = readSpecs(root)[0];
+      const model = await gen(root, spec);
+      const domain = await import(pathToFileURL(path.join(root, "gen", "journey.ts")).href);
+      assert.deepEqual([domain.witnessIndex, domain.witnessSender, domain.witness_fixture, domain.witness_sometimesDone, domain.witnessStep_sometimesDone(7)], [3, 4, 5, 6, 7]);
+      return simulation({ root, fresh: false, used: new Set() }, spec, [spec], model, domain, 1);
+    };
+    const [reached, denied, unsafe, mistyped] = await Promise.all([
+      simulateExample(modelSource, '(("publish", 41), "finish")'),
+      simulateExample(modelSource.replace("n == 42", "n == 1"), '("publish", -1)'),
+      simulateExample(modelSource, '(("publish", 43), "finish")'),
+      simulateExample(modelSource, '("publish", "unknown")'),
+    ]);
+    assert.ok(reached.said.some((r) => r.ok && r.summary === "sometimesDone is reachable"), JSON.stringify(reached.said));
+    assert.ok(reached.said.some((r) => r.ok && r.stage === "replay"), JSON.stringify(reached.said));
+    assert.deepEqual(reached.tested?.journeys[0]?.events, [{ type: "publish", amount: 41 }, { type: "finish" }]);
+    assert.ok(denied.said.some((r) => r.ok && r.summary === "sometimesDone is reachable"), JSON.stringify(denied.said));
+    assert.ok(unsafe.said.some((r) => !r.ok && r.stage === "always" && r.detail.includes('publish{"amount":43}')), JSON.stringify(unsafe.said));
+    assert.ok(mistyped.said.some((r) => !r.ok && /Couldn't unify (?:int and str|str and int)/.test(r.detail)), JSON.stringify(mistyped.said));
   });
 
   test("hand-written code that changes what it is checked against is refused or flagged", async () => {
@@ -2198,12 +2234,12 @@ function eachCheck() {
         import { check } from "./vibestack/formal.ts";
         let models = 0;
         const result = await check(".", false, (step) => {
-          if (step.stage === "model" && ++models === 1) fs.linkSync("node_modules/.bin/quint", "second-install-quint");
+          if (step.stage === "model" && ++models <= 2) fs.linkSync("node_modules/.bin/quint", "concurrent-install-" + models);
         });
         console.log(JSON.stringify([models, result.results.filter(s => s.stage === "model").length, result.results.filter(s => !s.ok).map(s => s.stage)]));
       `], root);
       assert.equal(retry.status, 0, retry.stderr);
-      assert.deepEqual(JSON.parse(retry.stdout), [2, 1, ["review"]]);
+      assert.deepEqual(JSON.parse(retry.stdout), [3, 1, ["review"]]);
     }
     fs.writeFileSync(path.join(root, "tsconfig.json"), '{"compilerOptions":{"noEmit":true},"include":["gen/*.ts"]}');
     if (process.platform !== "win32") {
@@ -3303,6 +3339,7 @@ describe("the documents name what exists", () => {
     });
     assert.deepEqual(Object.fromEntries(titles.map((title) => [title, ranBy(title)])), Object.fromEntries(titles.map((title) => [title, [elsewhere[title] ?? "selftest:tools:rest"]])));
     assert.match(ci, /pnpm all "\/\/#selftest:tools:.*?--only --continue=dependencies-successful --summarize/, "a dedicated runner executes only its shard after setup");
+    assert.match(scripts.prepare, /^node vibestack\/spec\.ts gen --install --skip-gen-on-pack \/\/#build(?: |$)/);
     const [first, ...others] = shards.map((task) => JSON.parse(read("turbo.json")).tasks[`//#${task}`].dependsOn);
     assert.deepEqual(others, others.map(() => first), "the shards wait for the same integration prerequisites");
   });
@@ -3372,9 +3409,11 @@ describe("the documents name what exists", () => {
     assert.deepEqual({
       rootUsesElizaModels: reach("//#gen").has("//#gen:eliza"),
       notWaiting: real.filter((id) => !reach(id).has("//#gen")).sort(),
+      analyzeWaitsFor: tasks.get("//#analyze")!.dependencies.toSorted(),
       lintWaitsFor: vibeDeclared.filter((id) => tasks.get("//#lint:js")!.dependencies.includes(id)),
       devWaitsFor: tasks.get("vibestack-studio#dev")!.dependencies.toSorted(),
-      prose: [studio(prose), prose.includes("@repo/app#test")],
+      prose: [studio(prose), prose.includes("@repo/app#test"), prose.includes("//#analyze")],
+      docs: (await changedBy(append("README.md"))).includes("//#analyze"),
       selftest: [studio(selftest), selftest.includes("//#build"), ["a", "b", "rest"].every((shard) => selftest.includes(`//#selftest:tools:${shard}`))],
       fixture: { studio: studio(fixture), build: fixture.includes("//#build"), selftest: fixture.includes("//#selftest:tools:a") },
       frameworkTest: { build: frameworkTest.includes("//#build"), test: frameworkTest.includes("//#test") },
@@ -3390,8 +3429,9 @@ describe("the documents name what exists", () => {
       }),
     }, {
       rootUsesElizaModels: true,
-      notWaiting: ["//#analyze", "//#build", "//#gen:eliza", "//#lint:css", "//#selftest:docs", "//#selftest:examples", "@repo/design-system#build", "@repo/ui#typecheck", "vibestack-studio#build", "vibestack-studio#dev", "vibestack-studio#test", "vibestack-studio#typecheck"],
-      lintWaitsFor: vibeDeclared, devWaitsFor: tasks.get("vibestack-studio#build")!.dependencies.toSorted(), prose: [[], true], selftest: [[], false, true],
+      notWaiting: ["//#build", "//#gen:eliza", "//#lint:css", "//#selftest:docs", "//#selftest:examples", "@repo/design-system#build", "@repo/ui#typecheck", "vibestack-studio#build", "vibestack-studio#dev", "vibestack-studio#test", "vibestack-studio#typecheck"],
+      analyzeWaitsFor: ["//#gen", "@repo/design-system#build", "@repo/ui#gen", "vibestack-studio#gen"],
+      lintWaitsFor: vibeDeclared, devWaitsFor: tasks.get("vibestack-studio#build")!.dependencies.toSorted(), prose: [[], true, true], docs: false, selftest: [[], false, true],
       fixture: { studio: ["vibestack-studio#test"], build: false, selftest: true },
       frameworkTest: { build: false, test: true },
       independentOwner: true, leftovers: [],
@@ -3491,9 +3531,18 @@ function theCommandLine() {
       assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
     }
     fs.writeFileSync(path.join(root, "owner-source"), "external owner");
-    const installed = await prepare(true, "verify", ...prerequisites);
+    const packable = ["--skip-gen-on-pack", ...prerequisites];
+    const packed = await exec(process.execPath, [script, "gen", "--install", ...packable], root, {
+      ...process.env, GITHUB_ACTIONS: "true", GITHUB_JOB: "verify",
+      npm_command: "pack", npm_lifecycle_event: "prepare", TURBO_CACHE: "local:rw", TURBO_TOKEN: "",
+    });
+    assert.equal(packed.status, 0, packed.stderr);
     assert.equal(fs.readFileSync(path.join(root, "owner-generated"), "utf8"), "external owner");
+    assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
+    fs.writeFileSync(path.join(root, "owner-source"), "installed owner");
+    const installed = await prepare(true, "verify", ...packable);
     assert.equal(installed.status, 0, installed.stderr);
+    assert.equal(fs.readFileSync(path.join(root, "owner-generated"), "utf8"), "installed owner");
     assert.doesNotMatch(installed.stdout, /gen\/ was not generated/);
     assert.equal((await import(path.join(root, "gen/value.ts") + "?installed")).answer, 43);
     fs.rmSync(path.join(root, "gen/value.ts"));
@@ -3900,9 +3949,10 @@ test("the lint refuses, in a project's own code, a comment that is neither a cit
   const eslint = new ESLint({ cwd: project });
   const found = async (file: string, lines: string[]) => (await eslint.lintText(lines.join("\n"), { filePath: path.join(project, file) }))[0]!.messages
     .filter((m) => m.fatal || m.ruleId === "no-console" || m.ruleId?.startsWith("code/")).map((m) => `${m.line} ${m.ruleId ?? "inline config"}`);
+  const specFile = "spec/app/index.md";
   assert.deepEqual(await found("apps/app/src/probe.vibe", [
-    `// spec/app/index.md, "Story: Manage my saved passwords privately"; spec/app/index.md, "Passwords displays sign-in details only while the vault is available"`,
-    `/* spec/app/index.md, "Story: Manage my saved passwords privately" */`,
+    `// ${specFile}, "Story: Manage my saved passwords privately"; ${specFile}, "Passwords displays sign-in details only while the vault is available"`,
+    `/* ${specFile}, "Story: Manage my saved passwords privately" */`,
     "//@ ghost",
     "/** @model spec/app/index.md */",
     "// a note",
