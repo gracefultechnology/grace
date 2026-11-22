@@ -135,9 +135,7 @@ const located = (found: string | null, missing: string) => {
 const androidHome = () => located(resolveAndroidSdkRoot(), "No Android SDK was found: set ANDROID_HOME");
 
 export function buildTool(name: string): string {
-  const tools = path.join(androidHome(), "build-tools");
-  const [newest] = readdirSync(tools).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
-  return path.join(tools, newest, name);
+  return path.join(androidHome(), "build-tools", "36.0.0", name);
 }
 
 const environment = () => ({
