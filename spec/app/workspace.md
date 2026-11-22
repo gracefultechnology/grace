@@ -789,7 +789,8 @@ close a newly opened Settings explanation. Disabling wake immediately stops
 its detector; it does not grant or remove OS microphone permission. Save and
 acknowledgment use the existing versioned preference storage contract. Preview
 and Undo recheck browser geometry when text size changes, while sound-only
-changes preserve current targets. Both Sample voice and Test sound use the
+changes preserve current targets. The brightness and volume buttons apply their
+steps to the session when the workspace handles each press. Both Sample voice and Test sound use the
 same guarded sample action. Its audio effect carries the preference revision;
 the actuator checks it and the current device mute setting before playback.
 
@@ -801,6 +802,11 @@ pure def withPreferences(preferences: R::Preferences, w: Workspace): Workspace =
   { ...updated, preferences: preferences }
 pure def changePreferences(w: Workspace, settings: R::DisplayPreferences, by: WorkspaceActor): Workspace =
   withPreferences(R::preview(w.preferences, settings, R::PreferenceUser), w)
+pure def canAdjustPreferenceLevel(w: Workspace, levelStep: R::LevelStep, by: WorkspaceActor): bool =
+  canChangePreferences(w, R::adjustedLevel(w.preferences.session, levelStep), by)
+pure def adjustPreferenceLevel(w: Workspace, levelStep: R::LevelStep, by: WorkspaceActor): Workspace =
+  changePreferences(w, R::adjustedLevel(w.preferences.session, levelStep), by)
+pure val levelStepValues = R::levelStepValues
 pure def canUndoPreferences(w: Workspace, by: WorkspaceActor): bool =
   by == Person and w.device.readiness == S::Ready and R::canUndo(w.preferences, R::PreferenceUser)
 pure def undoPreferences(w: Workspace, by: WorkspaceActor): Workspace =
