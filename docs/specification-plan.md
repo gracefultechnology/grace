@@ -417,6 +417,10 @@ The first authenticated attempt returned a follow-up question about finding the 
 
 #### Latest records and website account evidence
 
+In the [eight-case Linux run](https://github.com/gracefultechnology/grace/actions/runs/45075025696), Grace followed My Account and My Orders on 298 (completed), 299 (cancelled) and 300 (pending). The history offered only public-link observation. Each task stayed open and scored 0, and each untouched control scored 0. The five category tasks scored 1 with untouched controls of 0.
+
+A separate Chromium investigation of the same pinned storefront followed the visible pagination controls and found 37 distinct orders across four pages. It opened the details for all 25 completed and nine cancelled orders and verified each order’s identity, status and full date. Each group had one newest candidate. The official URL evaluator accepted both independently selected destinations and rejected both starting pages. The five-order account preview happened to include both winners. It provided no ordering guarantee for the other 32 orders.
+
 An account dashboard can display a verified account and a recent record. A
 generic “My Orders” link carries no account identity to the next document.
 A same-name account can reuse the same order number, address, date and status.
@@ -433,3 +437,5 @@ loaded page. The browser’s owner and session identify Grace’s surface.
 Website account evidence must come from the site. A scoped reader would
 need to verify the selected region and reject active forms independently of
 the account check.
+
+To finish this family, let the person grant access to the order list on the active website account. Bind each page and detail to a site-supplied account identifier and isolate the read to the record region. Discard the scan when the account or document changes unexpectedly. Traverse until the observed item count is complete. A site-declared newest-first ordering can shorten this traversal once the newest matching date and its tie boundary have been checked. Where the site supplies only ambiguous short dates, use full dates from account-bound details. Check the selected detail again before completing the task. Measure this with a latest candidate on a later page, equal dates, a changed account, and both official landings and untouched controls. A missing identity or ordering guarantee needs to remain visible in the result.

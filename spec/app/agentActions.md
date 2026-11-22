@@ -93,7 +93,7 @@ pure def route(w: World, request: R::Request, command: AgentAction): Route =
         if (P::canAgree(w.pending, answerOf(w, request), w.now, P::Person)) ToAnswer({ consent: answerOf(w, request) })
         else Refused({ why: NothingAsked })
     | CancelProposal =>
-        if (P::canWithdraw(w.pending, R::Cancellation, P::Grace)) ToWithdraw else Refused({ why: NothingAsked })
+        if (P::turnDrops(w.pending, R::Cancellation, request, w.now, P::Grace)) ToWithdraw else Refused({ why: NothingAsked })
     | ShowSetting(x) => ToSetting({ page: x.page })
     | Guide(x) =>
         if (w.targets.contains(x.target)) ToGuide({ target: x.target, kind: x.kind, title: x.title })
@@ -303,8 +303,10 @@ consent `R::consent` builds from Margaret's own turn, the host's new answer
 stamp and the question as it is held now, and only when the proposal would
 take it: a turn after the one that asked, in the current generation. Any
 other yes is refused as nothing asked, and so is a yes in Grace's reply to
-an Ask Grace tap: that tap asked for help and agreed to nothing. Her No or a cancellation drops a
-question she has not agreed to.
+an Ask Grace tap: that tap asked for help and agreed to nothing. Her No or a
+cancellation in answer to her own typed, said or tapped turn drops a question
+she has not agreed to; Grace's reply to an Ask Grace tap drops none, so the
+question waits for her answer.
 
 ```quint
 pure def answerOf(w: World, request: R::Request): R::Consent = R::consent(request, w.stamp, P::proposalOf(w.pending))
@@ -314,13 +316,14 @@ pure def lawConsentNeedsAWaitingQuestion(w: World, request: R::Request, command:
   match routed {
     | ToAnswer(x) => P::asking(w.pending) and w.pending.agreed == 0 and R::answers(x.consent.origin) and
         x.consent == answerOf(w, request) and P::canAgree(w.pending, x.consent, w.now, P::Person)
-    | ToWithdraw => P::canWithdraw(w.pending, R::Cancellation, P::Grace)
+    | ToWithdraw => P::turnDrops(w.pending, R::Cancellation, request, w.now, P::Grace)
     | _ => true
   }
-pure def lawAskingForHelpNeverAgrees(w: World, request: R::Request, command: AgentAction): bool =
+pure def lawAskingForHelpNeverAnswers(w: World, request: R::Request, command: AgentAction): bool =
   val routed = route(w, request, command)
   request.origin == R::AskedForHelp implies match routed {
     | ToAnswer(_) => false
+    | ToWithdraw => false
     | _ => true
   }
 ```

@@ -55,17 +55,18 @@ type NavigationReport = { window: ViewWindow, kind: Navigation, verified: bool }
 type DeleteScope = ThisOccurrence | EntireSeries
 type DeleteStatus = NoDeletion | DeletionQuestion | DeletionPending | DeletionFailed
 type SeriesDefinition = { version: int, details: C::EntryDetails }
+type FormPicker = NoPicker | DayPicker | TimePicker
 type CalendarView = {
   owner: str, calendarId: str, timezone: str, opened: bool, window: ViewWindow,
   entries: List[C::Calendar], selectedId: str, deletedSeries: Set[str], cancelledIds: Set[str],
   series: List[SeriesDefinition],
-  deletion: DeleteStatus, scope: DeleteScope, generation: int
+  deletion: DeleteStatus, scope: DeleteScope, generation: int, picker: FormPicker
 }
 pure val emptyWindow: ViewWindow = { mode: WeekView, anchorDay: 0, selectedDay: 0, fromTime: 0, untilTime: 1 }
 pure val initial: CalendarView = {
   owner: "", calendarId: "", timezone: "", opened: false, window: emptyWindow,
   entries: List(), selectedId: "", deletedSeries: Set(), cancelledIds: Set(), series: List(), deletion: NoDeletion,
-  scope: ThisOccurrence, generation: 0
+  scope: ThisOccurrence, generation: 0, picker: NoPicker
 }
 pure def validWindow(window: ViewWindow): bool = window.fromTime < window.untilTime
 pure def validStored(c: C::Calendar): bool =
@@ -331,7 +332,7 @@ pure def canCreateOccurrence(v: CalendarView, entry: EntrySeed, by: ViewActor): 
   by == ViewUser and v.opened and entry.identity.kind == C::Appointment and freshEntryAllowed(v, entry)
 pure def createOccurrence(v: CalendarView, entry: EntrySeed, by: ViewActor): CalendarView =
   { ...v, entries: v.entries.append(C::create(C::initial, entry.identity, entry.details, C::CalendarUser)),
-    selectedId: entry.identity.occurrenceId }
+    selectedId: entry.identity.occurrenceId, picker: NoPicker }
 pure def dismisses(command: OccurrenceAction): bool = match command {
   | DismissReminder => true
   | _ => false
@@ -354,12 +355,54 @@ pure def changeOccurrence(v: CalendarView, id: str, command: OccurrenceAction, b
       else v.entries.listMap(c => if (c.identity.occurrenceId == id) updated else c),
     cancelledIds: if (updated.phase == C::Empty) v.cancelledIds.union(Set(id)) else v.cancelledIds,
     selectedId: if (v.selectedId == id and (updated.phase == C::Empty or
-      (not(v.opened) and updated.phase != C::Editing))) "" else v.selectedId }
+      (not(v.opened) and updated.phase != C::Editing))) "" else v.selectedId,
+    picker: if (closesPicker(command)) NoPicker else v.picker }
+pure def closesPicker(command: OccurrenceAction): bool = match command {
+  | BeginEditing => true
+  | CancelEditing => true
+  | ApproveEntry(_) => true
+  | _ => false
+}
 pure def sometimesEntryEditing(v: CalendarView): bool = hasEditing(v)
 pure def sometimesUnsavedEntryCancelled(v: CalendarView): bool = v.cancelledIds.size() > 0
 pure def sometimesEntrySaveFailed(v: CalendarView): bool = v.entries.some(c => c.storageError == C::SaveFailure)
 pure def sometimesOwnedReminderShown(v: CalendarView): bool = v.entries.some(c => c.reminder == C::ReminderShown)
 pure def sometimesOwnedReminderDismissed(v: CalendarView): bool = v.entries.some(c => c.reminder == C::ReminderDismissed)
+```
+
+### The form opens its Day or its Time list, one at a time
+
+On the form, Change Day and Change Time each open their list, as in the
+prototype’s form (`calForm`, its `pick`): opening one closes the other, and
+choosing a day or a time, or tapping the opened one again, closes it. Closing
+a list closes only that list, so closing one that another has already
+replaced leaves the other open. A form
+opens with both lists closed, and Save and Back close them. A list shows only
+while the form she can still change is showing, never on the detail, while a
+Save awaits its result or while Calendar is closed.
+
+```quint
+pure def formOpen(v: CalendarView): bool =
+  v.opened and v.deletion == NoDeletion and selectedOccurrence(v).phase == C::Editing and
+    selectedOccurrence(v).approvedRevision == -1
+pure def canShowPicker(v: CalendarView, picker: FormPicker, by: ViewActor): bool =
+  by == ViewUser and formOpen(v) and picker != NoPicker
+pure def showPicker(v: CalendarView, picker: FormPicker, by: ViewActor): CalendarView =
+  { ...v, picker: picker }
+pure def canHidePicker(v: CalendarView, picker: FormPicker, by: ViewActor): bool =
+  by == ViewUser and formOpen(v) and picker != NoPicker and v.picker == picker
+pure def hidePicker(v: CalendarView, picker: FormPicker, by: ViewActor): CalendarView =
+  { ...v, picker: NoPicker }
+pure def shownPicker(v: CalendarView): FormPicker = if (formOpen(v)) v.picker else NoPicker
+pure def lawAFormOpensWithItsListsClosed(v: CalendarView, id: str, entry: EntrySeed): bool =
+  shownPicker(changeOccurrence(v, id, BeginEditing, ViewUser)) == NoPicker and
+    shownPicker(createOccurrence(v, entry, ViewUser)) == NoPicker and
+    shownPicker(changeOccurrence(v, id, ApproveEntry({ revision: entryAt(v, id).revision }), ViewUser)) == NoPicker
+pure def lawAListShowsOnlyOnTheForm(v: CalendarView): bool =
+  shownPicker(v) != NoPicker implies formOpen(v)
+pure def lawClosingOneListKeepsTheOther(v: CalendarView, picker: FormPicker): bool =
+  v.picker != picker implies not(canHidePicker(v, picker, ViewUser))
+pure def sometimesPickerShown(v: CalendarView): bool = shownPicker(v) != NoPicker
 ```
 
 ### A provider's create receipt names the saved occurrence

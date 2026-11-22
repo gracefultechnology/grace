@@ -175,12 +175,13 @@ news, the calendar and the appointment, with no consent in it, so it asks
 Grace to do nothing.
 
 What Margaret sees follows the same news. After an appointment was added or
-changed, Calendar raises the toast "Saved to your calendar" and the saved row
-gets Grace’s green confirm ring; after one was deleted, it raises "Deleted"
-followed by the appointment’s title. Both toasts go through
-[the notices](./notices.md), which decide when each shows. Nothing else
-rings a row this way, so a confirm ring always marks an appointment the
-calendar has just saved.
+changed, Calendar raises the toast "Saved to your calendar"; after one was
+deleted, it raises "Deleted" followed by the appointment’s title. Both toasts
+go through [the notices](./notices.md), which decide when each shows. Only a
+newly added appointment’s row gets Grace’s green confirm ring, as in the
+prototype: a change she saved leaves her on that appointment’s detail, with
+no ring. Nothing else rings a row this way, so a confirm ring always marks an
+appointment the calendar has just added.
 
 ```quint
 type CalendarNews = NoCalendarNews | AddedAppointment | ChangedAppointment | DeletedAppointment
@@ -215,7 +216,7 @@ pure def lawOnlyTheStoreIsNews(key: int, view: V::CalendarView, id: str, publish
     (V::canPublishOccurrence(view, published, view.generation, true, V::ViewStore) implies told(key, view, fed).news == NoCalendarNews)
 type ConfirmRing = { shown: bool, key: int, id: str }
 pure def confirmRing(news: CalendarTold): ConfirmRing =
-  { shown: news.news == AddedAppointment or news.news == ChangedAppointment, key: news.key, id: news.id }
+  { shown: news.news == AddedAppointment, key: news.key, id: news.id }
 pure def lawRingMarksAJustSavedAppointment(key: int, before: V::CalendarView, after: V::CalendarView): bool =
   val ring = confirmRing(told(key, before, after))
   ring.shown implies (ring.key == key and
@@ -354,10 +355,13 @@ yes or by her own Save, the day it starts on is selected and its row has
 Grace’s confirm ring. A change she saved herself leaves Calendar where it is,
 on that appointment’s detail. An appointment being edited, a "Delete?"
 awaiting her answer and a failed deletion are never discarded for this: while
-one is, Calendar stays where it is. The host gives two verified reports: the
-local day the appointment starts on, with its number and hours, and a chosen
-day in Week that selects that same day, so the turn is one Calendar itself
-would accept from her.
+one is, Calendar stays where it is, and the question turns it once Calendar is
+free, if Grace is still asking it. The host remembers the last question that
+turned the day, or that Grace asked while Calendar was closed, and only a
+different one turns it again. The host gives two verified reports: the local
+day the appointment starts on, with its number and hours, and a chosen day in
+Week that selects that same day, so the turn is one Calendar itself would
+accept from her.
 
 ```quint
 type DayToShow = { show: bool, startAt: int }

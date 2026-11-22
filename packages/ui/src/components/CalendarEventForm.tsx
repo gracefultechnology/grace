@@ -65,6 +65,7 @@ export function CalendarPickerField({ label, value, icon, choices, selected, ope
               event.preventDefault();
               (event.currentTarget as HTMLElement).focus();
             }}
+            onCloseAutoFocus={(event) => event.preventDefault()}
             className={cn(menuPanel({ surface: "page" }), "max-h-[376px] overflow-auto font-sans [scrollbar-width:none]")}
           >
             {choices.map((choice) => (
