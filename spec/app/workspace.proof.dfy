@@ -437,6 +437,35 @@ lemma changePreferences_ensures(w: Workspace, settings: app__preferences_Display
   }
 }
 
+lemma adjustPreferenceLevel_ensures(w: Workspace, levelStep: app__preferences_LevelStep, by_: WorkspaceActor)
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysDeviceRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysBrowserRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysAssistantRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysExecutionRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCommitmentRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCommitmentRegistryIsCanonical(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCommitmentAssociation(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysPausedCommitmentCannotSubmit(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysOneTask(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysPausedTogether(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysRecordingHasPermission(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysOperationHasVisibleTask(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysEvidenceVersionsAreNonnegative(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysWakeRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysActiveWakePausesWebsiteWork(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysPreferencesRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCommitmentUsesCanonicalIdentity(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCurrentBeforeAction(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCommitmentReviewUsesCurrentContext(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepInterruptionsKeepTask(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepWakeNeverDispatchesWebsite(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_), []))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepEffectsRequireCurrentContext(w, adjustPreferenceLevel(w, levelStep, by_), []))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepCommitmentSwitchRetainsRecords(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_)))
+{
+  changePreferences_ensures(w, app__preferences_adjustedLevel(w.preferences.session, levelStep), by_);
+}
+
 lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysDeviceRules(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysBrowserRules(savePreferences(w, by_)))

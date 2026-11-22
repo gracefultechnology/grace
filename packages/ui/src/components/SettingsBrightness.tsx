@@ -13,6 +13,8 @@ export type SettingsBrightnessProps = Omit<ComponentProps<"section">, "onChange"
   min?: number;
   /** Called with the new brightness: dragged, tapped or stepped by − and +. */
   onBrightnessChange?: (brightness: number) => void;
+  /** Called by − and + instead of `onBrightnessChange`, with how far to move, for an owner that steps its own brightness. */
+  onBrightnessStep?: (change: number) => void;
   /** The screen dims itself at night. */
   nightDim: boolean;
   onNightDimChange?: (on: boolean) => void;
@@ -54,6 +56,7 @@ export function SettingsBrightness({
   brightness,
   min = 20,
   onBrightnessChange,
+  onBrightnessStep,
   nightDim,
   onNightDimChange,
   title = "Brightness",
@@ -84,6 +87,7 @@ export function SettingsBrightness({
           min={min}
           value={brightness}
           onValueChange={onBrightnessChange}
+          onStep={onBrightnessStep}
         />
       </Panel>
       {onNightDimChange && <SettingsSwitchRow className="mt-3.5" title={nightDimLabel} subtitle={nightDimHint} checked={nightDim} onCheckedChange={onNightDimChange} />}
