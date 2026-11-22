@@ -143,8 +143,8 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   }
 });
 
-it('Clear an expired tablet sign-in before signing in again (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
-  let needsCleanup = true;
+it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
+  let needsCleanup = false;
   let cleanupAttempts = 0;
   const signInAttempts: unknown[] = [];
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
@@ -156,7 +156,13 @@ it('Clear an expired tablet sign-in before signing in again (spec/app/setup.md, 
         if (cleanupAttempts === 1) throw new Error("Cloud is unreachable");
         needsCleanup = false;
       },
-      beginSignIn: async (options) => { signInAttempts.push(options); },
+      beginSignIn: async (options) => {
+        signInAttempts.push(options);
+        if (signInAttempts.length === 1) {
+          needsCleanup = true;
+          throw new Error("The previous credential was rejected");
+        }
+      },
       signOut: async () => { throw new Error("Legacy cleanup must use its dedicated action"); },
       manageAccount: async () => { throw new Error("An unverified owner cannot manage an account"); },
       addListener: async () => ({ remove: async () => undefined }),
@@ -171,6 +177,7 @@ it('Clear an expired tablet sign-in before signing in again (spec/app/setup.md, 
   await act(() => userEvent.click(button("Account")));
   const clear = button("Clear old sign-in");
   const confirm = button("Confirm clearing old sign-in");
+  await act(() => userEvent.click(button("Sign in to Grace")));
   await expect.element(clear).toBeEnabled();
   await expect.element(button("Sign in to Grace")).not.toBeInTheDocument();
   await expect.element(button("Manage Grace account")).not.toBeInTheDocument();
@@ -186,6 +193,6 @@ it('Clear an expired tablet sign-in before signing in again (spec/app/setup.md, 
   await act(() => userEvent.click(confirm));
   await expect.element(clear).not.toBeInTheDocument();
   await act(() => userEvent.click(button("Other sign-in options")));
-  expect(signInAttempts).toEqual([{ method: "browser" }]);
+  expect(signInAttempts).toEqual([undefined, { method: "browser" }]);
   expect(cleanupAttempts).toBe(2);
 });

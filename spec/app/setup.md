@@ -496,7 +496,8 @@ sign-in in the browser.
 
 Each source reports through its own event. The tablet's own Grace session
 reports whether this tablet is signed in, signed out, or needs to clear an
-expired sign-in whose owner could not be verified. The Grace service's
+previous sign-in whose owner could not be verified because the credential
+expired or the service rejected it. The Grace service's
 authenticated response reports only the web account, its plan and its Google
 connection; either may report that the account could not be checked. Only a
 signed-in web account carries any Google link state. Every change to the

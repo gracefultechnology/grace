@@ -260,9 +260,12 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     if (native) {
       if (plugin === undefined) return false
       const current = try refresh()
-      if (operation.kind === "signIn" && mayBeginDeviceSignIn(current)) try tryPromise(() =>
-        operation.method === "browser" ? plugin.beginSignIn({ method: "browser" }) : plugin.beginSignIn())
-      else if (operation.kind === "manageAccount" && current.tag === "GraceDeviceSignedIn") try tryPromise(() => plugin.manageAccount())
+      if (operation.kind === "signIn" && mayBeginDeviceSignIn(current)) return Effect.as(tryPromise(() =>
+        operation.method === "browser" ? plugin.beginSignIn({ method: "browser" }) : plugin.beginSignIn()), true) catch effect () => {
+        try refresh()
+        return false
+      }
+      if (operation.kind === "manageAccount" && current.tag === "GraceDeviceSignedIn") try tryPromise(() => plugin.manageAccount())
       else if (operation.kind === "signOut" && current.tag === "GraceDeviceSignedIn") {
         try tryPromise(() => plugin.signOut())
         return (try refresh()).tag === "GraceDeviceSignedOut"
