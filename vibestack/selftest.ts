@@ -3812,7 +3812,8 @@ test("the same installed Quint shares verification results across checkouts and 
     assert.equal(recall(memory, first), first.name, "the prior verified action survives");
   `], left.root);
   assert.equal(publication.status, 0, publication.stderr);
-  const projectWithTool = toolchain(oneRule("index", "Value", "pure val value = 1"), "quint");
+  const projectWithTool = toolchain(oneRule("index", "Value", "pure val value = 1"), "quint", "lsc");
+  fs.unlinkSync(path.join(projectWithTool, "vibestack/selftest.ts"));
   const shim = path.join(projectWithTool, "node_modules/.bin/quint");
   fs.unlinkSync(shim);
   fs.copyFileSync(path.join(nodeModules, ".bin/quint"), shim);
@@ -3826,7 +3827,8 @@ test("the same installed Quint shares verification results across checkouts and 
     });
     assert.equal(models, 2);
     assert.deepEqual(result.results.map(({ stage }) => stage).filter(stage => stage === "model"), ["model"]);
-    assert.deepEqual(result.results.filter(step => !step.ok).map(({ stage }) => stage), ["review"]);
+    const failed = result.results.filter(step => !step.ok);
+    assert.deepEqual(failed.map(({ stage }) => stage), ["review"], JSON.stringify(failed));
     models = 0;
     await assert.rejects(check(".", false, (step) => {
       if (step.stage === "model") fs.linkSync("node_modules/.bin/quint", "changing-shim-" + ++models);
