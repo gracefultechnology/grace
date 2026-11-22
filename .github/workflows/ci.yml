@@ -20,11 +20,8 @@ on:
         type: boolean
         default: true
       billworld_cohort:
-        description: Select the first or second disjoint set of 100 Fleet billers
-        type: choice
-        options:
-          - '1'
-          - '2'
+        description: Positive cohort number from the pinned Fleet catalog (up to 100 billers each)
+        type: string
         default: '1'
       billworld_resume_run:
         description: Optional earlier CI run ID at the exact same product commit
@@ -56,7 +53,7 @@ concurrency:
 
 env:
   TURBO_TELEMETRY_DISABLED: "1"
-  GRACE_BILLWORLD_SELECTED_COHORT: ${{ inputs.billworld_cohort || '1' }}
+  GRACE_BILLWORLD_SELECTED_COHORT: ${{ inputs.billworld_cohort }}
   GRACE_BILLWORLD_REVISION: 8320228bccf0759f375b9633592612e0e570a526
 
 permissions:
@@ -435,16 +432,65 @@ jobs:
     needs: billworld
     runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository == 'gracefultechnology/grace-new' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/checkout@v7
+        with:
+          repository: gracefultechnology/billworld
+          ref: ${{ env.GRACE_BILLWORLD_REVISION }}
+          path: .cache/billworld
+          persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
           pattern: billworld-browser-receipts-*
           path: ${{ runner.temp }}/grace-fleet-shards
-      - name: Verify all 100 independently graded browser receipts
+      - name: Verify the independently graded browser receipts
         env:
           GRACE_BILLWORLD_RESULTS: ${{ runner.temp }}/grace-fleet-shards
           GRACE_BILLWORLD_MATRIX_RESULT: ${{ needs.billworld.result }}
           GRACE_PRODUCT_REVISION: ${{ github.sha }}
         run: |
+          node --input-type=module <<'JS'
+          import { execFileSync } from "node:child_process";
+          import { writeFileSync } from "node:fs";
+          import { join, resolve } from "node:path";
+          import { pathToFileURL } from "node:url";
+
+          const input = process.env.GRACE_BILLWORLD_SELECTED_COHORT;
+          const cohort = Number(input);
+          if (!/^[1-9][0-9]*$/.test(input) || !Number.isSafeInteger(cohort))
+            throw new Error("The Fleet cohort must be a positive integer");
+          const tree = resolve(".cache/billworld");
+          const git = (...args) => execFileSync("git", ["-C", tree, ...args], { encoding: "utf8" }).trim();
+          if (git("rev-parse", "HEAD") !== process.env.GRACE_BILLWORLD_REVISION ||
+              git("status", "--porcelain", "--", "categories", "billworld/fleet"))
+            throw new Error("Fleet qualification requires the unmodified pinned BillWorld sources");
+          const load = (module) => import(pathToFileURL(join(tree, "billworld", "fleet", module)).href);
+          const [{ loadCatalog }, { loadTemplates, templateFor }] = await Promise.all([load("catalog.mjs"), load("server.mjs")]);
+          const { billers } = loadCatalog();
+          const cohortSize = 100;
+          const cohortCount = Math.ceil(billers.size / cohortSize);
+          if (cohort > cohortCount) throw new Error(`The pinned Fleet catalog has only ${cohortCount} cohorts`);
+          const sorted = [...billers.values()].sort((a, b) =>
+            a.template.localeCompare(b.template, "en") || a.id.localeCompare(b.id, "en"));
+          const familySizes = new Map();
+          const ordered = sorted.map((biller) => {
+            const rank = familySizes.get(biller.template) ?? 0;
+            familySizes.set(biller.template, rank + 1);
+            return { biller, rank };
+          }).sort((a, b) => a.rank - b.rank);
+          await loadTemplates();
+          const landmarks = ordered.slice((cohort - 1) * cohortSize, cohort * cohortSize).map(({ biller }) => {
+            const { routes } = templateFor(biller);
+            const prefix = "/b/" + encodeURIComponent(biller.id);
+            return [biller.id, biller.template, biller.signal, prefix + routes.home, prefix + routes.help];
+          });
+          writeFileSync(join(process.env.RUNNER_TEMP, "fleet-expected-landmarks.json"), JSON.stringify(landmarks));
+          JS
           python3 - <<'PY'
           import json
           import os
@@ -455,7 +501,6 @@ jobs:
           revision = os.environ["GRACE_BILLWORLD_REVISION"]
           product_revision = os.environ["GRACE_PRODUCT_REVISION"]
           cohort_number = int(os.environ["GRACE_BILLWORLD_SELECTED_COHORT"])
-          cohort = None
           verified = {}
           documents = set()
 
@@ -484,6 +529,11 @@ jobs:
                       url.username is None and url.password is None, f"Invalid Fleet loopback URL {value}")
               return url
 
+          landmarks = load(Path(os.environ["RUNNER_TEMP"]) / "fleet-expected-landmarks.json")
+          cohort = [(biller, template, evidence, urlsplit(start)[2:], urlsplit(landing)[2:])
+                    for biller, template, evidence, start, landing in landmarks]
+          cohort_total = len(cohort)
+
           for shard in range(1, 5):
               manifests = list((root / f"billworld-browser-receipts-{shard}").rglob("cohort.json"))
               require(len(manifests) == 1, f"Expected one Fleet cohort manifest for shard {shard}")
@@ -493,25 +543,23 @@ jobs:
                   (revision, product_revision, shard, 4),
                   f"Wrong Fleet revision or shard metadata for shard {shard}",
               )
-              require(manifest.get("cohortNumber", 1) == cohort_number, f"Wrong selected Fleet cohort on shard {shard}")
+              require(manifest.get("cohortNumber", 1) == cohort_number and manifest.get("navigation") == "public support page",
+                      f"Wrong selected Fleet cohort on shard {shard}")
               tasks = manifest["cohort"]
-              ids = [task["taskId"] for task in tasks]
-              require(len(ids) == len(set(ids)) == 100, "Fleet manifest must declare 100 unique billers")
               identity = [
                   (task["taskId"], task["template"], task["evidence"], loopback(task["startUrl"])[2:], loopback(task["expected"])[2:])
                   for task in tasks
               ]
-              if cohort is None:
-                  cohort = identity
-              require(identity == cohort, f"Fleet cohort differs on shard {shard}")
+              require(identity == cohort, f"Fleet cohort differs from the pinned catalog on shard {shard}")
               assigned = {task["taskId"]: task for task in tasks[shard - 1::4]}
+              shard_total = len(assigned)
               directory = manifests[0].parent
               require({path.stem for path in directory.glob("*.json")} == ({"cohort", "scores"} | set(assigned)),
                       f"Wrong receipt membership on shard {shard}")
               scores = load(directory / "scores.json")
               require(
                   (scores["revision"], scores["productRevision"], scores["shard"], scores["shardCount"], scores["cohortTotal"],
-                   scores["attempted"], scores["total"], scores["passed"]) == (revision, product_revision, shard, 4, 100, 25, 25, 25),
+                   scores["attempted"], scores["total"], scores["passed"]) == (revision, product_revision, shard, 4, cohort_total, shard_total, shard_total, shard_total),
                   f"Incomplete or failed Fleet score for shard {shard}",
               )
               require(scores.get("cohortNumber", 1) == cohort_number, f"Wrong score cohort on shard {shard}")
@@ -545,13 +593,13 @@ jobs:
                   verified[task_id] = shard
                   documents.update(ids)
 
-          require(len(verified) == 100, "Expected 100 distinct verified Fleet browser receipts")
+          require(len(verified) == cohort_total, f"Expected {cohort_total} distinct verified Fleet browser receipts")
           require(os.environ["GRACE_BILLWORLD_MATRIX_RESULT"] == "success", "A Fleet shard job did not succeed")
           (root / "qualification.json").write_text(json.dumps(
-              {"revision": revision, "productRevision": product_revision, "cohortNumber": cohort_number, "checked": 100, "passed": 100, "shards": 4, "cases": verified}, indent=2
+              {"revision": revision, "productRevision": product_revision, "cohortNumber": cohort_number, "checked": cohort_total, "passed": cohort_total, "shards": 4, "cases": verified}, indent=2
           ) + "\n")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
-              summary.write(f"Verified **100 of 100** distinct Fleet billers in cohort {cohort_number} across four shards.\n")
+              summary.write(f"Verified **{cohort_total} of {cohort_total}** distinct Fleet billers in cohort {cohort_number} across four shards.\n")
           PY
       - uses: actions/upload-artifact@v7
         with:
