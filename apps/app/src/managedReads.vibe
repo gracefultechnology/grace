@@ -171,8 +171,8 @@ export service ManagedReads {
   send(command: Command): boolean!!
   stage(proposal: ProposedWork): boolean!!
   series(scope: WriteScope, occurrenceId: string): (EventRow | undefined)!!
-  review(scope: WriteScope, action: AppointmentChange | undefined): boolean!!
-  change(scope: WriteScope, action: ManagedWrite): (WriteReceipt | undefined)!!
+  review(scope: WriteScope, action: AppointmentChange | undefined, expectedProposal?: number): boolean!!
+  change(scope: WriteScope, action: ManagedWrite, expectedProposal?: number): (WriteReceipt | undefined)!!
   sendMail(input: { accountId: string; email: string; grant: string; draft: LocalMailDraft; checkOnly: boolean; replyTo?: string }): boolean!!
 }
 
@@ -452,7 +452,9 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
 
   effect function readSeries(scope: ReadyScope, shown: Calendar, occurrenceId: string) {
     const selected = shown.selected
-    if (shown.accountId !== scope.accountId || shown.grant !== scope.grant) return undefined
+    const seriesId = selected?.seriesId ?? ""
+    if (shown.accountId !== scope.accountId || shown.grant !== scope.grant ||
+      !isTheSelectedSeries(selected?.externalId ?? "", seriesId, occurrenceId, seriesId)) return undefined
     const found = try query("calendar/series", { grantId: scope.grant, occurrenceId }, Series, authorization)
     return managedReadMatches(scope.accountId, found.accountId, occurrenceId, found.occurrenceId) &&
       isTheSelectedSeries(selected?.externalId ?? "", selected?.seriesId ?? "", occurrenceId, found.event.externalId) ? found.event : undefined
@@ -484,7 +486,9 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
       if (shown.kind !== "calendar" || !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange")) return false
       if ((proposal.id !== undefined || proposal.version !== undefined) && (!shown.selected ||
         !isSelectedVersion(shown.selected.externalId, shown.selected.etag ?? "", proposal.id ?? "", proposal.version ?? ""))) return false
-      if (proposal.kind === "removeAppointment") {
+      if (proposal.kind === "appointment") {
+        reviewed = { ...shown, reviewing: undefined }
+      } else {
         let series = shown.series
         let reviewing: AppointmentChange = { kind: "appointment", action: "delete", id: proposal.id, version: proposal.version }
         if (proposal.series) {
@@ -513,18 +517,18 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     return event
   }
 
-  effect function reviewChange({ accountId, grant }: WriteScope, action: AppointmentChange | undefined) {
+  effect function reviewChange({ accountId, grant }: WriteScope, action: AppointmentChange | undefined, expectedProposal?: number) {
     const scope = try activeScope()
     const account = try setup.get()
     if (scope.kind !== "ready" || scope.view !== "Calendar" || scope.accountId !== accountId || scope.grant !== grant ||
       !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange")) return false
     const shown = try SubscriptionRef.get(latest)
-    if (shown.kind !== "calendar" || shown.accountId !== accountId || shown.grant !== grant ||
+    if (shown.kind !== "calendar" || shown.accountId !== accountId || shown.grant !== grant || shown.proposed?.number !== expectedProposal ||
       (action !== undefined && !appointmentTarget(shown, action))) return false
     return try publishReview(scope, shown, { ...shown, reviewing: action })
   }
 
-  effect function change({ accountId, grant }: WriteScope, action: ManagedWrite) {
+  effect function change({ accountId, grant }: WriteScope, action: ManagedWrite, expectedProposal?: number) {
     const scope = try activeScope()
     const kind = action.kind === "appointment" ? "ManagedAppointmentChange" : "ManagedTrash"
     const view = action.kind === "appointment" ? "Calendar" : "Email"
@@ -535,8 +539,11 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.grant !== grant || shown.accountId !== accountId) return undefined
     if (action.kind === "trash" && (shown.kind !== "mail" || !shown.selected ||
       !isSelectedVersion(shown.selected.message.externalId, inboxTrashVersion(shown), action.id, action.version))) return undefined
-    if (action.kind === "appointment" && (shown.kind !== "calendar" || !shown.reviewing ||
-      !isTheReviewedAppointment(reviewOf(shown.reviewing), reviewOf(action)) || !appointmentTarget(shown, action))) return undefined
+    if (action.kind === "appointment") {
+      if (shown.kind !== "calendar" || shown.proposed?.number !== expectedProposal || !shown.reviewing ||
+        !isTheReviewedAppointment(reviewOf(shown.reviewing), reviewOf(action)) || !appointmentTarget(shown, action) ||
+        !(try publishReview(scope, shown, { ...shown, reviewing: undefined }))) return undefined
+    }
     const operationId = try Effect.try(() => webView.window.crypto.randomUUID())
     const common = { accountId, grantId: grant, operationId }
     const payload = action.kind === "appointment"
@@ -863,8 +870,8 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     send: effect (command) => gate.withPermit(send(command)) catch () => false,
     stage: effect (proposal) => gate.withPermit(stage(proposal)) catch () => false,
     series: effect (scope, occurrenceId) => gate.withPermit(series(scope, occurrenceId)) catch () => undefined,
-    review: (scope, action) => gate.withPermit(reviewChange(scope, action)),
-    change: effect (scope, action) => gate.withPermit(change(scope, action)) catch () => undefined,
+    review: (scope, action, expectedProposal) => gate.withPermit(reviewChange(scope, action, expectedProposal)),
+    change: effect (scope, action, expectedProposal) => gate.withPermit(change(scope, action, expectedProposal)) catch () => undefined,
     sendMail: effect (input) => gate.withPermit(sendMail(input)) catch () => false,
   }
 })
