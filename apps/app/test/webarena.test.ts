@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { Effect } from "effect";
 import { expect, it } from "vitest";
 import { startWebArenaWorker } from "./webarena.ts";
 
@@ -50,7 +50,7 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     const cleanup = new AbortController();
     try {
       const pending = new Promise<Gate>((resolve) => { gates.once(phase, resolve); });
-      return await Promise.race([pending, delay(30_000, undefined, { signal: cleanup.signal }).then(() => {
+      return await Promise.race([pending, Effect.runPromise(Effect.sleep("30 seconds"), { signal: cleanup.signal }).then(() => {
         throw new Error(`The fixture did not reach ${phase}`);
       })]);
     } finally {
@@ -100,7 +100,7 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     const scores = worker.grade({ fixture: JSON.stringify(fixture), urls });
     const completion = scores.then(() => "graded", () => "failed");
     const importGate = await enter("importing");
-    expect(await Promise.race([completion, delay(gradingTimeoutMs * 2, "importing")])).toBe("importing");
+    expect(await Promise.race([completion, Effect.runPromise(Effect.as(Effect.sleep(gradingTimeoutMs * 2), "importing"))])).toBe("importing");
     importGate.release();
     await expect(scores).resolves.toEqual([1, 0]);
 

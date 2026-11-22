@@ -134,7 +134,8 @@ function launchEvaluator({ python, root, env, startupTimeoutMs = 30 * 60_000, gr
     await ready;
     if (closing || !input) throw new WebArenaEvaluatorError("grading", "closed");
     try {
-      input.write(JSON.stringify({ fixture: JSON.parse(fixture), urls }) + "\n");
+      const task: unknown = JSON.parse(fixture);
+      input.write(JSON.stringify({ fixture: task, urls }) + "\n");
       const response = await read("grading", AbortSignal.timeout(gradingTimeoutMs));
       return Schema.decodeUnknownSync(Scores)(JSON.parse(response));
     } catch (error) {
@@ -263,10 +264,14 @@ export function webArena({ checkout, python, cases }: { checkout: string; python
 
 export const webArenaPluginName = "grace-official-webarena";
 
+function hasEvaluatorLifecycle(value: unknown): value is Pick<ReturnType<typeof webArena>, "start" | "close"> {
+  return typeof value === "object" && value !== null &&
+    "start" in value && typeof value.start === "function" && "close" in value && typeof value.close === "function";
+}
+
 export async function setup(project: TestProject) {
-  const api: Pick<ReturnType<typeof webArena>, "start" | "close"> | undefined =
-    project.vite.config.plugins.find(({ name }) => name === webArenaPluginName)?.api;
-  if (typeof api?.start !== "function" || typeof api.close !== "function")
+  const api: unknown = project.vite.config.plugins.find(({ name }) => name === webArenaPluginName)?.api;
+  if (!hasEvaluatorLifecycle(api))
     throw new Error("The WebArena project has no evaluator lifecycle");
   const prepare = async () => {
     project.vitest.onCancel(api.close);
