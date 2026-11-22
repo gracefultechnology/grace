@@ -52,7 +52,8 @@ import handoffs as H from "./handoffs"
 type WorkspaceActor = Person | Host | Store | Actuator
 type StepDetails = { surface: S::Surface, subject: str, outcome: str }
 type GuidedStep = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | ReadCalendar | SaveMailAppointment
-  | ReachNamedPage({ subject: str }) | SurfaceOutcome({ surface: S::Surface, subject: str, outcome: str })
+  | ReachNamedPage({ subject: str }) | ReadLatestRecord({ collection: str, status: str })
+  | SurfaceOutcome({ surface: S::Surface, subject: str, outcome: str })
 type GuidedMail = { account: int, owner: str, address: str, ref: str, generation: int, revision: int, version: str }
 type GuidedCalendarApproval = {
   task: str, account: int, owner: str, calendar: str, sourceRef: str, provisional: str, proposal: int,
@@ -74,16 +75,25 @@ type GuidedCheckpoint = {
 }
 type GuidedRecovery = { owner: str, checkpoint: GuidedCheckpoint }
 type GuidedFence = { task: str, version: int }
+type RecordCoverage = { observed: int, total: int }
+type GuidedRecordSelection = {
+  owner: str, task: str, version: int, generation: int, deviceVersion: int, browserRevision: int,
+  stepIndex: int, tabId: int, loadVersion: int, documentId: str, domRevision: int,
+  key: str, coverage: RecordCoverage, matches: int
+}
+type GuidedRecordState = NoGuidedRecordSelection | StagedGuidedRecord({ selection: GuidedRecordSelection })
 type GuidedPlan = {
   owner: str, steps: List[GuidedStep], receipts: List[GuidedReceipt], openingBrowser: int, originalAsk: str, linkStep: int, linkUrl: str,
   mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str,
-  nameCorrection: GuidedNameCorrectionState, nameOverride: GuidedNameOverride, saveRecovery: GuidedCheckpointSave
+  nameCorrection: GuidedNameCorrectionState, nameOverride: GuidedNameOverride, saveRecovery: GuidedCheckpointSave,
+  recordSelection: GuidedRecordState
 }
 type GuidedRequest = { owner: str, task: str, goal: str, steps: List[GuidedStep] }
 type GuidedObservation = {
   owner: str, task: str, version: int, deviceVersion: int, browserRevision: int,
   step: GuidedStep, sourceKey: str, evidence: str
 }
+type GuidedRecordCheck = { report: GuidedObservation, key: str, tabId: int, documentId: str, loadVersion: int }
 type GuidedNamedPageCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, heading: str }
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
 type GuidedSaveRecoveryCheck = { report: GuidedObservation, saved: GuidedSaveReference }
@@ -106,7 +116,8 @@ pure val noGuidedNameOverride: GuidedNameOverride = { stepIndex: -1, label: "" }
 pure val emptyPlan: GuidedPlan = {
   owner: "", steps: List(), receipts: List(), openingBrowser: 0, originalAsk: "", linkStep: -1, linkUrl: "",
   mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: "",
-  nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched
+  nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched,
+  recordSelection: NoGuidedRecordSelection
 }
 pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
@@ -116,6 +127,7 @@ pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadCalendar => { surface: S::Calendar, subject: "Saved appointment", outcome: "Open the saved appointment you want me to read." }
   | SaveMailAppointment => { surface: S::Calendar, subject: "Appointment from the email", outcome: "Ask me to prepare the appointment from the email. Approve its details separately." }
   | ReachNamedPage(target) => { surface: S::Browser, subject: target.subject, outcome: "Find and check the named page." }
+  | ReadLatestRecord(intent) => { surface: S::Browser, subject: intent.collection, outcome: "Check the latest record matching the reviewed status." }
   | SurfaceOutcome(details) => { surface: details.surface, subject: details.subject, outcome: details.outcome }
 }
 pure val noGuidedStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "", outcome: "" })
@@ -1216,7 +1228,7 @@ For a plan bound to a verified owner, Start records the first checkpoint before 
 
 A durable checkpoint keeps the reviewed owner, task and goal, the ordered
 outcomes and the ordered prefix of confirmed receipts. Receipt identifiers
-are opaque source digests. A confirmed correction keeps the exact replacement
+are opaque references. A confirmed correction keeps the exact replacement
 name and the public link the person approved with it. The host stores the
 checkpoint under the authenticated account that reviewed it. The authenticated
 store may recover that checkpoint only into an empty workspace for the same
@@ -1312,6 +1324,7 @@ pure def lawRestoredGuidanceWaitsForACurrentRead(w: Workspace, recovery: GuidedR
     after.assistant.workVersion > recovery.checkpoint.workVersion and after.assistant.operation == "" and
     after.plan.steps == recovery.checkpoint.request.steps and after.plan.receipts == recovery.checkpoint.receipts and
     after.plan.mail == noGuidedMail and after.plan.calendarApproval == noGuidedApproval and
+    after.plan.recordSelection == NoGuidedRecordSelection and
     after.browser == w.browser and after.execution == w.execution and not(canRestoreGuided(after, recovery, by)))
 pure def sometimesRecoveredGuidanceIsPaused(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.activity == A::Paused and w.assistant.presentation == A::Closed
@@ -1377,6 +1390,7 @@ pure def isNamedDestination(guidedStep: GuidedStep): bool = match guidedStep {
 }
 pure def hasGuidedAdapter(guidedStep: GuidedStep): bool = match guidedStep {
   | SurfaceOutcome(_) => false
+  | ReadLatestRecord(intent) => intent.collection != "" and intent.status != ""
   | _ => true
 }
 pure def isLinkGuidanceStep(guidedStep: GuidedStep): bool = match guidedStep {
@@ -1384,6 +1398,7 @@ pure def isLinkGuidanceStep(guidedStep: GuidedStep): bool = match guidedStep {
   | ReadChangedBrowser => true
   | ReadStatement => true
   | ReachNamedPage(_) => true
+  | ReadLatestRecord(_) => true
   | _ => false
 }
 pure def mayGuideReadLink(w: Workspace): bool =
@@ -1394,7 +1409,8 @@ pure def mayGuideReadLink(w: Workspace): bool =
   w.assistant.replacementId == "" and w.assistant.conversation.turn == C::Ready and not(w.assistant.conversation.question) and
   w.execution.phase == X::Idle and w.commitmentTask == ""
 pure def canSetGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): bool =
-  by == Host and mayGuideReadLink(w) and link.url != "" and link.task == w.assistant.taskId and
+  by == Host and mayGuideReadLink(w) and not(isLatestRecord(nextOutcome(w.plan))) and
+  link.url != "" and link.task == w.assistant.taskId and
   link.version == w.assistant.workVersion and link.generation == w.assistant.conversation.generation and
   link.deviceVersion == w.device.contextVersion and link.browserRevision == w.browser.revision and
   link.stepIndex == w.plan.receipts.length() and
@@ -1553,10 +1569,11 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  not(isNamedDestination(report.step)) and guidedObservationCurrent(w, report, by)
+  not(isNamedDestination(report.step)) and not(isLatestRecord(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
-    nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched }
+    nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched,
+    recordSelection: NoGuidedRecordSelection }
   val assistant = w.assistant
   { ...w, plan: plan, assistant:
     if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
@@ -1604,6 +1621,121 @@ pure val pageCheckValues = Set(samplePageCheck, { ...samplePageCheck, heading: "
     loadVersion: 4, url: "https://utility.example/help", heading: "Help" })
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
+```
+
+### The latest matching record must be selected on its collection and verified on arrival
+
+For a request such as opening the latest completed order or reading the latest
+paid invoice, the reviewed Browser step shows the requested collection and
+status. Both come from one ranked record phrase in the request. Grace selects
+locally in the active tab and accounts for every distinct record in the
+site’s reported total. A private collection and detail must identify the same
+site account. A public collection and detail must both be visibly public.
+Grace binds the unique latest match and the fresh collection to the active
+step. The person follows the highlight, then chooses Resume. Only that
+direct visit and its single pause and resume can carry the selection forward.
+Grace checks the new document’s address and independently visible identity.
+A regular browser check cannot confirm this step.
+
+The source and detail evidence stays local, including the link, dates and
+provider identifiers. The reviewed checkpoint retains the collection and
+status from the request and, after confirmation, a generic receipt with an
+opaque reference. An interrupted selection needs a new collection observation
+after resuming.
+
+```quint
+type RecordDatePick = { seen: int, index: int, ties: int }
+pure def pickLatestRecordDate(dates: List[int]): RecordDatePick =
+  val latest = dates.foldl(dates.nthOr(0, 0), (top, date) => if (date > top) date else top)
+  dates.foldl({ seen: 0, index: -1, ties: 0 }, (pick, date) => {
+    seen: pick.seen + 1,
+    index: if (date == latest) pick.seen else pick.index,
+    ties: if (date == latest) pick.ties + 1 else pick.ties
+  })
+pure def uniqueLatestRecordIndex(dates: List[int]): int =
+  val pick = pickLatestRecordDate(dates)
+  if (pick.ties == 1) pick.index else -1
+pure def lawTiedOrAbsentLatestDateCannotSelect(dates: List[int]): bool =
+  pickLatestRecordDate(dates).ties != 1 implies uniqueLatestRecordIndex(dates) == -1
+pure val recordReceiptText = "Checked the latest matching record."
+pure def isLatestRecord(guidedStep: GuidedStep): bool = match guidedStep {
+  | ReadLatestRecord(_) => true
+  | _ => false
+}
+pure def canStageGuidedRecord(w: Workspace, selection: GuidedRecordSelection, by: WorkspaceActor): bool =
+  val tab = B::activeTab(w.browser)
+  val report = { owner: selection.owner, task: selection.task, version: selection.version,
+    deviceVersion: selection.deviceVersion, browserRevision: selection.browserRevision, step: nextOutcome(w.plan),
+    sourceKey: selection.key, evidence: recordReceiptText }
+  isLatestRecord(report.step) and guidedObservationCurrent(w, report, by) and
+  selection.generation == w.assistant.conversation.generation and selection.stepIndex == w.plan.receipts.length() and
+  selection.tabId == tab.id and selection.loadVersion == tab.loadVersion and tab.load == B::Loaded and tab.secure and
+  selection.documentId != "" and selection.domRevision >= 0 and selection.matches == 1 and
+  selection.coverage.total > 0 and selection.coverage.observed == selection.coverage.total
+pure def stageGuidedRecord(w: Workspace, selection: GuidedRecordSelection, by: WorkspaceActor): Workspace =
+  { ...w, plan: { ...w.plan, recordSelection: StagedGuidedRecord({ selection: selection }) } }
+pure def guidedRecordReceipt(w: Workspace): GuidedReceipt =
+  val recordSelection = w.plan.recordSelection
+  val key = match recordSelection {
+    | NoGuidedRecordSelection => ""
+    | StagedGuidedRecord(bound) => bound.selection.key
+  }
+  { sourceKey: key, evidence: recordReceiptText }
+pure def guidedRecordBindingMatches(w: Workspace, selection: GuidedRecordSelection, recordCheck: GuidedRecordCheck): bool =
+  val tab = B::activeTab(w.browser)
+  val report = recordCheck.report
+  recordCheck.key == selection.key and recordCheck.tabId == selection.tabId and tab.id == selection.tabId and
+  selection.owner == report.owner and selection.task == report.task and selection.version + 2 == report.version and
+  w.assistant.activity == A::Rechecking and selection.generation + 1 == w.assistant.conversation.generation and
+  selection.stepIndex == w.plan.receipts.length() and
+  selection.deviceVersion == report.deviceVersion and report.browserRevision == selection.browserRevision + 2 and
+  tab.load == B::Loaded and tab.secure and recordCheck.loadVersion == tab.loadVersion and
+  recordCheck.loadVersion == selection.browserRevision + 1 and recordCheck.loadVersion > selection.loadVersion and
+  recordCheck.documentId != "" and recordCheck.documentId != selection.documentId
+pure def canConfirmGuidedRecord(w: Workspace, recordCheck: GuidedRecordCheck, by: WorkspaceActor): bool =
+  val report = recordCheck.report
+  val receipt = guidedRecordReceipt(w)
+  val recordSelection = w.plan.recordSelection
+  isLatestRecord(report.step) and guidedObservationCurrent(w, report, by) and
+  report.sourceKey == receipt.sourceKey and report.evidence == receipt.evidence and
+  match recordSelection {
+    | NoGuidedRecordSelection => false
+    | StagedGuidedRecord(bound) => guidedRecordBindingMatches(w, bound.selection, recordCheck)
+  }
+pure def confirmGuidedRecord(w: Workspace, recordCheck: GuidedRecordCheck, by: WorkspaceActor): Workspace =
+  confirmGuided(w, recordCheck.report, by)
+pure def lawARecordDoesNotBindAPublicLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): bool =
+  isLatestRecord(nextOutcome(w.plan)) implies not(canSetGuidedLink(w, link, by))
+pure def lawARecordNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  isLatestRecord(report.step) implies not(canConfirmGuided(w, report, by))
+pure def lawARecordCheckRequiresASelection(w: Workspace, recordCheck: GuidedRecordCheck, by: WorkspaceActor): bool =
+  w.plan.recordSelection == NoGuidedRecordSelection implies not(canConfirmGuidedRecord(w, recordCheck, by))
+pure def lawARecordCheckNeedsTheSelectedKey(w: Workspace, recordCheck: GuidedRecordCheck, by: WorkspaceActor): bool =
+  recordCheck.key != guidedRecordReceipt(w).sourceKey implies not(canConfirmGuidedRecord(w, recordCheck, by))
+pure def lawARecordCheckKeepsItsReceiptPrivate(w: Workspace, recordCheck: GuidedRecordCheck, by: WorkspaceActor): bool =
+  recordCheck.report.evidence != recordReceiptText implies not(canConfirmGuidedRecord(w, recordCheck, by))
+pure def lawAStagedRecordDoesNotChangeTheCheckpoint(w: Workspace, selection: GuidedRecordSelection, by: WorkspaceActor): bool =
+  guidedCheckpoint(stageGuidedRecord(w, selection, by)) == guidedCheckpoint(w)
+pure def lawIncompleteRecordCollectionsCannotBeStaged(w: Workspace, selection: GuidedRecordSelection, by: WorkspaceActor): bool =
+  selection.coverage.observed != selection.coverage.total implies not(canStageGuidedRecord(w, selection, by))
+pure def lawAmbiguousRecordsCannotBeStaged(w: Workspace, selection: GuidedRecordSelection, by: WorkspaceActor): bool =
+  selection.matches != 1 implies not(canStageGuidedRecord(w, selection, by))
+pure val sampleGuidedRecordSelection: GuidedRecordSelection = {
+  owner: "tablet", task: "read", version: 1, generation: 2, deviceVersion: 2, browserRevision: 1,
+  stepIndex: 0, tabId: 1, loadVersion: 1, documentId: "collection-document", domRevision: 0,
+  key: "record-binding", coverage: { observed: 3, total: 3 }, matches: 1
+}
+pure val selectionValues = Set(sampleGuidedRecordSelection,
+  { ...sampleGuidedRecordSelection, coverage: { observed: 2, total: 3 } },
+  { ...sampleGuidedRecordSelection, matches: 2 })
+pure val sampleGuidedRecordCheck: GuidedRecordCheck = {
+  report: { ...sampleReport, owner: "tablet", task: "read", version: 3, deviceVersion: 2, browserRevision: 3,
+    step: ReadLatestRecord({ collection: "order", status: "completed" }), sourceKey: "record-binding", evidence: recordReceiptText },
+  key: "record-binding", tabId: 1, documentId: "detail-document", loadVersion: 2
+}
+pure val recordCheckValues = Set(sampleGuidedRecordCheck,
+  { ...sampleGuidedRecordCheck, key: "stale-binding" },
+  { ...sampleGuidedRecordCheck, documentId: "collection-document" })
 ```
 
 ### A calendar save must come from the selected email and a separately approved write

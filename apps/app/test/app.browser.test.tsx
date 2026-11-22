@@ -1049,7 +1049,7 @@ it('Ask for email help (spec/app/conversation.md, "A turn may start without her 
 });
 
 it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
-  // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
+  // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/workspace.md, "The latest matching record must be selected on its collection and verified on arrival"
   const { agent, requests, answer, listeners, stopped, created, refused } = deviceAgent();
   const runtime = ManagedRuntime.make(application(undefined, undefined, { native: true, agent }));
   const host = document.body.appendChild(document.createElement("div"));
@@ -1189,6 +1189,31 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     await expect.element(input).toBeVisible();
     expect(review.query()).toBeNull();
     expect(plan.query()).toBeNull();
+
+    const reviewRecord = (collection: string, status: string) =>
+      ({ kind: "proposeReadPlan", steps: [{ kind: "ReadLatestRecord", collection, status }] });
+    for (const [words, collection, status] of [
+      ["Show my most recent order marked canceled.", "order", "canceled"],
+      ["Open the latest invoice that was paid.", "invoice", "paid"],
+    ]) {
+      await offer(words, [reviewRecord(collection, status)]);
+      await expect.element(review.getByRole("list", { name: "Read plan" })).toHaveTextContent(
+        `Latest record in “${collection}” with status “${status}”`);
+      expect(plan.query()).toBeNull();
+      await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace" })));
+      await expect.element(review).not.toBeInTheDocument();
+      await act(() => userEvent.click(reopen));
+      await expect.element(input).toBeVisible();
+    }
+    for (const [index, words] of [
+      "Show my most recent order, and tell me which invoice was canceled.",
+      "Show my latest order. That was canceled last week.",
+      "Show the latest order that was not canceled.",
+    ].entries()) {
+      await offer(words, [reviewRecord("order", "canceled")]);
+      await expect.poll(() => refusal.elements().length).toBe(5 + index);
+      expect(review.query()).toBeNull();
+    }
 
     await offer(ownSpelling, [{ kind: "ReachNamedPage", target: "Grace's Help Center" }]);
     await expect.element(review.getByText(ownSpelling, { exact: true })).toBeVisible();

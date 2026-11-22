@@ -289,7 +289,21 @@ export const agent = Layer.effect(Agent, effect {
       const at = quotedAt(words, target)
       return at < 0 ? undefined : { tag: "ReachNamedPage", subject: words.slice(at, at + target.length) }
     }
-    const offered = action.steps.map((step): GuidedStep | undefined => typeof step === "string" ? { tag: step } : named(step.target))
+    const offered = action.steps.map((step): GuidedStep | undefined => {
+      if (typeof step === "string") return { tag: step }
+      if (step.kind === "ReachNamedPage") return named(step.target)
+      const status = lower(step.status)
+      const collection = lower(step.collection)
+      const connectors = ["marked", "marked as", "that was", "that is", "that has been", "with status", "with a status of", "whose status is"]
+      const phrases = [`${status} ${collection}`, ...connectors.map((connector) => `${collection} ${connector} ${status}`)]
+      const clauses: string[] = words.toLowerCase().split(/[.!?;:\n]+/u)
+      const quoted = clauses.some((clause): boolean => {
+        const requestWords = ` ${clause.replace(/[^\p{L}]+/gu, " ").trim()} `
+        return ["latest", "newest", "most recent"].some((rank) =>
+          phrases.some((criteria) => requestWords.includes(` ${rank} ${criteria} `)))
+      })
+      return quoted ? { tag: "ReadLatestRecord", collection, status } : undefined
+    })
     const steps = offered.filter((step) => step !== undefined)
     if (steps.length !== offered.length) return "OwnerRefused"
     const owner = request.authority === undefined ? undefined : guidedOwner(request.authority, steps)

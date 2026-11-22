@@ -1979,6 +1979,35 @@ lemma confirmGuidedNamedPage_ensures(w: Workspace, pageCheck: GuidedNamedPageChe
   GuidedReceiptPreserves(w, pageCheck.report, by_);
 }
 
+lemma confirmGuidedRecord_ensures(w: Workspace, recordCheck: GuidedRecordCheck, by_: WorkspaceActor)
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysDeviceRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysBrowserRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysAssistantRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysExecutionRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCommitmentRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCommitmentRegistryIsCanonical(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCommitmentAssociation(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysPausedCommitmentCannotSubmit(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysOneTask(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysPausedTogether(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysRecordingHasPermission(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysOperationHasVisibleTask(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysEvidenceVersionsAreNonnegative(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysWakeRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysActiveWakePausesWebsiteWork(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysPreferencesRules(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCommitmentUsesCanonicalIdentity(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCurrentBeforeAction(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysCommitmentReviewUsesCurrentContext(confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepInterruptionsKeepTask(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepWakeNeverDispatchesWebsite(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuidedRecord(w, recordCheck, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_)))
+{
+  GuidedReceiptPreserves(w, recordCheck.report, by_);
+}
+
 lemma resume_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysDeviceRules(resume(w, by_)))
   ensures (inv(w) ==> canResume(w, by_) ==> alwaysBrowserRules(resume(w, by_)))
