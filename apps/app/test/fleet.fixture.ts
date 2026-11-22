@@ -273,6 +273,10 @@ export const fleetStatementCases = [
   { billerId: "anoka-municipal-utility-city-of-anoka-252a5c", template: "invoicecloud" },
   { billerId: "b-and-b-sanitation-waste-connections-fec9e8", template: "waste-hauler" },
   { billerId: "belton-honea-path-wa-sc0410011-66b378", template: "xpress" },
+  { billerId: "colyell-community-water-6ce73c", template: "doxo" },
+  { billerId: "aflac-dental-insurance-60fdf1", template: "insurance" },
+  { billerId: "ace-cash-express-bill-payment-5a3f3c", template: "invoice-portal" },
+  { billerId: "above-all-satellite-localoop-inc-a40f31", template: "telecom" },
 ];
 
 const StatementRoutes = Schema.Struct({ routes: Schema.Struct({
