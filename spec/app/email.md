@@ -1219,6 +1219,12 @@ any picker leaves the draft unchanged. Its result must match the exact composer
 revision captured at launch, so a delayed result cannot attach to a later draft. Forwarding copies sanitized selected
 content and attachments into a new editable draft and never sends it.
 
+When adding a file and preparing the message for delivery, the connector
+checks which formats and filenames the provider accepts. The draft can
+carry up to ten attachments with different filenames, ignoring case.
+An older draft with an incompatible attachment stays editable. Its
+attachments are never renamed or converted during delivery.
+
 Saving is dispatched to [Files](./files.md). `mayExportAttachments`
 is the source authorization check before the host constructs its `FileImport`;
 only Files' durable acknowledgment permits “Saved to Files”. There is no Print:

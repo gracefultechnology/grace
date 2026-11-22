@@ -5,7 +5,7 @@ import type { SavedFile } from "../gen/app__files.effect.vibe"
 import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.vibe"
 import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
-import { Connector, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
+import { Connector, sendableAttachment, sendableAttachments, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
 import { Library } from "./files.vibe"
 import { type Held, followAccounts, Instances } from "./instances.vibe"
 
@@ -153,7 +153,10 @@ effect function flush(box: MailMachine.Shape, mail: MailConnection, library: Lib
   }
 }
 
-effect function attachTo(box: MailMachine.Shape, launched: Mailbox, asset: SavedFile) {
+effect function attachTo(box: MailMachine.Shape, launched: Mailbox, asset: SavedFile, library: Library.Shape) {
+  if (!sendableAttachments([...launched.draftAttachments, asset])) return false
+  const content = (try library.contents([asset])).get(asset.id)
+  if (content === undefined || !sendableAttachment(asset, content)) return false
   const event: MailEvent = { type: "attachAsset", owner: launched.owner, asset, draftRevision: launched.revision, selected: true }
   if (!enabled(try box.get(), event, "MailHost")) return false
   return (box.send(event, "MailHost") catch () => undefined) !== undefined
@@ -361,7 +364,7 @@ export const mailing = Layer.effect(Mail, effect {
     const box = shelf.mail(id) catch () => undefined
     if (box === undefined) return
     const m = try box.get()
-    if (m.revision !== revision || !recipientsValid(m.draft)) return
+    if (m.revision !== revision || !recipientsValid(m.draft) || !sendableAttachments(m.draftAttachments)) return
     const confirmed = box.send({ type: "confirmVisibleSend", revision }, "MailUser") catch () => undefined
     if (confirmed !== undefined && m.view !== "Inbox") box.send({ type: "showInbox" }, "MailUser") catch () => undefined
   }
@@ -384,17 +387,18 @@ export const mailing = Layer.effect(Mail, effect {
 
   effect function attach(id: number, asset: SavedFile) {
     const owned = try ownedMailbox(id)
-    return owned !== undefined && (try attachTo(owned.box, owned.m, asset))
+    return owned !== undefined && (try attachTo(owned.box, owned.m, asset, library))
   }
 
   effect function capture(id: number) {
     const owned = try ownedMailbox(id)
     if (!owned || !canEditDraft(owned.m, "MailUser")) return false
     const photo = try library.capture()
-    return photo !== undefined && (try attachTo(owned.box, owned.m, photo))
+    return photo !== undefined && (try attachTo(owned.box, owned.m, photo, library))
   }
 
   effect function share(photo: SavedFile) {
+    if (!sendableAttachments([photo])) return false
     const a = try registry.get()
     const sources = try Effect.forEach(a.accounts, effect (account) => {
       const box = shelf.mail(account.id) catch () => undefined

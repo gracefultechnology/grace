@@ -14,6 +14,7 @@ import { type Event as WorkspaceEvent, Machine as Workspaces } from "../gen/app_
 import { Email } from "../src/Email.tsx";
 import { RuntimeContext } from "../src/useApp.ts";
 import { application } from "../src/app.vibe";
+import { FileEntry } from "../src/files.vibe";
 import { Instances } from "../src/instances.vibe";
 import { chooseMailLink } from "../src/mailLink.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
@@ -462,9 +463,42 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("button", { name: "Susan" }));
   await expect.element(subject()).toHaveValue("A photo");
   await expect.element(page.getByRole("img", { name: "Piano.png" })).toBeVisible();
+  const deviceFiles = await library(libraryOwner, 1);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = deviceFiles.transaction("files", "readwrite");
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      const store = transaction.objectStore("files");
+      const stored = store.getAll();
+      stored.onsuccess = () => {
+        try {
+          const row = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ entry: FileEntry, data: Schema.String })))(stored.result)
+            .find(({ entry }) => entry.name === "Piano.png");
+          const source = row?.entry.source;
+          if (!row || !source) throw new Error("Missing the saved source photo");
+          for (const name of ["PIANO.PNG", "Phone photo.heic"]) {
+            const id = crypto.randomUUID();
+            store.add({ ...row, entry: { ...row.entry, id, name, source: { ...source, id, name, sourceRef: id } } });
+          }
+        } catch (error) {
+          transaction.abort();
+          reject(error);
+        }
+      };
+    });
+  } finally {
+    deviceFiles.close();
+  }
   await click(page.getByRole("button", { name: "Attach" }));
   await click(page.getByRole("menuitem", { name: "Choose from Photos" }));
-  await click(page.getByRole("dialog", { name: "Choose from Photos" }).getByRole("button", { name: "Bow.png" }));
+  const photoPicker = page.getByRole("dialog", { name: "Choose from Photos" });
+  for (const name of ["PIANO.PNG", "Phone photo.heic"]) {
+    await click(photoPicker.getByRole("button", { name, exact: true }));
+    await expect.element(photoPicker.getByRole("status")).toBeVisible();
+    await expect.element(page.getByRole("button", { name: `Remove ${name}`, exact: true })).not.toBeInTheDocument();
+  }
+  await click(photoPicker.getByRole("button", { name: "Bow.png" }));
   await expect.element(page.getByRole("img", { name: "Bow.png" })).toBeVisible();
   await click(page.getByRole("button", { name: "Add", exact: true }));
   await click(page.getByRole("button", { name: "Add to Cc" }));

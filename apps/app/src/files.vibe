@@ -152,6 +152,7 @@ export const library = Layer.effect(Library, effect {
     const kept = new Set(catalog.entries.map((entry) => entry.id))
     const held = try Effect.forEach(files.filter((file) => kept.has(file.id)), effect (file) => {
       const got = try Schema.decodeUnknownEffect(Content)(try tryPromise(() => actual.content({ lease, id: file.id })))
+      if (got.id !== file.id) throw new FilesUnavailable()
       return [file.id, { mimeType: got.mimeType, data: got.data }] as const
     })
     return new Map<string, Attached>(held)
