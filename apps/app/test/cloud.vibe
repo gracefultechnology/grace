@@ -456,6 +456,7 @@ effect function store(site: string) {
   const issued = try Ref.make(0)
   const googleCodes = try Ref.make(new Map<string, GoogleConsent>())
   const googleLinks = try Ref.make(new Map<string, string>())
+  const arrivalBaselines = try Ref.make(new Map<string, readonly string[]>())
   const calendarCreates = try SynchronizedRef.make(new Map<string, { intent: string; event: Appointment }>())
   const origin = effect {
     const request = try HttpServerRequest.HttpServerRequest
@@ -1075,6 +1076,19 @@ effect function store(site: string) {
     return try HttpServerResponse.json({ outcome, address })
   }
 
+  effect function inboxArrival() {
+    const { grantId, cursor } = try HttpServerRequest.schemaSearchParams(Schema.Struct({
+      grantId: Filled, cursor: Schema.optionalKey(Filled),
+    }))
+    const { key, box } = try connection("google", grantId, true)
+    const ids = box.mail.filter((message) => message.labels.includes("INBOX")).map((message) => message.externalId)
+    const current = digestOf([key, grantId, ...ids].join("\n"))
+    const baseline = cursor === undefined ? undefined : (try Ref.get(arrivalBaselines)).get(`${key}/${grantId}/${cursor}`)
+    if (cursor !== undefined && baseline === undefined) throw new ProofInvalid()
+    try Ref.update(arrivalBaselines, (all) => new Map(all).set(`${key}/${grantId}/${current}`, ids))
+    return try HttpServerResponse.json({ cursor: current, arrived: baseline !== undefined && ids.some((id) => !baseline.includes(id)) })
+  }
+
   effect function receiveMail() {
     const account = try signedIn()
     const incoming = try HttpServerRequest.schemaBodyJson(IncomingMail)
@@ -1278,6 +1292,7 @@ effect function store(site: string) {
     HttpRouter.route("GET", "/fake/signin/:sessionId", answered(signInPage())),
     HttpRouter.route("POST", "/fake/signin/:sessionId", answered(choose())),
     HttpRouter.route("POST", "/fake/gmail/incoming", answered(receiveMail())),
+    HttpRouter.route("GET", "/api/v1/eliza/google/gmail/inbox-v1/arrival", answered(inboxArrival())),
     HttpRouter.route("POST", "/fake/expire", answered(expire())),
     HttpRouter.route("POST", "/fake/outage", answered(outage())),
     HttpRouter.route("POST", "/fake/chat/script", answered(script())),

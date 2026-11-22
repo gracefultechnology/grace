@@ -780,7 +780,7 @@ async function askForPrivateSignIn(native: ReturnType<typeof fakePlugin>, reques
   await act(() => userEvent.click(page.getByRole("button", { name: "Send", exact: true })));
 }
 
-async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fillField, platform: Extract<Parameters<typeof application>[2], { native: boolean }> = { native: false }, connectedInbox = false) {
+async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fillField, platform: Extract<Parameters<typeof application>[2], { native: boolean }> = { native: false }, deliverAfterEmptyPoll?: () => Promise<void>) {
   let finishFirstLaunch: (() => void) | undefined;
   const firstAppLaunch = new Promise<void>((resolve) => { finishFirstLaunch = resolve; });
   const openApp = platform.openPrivateVerificationApp;
@@ -851,12 +851,14 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   await tap(signInHelp);
   await routeTo(help);
   const watchMail = help.getByRole("button", { name: "Watch for new mail" });
-  if (connectedInbox) {
+  if (deliverAfterEmptyPoll) {
     await tap(watchMail);
     await expect.element(help.getByRole("status")).toHaveTextContent("Watching for new mail in your connected inbox.");
     await tap(help.getByRole("button", { name: "Stop watching" }));
     await expect.element(help.getByRole("status")).not.toBeInTheDocument();
     await tap(watchMail);
+    await expect.element(help.getByRole("status")).toHaveTextContent("Watching for new mail in your connected inbox.");
+    await deliverAfterEmptyPoll();
     await expect.poll(() => help.getByRole("status").query()?.textContent, { timeout: 12000 }).toBe("New mail arrived");
     expect(visit()).toEqual(before);
   } else {
@@ -2423,11 +2425,16 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
 it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: Sign in privately on a website")', async () => {
   // spec/app/browserControls.md, "A new-mail hint belongs to one approved private visit"
   const native = fakePlugin();
-  const account = { id: "sign-in-help-owner", email: "fixture@example.test" };
-  const grant = "4e3cf7dd-2cbb-4463-8062-1f366bd980a9";
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const headers = { Authorization: `Bearer ${secret}` };
+  const status = await fetch(new URL("/api/v1/eliza/google/status", cloud), { headers });
+  const connected = Schema.decodeUnknownSync(Schema.Struct({ connectionId: Schema.String, identity: Schema.Struct({ email: Schema.String }) }))(await status.json());
+  const account = { id: "sign-in-help-owner", email: connected.identity.email };
+  const grant = connected.connectionId;
   const configuredApi: unknown = apiOrigin;
   const api = typeof configuredApi === "string" && configuredApi ? new URL(configuredApi, window.location.href).origin : window.location.origin;
-  const requests: Record<string, string>[] = [];
+  const requests: { grant: string | null; since: string | null; arrived: boolean; cursor: string }[] = [];
   const browserFetch = window.fetch.bind(window);
   const provider = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, window.location.href);
@@ -2439,11 +2446,15 @@ it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: 
         accountId: account.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
         identity: { email: account.email }, connectionId: grant, grantedCapabilities: ["google.gmail.triage"],
       });
-      case "/api/v1/eliza/google/gmail/inbox-v1/arrival":
+      case "/api/v1/eliza/google/gmail/inbox-v1/arrival": {
         expect(init?.method).toBe("GET");
         expect(init?.body).toBeUndefined();
-        requests.push(Object.fromEntries(url.searchParams));
-        return Response.json({ cursor: "fixture-inbox-cursor", arrived: url.searchParams.has("cursor") });
+        const result = await browserFetch(new URL(url.pathname + url.search, cloud), { headers, signal: init?.signal });
+        if (!result.ok) return result;
+        const { arrived, cursor } = Schema.decodeUnknownSync(Schema.Struct({ arrived: Schema.Boolean, cursor: Schema.String }))(await result.json());
+        requests.push({ grant: url.searchParams.get("grantId"), since: url.searchParams.get("cursor"), arrived, cursor });
+        return Response.json({ arrived, cursor });
+      }
       default: return url.pathname.startsWith("/api/") ? new Response(null, { status: 404 }) : browserFetch(input, init);
     }
   });
@@ -2451,8 +2462,24 @@ it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: 
     await signInPrivately(native, async (field, text) => {
       await act(() => userEvent.clear(field));
       await act(() => userEvent.type(field, text));
-    }, { native: false }, true);
-    expect(requests).toEqual([{ grantId: grant }, { grantId: grant }, { grantId: grant, cursor: "fixture-inbox-cursor" }]);
+    }, { native: false }, async () => {
+      await expect.poll(() => requests.some(({ since, arrived }) => since !== null && !arrived), { timeout: 12000 }).toBe(true);
+      await expect.element(page.getByRole("status").filter({ hasText: "Watching for new mail in your connected inbox." })).toBeVisible();
+      expect(page.getByText("New mail arrived", { exact: true }).query()).toBeNull();
+      const delivered = await browserFetch(new URL("/fake/gmail/incoming", cloud), {
+        method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ to: account.email, from: "Synthetic delivery", fromEmail: "arrivals@grace.test",
+          subject: "Ordinary inbox arrival", body: "Your appointment details are available." }),
+      });
+      expect(delivered.ok).toBe(true);
+    });
+    const baseline = requests[0]?.cursor;
+    expect(requests.map(({ grant }) => grant)).toEqual(requests.map(() => grant));
+    expect(requests.map(({ since, arrived }) => ({ since, arrived }))).toEqual([
+      { since: null, arrived: false }, { since: null, arrived: false },
+      { since: baseline, arrived: false }, { since: baseline, arrived: true },
+    ]);
+    expect(requests.at(-1)?.cursor).not.toBe(baseline);
   } finally {
     provider.mockRestore();
   }
