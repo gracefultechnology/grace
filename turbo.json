@@ -133,6 +133,7 @@
       "cache": false
     },
     "//#gen:eliza": {
+      "env": ["!VITE_*"],
       "inputs": [
         "vendor/eliza/{package.json,pnpm-lock.yaml,pnpm-workspace.yaml}",
         "vendor/eliza/{apps,packages}/*/package.json",
@@ -143,6 +144,7 @@
       "outputs": ["vendor/eliza/packages/cloud/gen/**", "vendor/eliza/packages/os/gen/**"]
     },
     "//#gen": {
+      "env": ["!VITE_*"],
       "dependsOn": ["//#gen:eliza"],
       "inputs": [
         "spec/**",
