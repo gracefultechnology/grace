@@ -2,7 +2,7 @@
 import character from "../agent/character.json" with { type: "json" }
 import policy from "../agent/policy.json" with { type: "json" }
 import { Digest } from "effect/crypto"
-// spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
+// spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/browserControls.md, "A direct request uses the selected page and revision"
 import { Machine as Accounts, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { openSelected, sourceAt } from "../gen/app__calendars.effect.vibe"
@@ -42,7 +42,7 @@ export service Conversation {
 
 const origins: Record<PersonTurn["tag"], Origin> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
 const apology = "Sorry, I didn’t catch that. Could you say it again?"
-const noControls = "This conversation shows no controls under your reply, so never offer {kind:\"privateSignIn\"}: tell the person to tap Private sign-in on the website instead."
+const noControls = "This conversation shows no controls under your reply. Never offer {kind:\"privateSignIn\"}. If the person asks to sign in, direct them to the website’s own sign-in form."
 const hostStarted = "(The person has not spoken: the tablet started this turn. Answer what it just told you happened.)"
 
 schema Delta { content?: string }
