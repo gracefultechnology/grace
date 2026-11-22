@@ -164,7 +164,7 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
           const { origin } = source
           const supported = plan.steps.every((item) => typeof item === "string"
             ? item === "ReadBrowser" || item === "ReadChangedBrowser" || item === "ReadStatement"
-            : item.kind === "ReachNamedPage")
+            : item.kind === "ReachNamedPage" || item.kind === "ReadLatestRecord")
           const eligible = words !== undefined && reply.actions.length === 1 && supported && safe === reply.text && !reply.isQuestion && fromPerson(origin)
           const applied = eligible ? try agent.apply([plan], { generation: token, workVersion, origin, authority }) : []
           const current = try workspace.get()

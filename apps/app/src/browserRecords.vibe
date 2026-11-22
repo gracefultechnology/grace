@@ -1,0 +1,294 @@
+// spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
+import { comparableName, guidedPageState, NativePage } from "./nativePage.vibe"
+import type { LinkObservation, PageId } from "./nativePage.schema.ts"
+
+export type RecordSiteScope = { kind: "Bound"; marker: string } | { kind: "Public" }
+type SiteAccount = RecordSiteScope | { kind: "Absent" | "Ambiguous" }
+
+type Node = LinkObservation["result"]["elements"][number]
+export type RecordLink = { id: string; href: string }
+type RecordAnchor = RecordLink & { selector: string }
+type RecordRange = { first: number; last: number; total: number }
+export type ObservedRecord = { identity: string; date: number; status: string; link: RecordLink }
+export type RecordCollection = RecordRange & {
+  documentId: string; domRevision: number; snapshotId: string
+  records: readonly ObservedRecord[]
+  account: RecordSiteScope; next: RecordLink | undefined; previous: RecordLink | undefined
+}
+export type CollectionObservation =
+  | { kind: "NoCollection" | "Unverifiable" | "PrivateForm" | "NeedsScope" }
+  | { kind: "Collection"; page: RecordCollection }
+
+const main = ':is(main,[role="main"])'
+const majorHeading = ':is(h1,[role="heading"][aria-level="1"])'
+const semanticTable = `${main} table:has(> thead > tr):has(> tbody > tr):not(:has(> tbody:nth-of-type(2)))`
+const dateFields = ["date", "created", "created on", "placed on", "issued", "issued on"]
+const identifierFields = ["id", "number", "#", "record id", "reference"]
+const detailLinksLabels = ["view", "details", "view details", "open details"]
+
+const accountField = ':is(header,[role="banner"]) :is([aria-label="Account" i],[aria-label="Profile" i],[aria-label="Signed-in account" i],[aria-label^="Signed in as " i]):not(form *):not(:has(input,textarea,[contenteditable]))'
+const siteHeader = ':is(header,[role="banner"]):not(:has([contenteditable]))'
+
+effect function accountOn(page: NativePage.Shape, id: PageId, address: URL, current: boolean!!): SiteAccount!! {
+  if (!(try current)) return { kind: "Ambiguous" }
+  const badge = page.readRecordText(id, accountField) catch () => undefined
+  if (!(try current)) return { kind: "Ambiguous" }
+  const header = page.readRecordText(id, siteHeader) catch () => undefined
+  if (!(try current)) return { kind: "Ambiguous" }
+  const values = new Set<string>()
+  if (header?.url === address.href && header.text.length <= 4096) {
+    const lines = header.text.split("\n")
+    for (const [index, line] of lines.entries()) {
+      const marker = /^(?:account (?:id|email))(?:\s*[:#]\s*|\s+|$)(.{0,95})$/iu.exec(line.trim())
+      if (marker) {
+        const label = (marker[1] || lines[index + 1] || "").trim()
+        if (/^[^\s\p{Cc}\p{Cf}]{1,95}$/u.test(label)) values.add(label)
+      }
+    }
+  }
+  if (values.size === 1) return { kind: "Bound", marker: [...values][0] }
+  if (values.size > 1) return { kind: "Ambiguous" }
+  const label = badge?.url === address.href ? badge.text.trim() : ""
+  const email = /^(?:signed in as\s+)?([^\s@]+@[^\s@]+\.[^\s@]+)$/iu.exec(label)?.[1]
+  const listed = /^#([^\s\p{Cc}\p{Cf}]{1,95})$/u.exec(label)?.[1]
+  const marker = email ?? listed
+  if (marker && marker.length <= 95) return { kind: "Bound", marker }
+  const publicRecord = page.readRecordText(id, `${main}[aria-label="Public records" i] ${majorHeading}`) catch () => undefined
+  return publicRecord?.url === address.href && (try current) ? { kind: "Public" } : { kind: "Absent" }
+}
+
+export function sameRecordAccount(first: RecordSiteScope, second: SiteAccount): boolean {
+  return first.kind === "Bound" && second.kind === "Bound" ? first.marker === second.marker :
+    first.kind === "Public" && second.kind === "Public"
+}
+
+export function comparableStatus(value: string): string | undefined {
+  const text = comparableName(value)
+  if (!/^[\p{L}\d][\p{L}\d -]{0,47}$/u.test(text) || /^(?:unknown|unavailable|not available|not applicable|n a|na)$/u.test(text)) return undefined
+  if (text === "complete") return "completed"
+  if (text === "canceled") return "cancelled"
+  return text
+}
+
+function identity(value: string): string | undefined {
+  const text = value.trim().replace(/^#\s*/u, "")
+  return /^[\p{L}\d][\p{L}\d_.-]{0,63}$/u.test(text) ? text : undefined
+}
+
+function dateValue(value: string, monthFirst: boolean): number | undefined {
+  const text = value.trim()
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(text)
+  const writtenMonthFirst = /^([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})$/u.exec(text)
+  const dayFirst = /^(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})$/u.exec(text)
+  const slash = monthFirst ? /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/u.exec(text) : null
+  const months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+  const word = (writtenMonthFirst?.[1] ?? dayFirst?.[2])?.toLowerCase()
+  const month = iso || slash ? Number(iso?.[2] ?? slash?.[1]) : months.findIndex((name) => name === word || name.slice(0, 3) === word) + 1
+  const day = Number(iso?.[3] ?? slash?.[2] ?? writtenMonthFirst?.[2] ?? dayFirst?.[1])
+  const year = Number(iso?.[1] ?? slash?.[3] ?? writtenMonthFirst?.[3] ?? dayFirst?.[3])
+  if (!(year >= 1000 && month > 0 && day > 0)) return undefined
+  const timestamp = Date.UTC(year, month - 1, day)
+  const date = new Date(timestamp)
+  return date.getUTCDate() === day && date.getUTCMonth() === month - 1 ? timestamp : undefined
+}
+
+function fullDateWitnesses(text: string): string[] {
+  const written = /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/u.exec(text.trim())
+  if (!written) return []
+  const left = written[1].padStart(2, "0")
+  const right = written[2].padStart(2, "0")
+  const year = written[3]
+  return [...new Set(["19", "20"].flatMap((century) =>
+    [`${century}${year}-${left}-${right}`, `${century}${year}-${right}-${left}`]))]
+}
+function rangeOf(text: string): RecordRange | undefined {
+  const phrase = text.trim().replace(/\s+/gu, " ")
+  const listed = /^(?:showing\s+)?(?:items?\s+)?(\d+)\s*(?:[-–]|to)\s*(\d+)\s+of\s+(\d+)(?:\s+(?:items?|records?|results?|total))?$/iu.exec(phrase)
+  const all = /^(\d+)\s+(?:items?|item\(s\)|records?|results?)$/iu.exec(phrase)
+  const range: RecordRange | undefined = listed ? { first: Number(listed[1]), last: Number(listed[2]), total: Number(listed[3]) } :
+    all ? { first: 1, last: Number(all[1]), total: Number(all[1]) } : undefined
+  return range && range.first >= 1 && range.first <= range.last && range.last <= range.total &&
+    [range.first, range.last, range.total].every(Number.isSafeInteger) ? range : undefined
+}
+
+export function sameCollectionAddress(from: URL, to: URL): boolean {
+  const withoutPage = (url: URL) => [...url.searchParams].filter(([key]) => !["p", "page"].includes(key))
+  return to.origin === from.origin && to.pathname === from.pathname && !to.hash &&
+    JSON.stringify(withoutPage(to)) === JSON.stringify(withoutPage(from))
+}
+
+export function sameCollectionPage(from: URL, to: URL): boolean {
+  const number = (url: URL): string => url.searchParams.get("page") ?? url.searchParams.get("p") ?? "1"
+  return sameCollectionAddress(from, to) && number(from) === number(to)
+}
+
+function safeLink(node: Node, address: URL): string | undefined {
+  const parsed = node.href === null ? null : URL.parse(node.href)
+  return node.tag === "a" && node.form === null && node.frame === undefined && node.inShadowRoot !== true && !node.disabled && !node.sensitive && parsed?.origin === address.origin &&
+    !parsed.username && !parsed.password && !parsed.hash && parsed.href !== address.href ? parsed.href : undefined
+}
+
+function collectionNouns(collection: string): string[] {
+  const subject = comparableName(collection)
+  if (subject.endsWith("ies")) return [subject, subject.slice(0, -3) + "y"]
+  if (subject.endsWith("s") && !subject.endsWith("ss")) return [subject, subject.slice(0, -1)]
+  return [subject, subject + (subject.endsWith("ss") ? "es" : "s")]
+}
+
+export function collectionLabels(collection: string): string[] {
+  return collectionNouns(collection).flatMap((name) => [name, "my " + name, name + " history", "my " + name + " history"])
+}
+
+function collectionName(text: string, collection: string): boolean {
+  return collectionLabels(collection).includes(comparableName(text))
+}
+
+export effect function observeRecordCollection(page: NativePage.Shape, id: PageId, address: URL, collection: string, current: boolean!!): CollectionObservation!! {
+  if (!(try current)) return { kind: "Unverifiable" }
+  const nouns: string[] = collectionNouns(collection)
+  const actionLabels = [...detailLinksLabels, ...nouns.flatMap((noun) => ["view " + noun, "open " + noun, "view " + noun + " details"])]
+  const detailAction = (node: Node): boolean => actionLabels.includes(comparableName(node.label ?? ""))
+  const snapshot: LinkObservation | undefined = page.observeLinks(id) catch () => undefined
+  const elements: readonly Node[] = snapshot?.result.elements ?? []
+  const state = guidedPageState(snapshot, address.href)
+  if (state === "PrivateForm") {
+    const publicNavigation = guidedPageState(snapshot, address.href, "GuidePublicLinks") === "PublicOnly" &&
+      !elements.some((node): boolean => Boolean(node.sensitive) || node.type === "password" || detailAction(node))
+    return { kind: publicNavigation ? "NoCollection" : "PrivateForm" }
+  }
+  if (state !== "Ordinary" || !snapshot || snapshot.result.domRevision === undefined) return { kind: "Unverifiable" }
+  const read = effect (selector: string) => {
+    if (!(try current)) return undefined
+    const reply = page.readRecordText(id, selector) catch () => undefined
+    return reply?.url === address.href && reply.text.length <= 4096 && (try current) ? reply.text : undefined
+  }
+  if (!(try current)) return { kind: "Unverifiable" }
+  const heading = page.readPrimaryHeading(id) catch () => undefined
+  if (heading?.url !== address.href || !collectionName(heading.text, collection))
+    return { kind: "NoCollection" }
+  const detailLinks: RecordAnchor[] = elements.flatMap((node): RecordAnchor[] => {
+    if (!node.targetSelector || !detailAction(node)) return []
+    const href = safeLink(node, address)
+    return href ? [{ id: node.id, href, selector: node.targetSelector }] : []
+  })
+  let table: string | undefined
+  let scope: string | undefined
+  const anchors: RecordAnchor[] = []
+  for (const link of detailLinks) {
+    const { selector } = link
+    const anchor = `:is(${selector})`
+    if (!(try read(`${semanticTable} > tbody > tr ${anchor}`))) continue
+    if (table === undefined) {
+      table = `${semanticTable}:has(> tbody > tr ${anchor}):not(:has(table))`
+      scope = `${main}:has(table ${anchor})`
+    }
+    else if (!(try read(`${table} > tbody > tr ${anchor}`))) return { kind: "Unverifiable" }
+    anchors.push(link)
+  }
+  if (!table || !scope) return { kind: "Unverifiable" }
+  const otherTable = `${scope} :is(table table,table ~ table,table ~ * table,*:has(table) ~ table,*:has(table) ~ * table)`
+  if (try read(otherTable)) return { kind: "Unverifiable" }
+  const header = try read(`${table} > thead > tr:only-child`)
+  if (header === undefined) return { kind: "Unverifiable" }
+  const columnText: string[] = header.split("\n")
+  const columns: string[] = columnText.map(comparableName)
+  const identities = [...identifierFields, ...nouns.flatMap((name) => [name, name + " id", name + " #", name + "#", name + " number"])]
+  const dates = [...dateFields, ...nouns.map((name) => name + " date")]
+  const indices: (number | undefined)[] = [identities, dates, ["status"]].map((labels: string[]): number | undefined => {
+    const matches: number[] = columns.flatMap((column, index): number[] => labels.includes(column) ? [index + 1] : [])
+    return matches.length === 1 ? matches[0] : undefined
+  })
+  if (indices.some((index) => index === undefined))
+    return { kind: "Unverifiable" }
+  const counter = ':is([role="status"],p,output):not(table *,form *):not(:has(input,textarea,select,[contenteditable]))'
+  const adjacent = ':is(:has(+ table),:is(div,section):has(+ table) *,:is(div,section):has(+ div table) *,table + :is(div,section) *,div:has(table) + :is(div,section) *)'
+  const counters = try read(`${scope} ${counter}${adjacent}`)
+  const range: RecordRange | undefined = counters === undefined ? undefined : rangeOf(counters)
+  if (!range) return { kind: "Unverifiable" }
+  const account = try accountOn(page, id, address, current)
+  if (account.kind !== "Bound" && account.kind !== "Public") return { kind: "NeedsScope" }
+  const count = range.last - range.first + 1
+  if (count !== anchors.length || new Set(anchors.map((link) => link.href)).size !== count) return { kind: "Unverifiable" }
+  const grid = `${table}:has(> tbody > tr:nth-child(${count})):not(:has(> tbody > tr:nth-child(${count + 1})))`
+  const monthFirst = (try read(`html:lang(en-US) ${grid} > thead`)) !== undefined
+  const records: ObservedRecord[] = []
+  const identitiesSeen = new Set<string>()
+  for (const { id: nodeId, href, selector } of anchors) {
+    const rowSelector = `${grid} > tbody > tr:has(:is(${selector}))`
+    const values = try Effect.forEach(indices, (index) => read(`${rowSelector} > :is(td,th):nth-child(${index})`))
+    const recordId = identity(values[0] ?? "")
+    let date = dateValue(values[1] ?? "", monthFirst)
+    if (date === undefined) {
+      const cell = `${rowSelector} > :is(td,th):nth-child(${indices[1]})`
+      const dates: number[] = []
+      for (const iso of fullDateWitnesses(values[1] ?? "")) {
+        const resolved = dateValue(iso, false)
+        if (resolved !== undefined && (try read(`${cell} time[datetime^="${iso}"]`)) === values[1])
+          dates.push(resolved)
+      }
+      if (dates.length === 1) date = dates[0]
+    }
+    const status = comparableStatus(values[2] ?? "")
+    if (recordId === undefined || date === undefined || !status || status.length > 48 || identitiesSeen.has(recordId))
+      return { kind: "Unverifiable" }
+    identitiesSeen.add(recordId)
+    records.push({ identity: recordId, date, status, link: { id: nodeId, href } })
+  }
+  const pagination = (label: RegExp): RecordLink[] => elements.flatMap((node): RecordLink[] => {
+    if (!node.targetSelector || !label.test(comparableName(node.label ?? ""))) return []
+    const href = safeLink(node, address)
+    return href && sameCollectionAddress(address, new URL(href)) ? [{ href, id: node.id }] : []
+  })
+  const uniquePageLink = (label: RegExp): RecordLink[] => {
+    const found: RecordLink[] = pagination(label)
+    const reversed: RecordLink[] = found.reverse()
+    const witnessed = new Map<string, RecordLink>(reversed.map((link): [string, RecordLink] => [link.href, link]))
+    return [...witnessed.values()]
+  }
+  const forward = uniquePageLink(/^(?:next|next page|page next)$/u)
+  const back = uniquePageLink(/^(?:previous|previous page|page previous)$/u)
+  if (forward.length !== (range.last < range.total ? 1 : 0) || back.length !== (range.first > 1 ? 1 : 0)) return { kind: "Unverifiable" }
+  if (!(try current)) return { kind: "Unverifiable" }
+  const latest: LinkObservation | undefined = page.observeLinks(id) catch () => undefined
+  if (!latest || latest.documentId !== snapshot.documentId || latest.result.domRevision !== snapshot.result.domRevision ||
+      guidedPageState(latest, address.href) !== "Ordinary") return { kind: "Unverifiable" }
+  const latestElements: readonly Node[] = latest.result.elements
+  const fresh = (link: RecordLink): RecordLink | undefined => {
+    const prior = elements.find((node): boolean => node.id === link.id)
+    if (!prior?.targetSelector) return undefined
+    const matches = latestElements.filter((node): boolean => node.targetSelector === prior.targetSelector && safeLink(node, address) === link.href)
+    return matches.length === 1 ? { href: link.href, id: matches[0]?.id ?? "" } : undefined
+  }
+  const confirmed: ObservedRecord[] = records.flatMap((record): ObservedRecord[] => {
+    const link = fresh(record.link)
+    return link ? [{ ...record, link }] : []
+  })
+  const next = forward[0] && fresh(forward[0])
+  const previous = back[0] && fresh(back[0])
+  if (confirmed.length !== records.length || (range.last < range.total && !next) || (range.first > 1 && !previous)) return { kind: "Unverifiable" }
+  return { kind: "Collection", page: {
+    documentId: latest.documentId, domRevision: snapshot.result.domRevision, snapshotId: latest.result.snapshotId,
+    ...range, records: confirmed, account, next, previous
+  } }
+}
+
+export effect function verifyRecordDetail(page: NativePage.Shape, id: PageId, address: URL, recordId: string, account: RecordSiteScope, collection: string, current: boolean!!): ({ documentId: string } | "PrivateForm" | undefined)!! {
+  if (!(try current)) return undefined
+  const before: LinkObservation | undefined = page.observeLinks(id) catch () => undefined
+  const state = guidedPageState(before, address.href)
+  if (state === "PrivateForm") return state
+  if (!before || before.result.domRevision === undefined || state !== "Ordinary" || !(try current)) return undefined
+  const heading = page.readRecordText(id, `${main} ${majorHeading}:not(form *)`) catch () => undefined
+  if (!(try current)) return undefined
+  const other = `${main} :is(${majorHeading} ~ ${majorHeading},${majorHeading} ~ * ${majorHeading},*:has(${majorHeading}) ~ ${majorHeading},*:has(${majorHeading}) ~ * ${majorHeading})`
+  const conflicting = page.readRecordText(id, other) catch () => undefined
+  if (conflicting?.url === address.href || !(try current)) return undefined
+  const name = /^([\p{L}]+(?: [\p{L}]+){0,2}?)\s+(?:(?:number|id|reference)\s*:?\s*)?#?\s*([\p{L}\d][\p{L}\d_.-]{0,63})$/iu.exec(heading?.text.trim() ?? "")
+  const label = comparableName(name?.[1] ?? "")
+  if (heading?.url !== address.href || name?.[2] !== recordId || !collectionNouns(collection).includes(label) ||
+      !sameRecordAccount(account, try accountOn(page, id, address, current))) return undefined
+  if (!(try current)) return undefined
+  const after: LinkObservation | undefined = page.observeLinks(id) catch () => undefined
+  return (try current) && after?.documentId === before.documentId && after.result.domRevision === before.result.domRevision &&
+    guidedPageState(after, address.href) === "Ordinary" ? { documentId: after.documentId } : undefined
+}

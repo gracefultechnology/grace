@@ -26,7 +26,7 @@ const BenchmarkDefinition = Schema.Struct({
   siteStorageState: Schema.optional(Schema.NonEmptyString),
   evaluator: Schema.optional(Schema.Literal("webarena")),
   exploratory: Schema.optional(Schema.Literal(true)),
-  requiredStep: Schema.optional(Schema.Literal("ReachNamedPage")),
+  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord"])),
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
@@ -502,9 +502,86 @@ async function googleConsent(context: BrowserCommandContext, endpoint: string, a
   }
 }
 
+type RecordCase = "later winner" | "earlier winner" | "tied latest" | "changed scope" | "mismatched detail" | "wrong record kind" | "ambiguous collection" | "private form" | "unverified account" | "public list";
+type RecordAction = { kind: "open"; scenario: RecordCase; decisionUrl: string } | { kind: "close" } | { kind: "requests" } | SiteObservation;
+const recordSites = new WeakMap<Page, { site: Site; decisionUrl: string; chatUrl: string; requests: { count: number; leaked: boolean } }>();
+
+async function recordPage(context: BrowserCommandContext, action: RecordAction) {
+  const open = recordSites.get(context.page);
+  if (action.kind === "open") {
+    if (open) throw new Error("The record fixture is already open");
+    const browser = await context.context.browser()?.newContext();
+    if (!browser) throw new Error("The record fixture needs Chromium");
+    const origin = "https://records.localhost";
+    const requests = { count: 0, leaked: false };
+    const chatUrl = new URL("/api/v1/chat/completions", action.decisionUrl).href;
+    try {
+      const website = await browser.newPage();
+      const session = await observeFromDocumentStart(website);
+      await website.route(`${origin}/**`, (route) => {
+        const url = new URL(route.request().url());
+        const later = url.searchParams.get("page") === "2";
+        const account = later && action.scenario === "changed scope" ? "acct-a" : "acct-A";
+        const index = later ? 2 : 1;
+        const single = action.scenario === "public list" || action.scenario === "unverified account";
+        const detail = url.pathname.startsWith("/view/");
+        const label = action.scenario === "mismatched detail" ? "private-canary-wrong" : "private-canary-" + url.pathname.split("/").at(-1);
+        const newer = action.scenario === "earlier winner" ? !later : later;
+        const day = newer && action.scenario !== "tied latest" ? 18 : 17;
+        const date = action.scenario === "earlier winner" ? `<time datetime="2026-10-${day}">10/${day}/26</time>` : `2026-10-${day}`;
+        const status = action.scenario === "earlier winner" ? "Canceled" : "Complete";
+        const homepage = '<h1>Store</h1><nav><a id="orders" href="/list">My Orders</a></nav>';
+        const content = detail ? `<h1>${action.scenario === "wrong record kind" ? "Invoice" : "Order"} #${label}</h1>` : url.pathname === "/home" ?
+          homepage + (action.scenario === "private form" ?
+            '<form aria-label="Sign in"><label>Username<input name="username"></label><label>Password<input name="password" type="password"></label><button type="submit">Sign in</button></form>' :
+            '<form><label>Newsletter email<input type="email"></label><button type="submit">Subscribe</button></form>') :
+          `<h1>Orders</h1><p>${single ? "1 Item" : `Items ${index} to ${index} of 2 total`}</p><table>
+          <thead><tr><th>Order number</th><th>Order date</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody><tr><td>private-canary-${index}</td><td>${date}</td><td>${status}</td><td><a id="details" href="/view/${index}">View order</a></td></tr></tbody>
+        </table><nav aria-label="Pages">${single ? "" : later ? '<a id="previous" href="/list">Previous</a>' : '<a id="next" href="/list?page=2">Next</a>'}</nav>`;
+        const decoy = action.scenario === "ambiguous collection" ?
+          '<section><p>1 Item</p><table><thead><tr><th>Order number</th><th>Order date</th><th>Status</th></tr></thead><tbody><tr><td>private-canary-decoy</td><td>2026-10-20</td><td>Complete</td></tr></tbody></table></section>' : "";
+        const banner = single ? "" : `<header>Account ID: ${account}</header>`;
+        const scope = action.scenario === "public list" ? ' aria-label="Public records"' : "";
+        return route.fulfill({ contentType: "text/html", body: `<!doctype html><title>Record fixture</title>${banner}<main${scope}>${content}${decoy}</main>` });
+      });
+      await context.page.route(action.decisionUrl, async (route) => {
+        requests.count++;
+        requests.leaked ||= (route.request().postData() ?? "").includes("private-canary");
+        await route.abort();
+      });
+      await context.page.route(chatUrl, (route) => {
+        requests.leaked ||= (route.request().postData() ?? "").includes("private-canary");
+        return route.continue();
+      });
+      const url = origin + (action.scenario === "later winner" || action.scenario === "private form" ? "/home" : "/list");
+      await website.goto(url);
+      recordSites.set(context.page, { site: { page: website, origin, browser, session }, decisionUrl: action.decisionUrl, chatUrl, requests });
+      await context.page.bringToFront();
+      return { url };
+    } catch (error) {
+      await context.page.unroute(action.decisionUrl);
+      await context.page.unroute(chatUrl);
+      await browser.close();
+      throw error;
+    }
+  }
+  if (!open) throw new Error("The record fixture is not open");
+  if (action.kind === "close") {
+    recordSites.delete(context.page);
+    await context.page.unroute(open.decisionUrl);
+    await context.page.unroute(open.chatUrl);
+    await open.site.browser.close();
+    return {};
+  }
+  if (action.kind === "requests") return open.requests;
+  return observeSite(open.site, action);
+}
+
 declare module "vitest/browser" {
   interface BrowserCommands {
     benchmarkSurface: (action: SiteAction) => Promise<Record<string, unknown>>;
+    recordPage: (action: RecordAction) => Promise<Record<string, unknown>>;
     googleConsent: (endpoint: string, address: string) => Promise<void>;
     releasedStatement: (attempt: string, action: StatementAction) => Promise<Record<string, unknown>>;
     realModel: (system: string, messages: readonly { role: "user" | "assistant"; content: string }[]) => Promise<string>;
@@ -529,7 +606,7 @@ export default defineConfig(async (env) => {
           ...entry,
           ...(official && { plugins: [{ name: webArenaPluginName, api: official }] }),
           optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto", "effect/testing", "pdf-lib"] },
-          test: { ...entry.test, ...(official && { globalSetup: ["test/webarena.ts"] }), browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, releasedStatement, realModel } } },
+          test: { ...entry.test, ...(official && { globalSetup: ["test/webarena.ts"] }), browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, recordPage, releasedStatement, realModel } } },
         }
       : entry);
   const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
