@@ -49,6 +49,7 @@ const nodeModules = (function find(dir: string): string {
 })(project);
 const turbo = path.join(nodeModules, ".bin", process.platform === "win32" ? "turbo.cmd" : "turbo");
 const STORE = path.join(project, ".cache/selftest/.spec-cache");
+const ISOLATED_IMPORT = "--package-import-method=clone-or-copy";
 const WEEK = 7 * 24 * 60 * 60 * 1000;
 const sharing: string[] = [];
 const attempt = (act: () => void) => { try { act(); } catch { return; } };
@@ -2480,18 +2481,21 @@ function eachCheck() {
     fs.cpSync(path.join(root, "first"), audit, { recursive: true });
     fs.writeFileSync(path.join(audit, "dafny"), "#!/bin/sh\nif [ \"$1\" = audit ]; then\n  [ -n \"$REWRITE\" ] && printf x >> \"$(dirname \"$0\")/Dafny.dll\"\n  echo 'Dafny auditor completed'\nelse printf '4.11.0\\n'; fi\n", { mode: 0o755 });
     const checked = await exec(process.execPath, ["--input-type=module", "--eval", [
+      'const assert = await import("node:assert/strict");',
       'const fs = await import("node:fs");',
       `const { act } = await import(${JSON.stringify(path.join(project, "vibestack/action.ts"))});`,
       `const { entry, steady, solver } = await import(${JSON.stringify(path.join(project, "vibestack/cache.ts"))});`,
       'const memory = { root: ".", fresh: false, used: new Set() };',
       'const proof = async () => (await entry(".", "prove", ["same obligation"])).name;',
-      'const kept = async () => { await steady(() => act(memory, "dafny", ["audit", "a.dfy"], "audited", { "a.dfy": { text: "", key: "a" } })); return fs.existsSync(".spec-cache") ? fs.readdirSync(".spec-cache").filter((f) => f.startsWith("action-")).length : 0; };',
+      'const audit = () => steady(() => act(memory, "dafny", ["audit", "a.dfy"], "audited", { "a.dfy": { text: "", key: "a" } }));',
+      'const kept = () => fs.existsSync(".spec-cache") ? fs.readdirSync(".spec-cache").filter((f) => f.startsWith("action-")).length : 0;',
       'const within = await steady(async () => { const before = await proof(); fs.writeFileSync("audit/Support.dll", "installed again during the check"); return [before, await proof()]; });',
       'const after = await proof();',
       'process.env.REWRITE = "1";',
-      'const rewritten = await kept();',
+      'await assert.rejects(audit(), /tool installation changed/);',
+      'const rewritten = kept();',
       'delete process.env.REWRITE;',
-      'const keptAfter = await kept();',
+      'await audit(); const keptAfter = kept();',
       'const choose = () => steady(async () => [(await solver()).version, await proof()]);',
       'const bundled = "libexec/z3/bin/z3-4.12.1"; fs.mkdirSync("libexec/z3/bin", { recursive: true });',
       'const install = (v) => fs.writeFileSync(bundled, ["#!/bin/sh", "echo Z3 version " + v, ""].join(String.fromCharCode(10)), { mode: 0o755 });',
@@ -2708,7 +2712,7 @@ function eachCheck() {
     for (const directory of ["vibestack/studio", ...fs.readdirSync(path.join(copy, "packages")).map((name) => `packages/${name}`)])
       for (const output of ["gen", "dist", "generated", "node_modules", ".spec-cache", ".cache", ".vibe", ".turbo", "storybook-static"])
         assert.ok(!fs.existsSync(path.join(copy, directory, output)), `${directory}/${output} is produced by the scratch build`);
-    const dependencies = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["install", "--offline", "--frozen-lockfile", "--ignore-scripts"], copy);
+    const dependencies = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["install", "--offline", "--frozen-lockfile", "--ignore-scripts", ISOLATED_IMPORT], copy);
     assert.equal(dependencies.status, 0, dependencies.stdout + dependencies.stderr);
     const built = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build"], copy, { ...process.env, TURBO_CACHE: "local:rw" });
     assert.equal(built.status, 0, built.stdout + built.stderr);
@@ -2782,7 +2786,7 @@ function eachCheck() {
     fs.writeFileSync(path.join(scaffold, "package.json"), JSON.stringify(manifest));
     fs.writeFileSync(path.join(scaffold, ".agents/skills/sync/SKILL.md"), "My installed project instructions.\n");
     for (const alias of [...harnessSkillPaths, "CLAUDE.md", ".claude/settings.json"]) fs.unlinkSync(path.join(scaffold, alias));
-    const reinstalled = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["install", "--prefer-offline", "--ignore-workspace", `--config.cache-dir=${scratch({})}`], scaffold);
+    const reinstalled = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["install", "--prefer-offline", "--ignore-workspace", ISOLATED_IMPORT, `--config.cache-dir=${scratch({})}`], scaffold);
     assert.equal(reinstalled.status, 0, reinstalled.stdout + reinstalled.stderr);
     for (const alias of harnessSkillPaths) assert.equal(fs.realpathSync(path.join(scaffold, alias)), path.join(scaffold, ".agents/skills"));
     assert.equal(fs.readlinkSync(path.join(scaffold, "CLAUDE.md")), "AGENTS.md");
@@ -3186,7 +3190,7 @@ describe("the standalone examples", () => {
         return;
       }
       const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
-      const installed = await exec(pnpm, ["install", "--frozen-lockfile", "--ignore-workspace"], example);
+      const installed = await exec(pnpm, ["install", "--frozen-lockfile", "--ignore-workspace", ISOLATED_IMPORT], example);
       assert.equal(installed.status, 0, installed.stdout + installed.stderr);
       const checked = await exec(pnpm, ["check"], example);
       assert.equal(checked.status, 0, `${checked.stdout}${checked.stderr}`.trim().split("\n").slice(-80).join("\n"));
