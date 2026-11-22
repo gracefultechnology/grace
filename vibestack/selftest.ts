@@ -3262,7 +3262,7 @@ describe("the documents name what exists", () => {
       [["selftest:tools:a", "selftest:tools:b", "selftest:tools:rest"], selftests.map((task) => `//#${task}`), selftests.map((task) => `//#${task}`)], "pnpm selftest and pnpm verify run every selftest task");
     const ci = read(".github/workflows/ci.yml");
     const lanes: string[] = JSON.parse(ci.match(/^ +lane: .*\|\| '(\[[^']+\])'/m)?.[1] ?? "[]");
-    const product = ci.match(/^ +run: pnpm all (build .+) --continue --summarize$/m)?.[1].split(" ") ?? [];
+    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --summarize$/m)?.[1].split(" ") ?? [];
     const fixtures = ci.match(/^  vibestack-fixture-selftests:\n[\s\S]*?^ +lane: \[(.+)\]$/m)?.[1].split(", ") ?? [];
     assert.deepEqual([...lanes, ...fixtures].sort(), ["product", ...shards.map((task) => `selftest-${task.split(":")[2]}`)].sort(), "each hosted tool shard has its own runner");
     assert.deepEqual([...product, ...shards.map((task) => `//#${task}`)].sort(), listed("verify").sort(), "the hosted jobs run each task of pnpm verify once");
@@ -3276,7 +3276,7 @@ describe("the documents name what exists", () => {
       return new RegExp(pattern).test(`${title} `) === (kind === "name");
     });
     assert.deepEqual(Object.fromEntries(titles.map((title) => [title, ranBy(title)])), Object.fromEntries(titles.map((title) => [title, [elsewhere[title] ?? "selftest:tools:rest"]])));
-    assert.match(ci, /pnpm all "\/\/#selftest:tools:.*?--only --continue --summarize/, "a dedicated runner executes only its shard after setup");
+    assert.match(ci, /pnpm all "\/\/#selftest:tools:.*?--only --continue=dependencies-successful --summarize/, "a dedicated runner executes only its shard after setup");
     const [first, ...others] = shards.map((task) => JSON.parse(read("turbo.json")).tasks[`//#${task}`].dependsOn);
     assert.deepEqual(others, others.map(() => first), "the shards wait for the same integration prerequisites");
   });
