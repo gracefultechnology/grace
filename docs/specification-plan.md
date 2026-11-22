@@ -144,7 +144,7 @@ The same release passed all 100 Fleet billers across 26 template families. The a
 The four offline Google and cross-app Chromium journeys passed in GitHub
 Actions on a temporary self-hosted Linux runner at workflow commit `00db25d`.
 To repeat them, dispatch `ci` with `cross_app_only` enabled. The same job checks
-local Gmail delivery in the Node test before running Chromium. To run just
+local Gmail delivery in the Node test and runs the pinned Eliza Worker against a resettable database and synthetic Google history. The Chromium journey stops an initial watch, observes an unchanged mailbox, delivers ordinary mail, opens the connected inbox and returns to the original private tab. To run just
 the delivery check after installing the workspace dependencies, use
 `pnpm --filter @repo/app test --project node test/app.test.vibe -t "Google denies missing consent"`.
 It sends an ordinary synthetic appointment message to a newly connected

@@ -652,6 +652,9 @@ jobs:
       - name: Verify local Gmail delivery and account isolation
         if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm --filter @repo/app test --project node test/app.test.vibe -t "Google denies missing consent"
+      - name: Verify the pinned Worker against synthetic Gmail history
+        if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm --dir vendor/eliza --filter @elizaos/cloud exec vitest run test/cloud.test.vibe -t "watch for new mail"
       - name: Exercise Google consent and guided tasks across apps with local fixtures
         if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         run: >-
