@@ -81,7 +81,7 @@ type GuidedReadSource =
   | ({ tag: "CurrentMessage" } & GuidedMail)
   | { tag: "CurrentDocument"; tab: number; loadVersion: number; documentId: string }
   | { tag: "NamedDocument"; tab: number; loadVersion: number; documentId: string; url: string; heading: string }
-  | { tag: "SearchDocument"; loadVersion: number; documentId: string; url: string; origin: string; query: string }
+  | { tag: "SearchDocument"; loadVersion: number; documentId: string; url: string; origin: string; query: string; heading: string }
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string }
   | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
 type GuidedReadReceipt = { source: GuidedReadSource; identity: readonly string[]; text: string }
@@ -178,14 +178,15 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const heading = native.readPrimaryHeading(id, true) catch () => undefined
       if (!heading) return undefined
       if (heading.url !== url) return "Changed"
-      const named = /^(?:search )?results for(?:\s*:\s*|\s+)(?:"(.*)"|'(.*)'|“(.*)”|‘(.*)’|([^"'“‘].*))$/iu.exec(heading.text.trim())
+      const headingText = heading.text.trim()
+      const named = /^(?:search )?results for(?:\s*:\s*|\s+)(?:"(.*)"|'(.*)'|“(.*)”|‘(.*)’|([^"'“‘].*))$/iu.exec(headingText)
       if ((named?.[1] ?? named?.[2] ?? named?.[3] ?? named?.[4] ?? named?.[5]) !== step.query) return undefined
       const after = native.observeLinks(id) catch () => undefined
       if (!after || after.documentId !== before.documentId) return "Changed"
       const afterMiss = pageMiss(after, url, "CheckPublicSearchResult")
       if (afterMiss !== undefined) return afterMiss
       return receipt({ tag: "SearchDocument", loadVersion: tab.loadVersion, documentId: after.documentId,
-        url, origin: address.origin, query: step.query }, [step.origin, step.query], "Search results for “" + step.query + "”.")
+        url, origin: address.origin, query: step.query, heading: headingText }, [step.origin, step.query], "Search results for “" + step.query + "”.")
     }
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
