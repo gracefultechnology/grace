@@ -3294,6 +3294,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
   let signedIn = false;
   let grant = "58b549ef-4b49-4210-a3d1-ec31369a9f06";
   let connected = true;
+  let statusAvailable = true;
   let historyId = "one";
   const fetch = window.fetch.bind(window);
   const unserved: string[] = [];
@@ -3322,7 +3323,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       case "/api/auth/refresh": return respond({}, 401);
       case "/api/auth/providers": return respond({ google: false, email: true, sms: false });
       case "/api/v1/billing/subscription": return respond({ status: "inactive", canManage: false, canCheckout: true });
-      case "/api/v1/eliza/google/status": return respond({
+      case "/api/v1/eliza/google/status": return !statusAvailable ? respond({}, 503) : respond({
         accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: connected, connected,
         identity: connected ? { email: person.email } : null, connectionId: connected ? grant : null,
         grantedCapabilities: connected ? ["google.gmail.triage", "google.calendar.read"] : [],
@@ -3481,9 +3482,17 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     expect(await check()).toBe("Used");
     expect(await receipts()).toEqual([mailReceipt]);
 
+    statusAvailable = false;
+    await refresh();
+    const unavailableMail = page.getByText("Google mail isn’t available right now", { exact: true });
+    await routeTo(unavailableMail);
+    expect(await check()).not.toBe("Confirmed");
+    statusAvailable = true;
+    await tap(button("Try again"));
+    await routeTo(button(/Riverview Clinic/));
     connected = false;
     await refresh();
-    await routeTo(page.getByText("Google mail isn’t available right now", { exact: true }));
+    await routeTo(unavailableMail);
     expect(await check()).not.toBe("Confirmed");
     expect(await receipts()).toEqual([mailReceipt]);
     grant = "a356abb1-f5a0-4d82-8b9b-69e4235a4990";
