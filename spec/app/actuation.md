@@ -20,6 +20,13 @@ match its existing unresolved attempt and the same observed account, task,
 device and page. An observed manual tap emits no agent submission. The host
 uses only entries emitted by the model, checks current saved-value authority
 where applicable and enforces one-time delivery before handing off to Chromium.
+The outbox consumer must retain the [task bridge's](./taskBridge.md) immutable
+command and fill source from enqueue to claim. At the last point before a
+write it supplies the original entry, the current Workspace and preparation,
+and the provider subject and actual typed values resolved for that exact
+command. The bridge applies `currentEffect` here and requires `graceMayFill`
+for a task form. A failed check drops the write. A task that ends while a
+write is queued never turns that entry into permission for an ordinary fill.
 
 ```quint
 import workspace as WS from "./workspace"
