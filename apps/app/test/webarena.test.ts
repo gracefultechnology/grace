@@ -43,7 +43,7 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
   expect(interpreter.status).toBe(0);
   const python = interpreter.stdout.trim();
   const root = await mkdtemp(join(tmpdir(), "grace-webarena-worker-"));
-  type Phase = "importing" | "failing-import" | "cancelled-import" | "grading";
+  type Phase = "importing" | "failing-import" | "cancelled-import" | "stalled-import" | "grading";
   type Gate = { pid: number; release: () => void };
   const gates = new EventEmitter<Record<Phase, [Gate]>>();
   const enter = async (phase: Phase) => {
@@ -61,7 +61,7 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
   const server = createServer((request, response) => {
     const [, phase, rawPid] = request.url?.split("/") ?? [];
     const pid = Number(rawPid);
-    if ((phase !== "importing" && phase !== "failing-import" && phase !== "cancelled-import" && phase !== "grading") ||
+    if ((phase !== "importing" && phase !== "failing-import" && phase !== "cancelled-import" && phase !== "stalled-import" && phase !== "grading") ||
         !Number.isSafeInteger(pid) || pid < 1) {
       response.writeHead(400).end();
       return;
@@ -85,9 +85,9 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
       writeFile(join(module, "helper_functions.py"), fakePage),
     ]);
     const gradingTimeoutMs = 1000;
-    const start = (phase: Exclude<Phase, "grading">) => {
+    const start = (phase: Exclude<Phase, "grading">, startupTimeoutMs?: number) => {
       const worker = startWebArenaWorker({
-        python, root, gradingTimeoutMs, env: { TEST_BARRIER: `http://127.0.0.1:${address.port}`, TEST_IMPORT: phase },
+        python, root, gradingTimeoutMs, startupTimeoutMs, env: { TEST_BARRIER: `http://127.0.0.1:${address.port}`, TEST_IMPORT: phase },
       });
       workers.push(worker);
       return worker;
@@ -104,11 +104,20 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     importGate.release();
     await expect(scores).resolves.toEqual([1, 0]);
 
+    const nextImport = enter("importing");
     const gradingFailure = worker.grade({ fixture: JSON.stringify({ ...fixture, hang: true }), urls }).catch((error: unknown) => error);
+    const nextScores = worker.grade({ fixture: JSON.stringify(fixture), urls });
     const gradeGate = await enter("grading");
     expect(gradeGate.pid).toBe(importGate.pid);
     expect(await gradingFailure).toMatchObject({ phase: "grading", reason: "deadline" });
     expect(() => process.kill(gradeGate.pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }));
+
+    const fresh = await nextImport;
+    expect(fresh.pid).not.toBe(importGate.pid);
+    fresh.release();
+    await expect(nextScores).resolves.toEqual([1, 0]);
+    await worker.close();
+    expect(() => process.kill(fresh.pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }));
 
     const failing = start("failing-import");
     const startupFailure = failing.ready.catch((error: unknown) => error);
@@ -118,6 +127,13 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     expect(failed).toMatchObject({ phase: "startup", reason: "exit" });
     expect(String(failed)).not.toContain("private fixture diagnostics");
     expect(() => process.kill(failGate.pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }));
+
+    const stalledGate = enter("stalled-import");
+    const stalled = start("stalled-import", 10_000);
+    const stalledFailure = stalled.ready.catch((error: unknown) => error);
+    const blocked = await stalledGate;
+    expect(await stalledFailure).toMatchObject({ phase: "startup", reason: "deadline" });
+    expect(() => process.kill(blocked.pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }));
 
     const cancelling = start("cancelled-import");
     const cancelled = cancelling.ready.catch((error: unknown) => error);

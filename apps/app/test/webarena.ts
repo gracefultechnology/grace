@@ -71,9 +71,12 @@ function spawnEvaluator(python: string, root: string, env: NodeJS.ProcessEnv) {
   }
 }
 
-export function startWebArenaWorker({ python, root, env, gradingTimeoutMs = 30_000 }: {
-  python: string; root: string; env: NodeJS.ProcessEnv; gradingTimeoutMs?: number;
-}) {
+type WorkerOptions = {
+  python: string; root: string; env: NodeJS.ProcessEnv; startupTimeoutMs?: number; gradingTimeoutMs?: number;
+};
+type Evaluation = { fixture: string; urls: readonly [string, string] };
+
+function launchEvaluator({ python, root, env, startupTimeoutMs = 30 * 60_000, gradingTimeoutMs = 30_000 }: WorkerOptions) {
   const child = spawnEvaluator(python, root, env);
   const input = child.stdin;
   const output = child.stdio[3];
@@ -118,28 +121,47 @@ export function startWebArenaWorker({ python, root, env, gradingTimeoutMs = 30_0
   };
   const ready = (async () => {
     try {
-      if (await read("startup") !== "ready") throw new WebArenaEvaluatorError("startup", "protocol");
+      if (await read("startup", AbortSignal.timeout(startupTimeoutMs)) !== "ready") throw new WebArenaEvaluatorError("startup", "protocol");
     } catch (error) {
       await close();
       throw error instanceof WebArenaEvaluatorError ? error : new WebArenaEvaluatorError("startup", "protocol");
     }
   })();
+  const grade = async ({ fixture, urls }: Evaluation) => {
+    await ready;
+    if (closing || !input) throw new WebArenaEvaluatorError("grading", "closed");
+    try {
+      input.write(JSON.stringify({ fixture: JSON.parse(fixture), urls }) + "\n");
+      const response = await read("grading", AbortSignal.timeout(gradingTimeoutMs));
+      return Schema.decodeUnknownSync(Scores)(JSON.parse(response));
+    } catch (error) {
+      await close();
+      throw error instanceof WebArenaEvaluatorError ? error : new WebArenaEvaluatorError("grading", "protocol");
+    }
+  };
+  return { ready, grade, close, stopped: terminal.signal };
+}
+
+export function startWebArenaWorker(options: WorkerOptions) {
+  let worker = launchEvaluator(options);
+  const ready = worker.ready;
+  let closed = false;
   let queue = Promise.resolve();
-  const grade = ({ fixture, urls }: { fixture: string; urls: readonly [string, string] }) => {
-    const grading = queue.then(async () => {
-      await ready;
-      if (closing || !input) throw new WebArenaEvaluatorError("grading", "closed");
-      try {
-        input.write(JSON.stringify({ fixture: JSON.parse(fixture), urls }) + "\n");
-        const response = await read("grading", AbortSignal.timeout(gradingTimeoutMs));
-        return Schema.decodeUnknownSync(Scores)(JSON.parse(response));
-      } catch (error) {
-        await close();
-        throw error instanceof WebArenaEvaluatorError ? error : new WebArenaEvaluatorError("grading", "protocol");
+  const grade = (request: Evaluation) => {
+    const result = queue.then(async () => {
+      if (worker.stopped.aborted) {
+        await worker.close();
+        if (closed) throw new WebArenaEvaluatorError("grading", "closed");
+        worker = launchEvaluator(options);
       }
+      return worker.grade(request);
     });
-    queue = grading.then(() => {}, () => {});
-    return grading;
+    queue = result.then(() => {}, () => {});
+    return result;
+  };
+  const close = () => {
+    closed = true;
+    return worker.close();
   };
   return { ready, grade, close };
 }
