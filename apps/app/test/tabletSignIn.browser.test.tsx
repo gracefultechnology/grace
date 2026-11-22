@@ -21,9 +21,14 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   const callback = new URL("https://app.graceforseniors.com/android/auth/callback");
   callback.searchParams.set("state", state);
   callback.searchParams.set("code", "c".repeat(64));
+  const proof = callback.pathname + callback.search;
   const ambiguous = new URL(callback);
   ambiguous.searchParams.append("code", "d".repeat(64));
-  const rejectedRedirects = ["https://elsewhere.example.test/android/auth/callback", ambiguous.href];
+  const rejectedRedirects = [
+    new URL(proof, "http://localhost:5173"),
+    new URL(proof, "https://elsewhere.example.test"),
+    ambiguous,
+  ];
   const returns: string[] = [];
   const returned = Latch.makeUnsafe();
   const browser = cdp();
@@ -42,11 +47,13 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
     const path = typeof input === "string" ? new URL(input, location.href).pathname : "";
     await beforeReply?.(path);
     if (path === "/api/auth/session") return Response.json({ account: { id: accountId, email: accountId + "@example.test" } });
+    if (path === "/api/v1/billing/subscription") return Response.json({ status: "inactive", canManage: false, canCheckout: false });
+    if (path === "/api/v1/eliza/google/status") return Response.json({ accountId, provider: "google", side: "owner", mode: "cloud_managed", configured: false, connected: false, grantedCapabilities: [], identity: null });
     if (path !== "/api/auth/device/authorize") return network(input, init);
     authorizations.push(await new Response(init?.body).json());
     authorizationArrived.openUnsafe();
     if (authorizations.length === 1) return new Response(null, { status: 503 });
-    return Response.json({ redirectUrl: rejectedRedirects[authorizations.length - 2] ?? callback.href });
+    return Response.json({ redirectUrl: (rejectedRedirects[authorizations.length - 2] ?? callback).href });
   });
   onTestFinished(async () => {
     browser.off("Fetch.requestPaused", captureReturn);
@@ -63,10 +70,12 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   await view.render();
 
   const signIn = page.getByRole("button", { name: "Sign in on tablet" });
+  const firstChoice = { challenge, state, expectedAccountId: accountId };
   await act(() => userEvent.click(signIn));
   await expect.element(page.getByRole("alert")).toBeVisible();
-  const firstChoice = { challenge, state, expectedAccountId: accountId };
+  await expect.element(signIn).toBeEnabled();
   const retries = [firstChoice];
+  expect(authorizations).toEqual(retries);
   for (let retried = 0; retried < rejectedRedirects.length; retried++) {
     authorizationArrived.closeUnsafe();
     await act(() => userEvent.click(signIn));
