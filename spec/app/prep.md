@@ -71,6 +71,7 @@ pure val weight_choose = 3
 pure val weight_decideFill = 3
 pure val weight_verifyForm = 3
 pure val weight_handOff = 3
+pure val weight_retire = 3
 ```
 
 ### Opening a selected bill requests private sign-in without assuming account access
@@ -170,12 +171,12 @@ pure def alwaysChoiceFitsTheFacts(b: Prep): bool =
 
 Grace offers to fill in only values the person already chose, the amount and the payment date, and fills them only after a yes to that specific offer: "Shall I fill in $84.20 and today's date for you?" with the answers "Yes, fill it in" and "No, I'll do it" (prototype/Grace Prototype.html:1503, 1513). In the prototype that limit is only an instruction to the model: its code fills the form whenever the model asks to fill on the payment page (prototype/Grace Prototype.html:1635), whatever the answer was. This spec deliberately departs from that and makes the answer a recorded state. Every new choice asks again. After "No, I'll do it", Grace points and waits while the person types, and the form is checked as it is read back. The person may change the answer while the form is being prepared.
 
-A fill is what the registry says the current choice types, for a bill only its amount and day, and never nothing. `graceMayFill` holds for a fill only while the form is being prepared, the preparation is live, the answer is "Yes, fill it in", and the fill is exactly that of the current choice. This model dispatches no website operation, so it records the answer and defines `graceMayFill` but cannot itself stop a fill. The owner that dispatches website operations must refuse Grace's fill of a payment form unless `graceMayFill` holds for exactly the values it would type.
+The person's answer applies to the offer version shown when they tapped it. A changed choice, a later answer, or another run makes that tap stale. Accepting an answer advances the version, so an earlier tap cannot undo it. The offer is the same for every kind of task: Grace offers to type only what the person chose. A fill is what the registry says the current choice types, for a bill only its amount and day, and never nothing. `graceMayFill` holds for a fill only while the form is being prepared, the preparation is live, the answer is "Yes, fill it in", and the fill is exactly that of the current choice. This model dispatches no website operation, so it records the answer and defines `graceMayFill` but cannot itself stop a fill. The [fill gate](./taskBridge.md) refuses Grace's fill of the task's form at the actuator unless the answer was "Yes, fill it in" for this task, and the actuator types a task's fill only when `graceMayFill` holds for exactly the values it would type.
 
 ```quint
-pure def canDecideFill(b: Prep, fillBy: FillBy, by: T::TaskActor): bool =
-  b.phase == Preparing and b.live and fillBy != NotAsked and by == T::Person
-pure def decideFill(b: Prep, fillBy: FillBy, by: T::TaskActor): Prep = { ...b, fillBy: fillBy }
+pure def canDecideFill(b: Prep, fillBy: FillBy, expectedVersion: int, by: T::TaskActor): bool =
+  b.phase == Preparing and b.live and expectedVersion == b.version and fillBy != NotAsked and by == T::Person
+pure def decideFill(b: Prep, fillBy: FillBy, expectedVersion: int, by: T::TaskActor): Prep = { ...b, fillBy: fillBy, version: b.version + 1 }
 pure def graceMayFill(b: Prep, fill: K::Fill): bool =
   b.phase == Preparing and b.live and b.fillBy == GraceFills and (match fill {
     | NoFill => false
@@ -254,4 +255,27 @@ pure def alwaysBlockExplained(b: Prep): bool = b.phase == Blocked implies b.reas
 pure def stepSubjectPersists(before: Prep, after: Prep): bool = before.phase != NoTask implies after.key == before.key
 pure def sometimesBlocked(b: Prep): bool = b.phase == Blocked
 pure def sometimesPaused(b: Prep): bool = b.phase != NoTask and not(b.live)
+```
+
+## Story: End a task when it is finished or no longer wanted
+
+> As a person who has finished a task, or who no longer wants it, I want Grace to end it so that nothing from it carries on.
+
+### Ending a task discards its preparation, keeps its subject and lets nothing from it come back
+
+The person ends a task by cancelling it; the host ends it when the assistant's work on it finishes, is abandoned or is replaced. A cancellation carries the version shown when the person tapped. A host report carries the version of the work it observed. Only a matching version can end the current preparation. Ending returns the preparation to no task: the facts, the evidence they were read from, the yes to them, the choice, the answer to the fill offer and any reason the task stopped are discarded, the preparation is live again, and its version advances, so that a report or a hand-off for the ended run carries an old version and attaches to nothing. The subject is kept, and only the person's own begin can select another one. Ending leaves the commitment alone, so a possible submission stays recorded. A task that was never begun cannot be ended, and no step of a preparation ever lowers its version.
+
+```quint
+pure def canRetire(b: Prep, expectedVersion: int, by: T::TaskActor): bool =
+  b.phase != NoTask and expectedVersion == b.version and (by == T::Person or by == T::Host)
+pure def retire(b: Prep, expectedVersion: int, by: T::TaskActor): Prep = { ...initial, key: b.key, version: b.version + 1 }
+pure def lawOldAnswersAndRetirementsAreRefused(b: Prep, expectedVersion: int, fillBy: FillBy, by: T::TaskActor): bool =
+  expectedVersion != b.version implies
+    (not(canRetire(b, expectedVersion, by)) and not(canDecideFill(b, fillBy, expectedVersion, by)))
+pure def stepRetireEndsTheRun(before: Prep, via: str, after: Prep): bool =
+  via == "retire" implies (after.phase == NoTask and after.key == before.key and after.facts == K::NoFacts and
+    not(after.factsConfirmed) and after.choice == T::NoTerms and after.fillBy == NotAsked and
+    after.evidence == "" and after.reason == "" and after.live and after.version > before.version)
+pure def stepVersionNeverGoesBack(before: Prep, after: Prep): bool = after.version >= before.version
+pure def sometimesRetired(b: Prep): bool = b.phase == NoTask and b.version > 0
 ```
