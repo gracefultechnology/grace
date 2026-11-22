@@ -1109,3 +1109,38 @@ pure def lawStaleUnlockCannotRestorePasswords(ownerMatches: bool, recoveryKeyMat
 pure def lawForegroundVaultCannotAuthorizeRestore(ownerMatches: bool, recoveryKeyMatches: bool, vaultEmpty: bool): bool =
   not(passwordRestoreAdmitted(ownerMatches, ForegroundVaultAccess, recoveryKeyMatches, vaultEmpty))
 ```
+
+### Removing the cloud copy keeps the tablet's passwords
+
+A removal approved for the current request deletes the cloud copy and
+leaves every password on the tablet as it was. An approval for any other
+action removes nothing.
+
+```quint
+type PasswordCloudCopy = StoredPasswordBackup | NoPasswordBackup
+type PasswordStores = { tabletEntries: List[str], cloudCopy: PasswordCloudCopy }
+pure def removePasswordBackup(stores: PasswordStores, removal: PasswordBackupRequest, approval: PasswordBackupApproval): PasswordStores =
+  match removal {
+    | PendingPasswordBackupRequest(request) =>
+      if (request.binding.purpose == DeletePasswordBackup and mayUsePasswordBackupGrant(removal, approval)) { ...stores, cloudCopy: NoPasswordBackup } else stores
+    | ClosedPasswordBackupRequest => stores
+  }
+pure val removalBindingSample: PasswordBackupBinding = { ...sharedPasswordBackupSample, purpose: DeletePasswordBackup }
+pure val storesValues: Set[PasswordStores] = Set({ tabletEntries: List(), cloudCopy: StoredPasswordBackup })
+  .union(Set({ tabletEntries: List("bank", "pharmacy"), cloudCopy: StoredPasswordBackup }))
+  .union(Set({ tabletEntries: List("bank"), cloudCopy: NoPasswordBackup }))
+pure val removalValues: Set[PasswordBackupRequest] = pendingValues
+  .union(Set(PendingPasswordBackupRequest({ binding: removalBindingSample })))
+pure val removalApprovalValues: Set[PasswordBackupApproval] = approvalValues
+  .union(Set(SharedNativePasswordApproval({ binding: removalBindingSample })))
+pure def lawRemovingBackupKeepsTabletPasswords(stores: PasswordStores, removal: PasswordBackupRequest, removalApproval: PasswordBackupApproval): bool =
+  removePasswordBackup(stores, removal, removalApproval).tabletEntries == stores.tabletEntries
+pure def lawApprovedRemovalDeletesCloudCopy(stores: PasswordStores, binding: PasswordBackupBinding): bool =
+  validPasswordBackupBinding(binding) and binding.purpose == DeletePasswordBackup implies
+    removePasswordBackup(stores, PendingPasswordBackupRequest({ binding: binding }),
+      if (binding.profile == StandaloneGraceProduction) StandaloneBrowserPasswordApproval({ binding: binding })
+      else SharedNativePasswordApproval({ binding: binding })).cloudCopy == NoPasswordBackup
+pure def lawOtherActionCannotRemoveBackup(stores: PasswordStores, binding: PasswordBackupBinding, removalApproval: PasswordBackupApproval): bool =
+  binding.purpose != DeletePasswordBackup implies
+    removePasswordBackup(stores, PendingPasswordBackupRequest({ binding: binding }), removalApproval) == stores
+```
