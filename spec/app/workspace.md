@@ -1638,6 +1638,8 @@ Grace checks the new document’s address and independently visible identity.
 A regular browser check cannot confirm this step. When the website prevents
 record reading or leaves the account, dates or completeness unverified, Grace
 explains the limitation and gives the person a way to check on the website.
+On a page where only public links may be read, the instructions use the reviewed
+status and tell the person to compare full dates across every page.
 The step remains unfinished.
 
 The source and detail evidence stays local, including the link, dates and
