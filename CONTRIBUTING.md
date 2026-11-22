@@ -177,7 +177,9 @@ for its time or its output is ended the same way. A run
 of a tool is remembered when it reached its answer, a refusal of its input
 included, never when it was stopped, timed out or failed for want of a file or
 program: an unchanged unit whose proof failed runs neither again, and an edit
-to a proof file only checks and verifies the Dafny it changes. A unit offered
+to a proof file only checks and verifies the Dafny it changes. When several proof units import
+the same module, the check renders that module once for each name prefix and citation setting they use.
+A unit offered
 what the units it imports proved is proved once when their results are
 remembered, and meanwhile, to be proved again if they fail, only while one of
 them is still being proved. A test run
@@ -210,7 +212,9 @@ device, inode, size and modification and change times stay the same, so an
 unchanged toolchain is not read again, nor Z3 asked its version. A check
 reads those times of Dafny's installation once, and reads them again after each
 run of Dafny, so a result is not remembered when the verifier was installed
-again during the run. Generated stories,
+again during the run. The template install generates locally with `gen --if-valid`. On GitHub Actions it uses the same strict root
+`gen` task as verification, so a successful install warms the task cache. A failed generation leaves the
+remaining checks runnable and is retried by verification. Generated stories,
 browser build artifacts, compiler declarations and successful test receipts
 are restored with their owning task. `check` is never skipped whole: its
 `driver:` programs run the real application in `traces` every time. Standalone examples install and check

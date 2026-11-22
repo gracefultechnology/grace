@@ -2686,6 +2686,46 @@ function eachCheck() {
     assert.match(proof.summary, /all 1 obligations proved/);
   });
 
+  test("owner generation mirrors the same artifact as the whole tree and checks its dependency closure", async () => {
+    const script = path.join(project, "vibestack/spec.ts");
+    const root = scratch({
+      "package.json": PACKAGE["package.json"],
+      "packages/target/package.json": JSON.stringify({ name: "@repo/target" }),
+      "packages/other/package.json": JSON.stringify({ name: "@repo/other" }),
+      "spec/index.md": "# Project",
+      "spec/target/index.md": ruleSpec('import lib.* from "../lib"\npure val targetValue = baseValue'),
+      "spec/lib.md": ruleSpec("pure val baseValue = 1"),
+      "spec/other/index.md": ruleSpec("pure val otherValue = 2"),
+    });
+    const all = await runCli(script, root, "gen");
+    assert.equal(all.status, 0, all.stdout + all.stderr);
+    const target = path.join(root, "packages/target/gen");
+    const outputs = () => fs.readdirSync(target).sort().map((name) => [name, fs.readFileSync(path.join(target, name), "utf8")]);
+    const expected = outputs();
+    const unrelated = path.join(root, "packages/other/gen/other.ts");
+    const before = fs.readFileSync(unrelated, "utf8");
+    fs.rmSync(target, { recursive: true });
+    fs.appendFileSync(path.join(root, "spec/other/index.md"), "\n[Missing](./missing.md)\n");
+    const scoped = await runCli(script, root, "gen", "--owner", "target");
+    assert.equal(scoped.status, 0, scoped.stdout + scoped.stderr);
+    assert.deepEqual(outputs(), expected);
+    assert.equal(fs.readFileSync(unrelated, "utf8"), before);
+    const fullCheck = await runCli(script, root, "check");
+    assert.equal(fullCheck.status, 1, fullCheck.stdout + fullCheck.stderr);
+    assert.match(fullCheck.stdout, /spec\/other\/index\.md.*no spec at this path/);
+    fs.appendFileSync(path.join(root, "spec/lib.md"), "\n[Missing](./missing.md)\n");
+    const broken = await runCli(script, root, "gen", "--owner", "target");
+    assert.equal(broken.status, 1, broken.stdout + broken.stderr);
+    assert.match(broken.stderr, /spec\/lib\.md.*no spec at this path/);
+    assert.deepEqual(outputs(), expected);
+    fs.writeFileSync(path.join(root, "spec/lib.md"), ruleSpec("pure val baseValue = 2"));
+    fs.writeFileSync(path.join(root, "spec/target/invalid.md"), ruleSpec('pure val invalid: int = "s"'));
+    const invalid = await runCli(script, root, "gen", "--owner", "target");
+    assert.equal(invalid.status, 1, invalid.stdout + invalid.stderr);
+    assert.match(invalid.stderr, /spec\/target\/invalid\.md/);
+    assert.deepEqual(outputs(), expected);
+  });
+
   test("the command line checks, generates and watches a project directory from its parent", async () => {
     const script = path.join(project, "vibestack/spec.ts");
     const cli = (root: string, ...args: string[]) => runCli(script, root, ...args);
@@ -3070,6 +3110,7 @@ describe("the documents name what exists", () => {
       return new RegExp(pattern).test(`${title} `) === (kind === "name");
     });
     assert.deepEqual(Object.fromEntries(titles.map((title) => [title, ranBy(title)])), Object.fromEntries(titles.map((title) => [title, [elsewhere[title] ?? "selftest:tools:rest"]])));
+    assert.match(ci, /pnpm all "\/\/#selftest:tools:.*?--only --continue --summarize/, "a dedicated runner executes only its shard after setup");
     const [first, ...others] = shards.map((task) => JSON.parse(read("turbo.json")).tasks[`//#${task}`]);
     assert.deepEqual(others, others.map(() => first), "the shards wait for the same tasks and are keyed by the same files");
   });
@@ -3121,6 +3162,10 @@ describe("the documents name what exists", () => {
       prose: [studio(prose), prose.includes("@repo/app#test")],
       selftest: [studio(selftest), ["a", "b", "rest"].every((shard) => selftest.includes(`//#selftest:tools:${shard}`))],
       fixture: studio(fixture),
+      independentOwner: (await changedBy(() => {
+        fs.mkdirSync(path.join(root, "packages/kit/spec"));
+        fs.writeFileSync(path.join(root, "packages/kit/spec/index.md"), "# Standalone kit\n");
+      })).includes("//#gen"),
       leftovers: await changedBy(async () => {
         for (const dir of ["", "packages/ui/", "vibestack/fixtures/"]) fs.writeFileSync(path.join(root, `${dir}.DS_Store`), "\0");
         fs.mkdirSync(path.join(root, "packages/ui/.cache/vitest/attachments"), { recursive: true });
@@ -3130,7 +3175,7 @@ describe("the documents name what exists", () => {
     }, {
       rootUsesElizaModels: true,
       notWaiting: ["//#analyze", "//#build", "//#gen:eliza", "//#lint:css", "//#selftest:docs", "//#selftest:examples", "@repo/design-system#build", "@repo/ui#typecheck", "vibestack-studio#build", "vibestack-studio#dev", "vibestack-studio#test", "vibestack-studio#typecheck"],
-      lintWaitsFor: vibeDeclared, devWaitsFor: tasks.get("vibestack-studio#build")!.dependencies.toSorted(), prose: [[], true], selftest: [[], true], fixture: ["vibestack-studio#test"], leftovers: [],
+      lintWaitsFor: vibeDeclared, devWaitsFor: tasks.get("vibestack-studio#build")!.dependencies.toSorted(), prose: [[], true], selftest: [[], true], fixture: ["vibestack-studio#test"], independentOwner: true, leftovers: [],
     }, "the owners' tasks, @repo/kit's among them, wait for the root's gen, and install's //#build does not, so `gen --if-valid` after it keeps a half-edited spec from failing install");
   });
 });
@@ -3161,6 +3206,29 @@ function theCommandLine() {
     fs.writeFileSync(path.join(root, "spec/value.md"), ruleSpec("pure val answer = nope", "A value"));
     assert.match((await runCli(script, root, "gen", "--if-valid")).stdout, /gen\/ was not generated/);
     assert.ok(fs.existsSync(path.join(root, "gen/value.ts")));
+    fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "install-gen", packageManager: JSON.parse(read("package.json")).packageManager, scripts: { gen: "node vibestack/spec.ts gen" } }));
+    fs.writeFileSync(path.join(root, "turbo.json"), JSON.stringify({ tasks: { "//#gen": { inputs: ["spec/**"], outputs: ["gen/**"] } } }));
+    fs.writeFileSync(path.join(root, "pnpm-workspace.yaml"), "packages: [packages/*]\n");
+    fs.mkdirSync(path.join(root, "packages/app"), { recursive: true });
+    fs.writeFileSync(path.join(root, "packages/app/package.json"), JSON.stringify({ name: "app" }));
+    fs.symlinkSync(nodeModules, path.join(root, "node_modules"), "dir");
+    fs.symlinkSync(path.dirname(script), path.join(root, "vibestack"), "dir");
+    const prepare = (hosted: boolean) => exec(process.execPath, [script, "gen", "--install"], root, { ...process.env, GITHUB_ACTIONS: String(hosted), TURBO_CACHE: "local:rw", TURBO_TOKEN: "" });
+    for (const hosted of [false, true]) {
+      const invalid = await prepare(hosted);
+      assert.equal(invalid.status, 0, invalid.stderr);
+      assert.match(invalid.stdout, /gen\/ was not generated/);
+      assert.equal((await import(path.join(root, "gen/value.ts"))).answer, 42);
+    }
+    fs.writeFileSync(path.join(root, "spec/value.md"), ruleSpec("pure val answer = 43", "A value"));
+    const installed = await prepare(true);
+    assert.equal(installed.status, 0, installed.stderr);
+    assert.doesNotMatch(installed.stdout, /gen\/ was not generated/);
+    assert.equal((await import(path.join(root, "gen/value.ts") + "?installed")).answer, 43);
+    fs.rmSync(path.join(root, "gen/value.ts"));
+    const restored = await prepare(true);
+    assert.match(restored.stdout, /cache hit/);
+    assert.equal((await import(path.join(root, "gen/value.ts") + "?restored")).answer, 43);
     fs.writeFileSync(path.join(root, ".spec-cache/lock"), `${process.pid}\n`);
     assert.match((await runCli(script, root, "gen")).stderr, /another check or accept is running in this project/);
   });
