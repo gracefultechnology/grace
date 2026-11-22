@@ -52,7 +52,7 @@ import handoffs as H from "./handoffs"
 type WorkspaceActor = Person | Host | Store | Actuator
 type StepDetails = { surface: S::Surface, subject: str, outcome: str }
 type GuidedStep = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | ReadCalendar | SaveMailAppointment
-  | ReachNamedPage({ subject: str }) | ReadLatestRecord({ collection: str, status: str })
+  | ReachNamedPage({ subject: str }) | ReadLatestRecord({ collection: str, status: str }) | SearchPublicSite({ query: str, origin: str, tabId: int })
   | SurfaceOutcome({ surface: S::Surface, subject: str, outcome: str })
 type GuidedMail = { account: int, owner: str, address: str, ref: str, generation: int, revision: int, version: str }
 type GuidedCalendarApproval = {
@@ -95,6 +95,7 @@ type GuidedObservation = {
 }
 type GuidedRecordCheck = { report: GuidedObservation, key: str, tabId: int, documentId: str, loadVersion: int }
 type GuidedNamedPageCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, heading: str }
+type GuidedSearchCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, query: str }
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
 type GuidedSaveRecoveryCheck = { report: GuidedObservation, saved: GuidedSaveReference }
 type GuidedCalendarReadback = { approval: GuidedCalendarApproval, occurrence: str, evidence: str }
@@ -127,6 +128,7 @@ pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadCalendar => { surface: S::Calendar, subject: "Saved appointment", outcome: "Open the saved appointment you want me to read." }
   | SaveMailAppointment => { surface: S::Calendar, subject: "Appointment from the email", outcome: "Ask me to prepare the appointment from the email. Approve its details separately." }
   | ReachNamedPage(target) => { surface: S::Browser, subject: target.subject, outcome: "Find and check the named page." }
+  | SearchPublicSite(target) => { surface: S::Browser, subject: target.query, outcome: "Search on the website, then check the results." }
   | ReadLatestRecord(intent) => { surface: S::Browser, subject: intent.collection, outcome: "Check the latest record matching the reviewed status." }
   | SurfaceOutcome(details) => { surface: details.surface, subject: details.subject, outcome: details.outcome }
 }
@@ -1390,6 +1392,7 @@ pure def isNamedDestination(guidedStep: GuidedStep): bool = match guidedStep {
 }
 pure def hasGuidedAdapter(guidedStep: GuidedStep): bool = match guidedStep {
   | SurfaceOutcome(_) => false
+  | SearchPublicSite(target) => target.query != "" and target.origin != "" and target.tabId > 0
   | ReadLatestRecord(intent) => intent.collection != "" and intent.status != ""
   | _ => true
 }
@@ -1534,7 +1537,7 @@ The app adapter checks the actual outcome on the named subject under the authent
 
 ```quint
 type GuidedPageField = PrivatePageField | UnknownPageField | NavigationPageField | IdleOptInField | IdleLoginField
-type GuidedEvidenceUse = GuidePublicLinks | CheckPublicDocument | ReadGuidedContent
+type GuidedEvidenceUse = GuidePublicLinks | CheckPublicDocument | CheckPublicSearchResult | ReadGuidedContent
 pure def allowsLimitedGuidedEvidence(use: GuidedEvidenceUse, controls: List[GuidedPageField]): bool =
   use != ReadGuidedContent and controls.every(controlKind =>
     controlKind == NavigationPageField or controlKind == IdleOptInField or (use == GuidePublicLinks and controlKind == IdleLoginField))
@@ -1569,7 +1572,7 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  not(isNamedDestination(report.step)) and not(isLatestRecord(report.step)) and guidedObservationCurrent(w, report, by)
+  not(isNamedDestination(report.step)) and not(isLatestRecord(report.step)) and not(isPublicSearch(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
     nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched,
@@ -1621,6 +1624,54 @@ pure val pageCheckValues = Set(samplePageCheck, { ...samplePageCheck, heading: "
     loadVersion: 4, url: "https://utility.example/help", heading: "Help" })
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
+```
+
+### The person searches the reviewed site and Grace checks that exact query
+
+When the person asks to search the secure site currently open, Grace can offer
+the complete query from their words. The review shows the query and site.
+Grace asks the person to use the site's own search and then choose Check search
+results. Grace does not type, submit or rank links for this step. The check
+needs a fresh loaded document in the reviewed tab on the reviewed origin. Two local readings,
+bracketed by observations of that same document and address, must find the
+same visible results heading outside forms, inputs and links. The heading must
+name the exact query after its search-results label. A private form,
+unrecognized input, covering blocker, wrong query or changed observation leaves
+the step open. An untouched newsletter opt-in and an idle recognized search
+box can remain beside the results. Grace uses only the heading as query evidence.
+The result is accepted only through this search check for the active reviewed
+step. The stored receipt describes the confirmed query and never stores the
+results address or other page content.
+
+```quint
+pure def isPublicSearch(guidedStep: GuidedStep): bool = match guidedStep {
+  | SearchPublicSite(_) => true
+  | _ => false
+}
+pure def canConfirmGuidedSearch(w: Workspace, searchCheck: GuidedSearchCheck, by: WorkspaceActor): bool =
+  val tab = B::activeTab(w.browser)
+  guidedObservationCurrent(w, searchCheck.report, by) and searchCheck.documentId != "" and
+  tab.load == B::Loaded and tab.secure and searchCheck.url != "" and searchCheck.url == B::tabUrl(tab) and
+  searchCheck.loadVersion == tab.loadVersion and searchCheck.loadVersion > w.plan.openingBrowser and
+  match searchCheck.report.step {
+    | SearchPublicSite(target) => target.origin == searchCheck.origin and target.query == searchCheck.query and target.tabId == tab.id
+    | _ => false
+  }
+pure def confirmGuidedSearch(w: Workspace, searchCheck: GuidedSearchCheck, by: WorkspaceActor): Workspace =
+  confirmGuided(w, searchCheck.report, by)
+pure def lawSearchNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  isPublicSearch(report.step) implies not(canConfirmGuided(w, report, by))
+pure def lawWrongSearchCannotFinish(w: Workspace, searchCheck: GuidedSearchCheck, by: WorkspaceActor): bool =
+  (match searchCheck.report.step {
+    | SearchPublicSite(target) => target.origin != searchCheck.origin or target.query != searchCheck.query or target.tabId != B::activeTab(w.browser).id
+    | _ => true
+  }) implies not(canConfirmGuidedSearch(w, searchCheck, by))
+pure val sampleSearchCheck: GuidedSearchCheck = {
+  report: { ...sampleReport, step: SearchPublicSite({ query: "green tea", origin: "https://example.org", tabId: 1 }) },
+  documentId: "search-document", loadVersion: 2, url: "https://example.org/search?q=green+tea", origin: "https://example.org", query: "green tea"
+}
+pure val searchCheckValues = Set(sampleSearchCheck, { ...sampleSearchCheck, query: "black tea" },
+  { ...sampleSearchCheck, origin: "https://other.example" })
 ```
 
 ### The latest matching record must be selected on its collection and verified on arrival
