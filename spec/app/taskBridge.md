@@ -125,14 +125,14 @@ that workspace holds. Other examples retain those transfers while their
 preparation pauses, or with a payload field or captured token that is stale. The examples are simulation inputs and do not restrict runtime values.
 
 ```quint
-pure val sampleChosenPreparation = {
+pure val chosenPreparationValues = {
   val begun = P::begin(P::initial, CM::exampleKey, "source", T::Person)
   val signed = P::inspectAccess(begun, { key: CM::exampleKey, version: 1, access: P::SignedIn }, T::Host)
   val facts = P::readFacts(signed, { key: CM::exampleKey, version: 2, evidence: "source", facts: K::sampleBillFacts }, T::Host)
-  P::choose(P::confirmFacts(facts, T::Person), CM::exampleTerms, T::Person)
+  Set(P::choose(P::confirmFacts(facts, T::Person), CM::exampleTerms, T::Person))
 }
 pure val preparationValues = {
-  val chosen = sampleChosenPreparation
+  val chosen = chosenPreparationValues.getOnlyElement()
   val yes = P::decideFill(chosen, P::GraceFills, chosen.version, T::Person)
   val no = P::decideFill(yes, P::PersonFills, yes.version, T::Person)
   val verified = P::verifyForm(chosen, { ...CM::exampleReview, revision: 4 }, T::Host)
@@ -142,7 +142,7 @@ pure val preparationValues = {
     .union(Set(yes, no, P::decideFill(no, P::GraceFills, no.version, T::Person)))
     .union(Set(P::pause(yes, T::Host), P::retire(handed, handed.version, T::Host)))
 }
-pure val sampleLoadedTask = {
+pure val loadedTaskValues = {
   val started = W::changeLifecycle(W::initial, W::StartupSucceeded, W::Host)
   val opened = W::openGrace(W::visit(started, S::Browser, W::Person), W::Person)
   val allowed = W::setBrowserObservation(opened, { allowed: true,
@@ -152,12 +152,12 @@ pure val sampleLoadedTask = {
   val compact = W::interact(available, I::Resize({ expanded: false }), W::Person)
   val begun = W::begin(compact,
     { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, W::Person)
-  W::receiveLoad(begun, { id: begun.browser.selected,
+  Set(W::receiveLoad(begun, { id: begun.browser.selected,
     version: B::tabById(begun.browser, begun.browser.selected).loadVersion, result: B::Loaded,
-    secure: false, endedAt: "https://utility.example" }, W::Host)
+    secure: false, endedAt: "https://utility.example" }, W::Host))
 }
 pure val wValues = {
-  val loaded = sampleLoadedTask
+  val loaded = loadedTaskValues.getOnlyElement()
   val observed = W::observe(loaded, { deviceVersion: loaded.device.contextVersion,
     browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
     website: X::goodObservation, checkpoint: "Read the current account" }, W::Host)
@@ -236,11 +236,11 @@ pure def captureWebsiteCommand(preparation: P::Prep, command: W::WorkspaceEffect
     source: if (preparation.phase == P::NoTask) OutsidePreparation
       else TaskForm({ task: preparedTask, key: preparation.key, fill: K::fillOf(preparation.choice) }) }
 
+pure def writesFormField(operation: X::WebsiteEffect): bool = match operation {
+  | Operate(details) => details.kind == X::FillOrdinary
+}
 pure def formFillCommand(command: W::WorkspaceEffect): bool = match command {
-  | Execute(details) => {
-    val operation = details.effect
-    match operation { | Operate(operationDetails) => operationDetails.kind == X::FillOrdinary }
-  }
+  | Execute(details) => writesFormField(details.effect)
   | _ => false
 }
 pure def fillPermitted(
@@ -292,25 +292,28 @@ pure def lawATaskFillUsesItsOwnVerifiedForm(
     }
 }
 
-pure val sampleFieldWrite = {
-  val loaded = sampleLoadedTask
+pure val fieldWriteValues = loadedTaskValues.map(loaded => {
   val observed = W::observe(loaded, { deviceVersion: loaded.device.contextVersion, browserRevision: loaded.browser.revision,
     taskVersion: loaded.assistant.workVersion, checkpoint: "Read the payment form", website: { ...X::goodObservation,
       generation: loaded.execution.generation, targets: List({ id: "bill-amount", consequence: X::AskFirst, inReach: true }) } }, W::Host)
   val queued = W::prepare(observed, AC::sampleOperationRequest(observed, "bill-amount", "chosen-payment", X::FillOrdinary), W::Host)
   W::dispatch(queued, AC::sampleOperationTokens(queued), W::Actuator)
+})
+pure val fillWorkspaceValues = fieldWriteValues.map(write => write.state)
+  .union(Set(W::initial, AC::ordinarySample(AC::observedSample(W::initial)).state))
+pure val capturedFillValues = fieldWriteValues.map(write => {
+  val chosen = chosenPreparationValues.getOnlyElement()
+  val yes = P::decideFill(chosen, P::GraceFills, chosen.version, T::Person)
+  captureWebsiteCommand(yes, write.out.nth(0), "task")
+})
+pure val queuedValues = {
+  val queued = capturedFillValues.getOnlyElement()
+  Set(queued, captureWebsiteCommand(P::initial, queued.command, ""),
+    { ...queued, source: TaskForm({ task: "other-task", key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }) },
+    { ...queued, command: AC::ordinarySample(AC::observedSample(W::initial)).out.nth(0) })
 }
-pure val fillWorkspaceValues = Set(sampleFieldWrite.state, W::initial, AC::ordinarySample(AC::observedSample(W::initial)).state)
-pure val sampleQueuedFill = {
-  val yes = P::decideFill(sampleChosenPreparation, P::GraceFills, sampleChosenPreparation.version, T::Person)
-  captureWebsiteCommand(yes, sampleFieldWrite.out.nth(0), "task")
-}
-pure val queuedValues = Set(sampleQueuedFill,
-  captureWebsiteCommand(P::initial, sampleFieldWrite.out.nth(0), ""),
-  { ...sampleQueuedFill, source: TaskForm({ task: "other-task", key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }) },
-  { ...sampleQueuedFill, command: AC::ordinarySample(AC::observedSample(W::initial)).out.nth(0) })
 pure val readValues = {
-  val original = { command: sampleQueuedFill.command, key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }
+  val original = { command: capturedFillValues.getOnlyElement().command, key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }
   Set(NoTaskForm, VerifiedForm(original),
     VerifiedForm({ ...original, key: { ...CM::exampleKey, account: "other-account" } }),
     VerifiedForm({ ...original, key: { ...CM::exampleKey, ref: "other-bill" } }),
@@ -480,7 +483,8 @@ pure def lawEndingTheFinishedRunKeepsItsReceipt(view: TaskView): bool =
     implies (joined(ended) and taskStatus(ended) == taskStatus(view))
 
 pure val guardedViewValues = wValues.filter(w => w.commitment.stage == CM::Draft and W::currentCommitmentContext(w)).map(w => {
-  val form = P::verifyForm(sampleChosenPreparation, { ...CM::exampleReview, revision: sampleChosenPreparation.version }, T::Host)
+  val chosen = chosenPreparationValues.getOnlyElement()
+  val form = P::verifyForm(chosen, { ...CM::exampleReview, revision: chosen.version }, T::Host)
   val handed = P::handOff(form, T::Actuator)
   val transfer = { handoff: handed.out.nth(0), captured: AC::sampleCommitmentTokens(w) }
   val converted = convertPreparedReview(handed.state, w, transfer, W::Host)
@@ -512,7 +516,10 @@ pure val endedViewValues = savedViewValues.map(v => { ...v, progress: progressAt
 pure val viewValues = guardedViewValues.union(checkingViewValues).union(observedViewValues)
   .union(savedViewValues).union(endedViewValues)
   .union(endedViewValues.map(v => { ...v, preparation: P::begin(v.preparation, v.preparation.key, "another request", T::Person) }))
-  .union(guardedViewValues.map(v => { ...v, preparation: P::decideFill(sampleChosenPreparation, P::PersonFills, sampleChosenPreparation.version, T::Person) }))
+  .union(guardedViewValues.map(v => {
+    val chosen = chosenPreparationValues.getOnlyElement()
+    { ...v, preparation: P::decideFill(chosen, P::PersonFills, chosen.version, T::Person) }
+  }))
   .union(guardedViewValues.map(v => { ...v, workspace: W::abandonTask(v.workspace, W::Person),
     preparation: P::retire(v.preparation, v.preparation.version, T::Person), progress: progressAtEnd(v, T::Person) }))
 ```
