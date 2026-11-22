@@ -103,14 +103,17 @@ export function startWebArenaWorker({ python, root, env, gradingTimeoutMs = 30_0
     if (closing || !lines) throw new WebArenaEvaluatorError(phase, closing ? "closed" : "protocol");
     const signal = deadline ? AbortSignal.any([terminal.signal, deadline]) : terminal.signal;
     const finished = new AbortController();
+    const failure = () => {
+      const reason: unknown = signal.reason;
+      return new WebArenaEvaluatorError(phase, reason === "spawn" || reason === "closed" ? reason : deadline?.aborted ? "deadline" : "exit");
+    };
     const interrupted = async (): Promise<never> => {
       if (!signal.aborted) await once(signal, "abort", { signal: finished.signal });
-      const reason: unknown = signal.reason;
-      throw new WebArenaEvaluatorError(phase, reason === "spawn" || reason === "closed" || reason === "exit" ? reason : "deadline");
+      throw failure();
     };
     try {
       const next = await Promise.race([interrupted(), lines.next()]);
-      if (next.done) throw new WebArenaEvaluatorError(phase, "exit");
+      if (next.done || signal.aborted) throw failure();
       return next.value;
     } finally {
       finished.abort();
