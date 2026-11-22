@@ -969,8 +969,20 @@ const LoginFixture = Schema.Struct({
   }),
   login: Schema.Struct({ label: Schema.String, origin: Schema.String, username: Schema.String, password: Schema.String }),
 });
-const Grade = Schema.Struct({ grade: Schema.Struct({ success: Schema.Boolean }), paymentCount: Schema.Int });
-class GradeFailure extends Error {}
+const Grade = Schema.Struct({
+  grade: Schema.Struct({
+    success: Schema.Boolean,
+    checks: Schema.Struct({ live_primary_session: Schema.Boolean, account_opened_after_login: Schema.Boolean }),
+  }),
+  paymentCount: Schema.Int,
+});
+class GradeFailure extends Error {
+  readonly reason: "agent_error" | "timeout";
+  constructor(reason: GradeFailure["reason"], message: string) {
+    super(message);
+    this.reason = reason;
+  }
+}
 const Callable = Schema.declare((value: unknown): value is (...args: unknown[]) => unknown => typeof value === "function");
 const isEpisodeHost = Schema.is(Schema.Struct({ startPasswordLoginEpisode: Callable }));
 const Episode = Schema.Struct({ grade: Callable, close: Callable });
@@ -980,7 +992,7 @@ function deviceNodes(xml: string) {
   return Array.from(xml.matchAll(/<node\b[^>]*>/g)).flatMap(([node]) => {
     const attr = (name: string) => new RegExp(` ${name}="([^"]*)"`).exec(node)?.[1] ?? "";
     const bounds = /^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$/.exec(attr("bounds"));
-    return bounds ? [{
+    return bounds && Number(bounds[1]) < Number(bounds[3]) && Number(bounds[2]) < Number(bounds[4]) ? [{
       x: Math.round((Number(bounds[1]) + Number(bounds[3])) / 2),
       y: Math.round((Number(bounds[2]) + Number(bounds[4])) / 2),
       label: attr("text"), description: attr("content-desc"), id: attr("resource-id").split("/").at(-1),
@@ -1209,10 +1221,15 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           await page.until(selectedHome, AbortSignal.any([signal, AbortSignal.timeout(420_000)]));
           await waitForNode((node) => node.packageName === identity.appId, "the foreground Grace app");
           process.stdout.write("The installed Grace Home is ready.\n");
-          step = "wait for the Page 3 control on Grace Home";
-          const page3 = await page.waitForHomeControl({ label: "Page 3" }, AbortSignal.timeout(120_000));
-          step = "tap Page 3 on Grace Home";
-          await page.tapAt(page3, AbortSignal.timeout(120_000));
+          step = "advance from the main cards to Files on Grace Home";
+          const nextToFiles = await page.waitForHomeControl({ label: "More apps" }, AbortSignal.timeout(120_000));
+          await page.tapAt(nextToFiles, AbortSignal.timeout(120_000));
+          step = "wait for Files on the second Grace Home page";
+          await page.waitForHomeControl({ label: "Previous page" }, AbortSignal.timeout(120_000));
+          await page.waitForHomeControl({ text: "Files" }, AbortSignal.timeout(120_000));
+          step = "advance from Files to Passwords on Grace Home";
+          const nextToPasswords = await page.waitForHomeControl({ label: "More apps" }, AbortSignal.timeout(120_000));
+          await page.tapAt(nextToPasswords, AbortSignal.timeout(120_000));
           step = "wait for the Passwords card on Grace Home";
           const passwords = await page.waitForHomeControl({ text: "Passwords" }, AbortSignal.timeout(120_000));
           process.stdout.write("The Passwords card is ready on the third Grace Home page.\n");
@@ -1232,18 +1249,54 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           await page.step({ tap: "Internet" });
           await page.step({ type: origin.origin, into: "Address" });
           await page.step({ press: "Enter" });
-          step = "ask Grace to open the site’s private sign-in";
+          step = "open Ask Grace on the site";
           await page.step({ tap: "Ask Grace" });
-          await page.step({ type: "sign me in to pay my bill", into: "Message to Grace" });
-          await page.step({ tap: "Send" });
+          const request = "sign me in to pay my bill";
+          step = "type the private sign-in request in the focused Grace composer";
+          await page.step({ type: request, into: "Message to Grace" });
+          await page.until(`document.activeElement?.matches('textarea[aria-label="Message to Grace"]') &&
+            document.activeElement.value === ${JSON.stringify(request)} &&
+            [...document.querySelectorAll('button:enabled')].some((button) => button.textContent.trim() === 'Send')`, AbortSignal.timeout(30_000));
+          step = "submit the request and wait for the private sign-in tab";
+          await page.step({ press: "Enter" });
+          await page.until(`document.querySelector('input[aria-label="Private website address"]')?.getClientRects().length > 0 &&
+            !document.querySelector('textarea[aria-label="Message to Grace"]')?.getClientRects().length`, AbortSignal.timeout(30_000));
           step = "open the episode using the private address control";
           await page.step({ type: entry.href, into: "Private website address", replace: true });
+          await page.until(`document.activeElement?.matches('input[aria-label="Private website address"]') &&
+            document.activeElement.value === ${JSON.stringify(entry.href)}`, AbortSignal.timeout(30_000));
+          step = "load the encrypted BillWorld page in the private tab";
           await page.step({ press: "Enter" });
+          await page.until(`(() => {
+            const address = document.querySelector('input[aria-label="Private website address"]');
+            return URL.parse(address?.value)?.origin === ${JSON.stringify(origin.origin)} &&
+              (address.getAttribute('aria-describedby') ?? '').split(' ').some((id) =>
+                document.getElementById(id)?.textContent === 'Encrypted connection');
+          })()`, AbortSignal.timeout(60_000));
         }, 900);
-        step = "request Android autofill and choose the matching entry";
-        await tap((node) => node.password && node.className === "android.widget.EditText", "the website password field");
-        await tap((node) => node.label === "Fill with a saved password", "Android's fill offer");
-        await tap((node) => node.packageName === identity.appId && node.label.includes(login.label), "the matching sign-in");
+        const websitePassword = (node: DeviceNode) => node.packageName === identity.appId && node.enabled && node.password;
+        step = "find the password field on the BillWorld sign-in form";
+        const passwordField = await waitForUi({ serial, file: screenFile, signal }, (nodes) => {
+          const fields = nodes.filter(websitePassword);
+          return fields.length === 1 ? fields[0] : undefined;
+        }, "the BillWorld sign-in form");
+        await tapNode(passwordField);
+        step = "wait for Android’s saved-password offer";
+        const fillOffer = await waitForUi({ serial, file: screenFile, signal }, (nodes) => {
+          const offers = nodes.filter((node) => node.enabled && (node.label === "Fill with a saved password" ||
+            node.description === "Fill with a saved password"));
+          return offers.length === 1 ? offers[0] : undefined;
+        }, "Android's fill offer");
+        await tapNode(fillOffer);
+        process.stdout.write("Android offered the saved password on the encrypted BillWorld form.\n");
+        step = "choose the matching saved sign-in";
+        const matchingSignIn = await waitForUi({ serial, file: screenFile, signal }, (nodes) => {
+          const choices = nodes.filter((node) => node.packageName === identity.appId && node.enabled &&
+            node.clickable && node.label.startsWith(login.label));
+          return choices.length === 1 ? choices[0] : undefined;
+        }, "the matching sign-in");
+        await tapNode(matchingSignIn);
+        process.stdout.write("The matching saved sign-in was chosen in Grace Passwords.\n");
       },
     });
     if (!isEpisode(started)) throw new Error("The fixture did not start");
@@ -1253,15 +1306,17 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     await requireNoScreenLock();
     step = "grade the autofilled form";
     const before = await readGrade();
-    if (before.grade.success || before.paymentCount !== 0) throw new GradeFailure("Autofill must not submit or pay");
+    if (before.grade.success || before.grade.checks.live_primary_session || before.grade.checks.account_opened_after_login || before.paymentCount !== 0) {
+      throw new GradeFailure("agent_error", "Autofill must not submit or pay");
+    }
     step = "submit the website form and grade";
     await tap((node) => /^(sign\s*in|log\s*in)$/i.test(node.label) && node.className === "android.widget.Button", "the website sign-in button");
     const until = Date.now() + 45_000;
     for (;;) {
       signal.throwIfAborted();
-      if (Date.now() >= until) throw new GradeFailure("BillWorld did not confirm the account view");
       const after = await readGrade();
-      if (after.paymentCount !== 0) throw new GradeFailure("The sign-in run encountered a payment");
+      if (after.paymentCount !== 0) throw new GradeFailure("agent_error", "The sign-in run encountered a payment");
+      if (Date.now() >= until) throw new GradeFailure("timeout", "BillWorld did not confirm the account view in time");
       if (after.grade.success) break;
       await delay(1000);
     }
@@ -1274,7 +1329,9 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   }
   try { await requireNoScreenLock(); } catch (error) { failures.push(error); }
   const unclean = failures.length > 0;
-  try { await episode?.close(); } catch (error) { failures.push(error); }
+  const outcome = journeyFailure instanceof GradeFailure ? journeyFailure.reason
+    : signal.aborted ? "interrupted" : journeyFailure ? "environment_error" : "completed";
+  try { await episode?.close({ reason: unclean || buildFailure ? "environment_error" : outcome }); } catch (error) { failures.push(error); }
   if (failures.length) throw new AggregateError(failures, unclean ? "BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use." : "The BillWorld episode did not close. The emulator's cleanup was verified.", { cause: journeyFailure });
   if (journeyFailure) throw journeyFailure;
 }
