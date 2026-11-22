@@ -40,7 +40,7 @@ final class SharedGraceCredentials {
   @Override public String toString() { return "Legacy key"; }
  }
  private record OwnerBinding(String localId, Owner owner) {}
- private record Receipt(String serverId, Key before, Key after) {}
+ private record Receipt(String serverId, Key before, Key after, String confirmedGeneration) {}
 
  private final Context context;
  private final JsonCredentialSlots slots;
@@ -105,7 +105,13 @@ final class SharedGraceCredentials {
   Owner known = matchingOwner(key, receipt, prior);
   boolean renewal = receipt != null && receipt.before() != null;
   if (known != null && (renewal || receipt == null || key.expiresAt() <= System.currentTimeMillis())) return;
-  if (key.expiresAt() <= System.currentTimeMillis()) throw needsVerification();
+  long now = System.currentTimeMillis();
+  Key verification = key;
+  if (key.expiresAt() <= now) {
+   if (!renewal || receipt.after() == null || receipt.after().expiresAt() <= now || !key.equals(receipt.before()) ||
+       receipt.confirmedGeneration() == null || !receipt.confirmedGeneration().equals(saved.generation())) throw needsVerification();
+   verification = receipt.after();
+  }
   var authority = DeviceCustody.legacyCredentials(context, BuildConfig.CLOUD_API_ORIGIN);
   if (receipt != null && !renewal) {
    if (!Objects.equals(key.serverId(), receipt.serverId()) ||
@@ -113,7 +119,7 @@ final class SharedGraceCredentials {
   } else if (renewal && receipt.after() != null && key.equals(receipt.after())) {
    authority.acknowledge(key.serverId(), key.secret());
   }
-  if (!(authority.user(key.secret()) instanceof Answer.Answered<Account> answered)) throw needsVerification();
+  if (!(authority.user(verification.secret()) instanceof Answer.Answered<Account> answered)) throw needsVerification();
   var verified = new Owner(answered.value().userId(), answered.value().organizationId());
   if (prior != null && !prior.owner().equals(verified)) throw needsVerification();
   synchronized (JsonCredentialSlots.LOCK) {
@@ -182,7 +188,7 @@ final class SharedGraceCredentials {
   return switch (value.optString("kind")) {
    case RENEWAL_REQUEST -> {
     requireRegistration(value);
-    yield new Receipt(null, key(value.getString("predecessor")), null);
+    yield new Receipt(null, key(value.getString("predecessor")), null, null);
    }
    case RENEWAL_RECEIPT -> {
     JSONObject proof = value.getJSONObject("proof");
@@ -191,11 +197,12 @@ final class SharedGraceCredentials {
     if (before.localId().equals(after.localId()) || before.secret().equals(after.secret()) ||
         after.expiresAt() <= before.expiresAt() || !Objects.equals(after.serverId(), identifier(proof.getString("credentialId"))) ||
         !after.secret().equals(proof.getString("secret"))) throw needsVerification();
-    yield new Receipt(null, before, after);
+    String confirmedGeneration = Boolean.TRUE.equals(value.opt("confirmed")) ? identifier(value.getString("generation")) : null;
+    yield new Receipt(null, before, after, confirmedGeneration);
    }
    case "" -> {
     requireRegistration(value);
-    yield new Receipt(identifier(value.getString("credentialId")), null, null);
+    yield new Receipt(identifier(value.getString("credentialId")), null, null, null);
    }
    default -> throw needsVerification();
   };
