@@ -15,7 +15,7 @@ import { Machine as Notices } from "../gen/app__notices.effect.vibe"
 import { NoticeHost } from "./notices.vibe"
 import { Digest } from "effect/crypto"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { day, dayOf, instant, midnight, navigation, windowOf } from "./calendarWindow.vibe"
+import { day, dayOf, instant, midnight, navigation, startDay, windowOf } from "./calendarWindow.vibe"
 import { surfaceOwner } from "./managedReads.vibe"
 import { webView } from "./surfacePlugin.ts"
 
@@ -428,9 +428,10 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
 
   effect function turnTo(boxes: readonly CalendarMachine.Shape[], shown: DayToShow) {
     if (!shown.show || (try workspace.get()).device.surface !== "Calendar") return
+    const start = startDay(shown.startAt)
     for (const box of new Set(boxes)) {
-      const report = navigation((try box.get()).window, "SelectDay", dayOf(shown.startAt))
-      if (showsDay(report, shown)) box.send({ type: "navigate", report }, "ViewUser") catch () => undefined
+      const report = navigation((try box.get()).window, "SelectDay", start.day)
+      if (showsDay(report, start, shown)) box.send({ type: "navigate", report }, "ViewUser") catch () => undefined
     }
   }
 
@@ -534,10 +535,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     try turnTo([lead], shown)
     if (shown.show || p.ask.tag !== "AddAsk" || !(try lead.get()).opened || calendarFree(sources)) try Ref.set(earlier, p)
   }))
-  effect function follow(_: Account, box: CalendarMachine.Shape) {
-    return try fork.scoped Stream.runForEach(box.changes, () => Effect.andThen(noticeReminders, turnToAsk))
-  }
-  try fork.scoped followAccounts(Stream.map(registry.changes, ({ accounts }) => accounts), effect (account) => try follow(account, try shelf.calendar(account.id)))
+  try fork.scoped followAccounts(Stream.map(registry.changes, ({ accounts }) => accounts), effect (account) => try fork.scoped Stream.runForEach((try shelf.calendar(account.id)).changes, () => Effect.andThen(noticeReminders, turnToAsk)))
   try fork.scoped Stream.runForEach(Stream.merge(Stream.merge(registry.changes, lead.changes), setup.changes), () => noticeReminders)
   try fork.scoped Stream.runForEach(lead.changes, () => turnToAsk)
 

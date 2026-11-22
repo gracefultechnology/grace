@@ -254,10 +254,10 @@ lemma SourceAtIsASource(calendars: seq<CalendarSource>, key: int)
   }
 }
 
-lemma lawCalendarSelectsTheStartDay_ensures(registry: app__accounts_Accounts, calendars: seq<CalendarSource>, earlier: app__proposal_Pending, pending: app__proposal_Pending, news: CalendarTold, report: app__calendarView_NavigationReport)
-  ensures (lawCalendarSelectsTheStartDay(registry, calendars, earlier, pending, news, report) == true)
+lemma lawCalendarSelectsTheStartDay_ensures(registry: app__accounts_Accounts, calendars: seq<CalendarSource>, earlier: app__proposal_Pending, pending: app__proposal_Pending, news: CalendarTold, report: app__calendarView_NavigationReport, start: StartDay)
+  ensures (lawCalendarSelectsTheStartDay(registry, calendars, earlier, pending, news, report, start) == true)
 {
-  if showsDay(report, askedDay(registry, calendars, earlier, pending)) || showsDay(report, savedDay(registry, calendars, news)) {
+  if showsDay(report, start, askedDay(registry, calendars, earlier, pending)) || showsDay(report, start, savedDay(registry, calendars, news)) {
     assert calendarFree(calendars);
     SourceAtIsASource(calendars, tabletKey);
     assert lead(calendars) in calendars;

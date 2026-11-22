@@ -358,12 +358,14 @@ awaiting her answer and a failed deletion are never discarded for this: while
 one is, Calendar stays where it is, and the question turns it once Calendar is
 free, if Grace is still asking it. The host remembers the last question that
 turned the day, or that Grace asked while Calendar was closed, and only a
-different one turns it again. The host gives one verified report, the one
-Calendar accepts from her when she chooses a day: Week, with the local day
-the appointment starts on chosen, whose week holds its start.
+different one turns it again. The host gives two verified reports: the local
+day the appointment starts on, with its number and hours, and a chosen day in
+Week that selects that same day, so the turn is one Calendar itself would
+accept from her.
 
 ```quint
 type DayToShow = { show: bool, startAt: int }
+type StartDay = { startAt: int, day: int, fromTime: int, untilTime: int, verified: bool }
 pure val stayOnDay: DayToShow = { show: false, startAt: 0 }
 pure def calendarFree(calendars: List[CalendarSource]): bool =
   lead(calendars).view.opened and calendars.every(s => s.view.deletion == V::NoDeletion and not(V::hasEditing(s.view)))
@@ -381,15 +383,18 @@ pure def savedDay(registry: A::Accounts, calendars: List[CalendarSource], news: 
   if (news.news == AddedAppointment and calendarFree(calendars) and showsCalendar(registry, news.key) and saved.phase == C::Saved)
     { show: true, startAt: saved.committed.startAt }
   else stayOnDay
-pure def showsDay(report: V::NavigationReport, day: DayToShow): bool =
-  day.show and report.kind == V::SelectDay and report.verified and report.window.mode == V::WeekView and
-    report.window.anchorDay == report.window.selectedDay and V::validWindow(report.window) and
-    report.window.fromTime <= day.startAt and day.startAt < report.window.untilTime
+pure def showsDay(report: V::NavigationReport, start: StartDay, day: DayToShow): bool =
+  day.show and start.verified and start.startAt == day.startAt and
+    start.fromTime <= day.startAt and day.startAt < start.untilTime and
+    report.kind == V::SelectDay and report.verified and report.window.mode == V::WeekView and
+    report.window.anchorDay == start.day and report.window.selectedDay == start.day and V::validWindow(report.window) and
+    report.window.fromTime <= start.fromTime and start.untilTime <= report.window.untilTime
 pure def lawCalendarSelectsTheStartDay(registry: A::Accounts, calendars: List[CalendarSource], earlier: P::Pending,
-    pending: P::Pending, news: CalendarTold, report: V::NavigationReport): bool =
-  (showsDay(report, askedDay(registry, calendars, earlier, pending)) or showsDay(report, savedDay(registry, calendars, news))) implies
-    (V::canNavigate(lead(calendars).view, report, V::ViewUser) and
-      V::navigate(lead(calendars).view, report, V::ViewUser).window == report.window)
+    pending: P::Pending, news: CalendarTold, report: V::NavigationReport, start: StartDay): bool =
+  val turned = V::navigate(lead(calendars).view, report, V::ViewUser)
+  (showsDay(report, start, askedDay(registry, calendars, earlier, pending)) or showsDay(report, start, savedDay(registry, calendars, news))) implies
+    (V::canNavigate(lead(calendars).view, report, V::ViewUser) and turned.window.selectedDay == start.day and
+      turned.window.fromTime <= start.startAt and start.startAt < turned.window.untilTime)
 pure def lawAnEditIsNeverDiscarded(registry: A::Accounts, calendars: List[CalendarSource], earlier: P::Pending,
     pending: P::Pending, news: CalendarTold): bool =
   calendars.some(s => V::hasEditing(s.view) or s.view.deletion != V::NoDeletion) implies
@@ -587,6 +592,9 @@ pure val reportValues = Set(
   { window: { ...V::emptyWindow, mode: V::MonthView, anchorDay: 4, selectedDay: 4, fromTime: 0, untilTime: 10 }, kind: V::SelectDay, verified: true },
   { window: { ...V::emptyWindow, anchorDay: 7, selectedDay: 7, fromTime: 0, untilTime: 10 }, kind: V::Later, verified: true })
 pure val dayValues = Set(stayOnDay, { show: true, startAt: 4 }, { show: true, startAt: 3 })
+pure val startValues = Set({ startAt: 4, day: 4, fromTime: 2, untilTime: 6, verified: true },
+  { startAt: 4, day: 4, fromTime: 2, untilTime: 6, verified: false },
+  { startAt: 3, day: 5, fromTime: 2, untilTime: 4, verified: true })
 pure val keyValues = Set(-1, 0, 1, 2, 3)
 pure val accountValues = Set(0, 1, 2, 3)
 pure val fromTimeValues = Set(0, 3, 4, 6)
