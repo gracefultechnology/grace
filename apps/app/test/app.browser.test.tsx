@@ -3438,8 +3438,9 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   const home = "https://example.org/";
   const result = home + "results?q=green+tea";
   const frame = await pinnedPage("statements", home, (html) => html.replace(/<body\b[^>]*>[\s\S]*<\/body>/u,
-    '<body><main><h1>Public catalogue</h1></main><form><label>Newsletter email <input type="email"></label><button type="submit">Subscribe</button></form></body>'));
+    '<body><header><form method="get"><input type="text" name="q" role="combobox" placeholder="Search the site"></form></header><main><h1>Public catalogue</h1></main><form><label>Newsletter email <input type="email"></label><button type="submit">Subscribe</button></form></body>'));
   const heading = frame.document.querySelector("h1")!;
+  const searchField = frame.document.querySelector('input[name="q"]')!;
   let url = home;
   let documentId = "initial";
   const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
@@ -3460,6 +3461,7 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
     url = address;
     documentId = address;
     heading.textContent = title;
+    searchField.setAttribute("value", query);
     await native.report("tab-1", url, 100, { pageError: null, securityBlocked: false });
     await tap(button("Resume Grace"));
   };

@@ -17,13 +17,15 @@ export const privateFormRecovery = "Choose Turn off browser reading. Finish the 
 
 type PageElement = LinkObservation["result"]["elements"][number]
 
-function pageField(element: PageElement): GuidedPageField {
+function pageField(element: PageElement, use: GuidedEvidenceUse = "ReadGuidedContent"): GuidedPageField {
   if (element.sensitive) return "PrivatePageField"
   const type = element.type ?? ""
   const search = element.role === "searchbox" || type === "search" ||
     ((type === "" || type === "text") &&
       /^(q|query|search)$/iu.test(element.fieldName ?? "") &&
-      /^search(?:\s+(?:this\s+)?(?:site|website))?$/iu.test(element.label?.trim() ?? ""))
+      (/^search(?:\s+(?:this\s+)?(?:site|website))?$/iu.test(element.label?.trim() ?? "") ||
+        (use === "CheckPublicSearchResult" && element.form != null && element.role === "combobox" &&
+          /^search (?:the |this |entire )?(?:site|website|store)(?: here)?[ .…]*$/iu.test(element.label?.trim() ?? ""))))
   if (search) return "NavigationPageField"
   if (element.tag === "textarea" || element.role === "textbox" ||
       (element.tag !== "input" && element.tag !== "select" && element.edited !== undefined) ||
@@ -61,15 +63,14 @@ export function guidedPageState(observation: LinkObservation | undefined, url: s
   const { blockers, elements } = observation.result
   if (blockers.some((blocker) => blocker.kind === "captcha")) return "PrivateForm"
   if (blockers.some((blocker) => blocker.covers !== "partial")) return "Unavailable"
-  const fields = elements.map(pageField)
-  if (use !== "CheckPublicSearchResult" && ordinaryGuidedPage(true, true, false, fields)) return "Ordinary"
+  if (use !== "CheckPublicSearchResult" && ordinaryGuidedPage(true, true, false, elements.map((element) => pageField(element)))) return "Ordinary"
   if (use === "ReadGuidedContent") return "PrivateForm"
   const address = URL.parse(url)
   if (!address || address.username || address.password ||
       (use === "CheckPublicDocument" && (address.search || address.hash)) ||
       (use === "CheckPublicSearchResult" && address.hash)) return "PrivateForm"
   const witnessed = elements.map((element): GuidedPageField => {
-    const kind = pageField(element)
+    const kind = pageField(element, use)
     if (kind === "NavigationPageField") {
       const textInput = element.role === "searchbox" || (element.tag === "input" && ["search", "text", ""].includes(element.type ?? ""))
       const entered = element.focused !== false || element.edited !== false || (use !== "CheckPublicSearchResult" && element.hasInput !== false)
