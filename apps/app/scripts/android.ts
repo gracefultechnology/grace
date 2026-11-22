@@ -1237,10 +1237,18 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           await page.step({ tap: "Internet" });
           await page.step({ type: origin.origin, into: "Address" });
           await page.step({ press: "Enter" });
-          step = "ask Grace to open the site’s private sign-in";
+          step = "open Ask Grace on the site";
           await page.step({ tap: "Ask Grace" });
-          await page.step({ type: "sign me in to pay my bill", into: "Message to Grace" });
-          await page.step({ tap: "Send" });
+          const request = "sign me in to pay my bill";
+          step = "type the private sign-in request in the focused Grace composer";
+          await page.step({ type: request, into: "Message to Grace" });
+          await page.until(`document.activeElement?.matches('textarea[aria-label="Message to Grace"]') &&
+            document.activeElement.value === ${JSON.stringify(request)} &&
+            [...document.querySelectorAll('button:enabled')].some((button) => button.textContent.trim() === 'Send')`, AbortSignal.timeout(30_000));
+          step = "submit the request and wait for the private sign-in tab";
+          await page.step({ press: "Enter" });
+          await page.until(`document.querySelector('input[aria-label="Private website address"]')?.getClientRects().length > 0 &&
+            !document.querySelector('textarea[aria-label="Message to Grace"]')?.getClientRects().length`, AbortSignal.timeout(30_000));
           step = "open the episode using the private address control";
           await page.step({ type: entry.href, into: "Private website address", replace: true });
           await page.step({ press: "Enter" });
