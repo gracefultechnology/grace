@@ -233,38 +233,25 @@ pure def lawLauncherHomeLeavesOnlyGraceToStepBack(shell: S::Shell, a: A::Assista
 
 ### A task waits while a website's question holds me, and goes on after my answer
 
-Grace's task steps and completions are the workspace's `prepare`, `dispatch`,
-`submitCommitment`, `completeOrdinary`, `confirmGuided`,
-`confirmGuidedNamedPage` and `confirmGuidedMail`, sent as the `Host`. The gate
-`taskMayAdvance` lets one through only when its own workspace guard allows it
-and what websites ask does not hold the person (`holdsThePerson`: a question
-is presented, or a site permission she allowed is waiting for Android), and
-whatever sends Grace's task steps is to ask the gate first. While it holds
-her, the gate lets none of Grace's through, whatever the workspace allows;
-the person's own events are not gated. When she answers a website message
-that was the only thing the page held, the gate gives exactly what the
-workspace allows.
+Grace waits before observing, preparing, dispatching or verifying a task step,
+advancing a reviewed plan, or submitting or completing a commitment. This
+includes a guided calendar write. The Host checks observations and completions.
+The Actuator dispatches operations and submits commitments. The website holds
+the person while its question is presented or an allowed permission is waiting
+for Android. At the time of each step both the website and the step's own
+workspace guard must allow it, including after an asynchronous read.
+
+The person can still answer, stop, or leave. Grace can restore a paused plan
+and keep an acknowledgement from work already sent. Applying that evidence
+to advance the task waits for release and must still match the task. Answering
+the last website message releases the hold. If another question or Android
+decision remains, it continues to hold the person.
 
 ```quint
 pure def taskMayAdvance(r: WR::WebsiteRequests, workspaceAdmits: bool): bool =
   workspaceAdmits and not(WR::holdsThePerson(r))
-pure def lawAHeldTaskDoesNotAdvance(w: WS::Workspace, r: WR::WebsiteRequests, operationRequest: WS::OperationRequest,
-  tokens: WS::OperationTokens, commitmentTokens: WS::CommitmentTokens, completion: WS::GoalCompletion,
-  report: WS::GuidedObservation, pageCheck: WS::GuidedNamedPageCheck, mailCheck: WS::GuidedMailCheck): bool =
-  WR::holdsThePerson(r) implies not(
-    taskMayAdvance(r, WS::canPrepare(w, operationRequest, WS::Host)) or taskMayAdvance(r, WS::canDispatch(w, tokens, WS::Host)) or
-    taskMayAdvance(r, WS::canSubmitCommitment(w, commitmentTokens, WS::Host)) or
-    taskMayAdvance(r, WS::canCompleteOrdinary(w, completion, WS::Host)) or taskMayAdvance(r, WS::canConfirmGuided(w, report, WS::Host)) or
-    taskMayAdvance(r, WS::canConfirmGuidedNamedPage(w, pageCheck, WS::Host)) or
-    taskMayAdvance(r, WS::canConfirmGuidedMail(w, mailCheck, WS::Host)))
-pure val wValues = Set(WS::initial, workspaceOf(S::finishStartup(S::initial, true), A::initial, B::initial))
-pure val operationRequestValues = WS::operationRequestValues
-pure val tokensValues = WS::tokensValues
-pure val commitmentTokensValues = WS::commitmentTokensValues
-pure val completionValues = WS::completionValues
-pure val reportValues = WS::reportValues
-pure val pageCheckValues = WS::pageCheckValues
-pure val mailCheckValues = WS::mailCheckValues
+pure def lawAHeldTaskDoesNotAdvance(r: WR::WebsiteRequests, workspaceAdmits: bool): bool =
+  WR::holdsThePerson(r) implies not(taskMayAdvance(r, workspaceAdmits))
 pure def lawAnsweringHerOnlyQuestionLetsTheTaskGoOn(r: WR::WebsiteRequests, id: int, choice: WR::Choice,
   answeredBy: WR::WebsiteActor, workspaceAdmits: bool): bool =
   WR::canAnswer(r, id, choice, answeredBy) and WR::isMessage(WR::presented(r).ask) and
