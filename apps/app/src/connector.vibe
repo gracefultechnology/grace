@@ -79,6 +79,7 @@ export type CalendarConnection = {
   readonly write: (entry: Calendar, view: CalendarView, dispatch?: GuidedDispatch) => StoreReceipt!NeedsSignIn
   readonly verifySaved: (view: CalendarView, occurrence: string, expected: EntryDetails) => (EntryDetails | undefined)!ConnectorFailure
   readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!NeedsSignIn
+  readonly removeRepetition: (series: Calendar["identity"], occurrence: EntryDetails) => DeletionReceipt!NeedsSignIn
 }
 
 export service Connector {
@@ -468,6 +469,12 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
   })
   const removal = effect (id: string, calendarId: string) =>
     HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
+  const removed = effect (id: string, calendarId: string, absent: DeletionReceipt) =>
+    Effect.as(call(removal(id, calendarId)), { succeeded: true, evidence: `deleted:${id}` }) catch effect (e) => match (e) {
+      when NeedsSignIn: throw e;
+      when ProviderRefused: e.status === 404 ? absent : { succeeded: false, evidence: `refused:${e.status}` };
+      when Unreachable: { succeeded: false, evidence: "" };
+    }
 
 
   effect function stored(entry: Calendar, dispatch: GuidedDispatch | undefined) {
@@ -540,11 +547,11 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     },
     remove: effect ({ calendarId, occurrenceId: id }, scope) => {
       if (scope === "EntireSeries") return { succeeded: false, evidence: "series-unsupported" }
-      return Effect.as(call(removal(id, calendarId)), { succeeded: true, evidence: `deleted:${id}` }) catch effect (e) => match (e) {
-        when NeedsSignIn: throw e;
-        when ProviderRefused: { succeeded: false, evidence: `refused:${e.status}` };
-        when Unreachable: { succeeded: false, evidence: "" };
-      }
+      return try removed(id, calendarId, { succeeded: false, evidence: "refused:404" })
+    },
+    removeRepetition: effect ({ calendarId, occurrenceId: id }, { startAt, allDay, timezone }) => {
+      const instance = `${id}_${allDay ? dateIn(startAt, timezone).replaceAll("-", "") : iso(startAt).replace(/[-:]|\.\d+/g, "")}`
+      return try removed(instance, calendarId, { succeeded: true, evidence: `kept-here:${instance}` })
     }
   }
 }

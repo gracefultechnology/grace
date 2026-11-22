@@ -50,6 +50,7 @@ type Appointment = {
   metadata: { etag: string; iCalUID: string | null; recurringEventId: string | null; createdAt: string | null; updatedAt: string | null }
   recurrence?: readonly string[]
   reminders?: typeof Reminders.Type
+  cancelled?: readonly string[]
 }
 
 schema Turn { said: string; outcome: "streaming" | "completed" | "aborted" }
@@ -920,8 +921,20 @@ effect function store(site: string) {
     return try HttpServerResponse.json({ event: shown(moved, moved.timezone ?? "UTC") }, { headers: { etag } })
   }
 
+  effect function cancelRepetition(fixed: Slug | undefined, query: typeof RemovalQuery.Type, instance: string, seriesId: string, stamp: string) {
+    const { key, box: found } = try connection(fixed, query.grantId)
+    const series = found.calendar.find((e) => e.externalId === seriesId && e.calendarId === (query.calendarId?.trim() || "primary"))
+    const at = Date.parse(stamp.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"))
+    const from = series === undefined ? Number.NaN : Date.parse(series.startAt)
+    if (series?.recurrence === undefined || !(at >= from) || (at - from) % (24 * 60 * 60 * 1000) !== 0) throw new Missing()
+    try changeBox(key, found.grantId, (b) => ({ ...b, calendar: b.calendar.map((e) => e.externalId === series.externalId && e.calendarId === series.calendarId ? { ...e, cancelled: [...e.cancelled ?? [], instance] } : e) }))
+    return try HttpServerResponse.json({ ok: true })
+  }
+
   effect function removeAppointment(fixed?: Slug) {
     const query = try HttpServerRequest.schemaSearchParams(RemovalQuery)
+    const repetition = /^(.+)_(\d{8}T\d{6}Z)$/.exec((try HttpRouter.params).eventId ?? "")
+    if (repetition !== null) return try cancelRepetition(fixed, query, repetition[0], repetition[1], repetition[2])
     const { key, grantId, found } = try existing(fixed, query.grantId, query.calendarId)
     try changeBox(key, grantId, (b) => ({ ...b, calendar: b.calendar.filter((e) => e !== found) }))
     return try HttpServerResponse.json({ ok: true })
