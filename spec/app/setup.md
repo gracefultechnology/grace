@@ -946,7 +946,8 @@ pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool
 
 > As a tablet owner, I can save an encrypted copy of my passwords to the
 > cloud deployment my tablet uses, restore them on a replacement tablet
-> with my recovery key, or remove the copy from my cloud account.
+> with my recovery key, or remove the copy from my cloud account while
+> keeping the passwords on my tablet.
 
 ### A backup belongs to the signed-in owner and has its own approval
 
