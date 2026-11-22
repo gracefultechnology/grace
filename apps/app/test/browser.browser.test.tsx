@@ -826,7 +826,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   expect(count("navigate")).toBe(before + 1);
 }, 180_000);
 
-it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mismatched detail", "wrong record kind", "ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "unverified account", "public list"] as const)('Check the latest item across record pages ($0) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (scenario) => {
+it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mismatched detail", "wrong record kind", "ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "public list"] as const)('Check the latest item across record pages ($0) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (scenario) => {
   localStorage.clear();
   const status = scenario === "earlier winner" ? "cancelled" : "completed";
   const requested = `Show the most recent ${status} order`;
@@ -897,7 +897,7 @@ it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mism
     await userEvent.click(show);
     await expect.element(ui.getByRole("status", { name: "Link guide result" }), { timeout: 15_000 }).toBeVisible();
   };
-  if (["ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "unverified account"].includes(scenario)) {
+  if (["ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account"].includes(scenario)) {
     await userEvent.click(show);
     await expect.element(ui.getByRole("status", { name: "Link unavailable" }), { timeout: 15_000 }).toBeVisible();
     expect((await route({ kind: "tapGuide" })).tapped).toBe(false);

@@ -502,7 +502,7 @@ async function googleConsent(context: BrowserCommandContext, endpoint: string, a
   }
 }
 
-type RecordCase = "later winner" | "earlier winner" | "tied latest" | "changed scope" | "mismatched detail" | "wrong record kind" | "ambiguous collection" | "conflicting counts" | "unclear count" | "conflicting account" | "private form" | "unverified account" | "public list";
+type RecordCase = "later winner" | "earlier winner" | "tied latest" | "changed scope" | "mismatched detail" | "wrong record kind" | "ambiguous collection" | "conflicting counts" | "unclear count" | "conflicting account" | "private form" | "newsletter list" | "unverified account" | "public list";
 type RecordAction = { kind: "open"; scenario: RecordCase; decisionUrl: string } | { kind: "close" } | { kind: "requests" } | SiteObservation;
 const recordSites = new WeakMap<Page, { site: Site; decisionUrl: string; chatUrl: string; requests: { count: number; leaked: boolean } }>();
 
@@ -532,18 +532,19 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
         const day = newer && action.scenario !== "tied latest" ? 18 : 17;
         const date = action.scenario === "earlier winner" ? `<time datetime="2026-10-${day}">10/${day}/26</time>` : `2026-10-${day}`;
         const status = action.scenario === "earlier winner" ? "Canceled" : "Complete";
-        const homepage = '<h1>Store</h1><nav><a id="orders" href="/list">My Orders</a></nav>';
+        const newsletter = '<form><label>Newsletter email<input type="email"></label><button type="submit">Subscribe</button></form>';
+        const homepage = '<h1>My Account</h1><nav><a id="orders" href="/list">My Orders</a></nav><section><h2>Recent orders</h2><table><tbody><tr><td><a href="/view/1">View order</a></td></tr></tbody></table></section>';
         const totals = conflictingCount
           ? `<div><p>1 Item</p><section><p>${action.scenario === "unclear count" ? "Showing part of 8" : "Showing 1–1 of 8"}</p></section></div>`
           : `<p>${single ? "1 Item" : `Items ${index} to ${index} of 2 total`}</p>`;
         const content = detail ? `<h1>${action.scenario === "wrong record kind" ? "Invoice" : "Order"} #${label}</h1>` : url.pathname === "/home" ?
           homepage + (action.scenario === "private form" ?
             '<form aria-label="Sign in"><label>Username<input name="username"></label><label>Password<input name="password" type="password"></label><button type="submit">Sign in</button></form>' :
-            '<form><label>Newsletter email<input type="email"></label><button type="submit">Subscribe</button></form>') :
+            newsletter) :
           `<h1>Orders</h1>${totals}<table>
           <thead><tr><th>Order number</th><th>Order date</th><th>Status</th><th>Action</th></tr></thead>
           <tbody><tr><td>private-canary-${index}</td><td>${date}</td><td>${status}</td><td><a id="details" href="/view/${index}">View order</a></td></tr></tbody>
-        </table><nav aria-label="Pages">${single ? "" : later ? '<a id="previous" href="/list">Previous</a>' : '<a id="next" href="/list?page=2">Next</a>'}</nav>`;
+        </table><nav aria-label="Pages">${single ? "" : later ? '<a id="previous" href="/list">Previous</a>' : '<a id="next" href="/list?page=2">Next</a>'}</nav>` + (action.scenario === "newsletter list" ? newsletter : "");
         const decoy = action.scenario === "ambiguous collection" ?
           '<section><p>1 Item</p><table><thead><tr><th>Order number</th><th>Order date</th><th>Status</th></tr></thead><tbody><tr><td>private-canary-decoy</td><td>2026-10-20</td><td>Complete</td></tr></tbody></table></section>' : "";
         const badge = action.scenario === "conflicting account" ? '<span aria-label="Account">#acct-B</span>' : "";

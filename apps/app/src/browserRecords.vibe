@@ -197,11 +197,12 @@ export effect function observeRecordCollection(page: NativePage.Shape, id: PageI
   const elements: readonly Node[] = snapshot?.result.elements ?? []
   const state = guidedPageState(snapshot, address.href)
   if (state === "PrivateForm") {
-    const publicNavigation = guidedPageState(snapshot, address.href, "GuidePublicLinks") === "PublicOnly" &&
-      !elements.some((node): boolean => Boolean(node.sensitive) || node.type === "password" || detailAction(node))
-    return { kind: publicNavigation ? "NoCollection" : "PrivateForm" }
-  }
-  if (state !== "Ordinary" || !snapshot || snapshot.result.domRevision === undefined) return { kind: "Unverifiable" }
+    if (guidedPageState(snapshot, address.href, "GuidePublicLinks") !== "PublicOnly" ||
+        elements.some((node): boolean => Boolean(node.sensitive) || node.type === "password")) return { kind: "PrivateForm" }
+    if (!elements.some(detailAction)) return { kind: "NoCollection" }
+    if (guidedPageState(snapshot, address.href, "CheckPublicDocument") !== "PublicOnly") return { kind: "PrivateForm" }
+  } else if (state !== "Ordinary") return { kind: "Unverifiable" }
+  if (!snapshot || snapshot.result.domRevision === undefined) return { kind: "Unverifiable" }
   const read = effect (selector: string) => {
     if (!(try current)) return undefined
     const reply = page.readRecordText(id, selector) catch () => undefined
@@ -209,8 +210,10 @@ export effect function observeRecordCollection(page: NativePage.Shape, id: PageI
   }
   if (!(try current)) return { kind: "Unverifiable" }
   const heading = page.readPrimaryHeading(id) catch () => undefined
-  if (heading?.url !== address.href || !collectionName(heading.text, collection))
-    return { kind: "NoCollection" }
+  if (heading?.url !== address.href || !heading.text.trim())
+    return { kind: state === "PrivateForm" ? "Unverifiable" : "NoCollection" }
+  if (!collectionName(heading.text, collection)) return { kind: "NoCollection" }
+  if (state === "PrivateForm") return { kind: "Unverifiable" }
   const detailLinks: RecordAnchor[] = elements.flatMap((node): RecordAnchor[] => {
     if (!node.targetSelector || !detailAction(node)) return []
     const href = safeLink(node, address)
