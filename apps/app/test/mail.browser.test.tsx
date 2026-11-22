@@ -441,9 +441,11 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("radio", { name: "Photos" }));
   await click(piano);
   const share = page.getByRole("button", { name: "Share" });
+  const recipients = page.getByRole("heading", { name: "Who is it to?" });
   await expect.element(share).toBeVisible();
   await click(share);
   // spec/app/mailboxes.md, "Writing starts at Who is it to?, and Cc and Bcc show once opened or used"
+  await expect.element(recipients).toBeVisible();
   await click(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Email discarded")).toBeVisible();
   await expect.element(row("Inbox")).toHaveAttribute("aria-current", "page");
@@ -452,7 +454,7 @@ it("See all my email in one place", async () => {
   await click(piano);
   await expect.element(share).toBeVisible();
   await click(share);
-  await expect.element(page.getByRole("heading", { name: "Who is it to?" })).toBeVisible();
+  await expect.element(recipients).toBeVisible();
   await click(page.getByRole("button", { name: "Susan" }));
   await expect.element(subject()).toHaveValue("A photo");
   await expect.element(page.getByRole("img", { name: "Piano.png" })).toBeVisible();
