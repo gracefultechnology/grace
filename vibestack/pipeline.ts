@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { evaluatorIdentity } from "./installed.ts";
 // The spec pipeline and command line, which spec.ts runs. Parsing, review, generation, simulation and proof each have one implementation.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -717,9 +719,9 @@ ${error.message}`);
 }
 
 /** The `spec` command, on `process.argv`. */
-export async function main() {
+export async function main(argv = process.argv.slice(2)) {
   let root = process.cwd();
-  let [command, ...args] = process.argv.slice(2);
+  let [command, ...args] = argv;
   const installing = command === "gen" && args.length === 1 && args[0] === "--install";
   if (installing) [command, ...args] = process.env.GITHUB_ACTIONS === "true" ? ["tasks", "//#gen"] : ["gen", "--if-valid"];
   const takes = (...allowed: string[][]) => allowed.some((a) => a.length === args.length && a.every((x, i) => x === "*" || x === args[i]));
@@ -744,7 +746,7 @@ export async function main() {
       const text = JSON.stringify(await steady(toolchainFingerprint)) + "\n";
       fs.mkdirSync(path.dirname(fingerprint), { recursive: true });
       if (!fs.existsSync(fingerprint) || fs.readFileSync(fingerprint, "utf8") !== text) fs.writeFileSync(fingerprint, text);
-      let env: NodeJS.ProcessEnv = { ...process.env, TURBO_TELEMETRY_DISABLED: "1" };
+      let env: NodeJS.ProcessEnv = { ...process.env, TURBO_TELEMETRY_DISABLED: "1", VIBESTACK_QUINT_EVALUATOR: evaluatorIdentity(root) ?? randomUUID() };
       const credentials = path.join(os.homedir(), ".config", "vibestack", "turbo-cache.json");
       if (env.TURBO_TOKEN === undefined && fs.existsSync(credentials)) {
         const cache = JSON.parse(fs.readFileSync(credentials, "utf8"));
