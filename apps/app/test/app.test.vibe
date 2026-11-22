@@ -371,7 +371,7 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
       const later = [try mail.lookup("operation-2"), try mail.send("operation-2", draft, none), try mail.send("operation-2", draft, none)]
       const copied = try mail.send("operation-3", withBcc, none)
       const unsendable = try mail.send("operation-4", { ...draft, attachments: [camera] }, none)
-      const photo = try mail.send("operation-5", { ...draft, attachments: [camera] }, new Map([["capture", { mimeType: "image/jpeg", data: btoa("garden") }]]))
+      const photo = try mail.send("operation-5", { ...draft, attachments: [camera] }, new Map([["capture", { mimeType: "image/jpeg", data: btoa("\xff\xd8\xff\xe0garden") }]]))
       const withForm = try mail.send("operation-6", { ...reply, attachments: [visitForm] }, none)
       const carried = (try sentMail(cloud, secret)).filter((m) => m.labels.includes("SENT")).map((m) => [m.subject, m.bcc, m.attachments.map((a) => a.filename)])
       const evidence = (s: { readonly evidence: string }) => s.evidence.startsWith("message:")
