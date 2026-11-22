@@ -1,11 +1,10 @@
-// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/calendar.md, "Story: See a reminder and choose what to do"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"; spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/workspace.md, "Guidance is visible only on its current surface and target"
+// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"; spec/app/calendarView.md, "The form opens its Day or its Time list, one at a time"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/calendar.md, "Story: See a reminder and choose what to do"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"; spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/workspace.md, "Guidance is visible only on its current surface and target"
 import { Banner, BannerButton, CalendarApp, type CalendarAppProps, CalendarDeleteDialog, type CalendarEventItem, CalendarGlyph, type HomeEvent } from "@repo/ui";
 import { Effect, Option } from "effect";
-import { useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { Calendar as Entry, EntryDetails, Recurrence } from "../gen/app__calendar.ts";
 import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, overlaps, rowTag, shownReminders, tabletKey, upcoming } from "../gen/app__calendars.ts";
-import { type Event as CalendarEvent, type ViewWindow, selectedOccurrence } from "../gen/app__calendarView.ts";
+import { type Event as CalendarEvent, type FormPicker, type ViewWindow, selectedOccurrence, shownPicker } from "../gen/app__calendarView.ts";
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { adding, CalendarNews, dayOf, editingPlan, horizon, hour, instant, longDate, midnight, minutesOf, navigation, type Opening, openingPlan, relative, say, shownDays, timeLabel } from "./calendar.vibe";
@@ -29,7 +28,9 @@ const dateOf = (n: number) => new Date(midnight(n));
 const short = (n: number, today: number) => (n === today ? "Today" : weekdays[(dateOf(n).getDay() + 6) % 7]);
 const whoWhere = (d: EntryDetails) => (d.participant ? [d.participant, d.location.split(" · ")[0]].filter(Boolean).join(" · ") : d.location);
 const reminderOf = (d: EntryDetails): Reminder => (!d.reminderEnabled ? "No" : d.leadTime >= 24 * hour ? "Day before" : "1 hour before");
-const reminderLine = (d: EntryDetails) => ({ No: "No reminder", "Day before": "Reminder day before", "1 hour before": "Reminder 1 hour before" })[reminderOf(d)];
+const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+const lead = (minutes: number) => minutes === 24 * 60 ? "day" : minutes % (24 * 60) === 0 ? plural(minutes / (24 * 60), "day") : minutes % 60 === 0 ? plural(minutes / 60, "hour") : plural(minutes, "minute");
+const reminderLine = (d: EntryDetails) => (!d.reminderEnabled ? "No reminder" : d.leadTime === 0 ? "Reminder when it starts" : `Reminder ${lead(Math.round(d.leadTime / 60_000))} before`);
 const withKept = (offered: number[], kept: number[]) => [...new Set([...offered, ...kept])].sort((x, y) => x - y);
 const span = (d: EntryDetails) => `${timeLabel(d.startAt)} to ${timeLabel(d.endAt)}`;
 
@@ -236,7 +237,8 @@ function Form({ box, entry, today, browsing, uncertain }: { box: CalendarInstanc
   const [typedWhere, setWhere] = useDraft(d.location, true);
   const title = typedTitle.trim() === d.title ? typedTitle : d.title;
   const where = typedWhere.trim() === d.location ? typedWhere : d.location;
-  const [pick, setPick] = useState<"day" | "time" | null>(null);
+  const pick = shownPicker(box.state);
+  const toggle = (picker: FormPicker) => (opened: boolean) => offer(box, { type: opened ? "showPicker" : "hidePicker", picker })?.();
   const startingAt = (startAt: number) => ({ startAt, endAt: startAt + d.endAt - d.startAt });
   const change = (next: Partial<EntryDetails>) => {
     const details = { ...d, title: title.trim(), location: where.trim(), ...next };
@@ -268,15 +270,15 @@ function Form({ box, entry, today, browsing, uncertain }: { box: CalendarInstanc
         title, onTitleChange: (typed) => { setTitle(typed); change({ title: typed.trim() }); },
         where, onWhereChange: (typed) => { setWhere(typed); change({ location: typed.trim() }); },
         day: {
-          value: longDate(chosenDay), selected: String(chosenDay), open: pick === "day",
-          onOpenChange: (o) => setPick(o ? "day" : null),
+          value: longDate(chosenDay), selected: String(chosenDay), open: pick === "DayPicker",
+          onOpenChange: toggle("DayPicker"),
           choices: days.map((n) => ({ value: String(n), label: relative(n, today) === longDate(n) ? longDate(n) : `${relative(n, today)} · ${say(n, { month: "short", day: "numeric" })}` })),
-          onPick: (n) => { setPick(null); change(startingAt(startOn(Number(n), minutes))); },
+          onPick: (n) => { toggle("DayPicker")(false); change(startingAt(startOn(Number(n), minutes))); },
         },
         time: {
-          value: span(d), selected: String(d.startAt), open: pick === "time", onOpenChange: (o) => setPick(o ? "time" : null),
+          value: span(d), selected: String(d.startAt), open: pick === "TimePicker", onOpenChange: toggle("TimePicker"),
           choices: times,
-          onPick: (at) => { setPick(null); change(startingAt(Number(at))); },
+          onPick: (at) => { toggle("TimePicker")(false); change(startingAt(Number(at))); },
         },
         repeat: { options: Object.values(repeats), value: repeats[d.recurrence], onChange: (v) => change({ recurrence: (Object.keys(repeats) as Recurrence[]).find((r) => repeats[r] === v) ?? "Once" }) },
         remind: {

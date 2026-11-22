@@ -16,6 +16,7 @@ import { graceTurns } from "./graceTurns.vibe"
 import { graceSpeech } from "./graceSpeech.vibe"
 import type { EmbeddedAgent } from "./agentPlugin.ts"
 import { machine as pageLayers } from "../gen/app__surface.effect.vibe"
+import { machine as mailChoices } from "../gen/app__mailboxes.effect.vibe"
 import { machine as websiteRequests } from "../gen/app__websiteRequests.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
@@ -116,7 +117,7 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const kept = Layer.orDie(Layer.provide(Layer.provideMerge(instances, accounts), tabletStorage))
   const records = platform.native ? platform.preferences ?? preferenceRecords : undefined
   const workspaceAndRequests = Layer.provide(websiteTask, Layer.merge(preferenceWorkspace(records), websiteRequests()))
-  const machines = Layer.provideMerge(library, Layer.mergeAll(storage, workspaceAndRequests, pageLayers(), nativePage(plugin), kept, setup(), passwordViews()))
+  const machines = Layer.provideMerge(library, Layer.mergeAll(storage, workspaceAndRequests, pageLayers(), nativePage(plugin), kept, setup(), passwordViews(), mailChoices()))
   const recoverable = Layer.provideMerge(guidedRecovery(platform.native, host.guidedTasks ?? (platform.native ? guidedTaskRecords : undefined)), machines)
   const guidance = Layer.provideMerge(agent, services(cloud))
   const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup))
