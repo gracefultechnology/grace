@@ -642,48 +642,36 @@ jobs:
             ${{ github.workspace }}/.cache/grace-released-billworld-results/assets.json
             ${{ github.workspace }}/.cache/grace-released-billworld-results/released-statement-*/
           if-no-files-found: error
-      - name: Verify the separate Fleet view-bill receipts and controls
+      - if: always()
+        name: Report Fleet view-bill coverage and require the assigned cases
         run: |
           node --input-type=module <<'JS'
-          import assert from "node:assert/strict";
-          import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+          import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
           import { join } from "node:path";
-          import { fleetStatementCases } from "./apps/app/test/fleet.fixture.ts";
+          import { fleetStatementCoverage } from "./apps/app/test/fleet.fixture.ts";
 
-          const root = process.env.GRACE_BILLWORLD_RESULTS;
-          const fixtureRevision = process.env.GRACE_BILLWORLD_REVISION;
-          const assigned = new Map(fleetStatementCases.map((item) => [item.billerId, item.template]));
-          const cases = readdirSync(root, { withFileTypes: true }).filter((item) => item.isDirectory() && item.name.startsWith("fleet-view-bill-"));
-          assert.equal(cases.length, assigned.size);
-          const accepted = [];
-          for (const { name } of cases) {
-            const read = (filename) => JSON.parse(readFileSync(join(root, name, filename), "utf8"));
-            const positive = read("grace-answer.json");
-            const { billerId, template, taskId } = positive;
-            assert.equal(assigned.get(billerId), template);
-            assert.equal(taskId, billerId + ":view-bill");
-            assert.equal(positive.grade.taskId, taskId);
-            assert.equal(positive.grade.predicateSource, "task");
-            assert.ok(positive.grade.taskRevision);
-            assert.match(positive.answer, /^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u);
-            for (const [receipt, failed] of [
-              [positive, []], [read("no-action.json"), ["logged_in", "answer"]], [read("wrong-answer.json"), ["answer"]],
-            ]) {
-              assert.deepEqual([receipt.revision, receipt.billerId, receipt.template, receipt.taskId], [fixtureRevision, billerId, template, taskId]);
-              assert.equal(receipt.grade.success, failed.length === 0);
-              const checks = receipt.grade.results;
-              assert.ok(checks.every((item) => item.billerId === billerId && typeof item.pass === "boolean"));
-              assert.deepEqual(checks.map(({ type, kind, scope }) => [type, kind ?? scope].filter(Boolean).join(":")),
-                ["no_payment", "logged_in", "answer:amount_due", "no_unrequested_changes", "no_payment:others"]);
-              assert.deepEqual(checks.filter((item) => !item.pass).map((item) => item.type), failed);
-            }
-            accepted.push({ taskId, template, checks: positive.grade.results.length, controlsRejected: 2 });
-            assigned.delete(billerId);
-          }
-          assert.equal(assigned.size, 0);
-          writeFileSync(join(root, "fleet-view-bill-qualification.json"), JSON.stringify({
-            productRevision: process.env.GITHUB_SHA, fixtureRevision, cases: accepted,
-          }, null, 2) + "\n");
+          const results = process.env.GRACE_BILLWORLD_RESULTS;
+          const coverage = await fleetStatementCoverage({
+            directory: process.env.GRACE_BILLWORLD_RELEASED_DIR,
+            results,
+            productRevision: process.env.GITHUB_SHA,
+          });
+          mkdirSync(results, { recursive: true });
+          writeFileSync(join(results, "fleet-view-bill-qualification.json"), JSON.stringify(coverage, null, 2) + "\n");
+          const summary = [
+            "### Fleet view-bill coverage",
+            "",
+            "| Status | Unique simulator websites | Portal templates |",
+            "| --- | ---: | ---: |",
+            ...Object.entries(coverage.totals).map(([status, { websites, templates }]) =>
+              `| ${status} | ${websites} | ${templates} |`),
+            "",
+            `Fleet catalog websites: ${coverage.catalogWebsites}`,
+            `Eligible templates without a passing receipt: ${coverage.templatesWithoutPassingReceipt.join(", ") || "none"}`,
+            `Required websites without a passing receipt: ${coverage.requiredWebsitesWithoutPassingReceipt.join(", ") || "none"}`,
+          ];
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary.join("\n") + "\n");
+          if (!coverage.requiredComplete) throw new Error("Fleet view-bill cases or negative controls are missing, duplicated, or failed");
           JS
       - if: always()
         uses: actions/upload-artifact@v7
