@@ -15,7 +15,7 @@ import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { collectionLabels, comparableStatus, observeRecordCollection, sameCollectionAddress, sameCollectionPage, sameRecordAccount, verifyRecordDetail, type CollectionObservation, type ObservedRecord, type RecordCollection, type RecordLink, type RecordSiteScope } from "./browserRecords.vibe"
 import { withhold } from "./private.ts"
 
-export type BrowserGuidance = { kind: "Link"; words: string } | { kind: "Menu" | "Unavailable"; words: string; alternateHref?: string; tryAnotherMenu?: boolean }
+export type BrowserGuidance = { kind: "Link" | "RecordUnavailable"; words: string } | { kind: "Menu" | "Unavailable"; words: string; alternateHref?: string; tryAnotherMenu?: boolean }
 
 export service BrowserGuide {
   point(onMenu: (guidance: BrowserGuidance) => void): BrowserGuidance!!
@@ -102,6 +102,9 @@ function directRecordVisit(visit: PendingRecordVisit, current: RecordContext): b
 }
 
 const insufficientRecords = unavailableBecause("I can’t verify which matching record is newest on this list.")
+function recordUnavailable(words: string): BrowserGuidance { return { kind: "RecordUnavailable", words } }
+const recordCoverage = recordUnavailable("I can’t verify that I’ve checked the whole list. Start on the first page, or review all pages on the website yourself.")
+const recordDates = recordUnavailable("I can’t tell which matching record is newest from the dates shown. Open the matching records and compare their full dates on the website.")
 const compareAllRecords = "Look for the next page of records. Ask me to show the link again there."
 const compareEarlierRecords = "Go back one page in this list. Ask me to show the link again there."
 
@@ -276,7 +279,6 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
     }
     const collection: CollectionObservation = try observeRecordCollection(page, start.id, start.url, start.outcome.collection, stillHere())
     if (!(try stillHere())) return changed
-    if (collection.kind === "PrivateForm") return privateForm
     if (collection.kind === "NoCollection") {
       scan = undefined
       const observed: LinkObservation | undefined = page.observeLinks(start.id) catch () => undefined
@@ -297,13 +299,16 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       if (!link || !(try showRecord({ documentId: fresh.documentId, snapshotId: fresh.result.snapshotId }, link, "Open the record history"))) return changed
       return { kind: "Link" as const, words: "Open the highlighted section, then ask me again." }
     }
-    if (collection.kind === "NeedsScope") {
-      scan = undefined
-      return unavailableBecause("I can’t verify which website account these records belong to. Open your account’s record list or a clearly marked public list, then ask again.")
-    }
     if (collection.kind !== "Collection") {
       scan = undefined
-      return insufficientRecords
+      switch (collection.kind) {
+        case "PrivateForm": return recordUnavailable(privateFormRecovery)
+        case "PublicOnly": return recordUnavailable("I can only help with public links on this page. Check the records on the website yourself.")
+        case "NeedsScope": return recordUnavailable("I can’t verify which website account these records belong to. Confirm the account on the website and check its records there.")
+        case "NeedsCoverage": return recordCoverage
+        case "NeedsDate": return recordDates
+        case "Unverifiable": return insufficientRecords
+      }
     }
     const current: RecordCollection = collection.page
     const walking: RecordScan | undefined = scan && directRecordVisit(scan.visit, start) && start.url.href === scan.visit.href ? scan : undefined
@@ -327,20 +332,22 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       records = walking.records
     } else {
       if (walking ? current.first !== walking.last + 1 || !current.previous ||
-          !sameCollectionPage(new URL(current.previous.href), walking.visit.from.url) : current.first !== 1) return insufficientRecords
+          !sameCollectionPage(new URL(current.previous.href), walking.visit.from.url) : current.first !== 1) return recordCoverage
       records = walking ? [...walking.records, ...records] : records
-      if (new Set(records.map((record) => record.identity)).size !== records.length) return insufficientRecords
+      if (new Set(records.map((record) => record.identity)).size !== records.length) return recordCoverage
       if (current.next) {
         if (!(try showRecord(current, current.next, "Next page"))) return changed
         scan = { visit: { from: start, href: current.next.href }, first: current.first, last: current.last,
           total: current.total, records, account: current.account }
         return { kind: "Link" as const, words: compareAllRecords }
       }
-      if (records.length !== current.total) return insufficientRecords
+      if (records.length !== current.total) return recordCoverage
     }
     const matching = records.filter((record) => record.status === comparableStatus(start.outcome.status))
     const chosen = walking?.selected ?? matching[uniqueLatestRecordIndex(matching.map((record) => record.date))]
-    if (!chosen) return insufficientRecords
+    if (!chosen) return matching.length === 0
+      ? recordUnavailable("I didn’t find that status in the list. Check the website for any filters or archived records.")
+      : recordDates
     const onPage = current.records.find((record) => record.identity === chosen.identity)
     if (!onPage) {
       if (!current.previous || !(try showRecord(current, current.previous, "Previous page"))) return insufficientRecords

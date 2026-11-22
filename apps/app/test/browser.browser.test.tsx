@@ -350,6 +350,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const menuGuidance = page.getByRole("status", { name: "Open submenu guidance" });
     const linkGuidance = page.getByRole("status", { name: "Link guide result" });
     const guidanceFailure = page.getByRole("status", { name: "Link unavailable" });
+    const recordRefusal = page.getByRole("status", { name: "Record check unavailable" });
     const words = (label: string) => (label.toLowerCase().replace(/[’']s\b/gu, "").match(/[\p{L}\p{N}]+/gu) ?? [])
       .map(word => word === "men" ? "man" : word === "women" ? "woman" : word.replace(/s$/u, ""));
     const namedWords = new Set(words(named?.subject ?? ""));
@@ -473,12 +474,13 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
           lastInstruction = instruction;
         }
       }
-      if (record) await expect.element(linkGuidance.or(guidanceFailure).first(), { timeout: 45_000 }).toBeVisible();
-      if (record && guidanceFailure.query() !== null) {
-        const instruction = guidanceFailure.element().textContent;
-        if (!exploratory || requiredStep !== "ReadLatestRecord" || instruction !== "I can’t verify which matching record is newest on this list.")
-          throw new Error("Record guidance could not verify the next link");
-        await expect.element(guidanceFailure).toBeVisible();
+      if (record) await expect.element(linkGuidance.or(guidanceFailure).or(recordRefusal).first(), { timeout: 45_000 }).toBeVisible();
+      if (record && guidanceFailure.query() !== null) throw new Error("Record guidance could not verify the next link");
+      if (record && recordRefusal.query() !== null) {
+        if (!exploratory || requiredStep !== "ReadLatestRecord") throw new Error("Record guidance stopped at an unverified collection");
+        const instruction = recordRefusal.element().textContent;
+        const { ringAvailable } = await transport({ kind: "inspectGuide" });
+        expect(ringAvailable).toBe(false);
         const action = Schema.decodeUnknownSync(SelectorRead)(await transport({
           kind: "read", selector: "#my-orders-table tbody tr td.actions a.view",
         }));
@@ -492,8 +494,8 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         expect(recordSelection.tag).toBe("NoGuidedRecordSelection");
         expect(receipts).toHaveLength(0);
         expect(finished.query()).toBeNull();
-        outcome.recordRefusal = { documentId: current.documentId, instruction, visibleAction: action.text.trim(),
-          selection: recordSelection.tag, receiptCount: receipts.length };
+        outcome.recordRefusal = { kind: "record-check-unavailable", documentId: current.documentId, instruction,
+          visibleAction: action.text.trim(), ringAvailable, selection: recordSelection.tag, receiptCount: receipts.length };
         outcome.miss = "insufficient-record-evidence";
         return;
       }
@@ -848,7 +850,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   expect(count("navigate")).toBe(before + 1);
 }, 180_000);
 
-it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mismatched detail", "wrong record kind", "ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "public list"] as const)('Check the latest item across record pages ($0) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (scenario) => {
+it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mismatched detail", "wrong record kind", "ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "short dates", "public list"] as const)('Check the latest item across record pages ($0) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (scenario) => {
   localStorage.clear();
   const status = scenario === "earlier winner" ? "cancelled" : "completed";
   const requested = `Show the most recent ${status} order`;
@@ -919,11 +921,11 @@ it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mism
     await userEvent.click(show);
     await expect.element(ui.getByRole("status", { name: "Link guide result" }), { timeout: 15_000 }).toBeVisible();
   };
-  if (["ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account"].includes(scenario)) {
+  if (["ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "short dates"].includes(scenario)) {
     await userEvent.click(show);
-    await expect.element(ui.getByRole("status", { name: "Link unavailable" }), { timeout: 15_000 }).toBeVisible();
-    expect((await route({ kind: "tapGuide" })).tapped).toBe(false);
-    expect(workspace().plan.receipts).toHaveLength(0);
+    await expect.element(ui.getByRole("status", { name: scenario === "ambiguous collection" ? "Link unavailable" : "Record check unavailable" }), { timeout: 15_000 }).toBeVisible();
+    expect(await route({ kind: "inspectGuide" })).toEqual({ ringAvailable: false });
+    expect(workspace().plan).toMatchObject({ recordSelection: { tag: "NoGuidedRecordSelection" }, receipts: [] });
     expect(await route({ kind: "requests" })).toEqual({ count: 0, leaked: false });
     return;
   }
@@ -946,9 +948,9 @@ it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mism
   expect(workspace().plan.receipts).toHaveLength(0);
   await userEvent.click(show);
   if (scenario === "tied latest" || scenario === "changed scope") {
-    await expect.element(ui.getByRole("status", { name: "Link unavailable" }), { timeout: 15_000 }).toBeVisible();
-    expect((await route({ kind: "tapGuide" })).tapped).toBe(false);
-    expect(workspace().plan.receipts).toHaveLength(0);
+    await expect.element(ui.getByRole("status", { name: scenario === "changed scope" ? "Link unavailable" : "Record check unavailable" }), { timeout: 15_000 }).toBeVisible();
+    expect(await route({ kind: "inspectGuide" })).toEqual({ ringAvailable: false });
+    expect(workspace().plan).toMatchObject({ recordSelection: { tag: "NoGuidedRecordSelection" }, receipts: [] });
   } else {
     await expect.element(ui.getByRole("status", { name: "Link guide result" }), { timeout: 15_000 }).toBeVisible();
     if (scenario === "earlier winner") {

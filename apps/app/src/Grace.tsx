@@ -285,7 +285,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               </AnswerChips>}
             </section>
           )}
-          {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
+          {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : feedback.result.kind === "RecordUnavailable" ? "Record check unavailable" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
           {failed && <GraceBubble role="status" aria-label={details?.surface === "Browser" ? "Page check result" : "Task check result"}>{failed}</GraceBubble>}
           {localCommands && guide.mic === "GuideMicUnavailable" && <PageText role="status">Cloud speech is unavailable. You can type a Passwords command.</PageText>}
           {localCommands && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that Passwords command. Try typing it.</PageText>}

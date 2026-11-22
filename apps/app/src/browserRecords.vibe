@@ -16,7 +16,7 @@ export type RecordCollection = RecordRange & {
   account: RecordSiteScope; next: RecordLink | undefined; previous: RecordLink | undefined
 }
 export type CollectionObservation =
-  | { kind: "NoCollection" | "Unverifiable" | "PrivateForm" | "NeedsScope" }
+  | { kind: "NoCollection" | "Unverifiable" | "PrivateForm" | "PublicOnly" | "NeedsScope" | "NeedsCoverage" | "NeedsDate" }
   | { kind: "Collection"; page: RecordCollection }
 
 const main = ':is(main,[role="main"])'
@@ -213,7 +213,7 @@ export effect function observeRecordCollection(page: NativePage.Shape, id: PageI
   if (heading?.url !== address.href || !heading.text.trim())
     return { kind: state === "PrivateForm" ? "Unverifiable" : "NoCollection" }
   if (!collectionName(heading.text, collection)) return { kind: "NoCollection" }
-  if (state === "PrivateForm") return { kind: "Unverifiable" }
+  if (state === "PrivateForm") return { kind: "PublicOnly" }
   const detailLinks: RecordAnchor[] = elements.flatMap((node): RecordAnchor[] => {
     if (!node.targetSelector || !detailAction(node)) return []
     const href = safeLink(node, address)
@@ -249,11 +249,11 @@ export effect function observeRecordCollection(page: NativePage.Shape, id: PageI
   if (indices.some((index) => index === undefined))
     return { kind: "Unverifiable" }
   const range = try collectionRange(page, id, address, current, scope, table)
-  if (!range) return { kind: "Unverifiable" }
+  if (!range) return { kind: "NeedsCoverage" }
   const account = try accountOn(page, id, address, current)
   if (account.kind !== "Bound" && account.kind !== "Public") return { kind: "NeedsScope" }
   const count = range.last - range.first + 1
-  if (count !== anchors.length || new Set(anchors.map((link) => link.href)).size !== count) return { kind: "Unverifiable" }
+  if (count !== anchors.length || new Set(anchors.map((link) => link.href)).size !== count) return { kind: "NeedsCoverage" }
   const grid = `${table}:has(> tbody > tr:nth-child(${count})):not(:has(> tbody > tr:nth-child(${count + 1})))`
   const monthFirst = (try read(`html:lang(en-US) ${grid} > thead`)) !== undefined
   const records: ObservedRecord[] = []
@@ -274,8 +274,9 @@ export effect function observeRecordCollection(page: NativePage.Shape, id: PageI
       if (dates.length === 1) date = dates[0]
     }
     const status = comparableStatus(values[2] ?? "")
-    if (recordId === undefined || date === undefined || !status || status.length > 48 || identitiesSeen.has(recordId))
-      return { kind: "Unverifiable" }
+    if (recordId === undefined || !status || status.length > 48) return { kind: "Unverifiable" }
+    if (identitiesSeen.has(recordId)) return { kind: "NeedsCoverage" }
+    if (date === undefined) return { kind: "NeedsDate" }
     identitiesSeen.add(recordId)
     records.push({ identity: recordId, date, status, link: { id: nodeId, href } })
   }
@@ -292,7 +293,7 @@ export effect function observeRecordCollection(page: NativePage.Shape, id: PageI
   }
   const forward = uniquePageLink(/^(?:next|next page|page next)$/u)
   const back = uniquePageLink(/^(?:previous|previous page|page previous)$/u)
-  if (forward.length !== (range.last < range.total ? 1 : 0) || back.length !== (range.first > 1 ? 1 : 0)) return { kind: "Unverifiable" }
+  if (forward.length !== (range.last < range.total ? 1 : 0) || back.length !== (range.first > 1 ? 1 : 0)) return { kind: "NeedsCoverage" }
   if (!(try current)) return { kind: "Unverifiable" }
   const latest: LinkObservation | undefined = page.observeLinks(id) catch () => undefined
   if (!latest || latest.documentId !== snapshot.documentId || latest.result.domRevision !== snapshot.result.domRevision ||

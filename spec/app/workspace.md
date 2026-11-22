@@ -1635,7 +1635,10 @@ Grace binds the unique latest match and the fresh collection to the active
 step. The person follows the highlight, then chooses Resume. Only that
 direct visit and its single pause and resume can carry the selection forward.
 Grace checks the new document’s address and independently visible identity.
-A regular browser check cannot confirm this step.
+A regular browser check cannot confirm this step. When the website prevents
+record reading or leaves the account, dates or completeness unverified, Grace
+explains the limitation and gives the person a way to check on the website.
+The step remains unfinished.
 
 The source and detail evidence stays local, including the link, dates and
 provider identifiers. The reviewed checkpoint retains the collection and
