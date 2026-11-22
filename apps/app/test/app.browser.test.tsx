@@ -1599,7 +1599,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         if (!signedIn || !connectorConfigured) return reply({}, 403);
         if (options?.method === "POST") {
           const expected = { request: tabletRequest, grant, accountId: person.id, stamp: consentStamp };
-          if (options.body !== JSON.stringify(expected)) return reply({}, 403);
+          expect(JSON.parse(String(options.body))).toEqual(expected);
           tabletApproved = true;
           return reply({ approved: true });
         }
