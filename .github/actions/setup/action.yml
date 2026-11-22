@@ -155,7 +155,7 @@ runs:
         PUBLISH_GEN_SEED: ${{ inputs.verification == 'true' && steps.gen-seed.outputs.prefix != '' }}
       run: |
         if [[ $PUBLISH_GEN_SEED == true ]]; then export TURBO_RUN_SUMMARY=true; fi
-        pnpm install --frozen-lockfile
+        pnpm install --frozen-lockfile --package-import-method=clone-or-copy
     - id: publish-gen-seed
       if: inputs.verification == 'true' && steps.gen-seed.outputs.prefix != ''
       continue-on-error: true
