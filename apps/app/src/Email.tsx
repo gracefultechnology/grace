@@ -2,6 +2,7 @@
 import { BrowserDialog, BrowserDialogText, Button, type Guide, type GuidePointing, type HomeEmailCardProps, type HomeMail, MailApp, type MailContact, type MailFolder, MailLink, type MailMessageTarget, MailMessageView, type MailPhoto, type MailSaveStatus, MailSignInBanner, type MailSummary, MailSyncingRow, PdfViewer, PhotoViewer, Toast } from "@repo/ui";
 import { Exit } from "effect";
 import { type ReactNode, Suspense, useState } from "react";
+import { useMachine as useMailChoices } from "../gen/app__mailboxes.react.ts";
 import type { Accounts } from "../gen/app__accounts.ts";
 import { canReplyToMessage, emptyContent, enabled, type Event as MailEvent, mayExportAttachments, messageRecord, photoAssets, readable, showsScamWarning } from "../gen/app__email.ts";
 import type { Folder, MessageChange } from "../gen/app__emailItem.ts";
@@ -138,9 +139,9 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const files = useFiles();
   const mail = useMail();
   const [picking, setPicking] = useState<Picking | null>(null);
-  const [outboxChosen, setOutboxChosen] = useState(false);
+  const { state: choices, send: tell } = useMailChoices(runtime);
   const sources = sourcesOf(boxes);
-  if (!workspace) return null;
+  if (!workspace || !choices) return null;
   const now = new Date();
   const online = workspace.device.connectivity === "Online";
   const fire = (event: WorkspaceEvent) => (can(event) ? () => void send(event) : undefined);
@@ -232,7 +233,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const folder: Folder = lead?.folder ?? "InboxFolder";
   const rows = accountRows(registry, sources);
   const waitingCount = outboxCount(registry, sources);
-  const outbox = showsOutbox(registry, sources, outboxChosen);
+  const outbox = showsOutbox(registry, sources, choices);
   const untitled = (subject: string | undefined) => subject === "" ? "(no subject)" : subject ?? "";
   const waiting: MailSummary[] = outboxRows(registry, sources).map((r) => {
     const at = queuedAt(r.queued.operationId);
@@ -288,12 +289,12 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
       onQueryChange={(query) => shown.forEach((b) => replace(b, search(query)))}
       onRetry={failed.some((b) => b.can(search(b.state.query))) ? () => failed.forEach((b) => offer(b, search(b.state.query))?.()) : undefined}
       onSelectFolder={(chosen) => {
-        setOutboxChosen(chosen === "outbox");
+        void tell({ type: chosen === "outbox" ? "chooseOutbox" : "chooseFolderList" });
         if (chosen === "outbox") return;
         if (registry.inboxFilter !== 0) filter(0);
         show(folders[chosen]);
       }}
-      onAccount={(id) => { setOutboxChosen(false); filter(id); show("InboxFolder"); }}
+      onAccount={(id) => { void tell({ type: "chooseFolderList" }); filter(id); show("InboxFolder"); }}
       onOpen={(id) => {
         const [owner, ...rest] = id.split("/");
         const box = shown.find((b) => b.id === Number(owner));

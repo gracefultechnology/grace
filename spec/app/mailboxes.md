@@ -6,10 +6,12 @@ count, each email tagged with where it came from, Outbox, a banner for an
 account that needs her to sign in again, a "Getting your … email…" row while
 a new account fills, and a From row with a "Send from" menu in the composer.
 This library derives all of that from the [email accounts](./accounts.md)
-registry and one [mailbox](./email.md) per account. It holds no state: what
+registry and one [mailbox](./email.md) per account. It holds no mail: what
 it shows is computed from the registry and the mailboxes, so the two never
 disagree, and every mailbox keeps its own fences (generation, send fence,
-retired drafts) unchanged.
+retired drafts) unchanged. Its state, the mail choices, is only what Email
+shows across the accounts: whether she chose Outbox. It is kept in memory
+while the tablet is on, and Grace is told it.
 
 A `MailSource` is one account's number in the registry and that account's
 mailbox, as the shell keeps them. An account shows its mail only while it is
@@ -223,19 +225,24 @@ pure def lawWaitingEmailIsCounted(sources: List[MailSource], account: int): bool
 Outbox is not a provider’s folder: choosing it shows the Outbox rows instead
 of a folder’s. Once the provider confirms the last waiting email was sent,
 the list shows the folder the mailboxes have chosen again and the Outbox row
-disappears (the prototype leaves an empty Outbox list on screen instead). That
-she chose Outbox is the screen’s own choice, like which tab is open; what it
-shows is decided here.
+disappears (the prototype leaves an empty Outbox list on screen instead). The
+mail choices keep that she chose Outbox until she chooses a folder or an
+account’s inbox, so an email that waits again later shows in Outbox once
+more; what it shows is decided here.
 
 ```quint
-pure def showsOutbox(registry: A::Accounts, sources: List[MailSource], outboxChosen: bool): bool =
-  outboxChosen and outboxCount(registry, sources) > 0
+type MailChoices = { outboxChosen: bool }
+pure val initial: MailChoices = { outboxChosen: false }
+pure def chooseOutbox(choices: MailChoices): MailChoices = { ...choices, outboxChosen: true }
+pure def chooseFolderList(choices: MailChoices): MailChoices = { ...choices, outboxChosen: false }
+pure def showsOutbox(registry: A::Accounts, sources: List[MailSource], choices: MailChoices): bool =
+  choices.outboxChosen and outboxCount(registry, sources) > 0
 pure def sentEverywhere(sources: List[MailSource], account: int, operationId: str): List[MailSource] =
   sources.listMap(s => if (s.account == account)
     { ...s, mailbox: E::queuedResult(s.mailbox, operationId, E::Sent, "provider", true, E::MailConnector) } else s)
 pure def lawLastSentEmailLeavesOutbox(registry: A::Accounts, sources: List[MailSource], account: int, operationId: str): bool =
   outboxRows(registry, sources).every(r => r.account == account and r.queued.operationId == operationId) implies
-    not(showsOutbox(registry, sentEverywhere(sources, account, operationId), true))
+    not(showsOutbox(registry, sentEverywhere(sources, account, operationId), chooseOutbox(initial)))
 ```
 
 ### Each account’s banner shows its own state, and offline is not a broken account
@@ -420,13 +427,13 @@ type DraftMove = MovedDraft({ emptied: E::Mailbox, opened: E::Mailbox }) | Draft
 pure def sameContent(one: E::DraftContent, other: E::DraftContent): bool =
   one.to == other.to and one.subject == other.subject and one.body == other.body and
   one.cc.subseteq(other.cc) and other.cc.subseteq(one.cc) and one.bcc.subseteq(other.bcc) and other.bcc.subseteq(one.bcc)
-pure def canMoveDraft(drafting: E::Mailbox, chosen: E::Mailbox): bool =
+pure def draftMovable(drafting: E::Mailbox, chosen: E::Mailbox): bool =
   drafting.composeVisible and drafting.draftId == "" and F::validCatalog(drafting.draftAttachments) and
   E::canDiscardDraft(drafting, true, E::MailUser) and E::canStartDraft(chosen, false, E::MailUser) and
   chosen.owner == drafting.owner and chosen.account != drafting.account and sendsFrom(chosen)
 pure def moveDraft(drafting: E::Mailbox, chosen: E::Mailbox): DraftMove =
   val written = E::editDraft(E::startDraft(chosen, false, E::MailUser), drafting.draft, E::MailUser)
-  if (not(canMoveDraft(drafting, chosen))) DraftStays
+  if (not(draftMovable(drafting, chosen))) DraftStays
   else MovedDraft({ emptied: E::discardDraft(drafting, true, E::MailUser),
     opened: drafting.draftAttachments.foldl(written, (m, f) => E::attachAsset(m, m.owner, f, m.revision, true, E::MailHost)) })
 pure def lawMovedDraftKeepsContent(drafting: E::Mailbox, chosen: E::Mailbox): bool =

@@ -6,7 +6,7 @@ import { Effect, Exit } from "effect";
 import { Suspense, use, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import { type DraftContent, emptyContent, enabled, type Event as MailEvent, type Mailbox, type SendStatus } from "../gen/app__email.ts";
-import { canMoveDraft, contactAccounts, fromChoices, type MailSource, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
+import { draftMovable, contactAccounts, fromChoices, type MailSource, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import type { Contact } from "./connector.vibe";
 import { Library, type SavedPhoto } from "./files.vibe";
 import { recipientsOf, recipientsValid, sendsWith } from "./mail.vibe";
@@ -135,7 +135,7 @@ export function EmailCompose({ registry, boxes, box, picking: chosen, onPicking,
   const m = box.state;
   const text = (field: Field) => typed[field] ?? m.draft[field];
   const write = (field: Field, value: string) => edit(box, { ...m.draft, subject: text("subject"), body: text("body"), [field]: value }, field, value);
-  const choices = fromChoices(registry, sources).filter((a) => a.id === box.id || canMoveDraft(m, sourceOf(sources, a.id).mailbox));
+  const choices = fromChoices(registry, sources).filter((a) => a.id === box.id || draftMovable(m, sourceOf(sources, a.id).mailbox));
   const keep: MailEvent = { type: "preserveDraft", draftId: m.draftId };
   const throwAway: MailEvent = { type: "discardDraft", confirmed: true };
   const undeleted = mail.undeleted.has(box.id);
