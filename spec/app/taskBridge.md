@@ -479,34 +479,24 @@ pure def lawEndingTheFinishedRunKeepsItsReceipt(view: TaskView): bool =
   joined(view) and view.preparation.phase == P::HandedOff and finishedWithReceipt(view.workspace)
     implies (joined(ended) and taskStatus(ended) == taskStatus(view))
 
-pure def viewTokens(w: W::Workspace): W::CommitmentTokens =
-  { deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision, taskVersion: w.assistant.workVersion,
-    revision: w.commitment.revision, attempt: w.commitment.attempt }
-
-pure val formForView = {
-  val begun = P::begin(P::initial, CM::exampleKey, "source", T::Person)
-  val signed = P::inspectAccess(begun, { key: begun.key, version: begun.version, access: P::SignedIn }, T::Host)
-  val facts = P::readFacts(signed, { key: signed.key, version: signed.version, evidence: "source", facts: K::sampleBillFacts }, T::Host)
-  P::choose(P::confirmFacts(facts, T::Person), CM::exampleTerms, T::Person)
-}
 pure val guardedViewValues = wValues.filter(w => w.commitment.stage == CM::Draft and W::currentCommitmentContext(w)).map(w => {
-  val form = P::verifyForm(formForView, { ...CM::exampleReview, revision: formForView.version }, T::Host)
+  val form = P::verifyForm(sampleChosenPreparation, { ...CM::exampleReview, revision: sampleChosenPreparation.version }, T::Host)
   val handed = P::handOff(form, T::Actuator)
-  val transfer = { handoff: handed.out.nth(0), captured: viewTokens(w) }
+  val transfer = { handoff: handed.out.nth(0), captured: AC::sampleCommitmentTokens(w) }
   val converted = convertPreparedReview(handed.state, w, transfer, W::Host)
   match converted {
     | ReviewDeclined => { preparation: handed.state, workspace: w, progress: NoLinkedAttempt }
     | ReviewConverted(delivered) => {
       val reviewed = W::reviewCommitment(w, delivered.report, W::Host)
-      val readBack = W::readBackCommitment(reviewed, viewTokens(reviewed), W::Host)
-      val guarded = W::journalCommitment(readBack, viewTokens(readBack), true, W::Store)
+      val readBack = W::readBackCommitment(reviewed, AC::sampleCommitmentTokens(reviewed), W::Host)
+      val guarded = W::journalCommitment(readBack, AC::sampleCommitmentTokens(readBack), true, W::Store)
       { preparation: handed.state, workspace: guarded,
         progress: journaledTaskAttempt(handed.state, guarded, { task: reviewed.commitmentTask, transfer: transfer }) }
     }
   }
 })
 pure val checkingViewValues = guardedViewValues.map(v =>
-  { ...v, workspace: W::observeCommitmentTap(v.workspace, viewTokens(v.workspace), W::Host) })
+  { ...v, workspace: W::observeCommitmentTap(v.workspace, AC::sampleCommitmentTokens(v.workspace), W::Host) })
 pure def outcomeView(view: TaskView, result: CM::Outcome): TaskView =
   val w = view.workspace
   val report = { ...CM::exampleOutcome, key: w.commitment.key, revision: w.commitment.revision,
@@ -522,7 +512,7 @@ pure val endedViewValues = savedViewValues.map(v => { ...v, progress: progressAt
 pure val viewValues = guardedViewValues.union(checkingViewValues).union(observedViewValues)
   .union(savedViewValues).union(endedViewValues)
   .union(endedViewValues.map(v => { ...v, preparation: P::begin(v.preparation, v.preparation.key, "another request", T::Person) }))
-  .union(guardedViewValues.map(v => { ...v, preparation: P::decideFill(formForView, P::PersonFills, formForView.version, T::Person) }))
+  .union(guardedViewValues.map(v => { ...v, preparation: P::decideFill(sampleChosenPreparation, P::PersonFills, sampleChosenPreparation.version, T::Person) }))
   .union(guardedViewValues.map(v => { ...v, workspace: W::abandonTask(v.workspace, W::Person),
     preparation: P::retire(v.preparation, v.preparation.version, T::Person), progress: progressAtEnd(v, T::Person) }))
 ```
