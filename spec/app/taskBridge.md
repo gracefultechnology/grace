@@ -124,11 +124,11 @@ pure def lawCurrentPreparationConverts(
 
 ### Finite examples cover a current handoff and retired source or destination versions
 
-Each workspace example has one accepted transfer: preparation version 4, reached
-through the existing owners' operations, with the payment revision and attempt
-that workspace holds. Other examples retain those transfers while their
-preparation pauses, resumes, answers the fill offer yes or no, or is retired,
-or with a payload field or captured token that is stale. The examples are simulation inputs and do not restrict runtime values.
+A preparation handed off at version 4 converts when the current workspace can
+accept its payment revision and attempt. An unbound task, a changed page or a
+different account can prevent conversion. The examples also cover a paused,
+resumed or retired preparation, a yes or no to filling, and stale payloads or
+captured tokens. Runtime values range beyond these finite simulation examples.
 
 ```quint
 pure val preparationValues = {
