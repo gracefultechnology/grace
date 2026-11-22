@@ -29,10 +29,18 @@ browser receipts. For a local Fleet run, set `GRACE_BILLWORLD_DIR` to the
 pinned checkout used by CI. Set `GRACE_BILLWORLD_SHARD` to `1` through `4`
 for a 25-biller run, or omit it to run the full cohort. Fleet requires Python 3
 for its result-directory lock and an unmodified tracked Grace checkout.
+The local option `GRACE_BILLWORLD_COHORT=2` selects the next 100 distinct
+billers in the same deterministic order. Omit it or use `1` for the
+original CI cohort. To run the second cohort locally, set the fixture and
+hosted benchmark variables and use:
+
+```sh
+GRACE_BILLWORLD_COHORT=2 pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' --passWithNoTests
+```
 
 To resume locally, set `GRACE_BILLWORLD_RESUME_DIR` to the existing
 `fleet-*` directory containing `cohort.json`. Keep the same Grace commit,
-BillWorld checkout, and shard setting. Use the browser command with
+BillWorld checkout, cohort, and shard setting. Use the browser command with
 `--passWithNoTests` so an already complete shard can validate without
 opening pages. To resume in CI, dispatch on the original Grace commit and
 supply its workflow run ID in `billworld_resume_run`. Each shard must have
@@ -63,6 +71,21 @@ visible answer. The job requires a rejected zero-action control and all six
 checks on the completed trial, including unchanged protected state and
 credentials. CI uploads asset provenance and both grader receipts as
 `billworld-released-task-md9`.
+
+The same command also runs the separate Fleet `view-bill` cases listed in
+`test/fleet.fixture.ts`. For a Fleet-only local run, set
+`GRACE_BILLWORLD_RELEASED_DIR` to the pinned checkout and use:
+
+```sh
+pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the Fleet .* BillWorld statement'
+```
+
+Each Fleet case signs in to an isolated local simulator and reads its
+current statement through the reviewed Grace plan. The pinned Fleet grader
+checks the amount and due date, login, unchanged account settings and zero
+payments. It also rejects a no-action and a wrong-answer trial. CI uploads
+these receipts as `billworld-fleet-view-bill`. The planner is scripted for
+these statement journeys.
 
 The standard verification job exercises Google sign-in and cross-app tasks in
 Chromium. A resettable loopback provider serves OAuth consent, Gmail messages

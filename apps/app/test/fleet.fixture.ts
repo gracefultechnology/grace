@@ -17,7 +17,7 @@ const Case = Schema.Struct({
 });
 const Manifest = Schema.Struct({
   revision: Schema.String, productRevision: Schema.String, navigation: Schema.Literal("public support page"),
-  shard: Schema.NullOr(Schema.Number), shardCount: Schema.Number, cohort: Schema.Array(Case),
+  shard: Schema.NullOr(Schema.Number), shardCount: Schema.Number, cohortNumber: Schema.optional(Schema.Literal(2)), cohort: Schema.Array(Case),
 });
 const Receipt = Schema.Struct({
   surface: Schema.Literal("desktop-chromium"), taskId: Schema.String, startUrl: Schema.String,
@@ -104,7 +104,7 @@ async function openFleetServer(tree: string, loginPaths?: Set<string>) {
   }
 }
 
-async function openFleet(tree: string) {
+async function openFleet(tree: string, cohort: 1 | 2) {
   const { fleet, origin, close } = await openFleetServer(tree);
   try {
     const groups = new Map<string, (typeof Biller.Type)[]>();
@@ -116,19 +116,20 @@ async function openFleet(tree: string) {
     }
     const byTemplate = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b, "en"));
     for (const [, group] of byTemplate) group.sort((a, b) => a.id.localeCompare(b.id, "en"));
-    const cases = [];
-    for (let offset = 0; cases.length < 100; offset++) {
-      const size = cases.length;
-      for (const [, group] of byTemplate) {
-        const biller = group[offset];
-        if (!biller || cases.length === 100) continue;
-        const entry = fleet.world.catalog.billers.get(biller.id);
-        const { routes } = Schema.decodeUnknownSync(Routes)(fleet.templateFor(entry));
-        const path = "/b/" + encodeURIComponent(biller.id);
-        cases.push({ biller, startUrl: origin + path + routes.home, expected: origin + path + routes.help });
-      }
-      if (size === cases.length) throw new Error("The pinned catalog has fewer than 100 distinct billers");
+    const size = 100;
+    const through = cohort * size;
+    const selected: (typeof Biller.Type)[] = [];
+    for (let offset = 0; selected.length < through; offset++) {
+      const row = byTemplate.flatMap(([, group]) => group.slice(offset, offset + 1));
+      if (row.length === 0) throw new Error(`The pinned catalog has fewer than ${through} distinct billers`);
+      selected.push(...row);
     }
+    const cases = selected.slice(through - size, through).map((biller) => {
+      const entry = fleet.world.catalog.billers.get(biller.id);
+      const { routes } = Schema.decodeUnknownSync(Routes)(fleet.templateFor(entry));
+      const path = "/b/" + encodeURIComponent(biller.id);
+      return { biller, startUrl: origin + path + routes.home, expected: origin + path + routes.help };
+    });
     return { cases, close };
   } catch (error) {
     await close();
@@ -144,7 +145,17 @@ function pinnedFleet(directory: string) {
   return tree;
 }
 
-export async function fleetFixture(directory: string, results: string, shardSetting?: string, resumeDirectory?: string) {
+export async function fleetFixture({ directory, results, shardSetting, resumeDirectory, cohortSetting }: {
+  directory: string;
+  results: string;
+  shardSetting?: string;
+  resumeDirectory?: string;
+  cohortSetting?: string;
+}) {
+  if (cohortSetting !== undefined && cohortSetting !== "1" && cohortSetting !== "2")
+    throw new Error("GRACE_BILLWORLD_COHORT must be 1 or 2");
+  const cohortNumber = cohortSetting === "2" ? 2 : 1;
+  const cohortMetadata = cohortNumber === 2 ? { cohortNumber } : {};
   const shardCount = 4;
   if (shardSetting !== undefined && !/^[1-4]$/.test(shardSetting))
     throw new Error("GRACE_BILLWORLD_SHARD must be one of 1, 2, 3 or 4");
@@ -167,17 +178,17 @@ export async function fleetFixture(directory: string, results: string, shardSett
       : Schema.decodeUnknownSync(Manifest)(JSON.parse(readFileSync(manifestFile, "utf8")));
     const changed = "Fleet resume requires the same pinned dataset, clean product revision, cohort and shard";
     if (original && (original.revision !== revision || original.productRevision !== productRevision ||
-        original.shard !== shard || original.shardCount !== shardCount))
+        (original.cohortNumber ?? 1) !== cohortNumber || original.shard !== shard || original.shardCount !== shardCount))
       throw new Error(changed);
-    const { cases, close } = environment = await openFleet(tree);
+    const { cases, close } = environment = await openFleet(tree, cohortNumber);
     const manifest = cases.map(({ biller, startUrl, expected }) => ({ taskId: biller.id, template: biller.template, evidence: biller.signal, startUrl, expected }));
-    const metadata = { revision, productRevision, navigation: "public support page", shard, shardCount, cohort: manifest };
+    const metadata = { revision, productRevision, navigation: "public support page", shard, shardCount, ...cohortMetadata, cohort: manifest };
     const assigned = cases.filter((_, index) => shard === null || index % shardCount === shard - 1);
     const assignedIds = new Set(assigned.map(({ biller }) => biller.id));
     const expected = new Map(manifest.filter(item => assignedIds.has(item.taskId)).map(item => [item.taskId, item]));
     const graded = new Map<string, boolean>();
     const score = () => ({
-      revision, productRevision, shard, shardCount, cohortTotal: cases.length, attempted: graded.size, total: assigned.length,
+      revision, productRevision, shard, shardCount, ...cohortMetadata, cohortTotal: cases.length, attempted: graded.size, total: assigned.length,
       passed: [...graded.values()].filter(Boolean).length, cases: Object.fromEntries(graded),
     });
     const replaceScores = () => {
@@ -254,6 +265,14 @@ export const fleetStatementCases = [
   { billerId: "121-disposal-co-d58f27", template: "utility-account" },
   { billerId: "405-express-lanes-orange-county-ca-32605e", template: "toll-account" },
   { billerId: "aberdeen-news-aberdeen-sd-newspaper-subscription-446eec", template: "newspaper" },
+  { billerId: "abc-warehouse-credit-card-synchrony-dd0607", template: "card-servicer" },
+  { billerId: "acushnet-water-department-ma-eb0721", template: "municipal-portal" },
+  { billerId: "adventhealth-castle-rock-castle-rock-co-de3968", template: "mychart" },
+  { billerId: "advance-america-82c9f5", template: "loan-servicer" },
+  { billerId: "alexandria-oh-municipal-income-tax-administered--565714", template: "income-tax" },
+  { billerId: "anoka-municipal-utility-city-of-anoka-252a5c", template: "invoicecloud" },
+  { billerId: "b-and-b-sanitation-waste-connections-fec9e8", template: "waste-hauler" },
+  { billerId: "belton-honea-path-wa-sc0410011-66b378", template: "xpress" },
 ];
 
 const StatementRoutes = Schema.Struct({ routes: Schema.Struct({

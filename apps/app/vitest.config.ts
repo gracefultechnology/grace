@@ -32,14 +32,21 @@ const BenchmarkDefinition = Schema.Struct({
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
-if ((process.env.GRACE_BILLWORLD_SHARD !== undefined || process.env.GRACE_BILLWORLD_RESUME_DIR !== undefined) &&
+if ((process.env.GRACE_BILLWORLD_SHARD !== undefined || process.env.GRACE_BILLWORLD_RESUME_DIR !== undefined ||
+    process.env.GRACE_BILLWORLD_COHORT !== undefined) &&
     !process.env.GRACE_BILLWORLD_DIR)
-  throw new Error("Fleet shard and resume settings require GRACE_BILLWORLD_DIR");
+  throw new Error("Fleet cohort, shard and resume settings require GRACE_BILLWORLD_DIR");
 if (process.env.GRACE_BILLWORLD_DIR && process.env.GRACE_BROWSER_BENCHMARK_FILE)
   throw new Error("Run Fleet separately from browser tasks declared in an external file");
 const host: NodeJS.Process & { graceFleet?: ReturnType<typeof fleetFixture> } = process;
 const fleet = process.env.GRACE_BILLWORLD_DIR
-  ? await (host.graceFleet ??= fleetFixture(process.env.GRACE_BILLWORLD_DIR, process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld", process.env.GRACE_BILLWORLD_SHARD, process.env.GRACE_BILLWORLD_RESUME_DIR))
+  ? await (host.graceFleet ??= fleetFixture({
+      directory: process.env.GRACE_BILLWORLD_DIR,
+      results: process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld",
+      shardSetting: process.env.GRACE_BILLWORLD_SHARD,
+      resumeDirectory: process.env.GRACE_BILLWORLD_RESUME_DIR,
+      cohortSetting: process.env.GRACE_BILLWORLD_COHORT,
+    }))
   : undefined;
 const definitions: unknown = process.env.GRACE_BROWSER_BENCHMARK_FILE
   ? JSON.parse(readFileSync(process.env.GRACE_BROWSER_BENCHMARK_FILE, "utf8"))
