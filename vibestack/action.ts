@@ -71,7 +71,7 @@ export async function act(memory: Memory, tool: keyof typeof TOOLS, args: string
   if (launcher && !installed) throw new Error(`${launcher} is not installed; run pnpm install`);
   const exe = installed?.exe ?? tool;
   const since = script && stamp([script]);
-  const id = installed ? installed.id + (script ? ` ${executableDigest(script)}` : "") : await verifierIdentity();
+  const id = installed ? installed.id && installed.id + (script ? ` ${executableDigest(script)}` : "") : await verifierIdentity();
   const at = await entry(memory.root, "action", [id, JSON.stringify(args), ...Object.keys(files).sort().flatMap((f) => [f, files[f].key])], (tool === "quint" || tool === "simulator") && args[0] === "run");
   const known = recall<Ran>(memory, at);
   if (known) return known;
