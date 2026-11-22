@@ -2,8 +2,10 @@
 
 This library connects [task preparation](./prep.md) to the existing
 [workspace review](./workspace.md), without a payment or review transition of
-its own. Its one value that outlives a call is the task's progress link, which
-the host holds from the journal acknowledgement until it retires the task.
+its own. It defines values the host keeps between calls: the task's progress
+link, held from the journal acknowledgement and, after retirement, kept only as
+the finished attempt that `progressAtEnd` returns; the queued website command,
+from enqueue to claim; and the accepted review's hand-off receipt.
 For every Prep handoff, the host must use this conversion, then consume
 its result through existing `reviewCommitment` with the authenticated Host actor.
 It also holds the gate the actuator checks before Grace fills a task's form, and
@@ -199,8 +201,10 @@ pure val byValues = Set(WS::Host, WS::Person, WS::Store, WS::Actuator)
 
 When the host queues a website command it keeps the complete emitted Workspace
 effect, the current preparation version and where the write came from. A fill
-here is typing a value into a field; choosing an option or navigating keeps its
-existing Workspace checks. A fill issued outside a task keeps that origin. A task fill carries the identity of
+here is Grace typing an ordinary form value (`FillOrdinary`), not a sign-in
+identifier or a private entry; choosing, navigating and every other operation
+keep their existing Workspace checks. A fill issued outside a task keeps that
+origin. A task fill carries the identity of
 the assistant task that owns this preparation, the full verified provider
 subject (including account and bill or appointment reference), and the typed
 values for that form. The host captures this once from the owning task and
