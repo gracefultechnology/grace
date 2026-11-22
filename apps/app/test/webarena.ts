@@ -204,6 +204,7 @@ export function webArena({ checkout, python, cases }: { checkout: string; python
     const initialPath = admin ? "/admin/admin/dashboard/" : "/";
     if (start.protocol !== "https:" || !["127.0.0.1", "localhost"].includes(start.hostname) || start.href !== `${origin}${initialPath}` || task.intent !== intent)
       throw new Error("WebArena input needs the unchanged official task intent and the synthetic site's starting document");
+    const checkedPath = site === "gitlab" ? new URL(task.eval.reference_url.replace(task.start_url, siteRoot)).pathname : undefined;
     const fixture = JSON.stringify(hits[0]).replaceAll(task.start_url, siteRoot);
     const unused = "http://127.0.0.1:1";
     const env = { SHOPPING: unused, SHOPPING_ADMIN: unused, REDDIT: unused, GITLAB: unused,
@@ -228,7 +229,7 @@ export function webArena({ checkout, python, cases }: { checkout: string; python
           const next = new URL(destination.url);
           next.hash = "";
           groundedNavigation = destination.documentId !== initial.documentId && next.href !== start.href &&
-            (site !== "gitlab" || next.pathname === "/explore" || next.pathname === "/explore/");
+            (checkedPath === undefined || next.pathname.replace(/\/$/, "") === checkedPath);
         }
       }
       return {
