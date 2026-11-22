@@ -282,8 +282,8 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       const observed: LinkObservation | undefined = page.observeLinks(start.id) catch () => undefined
       if (!observed || !["Ordinary", "PublicOnly"].includes(guidedPageState(observed, start.url.href, "GuidePublicLinks"))) return unobservable
       const publicLabels = collectionLabels(start.outcome.collection)
-      const safeNavigation: PublicLink[] = links(observed, start.url, "", true)
-      const allowed: PublicLink[] = safeNavigation.filter((link): boolean => link.pointable && Boolean(link.selector) &&
+      const safeNavigation: PublicLink[] = links(observed, start.url, start.outcome.collection, true)
+      const allowed: PublicLink[] = safeNavigation.filter((link): boolean => !link.samePage && link.pointable && Boolean(link.selector) &&
         (publicLabels.includes(comparableName(link.label)) || /^(?:my account|account)$/u.test(comparableName(link.label))))
       const target: PublicLink[] = allowed.filter((link): boolean => publicLabels.includes(comparableName(link.label)))
       const candidate = target.length === 1 ? target[0] : target.length === 0 && allowed.length === 1 ? allowed[0] : undefined
@@ -292,7 +292,8 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       const fresh: LinkObservation | undefined = page.observeLinks(start.id) catch () => undefined
       if (nav?.url !== start.url.href || !fresh || fresh.documentId !== observed.documentId ||
           fresh.result.domRevision !== observed.result.domRevision || !(try stillHere())) return changed
-      const link = links(fresh, start.url, "", true).find((item) => item.href === candidate.href && item.selector === candidate.selector)
+      const link = links(fresh, start.url, start.outcome.collection, true).find((item) =>
+        item.pointable && item.href === candidate.href && item.selector === candidate.selector)
       if (!link || !(try showRecord({ documentId: fresh.documentId, snapshotId: fresh.result.snapshotId }, link, "Open the record history"))) return changed
       return { kind: "Link" as const, words: "Open the highlighted section, then ask me again." }
     }
