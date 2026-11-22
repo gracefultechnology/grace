@@ -5,7 +5,7 @@ import { type ReactNode, useCallback, useState, useSyncExternalStore, useTransit
 import { useMachine } from "../gen/app__setup.react.ts";
 import type { Recurrence } from "../gen/app__calendar.ts";
 import { mayChangeManaged, mayReadManaged, maySendManagedMail } from "../gen/app__setup.ts";
-import { keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
+import { inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
 import { calendarGrid } from "./Calendar.tsx";
 import { dayOf, instant, midnight } from "./calendarWindow.vibe";
 import type { Navigation } from "../gen/app__calendarView.ts";
@@ -251,7 +251,8 @@ function Agenda({ calendar, today, move, open, busy, children }: {
 export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const runtime = useRuntime();
   const account = useMachine(runtime).state;
-  const [failed, setFailed] = useState<string>();
+  type ReadCommand = Parameters<ManagedReads.Shape["send"]>[0];
+  const [failed, setFailed] = useState<{ key: string; text: string; retry?: Extract<ReadCommand, {kind: "mailFolder"}> }>();
   const [pending, startTransition] = useTransition();
   const [editor, setEditor] = useState<{ key: string; event?: EventRow; seriesFor?: string }>();
   const [writeNotice, setWriteNotice] = useState<{ key: string; text: string; receipt?: WriteReceipt }>();
@@ -260,15 +261,18 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
     return () => fiber.interruptUnsafe();
   }, [runtime]);
   const snapshot = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(ManagedReads, (reads) => reads.get())));
-  const run = (command: Parameters<ManagedReads.Shape["send"]>[0]) => startTransition(async () => {
+  const run = (command: ReadCommand) => startTransition(async () => {
     setFailed(undefined);
     if (command.kind === "refresh") setWriteNotice(undefined);
     const result = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.send(command)));
     if (command.kind === "reminder") setWriteNotice({ key: projection, text: Exit.isSuccess(result) && result.value
       ? command.minutes === 0 ? "Reminder removed from your Grace account." : "Reminder choice saved. Your tablet schedules it when it reconnects."
       : "Grace couldn’t save that reminder choice." });
-    else if (!Exit.isSuccess(result) || !result.value) setFailed(command.kind === "saveAttachment" || command.kind === "savePhotos"
-      ? "Grace couldn’t save that to Files. Try again." : "Grace couldn’t open that. Try again.");
+    else if (!Exit.isSuccess(result) || !result.value) setFailed({
+      key: projection, retry: command.kind === "mailFolder" ? command : undefined,
+      text: command.kind === "saveAttachment" || command.kind === "savePhotos" ? "Grace couldn’t save that to Files. Try again." : "Grace couldn’t open that. Try again.",
+    });
+    else setFailed(undefined);
   });
   const signedIn = account?.graceAccount.tag === "GraceSignedIn" ? account.graceAccount : undefined;
   const authorized = signedIn !== undefined && account !== undefined &&
@@ -349,23 +353,23 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const back = <Button variant="capsule" size="pill" onClick={() => run({ kind: "back" })}>{snapshot.kind === "mail" ? `Back to ${folderNames[snapshot.folder]}` : "Back to calendar"}</Button>;
   const more = snapshot.next === null ? null :
     <Button variant="capsule" size="pill" loading={pending} onClick={() => run({ kind: "more" })}>Load more</Button>;
-  const problem = failed && <RetryNotice role="alert">{failed}</RetryNotice>;
+  const retry = failed?.retry;
+  const problem = failed?.key === projection && <RetryNotice role="alert" retrying={pending} onRetry={retry && (() => run(retry))}>{failed.text}</RetryNotice>;
 
   if (snapshot.kind === "mail") {
     const selected = snapshot.selected;
     const suggested = snapshot.proposed?.proposal;
     const draft = suggested?.kind === "draft" ? snapshot.proposed : undefined;
     const photos = selected?.attachments.filter((part) => part.mimeType.startsWith("image/")) ?? [];
+    const trashVersion = inboxTrashVersion(snapshot);
     const trash = suggested?.kind === "trash" && suggested.id === selected?.message.externalId;
     return selected ? (
       <section data-sensitive="true" className="flex flex-col items-start gap-4">
         {back}
         {showNotice}
         {problem}
-        {canTrash && snapshot.folder !== "trash" && selected.message.metadata?.historyId && <Button variant="warn" size="pill" loading={pending} onClick={() => {
-          const version = selected.message.metadata?.historyId;
-          if (version) write({ kind: "trash", id: selected.message.externalId, version });
-        }}>{trash ? "Confirm move to Trash" : "Move to Trash"}</Button>}
+        {canTrash && trashVersion && <Button variant="warn" size="pill" loading={pending}
+          onClick={() => write({ kind: "trash", id: selected.message.externalId, version: trashVersion })}>{trash ? "Confirm move to Trash" : "Move to Trash"}</Button>}
         <PageHeading>{selected.message.subject || "No subject"}</PageHeading>
         <PageText>{selected.message.from || "Unknown sender"}</PageText>
         <PageText tone="secondary">{day(selected.message.receivedAt)}</PageText>

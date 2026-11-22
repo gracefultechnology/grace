@@ -2,6 +2,9 @@
   "schema": 1,
   "sdk": { "min": 29, "target": 36, "compile": 36 },
   "releaseMinify": true,
+  "buildTypes": {
+    "release": { "proguardFiles": [{ "root": "consumer", "path": "android/proguard-rules.pro" }] }
+  },
   "kotlin": true,
   "nativeLibraries": "extract-16k",
   "embeddedAgent": {
@@ -39,6 +42,7 @@
   },
   "dependencies": [
     { "configuration": "implementation", "module": "androidx.appcompat:appcompat", "toolchainVersion": "androidxAppCompatVersion" },
+    { "configuration": "implementation", "module": "androidx.coordinatorlayout:coordinatorlayout", "toolchainVersion": "androidxCoordinatorLayoutVersion" },
     { "configuration": "implementation", "coordinate": "androidx.credentials:credentials:1.6.0" },
     { "configuration": "implementation", "coordinate": "androidx.credentials:credentials-play-services-auth:1.6.0" },
     { "configuration": "implementation", "coordinate": "com.google.android.libraries.identity.googleid:googleid:1.1.1" }
