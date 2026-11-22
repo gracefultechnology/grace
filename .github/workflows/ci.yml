@@ -240,6 +240,20 @@ jobs:
           browser_exit=0
           pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' |
             tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
+          shopt -s nullglob
+          receipts=("$WEBARENA_RESULTS"/task-*.json)
+          jq -n --argjson tasks "$tasks" '
+            [inputs] | group_by(.taskId) as $groups |
+            [$groups[] | select(length == 1) | .[0] | select(.taskId as $id | $tasks | index($id | tonumber) != null)] as $unique |
+            {configured: ($tasks | length), receipts: ($groups | map(length) | add // 0),
+             missingTaskIds: ($tasks - [$groups[][0].taskId | tonumber]),
+             duplicateTaskIds: [$groups[] | select(length > 1) | .[0].taskId | tonumber],
+             graded: ([$unique[] | select(.webArena.officialScore == 0 or .webArena.officialScore == 1)] | length),
+             officialPasses: ([$unique[] | select(.webArena.officialScore == 1)] | length),
+             passesWithRejectedControl: ([$unique[] | select(.webArena.officialScore == 1 and .webArena.noActionScore == 0)] | length)}
+          ' "${receipts[@]}" </dev/null > "$WEBARENA_RESULTS/run-coverage.json"
+          jq -r '"Of \(.configured) configured cases, \(.graded) received an official grade, \(.officialPasses) scored 1, and \(.passesWithRejectedControl) also rejected no action. Missing receipt IDs: \(.missingTaskIds). Duplicate receipt IDs: \(.duplicateTaskIds)."' \
+            "$WEBARENA_RESULTS/run-coverage.json" >> "$GITHUB_STEP_SUMMARY"
           jq -es --argjson tasks "$tasks" --argjson required "$required" --argjson records "$records" --argjson searches "$searches" '
             def search_case: (.taskId | tonumber) as $id | $searches | index($id) != null;
             def checked_search:
@@ -319,7 +333,7 @@ jobs:
                 .outcome.start.documentId != .outcome.destination.documentId and
                 (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
                   (if (.taskId | tonumber) as $id | $records | index($id) then checked_record else (.outcome.reviewedDestination | length) > 0 end))) end)})
-          ' "$WEBARENA_RESULTS"/task-*.json > "$WEBARENA_RESULTS/scorecard.json"
+          ' "${receipts[@]}" </dev/null > "$WEBARENA_RESULTS/scorecard.json"
           jq -r '
             "### WebArena Shopping",
             "",
