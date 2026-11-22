@@ -7,7 +7,7 @@ import { Suspense, use, useMemo, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { ComposeChoice, DraftContent, Event as MailEvent, Mailbox, SendStatus } from "../gen/app__email.ts";
 import { draftMovable, contactAccounts, fromChoices, type MailSource, pickerBack, showsCopies, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
-import type { Contact } from "./connector.vibe";
+import { sendableAttachments, type Contact } from "./connector.vibe";
 import { Library, type SavedPreview } from "./files.vibe";
 import { recipientsOf, recipientsValid } from "./mail.vibe";
 import { type MailInstance, type MailWriter, useRuntime, useWorkspace } from "./useApp.ts";
@@ -161,7 +161,8 @@ export function EmailCompose({ registry, boxes, box, mail, sender, frame }: Emai
   const removal = (index: number): MailEvent => ({ type: "removeAsset", assetId: m.draftAttachments[index]?.id ?? "" });
   const editable = box.can({ type: "editDraft", content: m.draft });
   const settling = Object.values(typed).some((t) => t !== undefined);
-  const ready = !settling && recipientsValid(m.draft) && box.can({ type: "confirmVisibleSend", revision: m.revision });
+  const attachmentsValid = sendableAttachments(m.draftAttachments);
+  const ready = !settling && attachmentsValid && recipientsValid(m.draft) && box.can({ type: "confirmVisibleSend", revision: m.revision });
   const retry = undeleted ? throwAway : keep;
   const chooser = (choice: ComposeChoice) => offered(box, { type: "openChooser", choice });
   const stopChoosing = () => { setRefused(false); offered(box, { type: "closeChooser" })?.(); };
@@ -186,8 +187,9 @@ export function EmailCompose({ registry, boxes, box, mail, sender, frame }: Emai
       sendStatus={statusOf(m)}
       onSend={ready ? () => void mail.confirmSend(box.id, m.revision) : undefined}
       onDiscard={offered(box, throwAway) && (() => void discard(box))}
-      draftError={m.draftStorage !== "DraftStoreFailed" ? undefined : undeleted ? "This email couldn’t be deleted from Drafts." : "This email couldn’t be saved to Drafts."}
-      onRetryDraft={box.can(retry) ? () => void (undeleted ? discard(box) : box.send(keep)) : undefined}
+      draftError={!attachmentsValid ? "Remove any unsupported or duplicate files. Email can send up to 10 attachments." :
+        m.draftStorage !== "DraftStoreFailed" ? undefined : undeleted ? "This email couldn’t be deleted from Drafts." : "This email couldn’t be saved to Drafts."}
+      onRetryDraft={attachmentsValid && box.can(retry) ? () => void (undeleted ? discard(box) : box.send(keep)) : undefined}
       onBack={leavable(box) ? () => void leave(box) : undefined}
       onAttach={{ camera: mail.camera && editable ? () => void mail.capture(box.id) : undefined, photos: chooser("ChoosePhoto"), file: chooser("ChooseFile") }}
       {...frame}

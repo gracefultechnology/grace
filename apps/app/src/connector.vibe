@@ -146,8 +146,23 @@ const served: Record<string, { readonly kind: "Photo" | "Pdf"; readonly name: Re
   "image/webp": { kind: "Photo", name: /\.webp$/i, magic: "UklGR" }
 }
 const attachmentLimit = 5 * 1024 * 1024
+const maxMailParts = 10
+const maxMailMimeBytes = 8 * 1024 * 1024
 const byteLength = (base64: string) => Math.floor(base64.length * 3 / 4) - (base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0)
 const bare = (address: string) => /<([^>]+)>/.exec(address)?.[1] ?? address.trim()
+
+export function sendableAttachments(files: readonly SavedFile[]) {
+  return files.length <= maxMailParts &&
+    new Set(files.map((file) => file.name.toLowerCase())).size === files.length &&
+    files.every(({ name, kind }) => name.length <= 120 && Array.from(name).every((char) =>
+      char !== "/" && char !== "\\" && char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127) &&
+      Object.values(served).some((format) => format.kind === kind && format.name.test(name)))
+}
+
+export function sendableAttachment(file: SavedFile, content: Attached) {
+  const format = served[content.mimeType]
+  return format?.kind === file.kind && format.name.test(file.name) && content.data.startsWith(format.magic)
+}
 
 function asset(account: AccountRef, m: Message, savedAt: number, a: Attachment): SavedFile[] {
   const type = served[a.mimeType]
@@ -627,15 +642,20 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
     }
 
     effect function uploaded(file: SavedFile, held: Attached | undefined) {
-      if (held !== undefined) return { name: file.name, mimeType: held.mimeType, dataBase64: held.data }
-      if (file.origin !== account.provider || file.account !== account.address) throw new ProviderRefused({ status: 422 })
-      const { message } = try read(file.container)
-      const got = try attachmentOf(file, message.metadata.historyId ?? "")
+      let got = held
+      if (got === undefined) {
+        if (file.origin !== account.provider || file.account !== account.address) throw new ProviderRefused({ status: 422 })
+        const { message } = try read(file.container)
+        got = try attachmentOf(file, message.metadata.historyId ?? "")
+      }
+      if (!sendableAttachment(file, got)) throw new ProviderRefused({ status: 422 })
       return { name: file.name, mimeType: got.mimeType, dataBase64: got.data }
     }
 
     effect function outgoing({ content: c, replyTo, attachments }: DraftSnapshot, held: ReadonlyMap<string, Attached>) {
+      if (!sendableAttachments(attachments)) throw new ProviderRefused({ status: 422 })
       const files = try Effect.forEach(attachments, (file) => uploaded(file, held.get(file.id)))
+      if (files.reduce((length, file) => length + file.dataBase64.length, 0) >= maxMailMimeBytes) throw new ProviderRefused({ status: 413 })
       const recipients = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, ...files.length > 0 ? { attachments: files } : {} }
       if (replyTo === "") return { kind: "send", mode: "compose", ...recipients }
       const { message } = try read(replyTo)
