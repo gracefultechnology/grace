@@ -1,203 +1,334 @@
 package technology.graceful.grace;
 
-import ai.eliza.auth.cloud.CloudCredentialSlots;
-import ai.eliza.auth.cloud.CloudSignInConfig;
-import ai.eliza.auth.cloud.CloudSignInEnvironment;
-import ai.eliza.auth.cloud.CloudSignInFlow;
-import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import ai.eliza.plugins.securestore.nativeonly.JsonCredentialSlots;
+import ai.eliza.plugins.signin.CredentialPolicy.Account;
+import ai.eliza.plugins.signin.DeviceCustody;
+import ai.eliza.plugins.signin.DeviceKeyClient.Answer;
+import ai.eliza.plugins.signin.DeviceKeyClient.Acknowledgement;
 import android.content.Context;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.Callable;
-import javax.net.ssl.HttpsURLConnection;
+import java.util.regex.Pattern;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
 final class SharedGraceCredentials {
+ private static final String VERIFIED_OWNER = "verified-owner";
+ private static final String REPAIRED_CREDENTIAL = "canonical-owner-verified";
+ private static final String PENDING = "shared-pending";
+ private static final String SIGN_OUT = "legacy-sign-out";
+ private static final String REJECTED_KEY = "legacy-rejected-key";
+ private static final String UNSELECTED = "unselected";
  private static final String GENERATION = "credential-intent";
- private static final String OWNER = "verified-owner";
- private static final Object MUTATION = new Object();
- private final Context context;
- private final CloudSignInConfig registration;
- private final JsonCredentialSlots store;
- private final String keySlot, receiptSlot, pendingSlot;
+ private static final String RENEWAL_REQUEST = "mobile-key-renewal-request-v1";
+ private static final String RENEWAL_RECEIPT = "mobile-key-renewal-v1";
+ private static final Pattern ACCOUNT_ID = Pattern.compile("[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", Pattern.CASE_INSENSITIVE);
+ private static final Pattern BEARER = Pattern.compile("eliza_mobile_[\\x21-\\x7e]{7,499}");
 
- SharedGraceCredentials(Context context, CloudSignInConfig registration, CloudSignInEnvironment environment) {
-  this.context = context.getApplicationContext();
-  this.registration = registration;
-  store = new JsonCredentialSlots(new File(context.getNoBackupFilesDir(), "shared-cloud-account-" + BuildConfig.CLOUD_PROFILE),
-    "technology.graceful.grace.shared-account.v1." + BuildConfig.CLOUD_PROFILE, slot -> 16384);
-  keySlot = registration.credentialSlot(environment);
-  receiptSlot = registration.receiptSlot(environment);
-  pendingSlot = registration.pendingSlot;
- }
-
- private String read(String name) throws Exception {
-  String serialized = store.read(name);
-  if (serialized == null) return null;
-  Object parsed = new JSONTokener(serialized).nextValue();
-  if (!(parsed instanceof String value)) throw new IOException("Unreadable credential record");
-  return value;
- }
-
- private void save(String name, String value) throws Exception {
-  if (value == null) store.remove(name);
-  else store.write(name, JSONObject.quote(value));
-  if (!Objects.equals(value, read(name))) throw new IOException("Credential change was not committed");
- }
-
- static <T> T withRead(Callable<T> read) throws Exception {
-  synchronized (JsonCredentialSlots.LOCK) { return read.call(); }
- }
-
- String generation() {
-  try {
-   return withRead(() -> {
-    String current = read(GENERATION);
-    if (current == null) { current = UUID.randomUUID().toString(); save(GENERATION, current); }
-    return current;
-   });
-  } catch (Exception failure) { throw new IllegalStateException("Account change unavailable"); }
- }
-
- Runnable observe() { return guard(generation()); }
-
- Runnable reserve() {
-  try {
-   return withRead(() -> {
-    String next = UUID.randomUUID().toString();
-    save(GENERATION, next);
-    return guard(next);
-   });
-  } catch (Exception failure) { throw new IllegalStateException("Account change unavailable"); }
- }
-
- Runnable guard(String expected) {
-  return () -> {
-   if (expected == null || !expected.equals(generation())) throw new IllegalStateException("Account changed");
-  };
- }
-
- CloudCredentialSlots slots(Runnable guard) {
-  return new CloudCredentialSlots() {
-   public String read(String slot) throws Exception { return withRead(() -> SharedGraceCredentials.this.read(slot)); }
-   public void write(String slot, String value) throws Exception { change(slot, false, null, value, guard); }
-   public void remove(String slot) throws Exception { change(slot, false, null, null, guard); }
-   public boolean compareExchange(String slot, String expected, String value) throws Exception { return change(slot, true, expected, value, guard); }
-  };
- }
-
- private boolean change(String slot, boolean compare, String expected, String value, Runnable guard) throws Exception {
-  synchronized (MUTATION) {
-   String previous = withRead(() -> read(slot));
-   guard.run();
-   if (compare && !Objects.equals(previous, expected)) return false;
-   if (Objects.equals(previous, value)) return true;
-   boolean retires = slot.equals(keySlot) || slot.equals(receiptSlot) || slot.equals(pendingSlot);
-   try {
-    if (retires) {
-     GracePasswordsOwner.enteringAccountChange(context);
-     GraceAgentService.retire();
-    }
-    return withRead(() -> {
-     guard.run();
-     if (compare && !Objects.equals(expected, read(slot))) return false;
-     if (slot.equals(keySlot)) save(OWNER, null);
-     save(slot, value);
-     return true;
-    });
-   } finally {
-    if (retires) {
-     GracePasswordsOwner.leavingAccountChange();
-     GraceAgentService.finishAccountChange(context);
-     ManagedCalendarReminders.reconcile(context);
-    }
-   }
+ record Owner(String accountId, String organizationId) {
+  Owner {
+   accountId = identifier(accountId);
+   organizationId = identifier(organizationId);
   }
  }
 
- private record Key(String id, String token) {
-  @Override public String toString() { return "SharedGraceCredentials.Key"; }
+ private record Snapshot(String key, String receipt, String retiring, String pending, String owner, String repaired, String generation, String signOut, String rejectedKey) {
+  @Override public String toString() { return "Legacy credential slots"; }
+ }
+ private record Key(String localId, String serverId, String secret, long expiresAt) {
+  @Override public String toString() { return "Legacy key"; }
+ }
+ private record OwnerBinding(String localId, Owner owner) {}
+ private record Receipt(String serverId, Key before, Key after, String confirmedGeneration) {}
+
+ private final Context context;
+ private final JsonCredentialSlots slots;
+ private final String environment, credentialSlot, receiptSlot, retiringSlot;
+
+ SharedGraceCredentials(Context context) {
+  this.context = context.getApplicationContext();
+  environment = switch (BuildConfig.CLOUD_PROFILE) {
+   case "shared-production" -> "production";
+   case "shared-staging" -> "staging";
+   default -> throw new IllegalArgumentException("Invalid shared Cloud profile");
+  };
+  credentialSlot = "shared-key:" + environment;
+  receiptSlot = "shared-ack:" + environment;
+  retiringSlot = "shared-retire:" + environment;
+  slots = new JsonCredentialSlots(new File(context.getNoBackupFilesDir(), "shared-cloud-account-" + BuildConfig.CLOUD_PROFILE),
+    "technology.graceful.grace.shared-account.v1." + BuildConfig.CLOUD_PROFILE, slot -> 16384);
  }
 
- private boolean enrollmentPending() throws Exception {
-  String raw = read(pendingSlot);
-  if (raw == null) return false;
-  var pending = CloudSignInFlow.Pending.parse(raw, registration);
-  if (pending == null) throw new IOException("Unreadable sign-in request");
-  return !pending.expired(System.currentTimeMillis());
+ Owner legacyOwner() throws Exception {
+  synchronized (JsonCredentialSlots.LOCK) {
+   Snapshot saved = snapshot();
+   OwnerBinding previous = binding(saved);
+   return previous == null || previous.localId().equals(saved.repaired()) ? null : previous.owner();
+  }
  }
 
- boolean deviceOnly() throws Exception {
-  return withRead(() -> read(keySlot) == null && read(receiptSlot) == null && !enrollmentPending());
+ boolean exposesCanonical(Owner confirmed) throws Exception {
+  synchronized (JsonCredentialSlots.LOCK) {
+   Snapshot saved = snapshot();
+   OwnerBinding previous = binding(saved);
+   return previous == null || previous.localId().equals(saved.repaired()) && previous.owner().equals(confirmed);
+  }
  }
 
- private Key acknowledged() throws Exception {
-  if (read(receiptSlot) != null || enrollmentPending()) return null;
-  String value = read(keySlot);
-  if (value == null) return null;
-  JSONObject key = new JSONObject(value);
-  String id = key.getString("credentialId"), token = key.getString("token");
-  if (!CloudSignInFlow.validUuid(id) || !CloudSignInFlow.validMobileSecret(token)) throw new IOException("Invalid account credential");
-  if (key.getLong("expiresAt") <= System.currentTimeMillis()) return null;
-  return new Key(id, token);
+ boolean acceptCanonical(Owner confirmed) throws Exception {
+  Objects.requireNonNull(confirmed);
+  synchronized (JsonCredentialSlots.LOCK) {
+   OwnerBinding previous = binding(snapshot());
+   if (previous == null) return true;
+   if (!previous.owner().equals(confirmed)) return false;
+   save(REPAIRED_CREDENTIAL, previous.localId());
+   return true;
+  }
  }
 
- CloudDeviceAccount.Session session() throws Exception {
-  return withRead(() -> {
-   Key key = acknowledged();
-   if (key == null) return null;
-   String value = read(OWNER);
-   if (value == null) throw new IOException("Account verification needed");
-   JSONObject owner = new JSONObject(value);
-   if (!key.id.equals(owner.getString("credentialId"))) throw new IOException("Account verification changed");
-   return new CloudDeviceAccount.Session(key.token, owner.getString("accountId"), owner.getString("organizationId"));
-  });
- }
-
- CloudDeviceAccount.Session verifyOwner() throws Exception {
-  Runnable current = observe();
-  Key key = withRead(this::acknowledged);
-  if (key == null) return null;
-  HttpsURLConnection connection = (HttpsURLConnection) URI.create(BuildConfig.CLOUD_API_ORIGIN + "/api/v1/user").toURL().openConnection();
-  connection.setInstanceFollowRedirects(false);
-  connection.setUseCaches(false);
-  connection.setConnectTimeout(8000);
-  connection.setReadTimeout(10000);
-  connection.setRequestProperty("Authorization", "Bearer " + key.token);
-  connection.setRequestProperty("Accept", "application/json");
-  try {
-   int status = connection.getResponseCode();
-   if (status == 401) {
-    String rejected = withRead(() -> key.equals(acknowledged()) ? read(keySlot) : null);
-    if (rejected != null) change(keySlot, true, rejected, null, current);
-    throw new IOException("Account credential was rejected");
+ void recoverOwner() throws Exception {
+  Snapshot saved;
+  synchronized (JsonCredentialSlots.LOCK) { saved = snapshot(); }
+  if (saved.signOut() != null) throw needsVerification();
+  Key key = key(saved.key());
+  OwnerBinding prior = owner(saved.owner());
+  Receipt receipt = receipt(saved.receipt());
+  if (key == null) {
+   if (prior != null || receipt != null && receipt.before() != null) throw needsVerification();
+   if (receipt != null || saved.pending() != null) synchronized (JsonCredentialSlots.LOCK) {
+    requireSnapshot(saved);
+    save(receiptSlot, null);
+    save(PENDING, null);
    }
-   if (status != 200) throw new IOException("Account verification failed");
-   try (var input = connection.getInputStream(); var output = new ByteArrayOutputStream()) {
-    byte[] chunk = new byte[2048];
-    int count;
-    while ((count = input.read(chunk)) != -1) {
-     if (output.size() + count > 65536) throw new IOException("Account response too large");
-     output.write(chunk, 0, count);
-    }
-    JSONObject data = new JSONObject(new String(output.toByteArray(), StandardCharsets.UTF_8)).getJSONObject("data");
-    String user = data.getString("id"), org = data.getString("organization_id");
-    if (!CloudSignInFlow.validUuid(user) || !CloudSignInFlow.validUuid(org)) throw new IOException("Invalid account identity");
-    return withRead(() -> {
-     current.run();
-     if (!key.equals(acknowledged())) throw new IOException("Account changed");
-     String value = new JSONObject().put("credentialId", key.id).put("accountId", user).put("organizationId", org).toString();
-     if (!value.equals(read(OWNER))) save(OWNER, value);
-     return new CloudDeviceAccount.Session(key.token, user, org);
-    });
+   return;
+  }
+  Owner known = matchingOwner(key, receipt, prior);
+  boolean renewal = receipt != null && receipt.before() != null;
+  if (known != null && (renewal || receipt == null || key.expiresAt() <= System.currentTimeMillis())) return;
+  long now = System.currentTimeMillis();
+  Key verification = key;
+  if (key.expiresAt() <= now) {
+   verification = liveSuccessor(saved, key, receipt, now);
+   if (verification == null) throw needsVerification();
+  }
+  var authority = DeviceCustody.legacyCredentials(context, BuildConfig.CLOUD_API_ORIGIN);
+  if (receipt != null && !renewal) {
+   if (key.serverId() == null) throw needsVerification();
+   if (key.serverId().equals(receipt.serverId())) {
+    if (!(authority.acknowledge(key.serverId(), key.secret()) instanceof Answer.Answered<Acknowledgement>)) throw needsVerification();
+   } else {
+    JSONObject proof = new JSONObject(saved.receipt());
+    if (proof.length() != 8 || !(proof.opt("code") instanceof String) || !(proof.opt("state") instanceof String) ||
+        !(proof.opt("codeVerifier") instanceof String) || !(proof.opt("acknowledgeBy") instanceof Number)) throw needsVerification();
    }
-  } finally { connection.disconnect(); }
+  } else if (renewal && receipt.after() != null && key.equals(receipt.after())) {
+   authority.acknowledge(key.serverId(), key.secret());
+  }
+  Answer<Account> result = authority.user(verification.secret());
+  if (verification.equals(key) && result instanceof Answer.Refused<Account> refused &&
+      refused.status() == 401 && refused.reason().credential()) {
+   Key successor = liveSuccessor(saved, key, receipt, System.currentTimeMillis());
+   if (successor != null) result = authority.user(successor.secret());
+   else if (prior == null && saved.repaired() == null) synchronized (JsonCredentialSlots.LOCK) {
+    requireSnapshot(saved);
+    save(REJECTED_KEY, credentialEvidence(saved));
+   }
+  }
+  if (!(result instanceof Answer.Answered<Account> answered)) throw needsVerification();
+  var verified = new Owner(answered.value().userId(), answered.value().organizationId());
+  if (prior != null && !prior.owner().equals(verified)) throw needsVerification();
+  synchronized (JsonCredentialSlots.LOCK) {
+   requireSnapshot(saved);
+   save(VERIFIED_OWNER, new JSONObject().put("credentialId", key.localId())
+    .put("accountId", verified.accountId()).put("organizationId", verified.organizationId()).toString());
+   if (receipt != null && !renewal) save(receiptSlot, null);
+  }
+ }
+
+ boolean needsCleanup() throws Exception {
+  synchronized (JsonCredentialSlots.LOCK) { return needsCleanup(snapshot()); }
+ }
+
+ private boolean needsCleanup(Snapshot saved) throws Exception {
+  Key selected = key(saved.key());
+  if (saved.signOut() != null) {
+   if (selected != null && !selected.localId().equals(saved.signOut())) throw needsVerification();
+   if (!UNSELECTED.equals(saved.signOut())) identifier(saved.signOut());
+   retirementSecrets(saved, selected, receipt(saved.receipt()));
+   return true;
+  }
+  long now = System.currentTimeMillis();
+  if (selected == null || selected.expiresAt() <= 0 || saved.owner() != null || saved.repaired() != null) return false;
+  if (selected.expiresAt() > now && (saved.rejectedKey() == null || !saved.rejectedKey().equals(credentialEvidence(saved)))) return false;
+  Receipt receipt = receipt(saved.receipt());
+  matchingOwner(selected, receipt, null);
+  retirementSecrets(saved, selected, receipt);
+  return liveSuccessor(saved, selected, receipt, now) == null;
+ }
+
+ private static Key liveSuccessor(Snapshot saved, Key selected, Receipt receipt, long now) {
+  if (receipt == null || receipt.after() == null || !selected.equals(receipt.before()) ||
+      receipt.confirmedGeneration() == null || !receipt.confirmedGeneration().equals(saved.generation()) ||
+      receipt.after().expiresAt() <= now) return null;
+  return receipt.after();
+ }
+
+ private static String credentialEvidence(Snapshot saved) throws Exception {
+  byte[] digest = MessageDigest.getInstance("SHA-256")
+   .digest((Objects.toString(saved.generation(), "") + "\u0000" + saved.key()).getBytes(StandardCharsets.UTF_8));
+  return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+ }
+
+ void signOut(boolean cleanupOnly, Runnable signOutCanonical) throws Exception {
+  Snapshot saved;
+  synchronized (JsonCredentialSlots.LOCK) { saved = snapshot(); }
+  if ((cleanupOnly || saved.signOut() != null) && !needsCleanup(saved)) throw needsVerification();
+  Key selected = key(saved.key());
+  Set<String> secrets = retirementSecrets(saved, selected, receipt(saved.receipt()));
+  synchronized (JsonCredentialSlots.LOCK) { requireSnapshot(saved); }
+  signOutCanonical.run();
+  if (secrets.isEmpty() && saved.receipt() == null && saved.pending() == null &&
+      saved.owner() == null && saved.repaired() == null && saved.rejectedKey() == null && saved.signOut() == null) return;
+  synchronized (JsonCredentialSlots.LOCK) {
+   requireSnapshot(saved);
+   if (saved.signOut() == null) save(SIGN_OUT, selected == null ? UNSELECTED : selected.localId());
+   saved = snapshot();
+  }
+  if (!secrets.isEmpty()) {
+   var authority = DeviceCustody.legacyCredentials(context, BuildConfig.CLOUD_API_ORIGIN);
+   for (String token : secrets) {
+    if (!authority.revoke(token)) throw new IOException("The previous Cloud sign-out could not be confirmed");
+   }
+  }
+  synchronized (JsonCredentialSlots.LOCK) {
+   requireSnapshot(saved);
+   for (String slot : new String[]{PENDING, receiptSlot, retiringSlot, VERIFIED_OWNER, REPAIRED_CREDENTIAL, REJECTED_KEY, credentialSlot, SIGN_OUT}) save(slot, null);
+  }
+ }
+
+ private static Set<String> retirementSecrets(Snapshot saved, Key selected, Receipt receipt) throws Exception {
+  Set<String> secrets = new LinkedHashSet<>();
+  add(secrets, selected);
+  if (receipt != null) {
+   add(secrets, receipt.before());
+   add(secrets, receipt.after());
+  }
+  JSONObject duty = saved.retiring() == null ? null : new JSONObject(saved.retiring());
+  while (duty != null) {
+   secrets.add(secret(duty.getString("token")));
+   duty = duty.has("earlier") ? duty.getJSONObject("earlier") : null;
+  }
+  return secrets;
+ }
+
+ private OwnerBinding binding(Snapshot saved) throws Exception {
+  if (saved.signOut() != null) throw needsVerification();
+  Key key = key(saved.key());
+  Receipt receipt = receipt(saved.receipt());
+  OwnerBinding prior = owner(saved.owner());
+  if (key == null && receipt == null && prior == null) return null;
+  if (key == null) throw needsVerification();
+  Owner known = matchingOwner(key, receipt, prior);
+  if (known == null || receipt != null && receipt.before() == null && key.expiresAt() > System.currentTimeMillis()) throw needsVerification();
+  return new OwnerBinding(key.localId(), known);
+ }
+
+ private static Owner matchingOwner(Key key, Receipt receipt, OwnerBinding prior) throws IOException {
+  if (receipt != null && receipt.before() != null && !key.equals(receipt.before()) && !key.equals(receipt.after())) throw needsVerification();
+  if (prior == null) return null;
+  if (key.localId().equals(prior.localId()) ||
+      receipt != null && receipt.before() != null && receipt.before().localId().equals(prior.localId())) return prior.owner();
+  throw needsVerification();
+ }
+
+ private static OwnerBinding owner(String stored) throws Exception {
+  if (stored == null) return null;
+  JSONObject value = new JSONObject(stored);
+  return new OwnerBinding(identifier(value.getString("credentialId")), new Owner(value.getString("accountId"), value.getString("organizationId")));
+ }
+
+ private Receipt receipt(String stored) throws Exception {
+  if (stored == null) return null;
+  JSONObject value = new JSONObject(stored);
+  return switch (value.optString("kind")) {
+   case RENEWAL_REQUEST -> {
+    requireRegistration(value);
+    yield new Receipt(null, key(value.getString("predecessor")), null, null);
+   }
+   case RENEWAL_RECEIPT -> {
+    JSONObject proof = value.getJSONObject("proof");
+    requireRegistration(proof);
+    Key before = key(value.getString("predecessor")), after = key(value.getString("successor"));
+    if (before.localId().equals(after.localId()) || before.secret().equals(after.secret()) ||
+        after.expiresAt() <= before.expiresAt() || !Objects.equals(after.serverId(), identifier(proof.getString("credentialId"))) ||
+        !after.secret().equals(proof.getString("secret"))) throw needsVerification();
+    String confirmedGeneration = Boolean.TRUE.equals(value.opt("confirmed")) ? identifier(value.getString("generation")) : null;
+    yield new Receipt(null, before, after, confirmedGeneration);
+   }
+   case "" -> {
+    requireRegistration(value);
+    yield new Receipt(identifier(value.getString("credentialId")), null, null, null);
+   }
+   default -> throw needsVerification();
+  };
+ }
+
+ private void requireRegistration(JSONObject value) throws Exception {
+  if (!BuildConfig.APPLICATION_ID.equals(value.getString("clientId")) || !environment.equals(value.getString("environment")) ||
+      !(BuildConfig.CLOUD_WEB_ORIGIN + BuildConfig.CLOUD_CALLBACK_PATH).equals(value.getString("redirectUri"))) throw needsVerification();
+ }
+
+ private static Key key(String stored) throws Exception {
+  if (stored == null) return null;
+  JSONObject value = new JSONObject(stored);
+  return new Key(identifier(value.getString("credentialId")),
+   value.has("serverCredentialId") ? identifier(value.getString("serverCredentialId")) : null,
+   secret(value.getString("token")), value.getLong("expiresAt"));
+ }
+
+ private static void add(Set<String> secrets, Key key) {
+  if (key != null) secrets.add(key.secret());
+ }
+
+ private static String secret(String value) throws IOException {
+  if (!BEARER.matcher(value).matches()) throw new IOException("Unreadable Cloud credential");
+  return value;
+ }
+
+ private Snapshot snapshot() throws Exception {
+  return new Snapshot(read(credentialSlot), read(receiptSlot), read(retiringSlot), read(PENDING),
+   read(VERIFIED_OWNER), read(REPAIRED_CREDENTIAL), read(GENERATION), read(SIGN_OUT), read(REJECTED_KEY));
+ }
+
+ private void requireSnapshot(Snapshot saved) throws Exception {
+  if (!saved.equals(snapshot())) throw new IOException("The previous Cloud account changed");
+ }
+
+ private void save(String slot, String value) throws Exception {
+  if (value == null) slots.remove(slot);
+  else slots.write(slot, JSONObject.quote(value));
+  if (!Objects.equals(value, read(slot))) throw new IOException("Could not save the previous Cloud account change");
+ }
+
+ private String read(String key) throws Exception {
+  String serialized = slots.read(key);
+  if (serialized == null) return null;
+  Object value = new JSONTokener(serialized).nextValue();
+  if (!(value instanceof String content)) throw new IOException("Unreadable account record");
+  return content;
+ }
+
+ private static IOException needsVerification() { return new IOException("The previous Cloud owner could not be confirmed"); }
+
+ private static String identifier(String value) {
+  if (value == null || !ACCOUNT_ID.matcher(value).matches()) throw new IllegalArgumentException("Invalid Cloud account identity");
+  return UUID.fromString(value).toString();
  }
 }

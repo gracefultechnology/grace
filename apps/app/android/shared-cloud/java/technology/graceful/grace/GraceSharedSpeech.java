@@ -1,6 +1,5 @@
 package technology.graceful.grace;
 
-import ai.eliza.auth.cloud.CloudSignInFlow;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import ai.eliza.plugins.passwords.PasswordSurfaces;
 import android.content.Context;
@@ -13,11 +12,13 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Pattern;
 import javax.net.ssl.HttpsURLConnection;
 import org.json.JSONObject;
 
 final class GraceSharedSpeech {
  private static final String ROUTE = "/api/v1/voice/speech";
+ private static final Pattern SPEECH_ID = Pattern.compile("(?i)[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}");
  private static final ExecutorService AUDIO = Executors.newSingleThreadExecutor();
  private final Context context;
 
@@ -66,10 +67,10 @@ final class GraceSharedSpeech {
     owner = GracePasswordsOwner.stableSession(context);
     if (!current(owner, generation)) throw new IOException("Account changed");
     String nonce = post(owner, "/consent", new JSONObject()).getString("consentNonce");
-    if (!CloudSignInFlow.validUuid(nonce) || !current(owner, generation)) throw new IOException("Invalid speech consent");
+    if (!validSpeechId(nonce) || !current(owner, generation)) throw new IOException("Invalid speech consent");
     var session = post(owner, "/session", new JSONObject().put("consentNonce", nonce));
     String id = session.getString("sessionId");
-    if (!CloudSignInFlow.validUuid(id)) throw new IOException("Invalid speech session");
+    if (!validSpeechId(id)) throw new IOException("Invalid speech session");
     minted = id;
     String token = session.getString("token"), expires = session.getString("expiresAt");
     String socket = "wss://" + URI.create(BuildConfig.CLOUD_API_ORIGIN).getRawAuthority() + ROUTE + "/ws?sessionId=" + id;
@@ -86,8 +87,10 @@ final class GraceSharedSpeech {
   });
  }
 
+ private static boolean validSpeechId(String value) { return value != null && SPEECH_ID.matcher(value).matches(); }
+
  private static void revoke(CloudDeviceAccount.Session owner, String id) throws Exception {
-  if (owner == null || !CloudSignInFlow.validUuid(id)) throw new IOException("Invalid speech session");
+  if (owner == null || !validSpeechId(id)) throw new IOException("Invalid speech session");
   if (!post(owner, "/session/" + id + "/revoke", null).getBoolean("revoked")) throw new IOException("Speech session is active");
  }
 

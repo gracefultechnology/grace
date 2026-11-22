@@ -495,8 +495,10 @@ session authorizes a tablet only after the person confirms the tablet
 sign-in in the browser.
 
 Each source reports through its own event. The tablet's own Grace session
-reports only whether this tablet is signed in, and the Grace service's
-authenticated response only the web account, its plan and its Google
+reports whether this tablet is signed in, signed out, or needs to clear an
+previous sign-in whose owner could not be verified because the credential
+expired or the service rejected it. The Grace service's
+authenticated response reports only the web account, its plan and its Google
 connection; either may report that the account could not be checked. Only a
 signed-in web account carries any Google link state. Every change to the
 account shown comes from one of these two reports, each carrying only what
@@ -522,11 +524,14 @@ Settings opens Account without a network connection is [the device
 shell](./shell.md)'s "Settings and rail popovers preserve the surface
 underneath": no connectivity check gates opening Settings. Keeping account
 details out of captures is the Settings account page's sensitive marking,
-which no rule checks yet.
+which no rule checks yet. Account settings offers to clear the old tablet
+sign-in when the device reports that it needs cleanup. Until the person
+confirms and the tablet reports an ordinary signed-out state, new sign-in
+is unavailable. Cleanup does not verify an owner.
 
 ```quint
 type GracePlan = PlanUnknown | PlanInactive | PlanInactiveBlocked | PlanActive | PlanInactiveManaged | PlanInactiveManagedCheckout | PlanActiveManaged
-type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignedIn | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
+type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignInNeedsCleanup | GraceDeviceSignedIn | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
 type AccountSource = TabletSession | GraceService
 type TabletSignIn = NoTabletSignIn | TabletSignInAsked | TabletSignInConfirmed({ accountId: str })
 pure def mayStartCheckout(account: GraceAccount): bool = match account {
@@ -540,11 +545,15 @@ pure def mayOpenBillingPortal(account: GraceAccount): bool = match account {
 pure def reportedBy(source: AccountSource, report: GraceAccount): bool = match report {
   | GraceDeviceSignedIn => source == TabletSession
   | GraceDeviceSignedOut => source == TabletSession
+  | GraceDeviceSignInNeedsCleanup => source == TabletSession
   | GraceSignedIn(_) => source == GraceService
   | GraceSignedOut(_) => source == GraceService
   | AccountUnavailable => source == TabletSession or source == GraceService
   | CheckingAccount => false
 }
+pure def mayBeginDeviceSignIn(account: GraceAccount): bool = account == GraceDeviceSignedOut
+pure def mayCleanupLegacySignIn(account: GraceAccount): bool = account == GraceDeviceSignInNeedsCleanup
+pure def sometimesLegacySignInNeedsCleanup(s: Setup): bool = mayCleanupLegacySignIn(s.graceAccount)
 pure def mayCheckAccountAgain(account: GraceAccount): bool = match account {
   | AccountUnavailable => true
   | GraceSignedIn(info) => info.plan == PlanUnknown
@@ -612,7 +621,7 @@ pure def stepTheAccountComesOnlyFromItsOwnSource(before: Setup, via: str, after:
 pure def alwaysOnlyAWebAccountCarriesAGoogleConnection(s: Setup): bool =
   linkUnknown(s.googleLink) or webAccountId(s.graceAccount) != ""
 pure val reportValues: Set[GraceAccount] = Set(
-  CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignedIn, AccountUnavailable,
+  CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignInNeedsCleanup, GraceDeviceSignedIn, AccountUnavailable,
   GraceSignedOut({ google: true, emailCode: true, smsCode: false }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactive }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveManaged }),

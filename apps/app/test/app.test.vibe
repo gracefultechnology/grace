@@ -601,18 +601,22 @@ it.live("Read the Google mail and calendar I connected: the pinned Eliza Cloud r
   const env = { PUBLIC_API_ORIGIN: "https://api.grace.test", WEB_ORIGIN: "https://app.grace.test" }
   const storage = try Effect.try(() => new Client())
   try tryPromise(() => storage.end())
-  const unconnectedProvider = async () => { throw new Error("This route check has no connected Google account") }
   const requests = [
     ...googleReads.map((route) => [googleRoute + route, "GET"] as const),
     ...googleChanges.map((route) => [googleRoute + route, "POST"] as const),
     ...Object.entries(accountRequests).filter(([path]) => path.startsWith(googleRoute)),
   ]
+  const providerCalls: string[] = []
+  const denyProvider: typeof fetch = async (input) => {
+    providerCalls.push(String(input))
+    throw new Error("Unexpected provider request")
+  }
   const unrouted = try Effect.forEach(requests, ([path, method]) => effect {
     const sent = HttpClientRequest.make(method)(env.PUBLIC_API_ORIGIN + path, { headers: { origin: env.WEB_ORIGIN } })
     const request = try HttpServerRequest.toWeb(HttpServerRequest.fromClientRequest(sent))
-    const response = try tryPromise(() => googleRequest(request, env, storage, "account", unconnectedProvider))
+    const response = try tryPromise(() => googleRequest(request, env, storage, "account", denyProvider))
     const { error } = try Schema.decodeUnknownEffect(Schema.Struct({ error: Schema.optional(Schema.String) }))(try tryPromise(() => response.json()))
     return error === "route_not_found" ? [method + " " + path] : []
   })
-  try Effect.try(() => assert.deepStrictEqual(unrouted.flat(), []))
+  try Effect.try(() => assert.deepStrictEqual({ unrouted: unrouted.flat(), providerCalls }, { unrouted: [], providerCalls: [] }))
 })
