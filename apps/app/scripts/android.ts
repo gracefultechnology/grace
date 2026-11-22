@@ -1315,7 +1315,8 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   }
   try { await requireNoScreenLock(); } catch (error) { failures.push(error); }
   const unclean = failures.length > 0;
-  try { await episode?.close(); } catch (error) { failures.push(error); }
+  const reason = signal.aborted ? "interrupted" : journeyFailure || unclean ? "environment_error" : "completed";
+  try { await episode?.close({ reason }); } catch (error) { failures.push(error); }
   if (failures.length) throw new AggregateError(failures, unclean ? "BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use." : "The BillWorld episode did not close. The emulator's cleanup was verified.", { cause: journeyFailure });
   if (journeyFailure) throw journeyFailure;
 }
