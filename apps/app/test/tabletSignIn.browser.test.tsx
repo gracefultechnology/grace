@@ -24,10 +24,12 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   const ambiguous = new URL(callback);
   ambiguous.searchParams.append("code", "d".repeat(64));
   const returns: string[] = [];
+  const returned = Latch.makeUnsafe();
   const browser = cdp();
   const captureReturn = async ({ request, requestId }: { request: { url: string }; requestId: string }) => {
     returns.push(request.url);
     await browser.send("Fetch.fulfillRequest", { requestId, responseCode: 204 });
+    returned.openUnsafe();
   };
   browser.on("Fetch.requestPaused", captureReturn);
   let accountId = "tablet-owner";
@@ -76,7 +78,8 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   await expect.element(page.getByText("Sign in on your tablet as second-owner@example.test?")).toBeVisible();
   expect(authorizations).toEqual(retries);
   await act(() => userEvent.click(signIn));
-  await expect.poll(() => returns).toEqual([callback.href]);
+  await Effect.runPromise(returned.await);
+  expect(returns).toEqual([callback.href]);
   expect(authorizations).toEqual([...retries, { challenge, state, expectedAccountId: accountId }]);
   await expect.element(signIn).not.toBeInTheDocument();
   const dispatched = [...returns];
