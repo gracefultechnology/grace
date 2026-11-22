@@ -26,6 +26,7 @@ function android() {
     listAvailableNetworks: () => tablet.location === "granted"
       ? Promise.resolve({ networks: tablet.visible ? tablet.scan ?? [nearby("NETGEAR-4F2", -54, "wpa2"), nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap")] : [] })
       : Promise.reject(Object.assign(new Error("location"), { code: "LOCATION_PERMISSION_REQUIRED" })),
+    connectToNetwork: () => Promise.resolve({ success: false }),
     disconnectFromNetwork: () => Promise.resolve({ success: true }),
     getConnectivity: () => Promise.resolve({ online: tablet.ssid !== null, validated: tablet.ssid !== null && tablet.validated, captivePortal: false, ssid: tablet.ssid }),
     addNetworkWithApproval: (options) => {
@@ -173,6 +174,15 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await joinedTo("Riverside Library Guest");
     await expect.element(openAndroidWifi).toBeVisible();
 
+    await tap("Sunrise Community Center");
+    await expect.poll(() => tablet.panels).toBe(4);
+    await expect.element(openAndroidWifi).not.toBeInTheDocument();
+    await tap("NETGEAR-4F2");
+    await act(() => userEvent.type(page.getByLabelText("Password"), "garden2024{Enter}"));
+    await expect.element(openAndroidWifi).toBeVisible();
+    await tap("Open Android’s Wi-Fi");
+    await expect.poll(() => tablet.panels).toBe(5);
+
     tablet.ssid = "NETGEAR-4F2";
     tablet.validated = false;
     await changed();
@@ -182,6 +192,6 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await changed();
     await joinedTo("NETGEAR-4F2");
     await expect.element(openAndroidWifi).not.toBeInTheDocument();
-    expect(tablet.joins).toHaveLength(5);
+    expect(tablet.joins).toHaveLength(6);
   });
 });
