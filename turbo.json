@@ -127,7 +127,6 @@
     },
     "//#gen:eliza": {
       "inputs": [
-        "vendor/eliza",
         "vendor/eliza/{package.json,pnpm-lock.yaml,pnpm-workspace.yaml}",
         "vendor/eliza/{apps,packages}/*/package.json",
         "vendor/eliza/spec/**/*.md",
