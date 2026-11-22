@@ -328,12 +328,11 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const scene = try look()
     const w = scene.workspace
     if (privateSurfaceActive(w)) return
-    const window = try Effect.orDie(Effect.try(() => sendable(w.assistant.conversation)))
-    if (window === undefined) {
+    const outgoing = try Effect.orDie(Effect.try(() => sendable(w.assistant.conversation)))
+    if (outgoing === undefined) {
       workspace.send({ type: "purgePrivate", token, messageIndex: w.assistant.conversation.messages.length - 1, purgeDraft: false }, "Host") catch () => undefined
       return
     }
-    const outgoing = window.map(({ author, text }) => ({ role: author === "HumanMessage" ? "user" : "assistant", content: text }))
     const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
     const news = try Ref.get(told)
     const source = try turnSource(token)

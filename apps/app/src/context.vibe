@@ -4,7 +4,7 @@ import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { calendarContext, type CalendarSource, type CalendarTold, dayRows, lead, openSelected, sourceAt } from "../gen/app__calendars.effect.vibe"
 import type { EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { entryAt } from "../gen/app__calendarView.effect.vibe"
-import { sentHistory, type Conversation, type Message } from "../gen/app__conversation.effect.vibe"
+import { sentHistory, type Conversation } from "../gen/app__conversation.effect.vibe"
 import { messageRecord, photoAssets, photoPosition, showsScamWarning, type Mailbox } from "../gen/app__email.effect.vibe"
 import type { Folder, MessageRecord } from "../gen/app__emailItem.effect.vibe"
 import { folderRows, fromChoices, mailContext, type MailTold, needsSignIn, openSource, outboxCount, showsMail, type MailSource } from "../gen/app__mailboxes.effect.vibe"
@@ -110,9 +110,12 @@ export function confidentialMail(c: MailContent | undefined): boolean {
 
 const confidentialMailNotice = "A private sign-in email is open. The person handles it directly."
 
-export function sendable(c: Conversation): readonly Message[] | undefined {
-  const window = sentHistory(c).map((m) => ({ ...m, text: withhold({ text: m.text, passwords: [] }) }))
-  return window.at(-1)?.text === c.messages.at(-1)?.text ? window : undefined
+export function sendable(c: Conversation) {
+  const messages = sentHistory(c).map(({ author, text }) => ({
+    role: author === "HumanMessage" ? "user" : "assistant",
+    content: withhold({ text, passwords: [] }),
+  }))
+  return messages.at(-1)?.content === c.messages.at(-1)?.text ? messages : undefined
 }
 
 const when = (at: number) =>
