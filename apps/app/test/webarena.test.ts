@@ -43,7 +43,7 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
   expect(interpreter.status).toBe(0);
   const python = interpreter.stdout.trim();
   const root = await mkdtemp(join(tmpdir(), "grace-webarena-worker-"));
-  type Phase = "importing" | "failing-import" | "grading";
+  type Phase = "importing" | "failing-import" | "cancelled-import" | "grading";
   type Gate = { pid: number; release: () => void };
   const gates = new EventEmitter<Record<Phase, [Gate]>>();
   const enter = async (phase: Phase) => {
@@ -61,7 +61,8 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
   const server = createServer((request, response) => {
     const [, phase, rawPid] = request.url?.split("/") ?? [];
     const pid = Number(rawPid);
-    if ((phase !== "importing" && phase !== "failing-import" && phase !== "grading") || !Number.isSafeInteger(pid) || pid < 1) {
+    if ((phase !== "importing" && phase !== "failing-import" && phase !== "cancelled-import" && phase !== "grading") ||
+        !Number.isSafeInteger(pid) || pid < 1) {
       response.writeHead(400).end();
       return;
     }
@@ -84,7 +85,7 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
       writeFile(join(module, "helper_functions.py"), fakePage),
     ]);
     const gradingTimeoutMs = 1000;
-    const start = (phase: "importing" | "failing-import") => {
+    const start = (phase: Exclude<Phase, "grading">) => {
       const worker = startWebArenaWorker({
         python, root, gradingTimeoutMs, env: { TEST_BARRIER: `http://127.0.0.1:${address.port}`, TEST_IMPORT: phase },
       });
@@ -117,6 +118,13 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     expect(failed).toMatchObject({ phase: "startup", reason: "exit" });
     expect(String(failed)).not.toContain("private fixture diagnostics");
     expect(() => process.kill(failGate.pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }));
+
+    const cancelling = start("cancelled-import");
+    const cancelled = cancelling.ready.catch((error: unknown) => error);
+    const cancelGate = await enter("cancelled-import");
+    await Promise.all([cancelling.close(), cancelling.close()]);
+    expect(await cancelled).toMatchObject({ phase: "startup", reason: "closed" });
+    expect(() => process.kill(cancelGate.pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }));
   } finally {
     await Promise.all(workers.map((worker) => worker.close()));
     for (const response of responses) response.destroy();
