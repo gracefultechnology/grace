@@ -965,16 +965,28 @@ pure def lawProductionBuildCannotOpenStagingPasswordRecovery(screenSecure: bool,
 
 Each verify, save, restore or remove action starts a new approval for the
 current native account. Shared Eliza Cloud asks the owner for fresh native
-Google verification through Steward and for consent to the action in the
-native flow. The selected Google identity must resolve to the same verified
-account and organization. Standalone Grace Cloud uses its registered
+Google verification and for consent to the action in the native flow.
+The currently deployed contract verifies through Steward. The canonical
+native contract binds the Google proof to the acknowledged device
+credential and the same registered app. Grace selects the canonical
+contract when the exact app is ready, or its Steward adapter when the
+deployed contract and exact native app are ready. The selected Google
+identity must resolve to the same verified account and organization.
+Standalone Grace Cloud uses its registered
 browser approval and gives the same tablet a bound device grant. A grant
 from either flow is usable only in that flow's deployment.
 
 ```quint
 type PasswordBackupPurpose = VerifyPasswordOwner | SavePasswordBackup | RestorePasswordBackup | DeletePasswordBackup
+type SharedPasswordBackupAuthority = SharedBackupUnavailable | SharedBackupCanonical | SharedBackupSteward
 type PasswordBackupBinding = { profile: PasswordCloudProfile, issuer: str, registrationId: str, accountId: str, organizationId: str, generationId: str, requestId: str, purpose: PasswordBackupPurpose }
 type PasswordBackupApproval = SharedNativePasswordApproval({ binding: PasswordBackupBinding }) | StandaloneBrowserPasswordApproval({ binding: PasswordBackupBinding })
+pure def sharedPasswordBackupAuthority(canonicalReady: bool, stewardReady: bool): SharedPasswordBackupAuthority =
+  if (canonicalReady) SharedBackupCanonical else if (stewardReady) SharedBackupSteward else SharedBackupUnavailable
+pure def lawSharedBackupPrefersCanonical(stewardReady: bool): bool =
+  sharedPasswordBackupAuthority(true, stewardReady) == SharedBackupCanonical
+pure def lawSharedBackupNeedsAdvertisedAuthority(canonicalReady: bool, stewardReady: bool): bool =
+  (sharedPasswordBackupAuthority(canonicalReady, stewardReady) == SharedBackupUnavailable) iff not(canonicalReady or stewardReady)
 pure def mayApproveSharedPasswordBackup(freshNativeGoogle: bool, sameAccount: bool, confirmed: bool): bool =
   freshNativeGoogle and sameAccount and confirmed
 pure def validPasswordBackupBinding(binding: PasswordBackupBinding): bool =
