@@ -894,11 +894,11 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
     await expect.element(openEmail).toBeDisabled();
     await expect.element(openMessages).toBeDisabled();
     await act(() => { finishFirstLaunch?.(); return firstAppLaunch; });
-    await expect.element(help.getByRole("status")).toHaveTextContent("Back or the app switcher");
+    await expect.element(help.getByRole("status")).toMatchTextContent("Back or the app switcher");
     expect(visit()).toEqual(before);
   }
   await tap(openMessages);
-  await expect.element(help.getByRole("status")).toHaveTextContent("couldn’t open");
+  await expect.element(help.getByRole("status")).toMatchTextContent("couldn’t open");
   await expect.element(help.getByText(/another device/)).toBeVisible();
   await expect.element(address).toBeVisible();
   expect(visit()).toEqual(before);
