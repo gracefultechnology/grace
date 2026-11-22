@@ -128,7 +128,8 @@ type Check = {
   verify: Set<Program>;
   bytes: number;
   lastPublished: number;
-  changed?: boolean;
+  drift?: string;
+  certified?: boolean;
   closed?: boolean;
 };
 const checking = new AsyncLocalStorage<Check>();
@@ -137,15 +138,28 @@ const MAX_PENDING_ENTRIES = 16;
 const MAX_PENDING_BYTES = 8 * 1024 ** 2;
 const PUBLISH_INTERVAL_MS = 1_000;
 
-export function publishChecked() {
+export class InstallationChanged extends Error {
+  constructor(component: string) {
+    super(`a tool installation changed during this check (${component}); run the check again`);
+  }
+}
+
+export function publishChecked(complete = false) {
   const check = checking.getStore();
   if (!check) return;
-  check.changed ||= [...check.verify].some((program) => !program.unchanged());
-  if (check.changed) {
+  if (complete) {
+    for (const program of check.programs.values()) if (program) check.verify.add(program);
+  }
+  for (const program of check.verify) {
+    check.drift ??= program.changed();
+    if (check.drift) break;
+  }
+  if (check.drift) {
     check.pending.clear();
     check.verify.clear();
-    throw new Error("a tool installation changed during this check; run the check again");
+    throw new InstallationChanged(check.drift);
   }
+  if (complete) check.certified = true;
   if (!check.pending.size) return;
   for (const [file, bytes] of check.pending) writeWhole(file, bytes);
   check.pending.clear();
@@ -173,7 +187,7 @@ export const steady = <T>(run: () => Promise<T>) => {
   return checking.run(check, async () => {
     try {
       const result = await run();
-      publishChecked();
+      if (!check.certified) publishChecked(true);
       return result;
     } finally {
       check.closed = true;
@@ -195,7 +209,7 @@ function perCheck<T>(read: () => Promise<T>): () => Promise<T> {
 }
 
 const TOOL_PACKAGES = { quint: "@informalsystems/quint", lsc: "lemmascript" } as const;
-type Program = { exe: string; id: string; unchanged: () => boolean };
+type Program = { exe: string; id: string; changed: () => string | undefined };
 const latest = new Map<keyof typeof TOOL_PACKAGES, Program>();
 
 function launcherDigest(exe: string, packageDir: string): string {
@@ -277,8 +291,11 @@ function packageGraph(exe: string, name: string) {
   const [main, loaded] = packageRoots(exe, name, observeLocation);
   if (!main) throw new Error(`no ${name} with a version is installed beside ${exe} or these tools; run pnpm install`);
   const roots = [visit(main), loaded && visit(loaded)];
-  return { graph, roots, main, contents, unchanged: () => [...observations].every(([file, at]) => state(file) === at)
-    && [...links].every(([file, at]) => state(file, false) === at) };
+  return { graph, roots, main, contents, changed: () => {
+    for (const [file, at] of observations) if (state(file) !== at) return file;
+    for (const [file, at] of links) if (state(file, false) !== at) return file;
+    return undefined;
+  } };
 }
 
 export const installedPackages = (exe: string, name: string) => packageGraph(exe, name).graph.map((p) => p.version).sort();
@@ -293,14 +310,17 @@ export function installedProgram(root: string, tool: keyof typeof TOOL_PACKAGES)
     return undefined;
   }
   let previous = latest.get(tool);
-  if (previous?.exe !== exe || !previous.unchanged()) {
-    const { graph, roots, main, contents, unchanged } = packageGraph(exe, TOOL_PACKAGES[tool]);
+  if (previous?.exe !== exe || previous.changed()) {
+    const { graph, roots, main, contents, changed } = packageGraph(exe, TOOL_PACKAGES[tool]);
     const packages = graph.map(({ dir, version, dependencies }) => [version, contents(dir), dependencies]);
     const id = sha(launcherDigest(exe, main), JSON.stringify([roots, packages]), `node@${process.versions.node}:${process.platform}:${process.arch}`);
-    latest.set(tool, previous = { exe, id, unchanged });
+    latest.set(tool, previous = { exe, id, changed });
   }
-  const { id, unchanged } = previous;
-  const program = { exe, id, unchanged: () => findBin(tool, root) === exe && unchanged() };
+  const { id, changed } = previous;
+  const program = { exe, id, changed: () => {
+    const file = findBin(tool, root) === exe ? changed() : exe;
+    return file === undefined ? undefined : `${tool}: ${file}`;
+  } };
   scope?.programs.set(key, program);
   return program;
 }
@@ -314,9 +334,9 @@ export function evaluatorForCheck(root: string): string | undefined {
   return id;
 }
 
-export function stableInstallation(same: boolean) {
+export function stableInstallation(same: boolean, component: string) {
   const scope = checking.getStore();
-  if (!same && scope) scope.changed = true;
+  if (!same && scope) scope.drift ??= component;
   return same;
 }
 
@@ -541,7 +561,7 @@ function use(memory: Memory, name: string) {
 export function recall<T>(memory: Memory, { name, file, evaluator }: Entry): T | undefined {
   memory.used.add(name);
   const check = checking.getStore();
-  if (memory.fresh || evaluator === null || check?.changed || check?.closed) return undefined;
+  if (memory.fresh || evaluator === null || check?.drift || check?.closed) return undefined;
   const fileBase = file.slice(0, -primaryExtension.length);
   const nameBase = name.slice(0, -primaryExtension.length);
   for (const [extension, decompress] of formats) {
@@ -566,9 +586,9 @@ export function recall<T>(memory: Memory, { name, file, evaluator }: Entry): T |
 export function store(memory: Memory, { name, file, evaluator }: Entry, value: unknown, action?: { program: Program; began: number }) {
   memory.used.add(name);
   const check = checking.getStore();
-  if (unsure || check?.changed || check?.closed || evaluator === null) return;
-  if (evaluator !== undefined && !stableInstallation(evaluatorIdentity(memory.root) === evaluator)) return;
-  if (action && !check && !action.program.unchanged()) return;
+  if (unsure || check?.drift || check?.closed || evaluator === null) return;
+  if (evaluator !== undefined && !stableInstallation(evaluatorIdentity(memory.root) === evaluator, "Quint evaluator")) return;
+  if (action && !check && action.program.changed()) return;
   const bytes = zstdCompressSync(JSON.stringify(value));
   sharedCache(name)?.used.add(name);
   if (action) check?.verify.add(action.program);

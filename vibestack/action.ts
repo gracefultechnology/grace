@@ -86,7 +86,7 @@ export async function act(memory: Memory, tool: keyof typeof TOOLS, args: string
     files: Object.fromEntries(written.map((f) => [f, fs.readFileSync(path.join(where, f), "utf8")])) };
   if (!ran.stopped && answered(args, ran)) {
     const same = installed ? !script || stamp([script]) === since : await verifiedNow() === id;
-    if (stableInstallation(same)) store(memory, at, ran, installed && { program: installed, began });
+    if (stableInstallation(same, script ?? "Dafny or Z3")) store(memory, at, ran, installed && { program: installed, began });
   }
   return ran;
 }

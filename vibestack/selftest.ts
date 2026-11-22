@@ -3812,6 +3812,28 @@ test("the same installed Quint shares verification results across checkouts and 
     assert.equal(recall(memory, first), first.name, "the prior verified action survives");
   `], left.root);
   assert.equal(publication.status, 0, publication.stderr);
+  const projectWithTool = toolchain(oneRule("index", "Value", "pure val value = 1"), "quint");
+  const shim = path.join(projectWithTool, "node_modules/.bin/quint");
+  fs.unlinkSync(shim);
+  fs.copyFileSync(path.join(nodeModules, ".bin/quint"), shim);
+  const retry = await exec(process.execPath, ["--input-type=module", "--eval", `
+    import assert from "node:assert/strict";
+    import fs from "node:fs";
+    import { check } from "./vibestack/pipeline.ts";
+    let models = 0;
+    const result = await check(".", false, (step) => {
+      if (step.stage === "model" && ++models === 1) fs.linkSync("node_modules/.bin/quint", "second-install-quint");
+    });
+    assert.equal(models, 2);
+    assert.deepEqual(result.results.map(({ stage }) => stage).filter(stage => stage === "model"), ["model"]);
+    assert.deepEqual(result.results.filter(step => !step.ok).map(({ stage }) => stage), ["review"]);
+    models = 0;
+    await assert.rejects(check(".", false, (step) => {
+      if (step.stage === "model") fs.linkSync("node_modules/.bin/quint", "changing-shim-" + ++models);
+    }), /tool installation changed during this check \\(quint:/);
+    assert.equal(models, 2);
+  `], projectWithTool);
+  assert.equal(retry.status, 0, retry.stdout + retry.stderr);
 });
 
 test("a trace integer of 16 or more digits that Quint wrote as a BigNumber decodes to the same integer", () => {
