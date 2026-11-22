@@ -120,6 +120,10 @@ async function readOutlookFromHome() {
 }
 
 it("Connect the email I already use", async () => {
+  // spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"
+  await expect.element(page.getByText("Not connected", { exact: true })).toBeVisible();
+  await expect.element(page.getByText("Connect your email to see it here.")).toBeVisible();
+
   // spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"
   await openEmailSettings();
   await expect.element(page.getByText("Which email do you use?")).toBeVisible();
@@ -155,6 +159,7 @@ it("Connect the email I already use", async () => {
   await expect.element(page.getByText("Connect your email to see it here.")).toBeVisible();
   await tap(emailCard());
   await expect.element(page.getByText("Get your email on this tablet")).toBeVisible();
+  expect(page.getByRole("button", { name: "Write" }).query()).toBeNull();
   await tap(page.getByRole("button", { name: "Connect your email" }));
   await expect.element(settings().getByRole("button", { name: "Email & calendar" })).toHaveAttribute("aria-current", "page");
   await tap(outlookRow);

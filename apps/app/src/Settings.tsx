@@ -1,5 +1,5 @@
 // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/accounts.md, "Story: Connect the email I already use"
-import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, RetryNotice, SettingsApp, SettingsBrightness, SettingsTextSize, SettingsVoice, type SettingsPage as PageName } from "@repo/ui";
+import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, RetryNotice, SettingsApp, SettingsBrightness, SettingsTextSize, SettingsVoice, Spinner, type SettingsPage as PageName } from "@repo/ui";
 import { CircleAlert, Trash, X } from "lucide-react";
 import type { ComponentProps } from "react";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
@@ -8,7 +8,7 @@ import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
 import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
-import { usesManagedSurfaces } from "./managedReads.vibe";
+import { surfaceOwner } from "./managedReads.vibe";
 import { retryPreferences } from "./preferences.vibe";
 import { useRuntime, useWebsiteRequests, useWorkspace } from "./useApp.ts";
 import { Wifi } from "./Wifi.tsx";
@@ -49,11 +49,14 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     onClose: () => { if (can({ type: "returnToApplication" })) void send({ type: "returnToApplication" }); }, ...props,
   };
   if (page === "EmailCalendarSettings") {
-    if (!usesManagedSurfaces(setup, window.location.hash)) return <EmailAccounts {...frame} />;
+    const owner = surfaceOwner(setup, window.location.hash);
+    if (owner === "Ours") return <EmailAccounts {...frame} />;
     return <SettingsApp {...frame}>
       <PageHeading>Email &amp; calendar</PageHeading>
-      {setup?.graceAccount.tag === "GraceSignedIn" && setup.googleLink.tag === "GoogleLinkConnected" && <PageText>{setup.googleLink.email}</PageText>}
-      <Button variant="prominent" size="pill" onClick={() => choose("account")}>Manage connections in Grace account</Button>
+      {owner === "Undecided" ? <ListRow role="status" className="mt-6" leading={<Spinner size="lg" aria-hidden />} title="Getting your email and calendar…" /> : <>
+        {setup?.graceAccount.tag === "GraceSignedIn" && setup.googleLink.tag === "GoogleLinkConnected" && <PageText>{setup.googleLink.email}</PageText>}
+        <Button variant="prominent" size="pill" onClick={() => choose("account")}>Manage connections in Grace account</Button>
+      </>}
     </SettingsApp>;
   }
 

@@ -119,7 +119,7 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const guidance = Layer.provideMerge(agent, services(cloud))
   const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup))
   const noticed = Layer.provideMerge(notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), recoverable)
-  const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateEmail), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native), voice), noticed)
+  const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateEmail), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native, cloud !== undefined), voice), noticed)
   const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary), shell)
   const controlled = Layer.provideMerge(Layer.mergeAll(replyControls(platform.native), conversation(cloud)), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)

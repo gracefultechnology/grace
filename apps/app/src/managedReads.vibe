@@ -112,10 +112,13 @@ export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" 
   ({ kind: "mail"; subjectForGrace: string } | { kind: "calendar"; title: string; startAt: string })
 )
 
-export function usesManagedSurfaces(setup: Pick<SetupState, "graceAccount" | "googleLink"> | undefined, hash: string): boolean {
-  const account = setup?.graceAccount
-  return viewOf(hash) !== undefined || account?.tag === "GraceDeviceSignedIn" ||
-    account?.tag === "GraceSignedIn" && setup?.googleLink.tag !== "GoogleLinkUnknown"
+export type SurfaceOwner = "Hosted" | "Ours" | "Undecided"
+
+export function surfaceOwner(setup: Pick<SetupState, "graceAccount" | "googleLink"> | undefined, hash: string): SurfaceOwner {
+  if (viewOf(hash) !== undefined) return "Hosted"
+  if (setup === undefined || setup.graceAccount.tag === "CheckingAccount") return "Undecided"
+  const account = setup.graceAccount
+  return account.tag === "GraceDeviceSignedIn" || account.tag === "GraceSignedIn" && setup.googleLink.tag !== "GoogleLinkUnknown" ? "Hosted" : "Ours"
 }
 
 export type GuidedAuthority = { device: string; connected: string | undefined }
@@ -124,7 +127,8 @@ export function guidedAuthority(setup: SetupState | undefined, hash: string): Gu
   const account = setup?.graceAccount
   const link = setup?.googleLink
   const device = account?.tag === "GraceSignedIn" ? JSON.stringify(["grace", account.accountId]) : "tablet"
-  const connected = !usesManagedSurfaces(setup, hash) ? "tablet" :
+  const owner = surfaceOwner(setup, hash)
+  const connected = owner === "Ours" ? "tablet" : owner === "Hosted" &&
     account?.tag === "GraceSignedIn" && link?.tag === "GoogleLinkConnected" && link.email.trim() !== ""
       ? JSON.stringify(["google", account.accountId, link.email.trim().toLowerCase()]) : undefined
   return { device, connected }
@@ -564,12 +568,12 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   }
 
   effect function ownsSurfaces(): boolean!! {
-    return usesManagedSurfaces(try setup.get(), webView.window.location.hash)
+    return surfaceOwner(try setup.get(), webView.window.location.hash) !== "Ours"
   }
 
   effect function guidedSelection(): GuidedManagedSelection!! {
     const account = try setup.get()
-    if (!usesManagedSurfaces(account, webView.window.location.hash)) return { kind: "legacy" }
+    if (surfaceOwner(account, webView.window.location.hash) === "Ours") return { kind: "legacy" }
     const scope = try activeScope()
     const shown = try SubscriptionRef.get(latest)
     if (scope.kind !== "ready" || account.graceAccount.tag !== "GraceSignedIn" ||
