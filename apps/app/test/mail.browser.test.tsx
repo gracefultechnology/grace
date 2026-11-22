@@ -1,5 +1,6 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Story: Save, share and remove the chosen file"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"
-import { Effect, Latch, ManagedRuntime, Schema } from "effect";
+import { Effect, Latch, Layer, ManagedRuntime, Schema } from "effect";
+import { FetchHttpClient } from "effect/http";
 import { act } from "react";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
@@ -17,7 +18,7 @@ import { Instances } from "../src/instances.vibe";
 import { chooseMailLink } from "../src/mailLink.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { client, expire, outage, script, signIn } from "./cloud.vibe";
-import { actOnScreen, allowOutlook, browserAccountResponse, connected, mountGmail, tabletView } from "./screen.tsx";
+import { actOnScreen, allowOutlook, browserAccountResponse, connected, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -637,33 +638,44 @@ it(`Keep the saved draft count while the Inbox refresh is delayed (spec/app/emai
   const release = Latch.makeUnsafe();
   const returned = Latch.makeUnsafe();
   const fetch = window.fetch.bind(window);
-  let first = true;
-  const network = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+  let hold = false;
+  const delayed: typeof fetch = async (input, init) => {
     const path = new URL(input instanceof Request ? input.url : input, location.href).pathname;
     const method = init?.method ?? (input instanceof Request ? input.method : "GET");
     const response = await fetch(input, init);
-    if (first && method === "GET" && path.endsWith("/inbox-v1/drafts")) {
-      first = false;
+    if (hold && method === "GET" && path.endsWith("/inbox-v1/drafts")) {
+      hold = false;
       captured.openUnsafe();
       await Effect.runPromise(release.await);
       returned.openUnsafe();
     }
     return response;
-  });
-  try {
-    await mountGmail(gmail, { url: cloud, key: secret });
-    await click(page.getByRole("button", { name: /^Email/ }));
-    await Effect.runPromise(captured.await);
+  };
+  localStorage.clear();
+  localStorage.setItem("accounts", JSON.stringify(connected(initial, "Gmail", gmail, "Gmail")));
+  const app = application(undefined, undefined, { url: cloud, key: secret });
+  const view = tabletView(ManagedRuntime.make(Layer.provide(app, Layer.succeed(FetchHttpClient.Fetch, delayed))));
+  const save = async (title: string) => {
     await click(page.getByRole("button", { name: "Write" }));
     await click(page.getByRole("button", { name: "Susan" }));
-    await act(() => userEvent.fill(subject(), "Lunch tomorrow"));
+    await act(() => userEvent.fill(subject(), title));
     await click(page.getByRole("button", { name: "Back to Inbox" }));
-    await expect.element(row("Drafts 1")).toBeVisible();
+  };
+  try {
+    await view.render();
+    await click(page.getByRole("button", { name: /^Email/ }));
+    await expect.element(email(/Main St Clinic/)).toBeVisible();
+    hold = true;
+    await save("Lunch tomorrow");
+    await Effect.runPromise(captured.await);
+    await save("Tea next week");
+    await expect.element(row("Drafts 2")).toBeVisible();
     await act(async () => { release.openUnsafe(); await Effect.runPromise(returned.await); });
-    await expect.element(row("Drafts 1")).toBeVisible();
+    await expect.element(row("Drafts 2")).toBeVisible();
   } finally {
     release.openUnsafe();
-    network.mockRestore();
+    await view.dispose();
+    localStorage.clear();
   }
 }, 120_000);
 
