@@ -376,17 +376,17 @@ pure def joined(view: TaskView): bool =
   val progress = view.progress
   match progress {
     | NoLinkedAttempt => false
-    | Following(run) => sameAttempt(view, run.link) and view.preparation.phase == P::HandedOff and
-        view.preparation.version == run.link.preparationVersion and view.workspace.assistant.outcome != A::Abandoned
-    | FinishedAttempt(run) => sameAttempt(view, run.link) and view.preparation.phase == P::NoTask and
-        view.preparation.version == run.link.preparationVersion + 1 and finishedWithReceipt(view.workspace)
+    | Following(tracked) => sameAttempt(view, tracked.link) and view.preparation.phase == P::HandedOff and
+        view.preparation.version == tracked.link.preparationVersion and view.workspace.assistant.outcome != A::Abandoned
+    | FinishedAttempt(tracked) => sameAttempt(view, tracked.link) and view.preparation.phase == P::NoTask and
+        view.preparation.version == tracked.link.preparationVersion + 1 and finishedWithReceipt(view.workspace)
   }
 
 pure def progressAtEnd(view: TaskView, by: T::TaskActor): TaskProgress =
   val progress = view.progress
   match progress {
-    | Following(run) => if (by == T::Host and joined(view) and finishedWithReceipt(view.workspace))
-        FinishedAttempt({ link: run.link }) else NoLinkedAttempt
+    | Following(tracked) => if (by == T::Host and joined(view) and finishedWithReceipt(view.workspace))
+        FinishedAttempt({ link: tracked.link }) else NoLinkedAttempt
     | _ => NoLinkedAttempt
   }
 
