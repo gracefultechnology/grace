@@ -36,8 +36,7 @@ function joinedFragments(lines: readonly string[]): string[] {
 }
 
 function statementLabels(text: string): Labeled[] {
-  const inlineDates = text.replace(/\r?\n[ \t]+(by)[ \t]+(?:\r?\n)?(?=\S)/giu, " $1 ");
-  const lines = joinedFragments(inlineDates.split(/\r?\n|[^\S\r\n]+·[^\S\r\n]+/u).map((line) => line.trim()).filter(Boolean));
+  const lines = joinedFragments(text.split(/\r?\n|[^\S\r\n]+·[^\S\r\n]+/u).map((line) => line.trim()).filter(Boolean));
   return lines.flatMap((line, index) => [...line.matchAll(label)].flatMap((match) => {
     const fact = facts.find((name) => match.groups?.[name] !== undefined);
     const words = fact === undefined ? undefined : match.groups?.[fact];
