@@ -1,4 +1,4 @@
-// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "Story: Approve a password backup in my browser"
 export { SpeechRelayCoordinator } from "@elizaos/cloud/worker"
 import { cloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud/worker"
 import { HttpServerResponse } from "effect/http"
@@ -40,9 +40,13 @@ export default {
       if (url.pathname !== "/android/passwords/approve") return page
       const response = HttpServerResponse.fromWeb(page)
       return HttpServerResponse.toWeb(HttpServerResponse.setHeaders(response, {
-        "content-security-policy": "frame-ancestors 'none'",
+        "content-security-policy": [
+          "default-src 'none'", "script-src 'self'", "style-src 'self'", "font-src 'self'", "img-src 'self'",
+          `connect-src 'self' ${new URL(env.PUBLIC_API_ORIGIN).origin}`, "base-uri 'none'",
+          "form-action 'none'", "frame-ancestors 'none'",
+        ].join("; "),
         "referrer-policy": "no-referrer",
-        "cache-control": "no-store",
+        "cache-control": "no-store, no-transform",
       }))
     }
     if (url.origin !== env.PUBLIC_API_ORIGIN) return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
