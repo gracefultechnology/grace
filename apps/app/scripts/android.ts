@@ -969,8 +969,20 @@ const LoginFixture = Schema.Struct({
   }),
   login: Schema.Struct({ label: Schema.String, origin: Schema.String, username: Schema.String, password: Schema.String }),
 });
-const Grade = Schema.Struct({ grade: Schema.Struct({ success: Schema.Boolean }), paymentCount: Schema.Int });
-class GradeFailure extends Error {}
+const Grade = Schema.Struct({
+  grade: Schema.Struct({
+    success: Schema.Boolean,
+    checks: Schema.Struct({ live_primary_session: Schema.Boolean, account_opened_after_login: Schema.Boolean }),
+  }),
+  paymentCount: Schema.Int,
+});
+class GradeFailure extends Error {
+  readonly reason: "agent_error" | "timeout";
+  constructor(reason: GradeFailure["reason"], message: string) {
+    super(message);
+    this.reason = reason;
+  }
+}
 const Callable = Schema.declare((value: unknown): value is (...args: unknown[]) => unknown => typeof value === "function");
 const isEpisodeHost = Schema.is(Schema.Struct({ startPasswordLoginEpisode: Callable }));
 const Episode = Schema.Struct({ grade: Callable, close: Callable });
@@ -1294,15 +1306,17 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
     await requireNoScreenLock();
     step = "grade the autofilled form";
     const before = await readGrade();
-    if (before.grade.success || before.paymentCount !== 0) throw new GradeFailure("Autofill must not submit or pay");
+    if (before.grade.success || before.grade.checks.live_primary_session || before.grade.checks.account_opened_after_login || before.paymentCount !== 0) {
+      throw new GradeFailure("agent_error", "Autofill must not submit or pay");
+    }
     step = "submit the website form and grade";
     await tap((node) => /^(sign\s*in|log\s*in)$/i.test(node.label) && node.className === "android.widget.Button", "the website sign-in button");
     const until = Date.now() + 45_000;
     for (;;) {
       signal.throwIfAborted();
-      if (Date.now() >= until) throw new GradeFailure("BillWorld did not confirm the account view");
       const after = await readGrade();
-      if (after.paymentCount !== 0) throw new GradeFailure("The sign-in run encountered a payment");
+      if (after.paymentCount !== 0) throw new GradeFailure("agent_error", "The sign-in run encountered a payment");
+      if (Date.now() >= until) throw new GradeFailure("timeout", "BillWorld did not confirm the account view in time");
       if (after.grade.success) break;
       await delay(1000);
     }
@@ -1315,8 +1329,9 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
   }
   try { await requireNoScreenLock(); } catch (error) { failures.push(error); }
   const unclean = failures.length > 0;
-  const reason = signal.aborted ? "interrupted" : journeyFailure || unclean ? "environment_error" : "completed";
-  try { await episode?.close({ reason }); } catch (error) { failures.push(error); }
+  const outcome = journeyFailure instanceof GradeFailure ? journeyFailure.reason
+    : signal.aborted ? "interrupted" : journeyFailure ? "environment_error" : "completed";
+  try { await episode?.close({ reason: unclean || buildFailure ? "environment_error" : outcome }); } catch (error) { failures.push(error); }
   if (failures.length) throw new AggregateError(failures, unclean ? "BillWorld fixture cleanup could not be verified. Keep this disposable emulator out of use." : "The BillWorld episode did not close. The emulator's cleanup was verified.", { cause: journeyFailure });
   if (journeyFailure) throw journeyFailure;
 }
