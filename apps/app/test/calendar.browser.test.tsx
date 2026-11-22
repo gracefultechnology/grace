@@ -306,7 +306,13 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
 }, journey);
 
 it('Change and delete an appointment from email (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
-  const { secret, eyeAt, eyeDay, toEyeWeek } = await start();
+  const { secret, eye, eyeAt: scheduled, eyeDay, toEyeWeek, run } = await start();
+  const eyeAt = scheduled + 7 * 60_000 + 12_345;
+  const shifted = await fetch(new URL(`/api/v1/eliza/google/calendar/events/${encodeURIComponent(eye)}`, cloud), {
+    method: "PATCH", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+    body: JSON.stringify({ startAt: new Date(eyeAt).toISOString(), endAt: new Date(eyeAt + hour / 2).toISOString() }),
+  });
+  expect(shifted.ok).toBe(true);
   const titles = async () => (await held(secret)).map((e) => e.title);
   await toEyeWeek();
   // spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"
@@ -319,6 +325,7 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await click("Change Day");
   await picked(longDate(eyeDay));
   await click(longDate(eyeDay));
+  expect((await run(selectedGmailCalendar)).entries.find((e) => e.identity.occurrenceId === eye)?.draft.startAt).toBe(eyeAt);
   await click("Back to Calendar");
   await edit("Eye check at Riverside", "Every week");
   await expect.element(page.getByText("Repeats every week")).toBeVisible();

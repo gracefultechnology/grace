@@ -1,7 +1,7 @@
 // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "An account's calendar is bound by its store before Calendar opens"; spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"; spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"; spec/app/calendarView.md, "Closing Calendar cancels unsubmitted edits and retains submitted writes"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Her yes is applied as the exact question she was asked"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/notices.md, "One toast shows at a time and the others wait their turn in order"; spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background"; spec/app/notices.md, "Only the calendar dismisses a reminder, and then it is gone everywhere"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
-import { askedDay, type CalendarSource, type CalRow, changeOf, confirmationOf, confirmRing, type DayToShow, deletionOf, savedDay, shownReminders, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
+import { askedDay, type CalendarSource, type CalRow, changeOf, confirmationOf, confirmRing, type DayToShow, deletionOf, savedDay, shownReminders, showsDay, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
 import { type Machine as CalendarMachine, enabled, entryAt, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type SeriesReceipt, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { planned, repetitions as repeatsOf, shifted } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
@@ -427,8 +427,15 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   }
 
   effect function turnTo(boxes: readonly CalendarMachine.Shape[], shown: DayToShow) {
-    if (!shown.show) return
-    for (const box of new Set(boxes)) box.send({ type: "navigate", report: navigation((try box.get()).window, "SelectDay", dayOf(shown.startAt)) }, "ViewUser") catch () => undefined
+    if (!shown.show || (try workspace.get()).device.surface !== "Calendar") return
+    const day = dayOf(shown.startAt)
+    const fromTime = midnight(day)
+    const untilTime = midnight(day + 1)
+    const start = { startAt: shown.startAt, day, fromTime, untilTime, verified: dayOf(fromTime) === day && dayOf(untilTime - 1) === day }
+    for (const box of new Set(boxes)) {
+      const report = navigation((try box.get()).window, "SelectDay", day)
+      if (showsDay(report, start, shown)) box.send({ type: "navigate", report }, "ViewUser") catch () => undefined
+    }
   }
 
   const visibility = Stream.changes(Stream.map(workspace.changes, (w) => w.device.surface === "Calendar"))
