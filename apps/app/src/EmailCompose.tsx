@@ -6,7 +6,7 @@ import { Effect } from "effect";
 import { Suspense, use, useMemo, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { ComposeChoice, DraftContent, Event as MailEvent, Mailbox, SendStatus } from "../gen/app__email.ts";
-import { canMoveDraft, contactAccounts, fromChoices, type MailSource, pickerBack, showsCopies, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
+import { draftMovable, contactAccounts, fromChoices, type MailSource, pickerBack, showsCopies, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import type { Contact } from "./connector.vibe";
 import { Library, type SavedPreview } from "./files.vibe";
 import { recipientsOf, recipientsValid } from "./mail.vibe";
@@ -155,7 +155,7 @@ export function EmailCompose({ registry, boxes, box, mail, sender, frame }: Emai
 
   const text = (field: Field) => typed[field] ?? m.draft[field];
   const write = (field: Field, value: string) => void edit({ ...m.draft, subject: text("subject"), body: text("body"), [field]: value }, field, value);
-  const choices = fromChoices(registry, boxSources).filter((a) => a.id === box.id || canMoveDraft(m, sourceOf(boxSources, a.id).mailbox));
+  const choices = fromChoices(registry, boxSources).filter((a) => a.id === box.id || draftMovable(m, sourceOf(boxSources, a.id).mailbox));
   const keep: MailEvent = { type: "preserveDraft", draftId: m.draftId };
   const undeleted = mail.undeleted.has(box.id);
   const removal = (index: number): MailEvent => ({ type: "removeAsset", assetId: m.draftAttachments[index]?.id ?? "" });

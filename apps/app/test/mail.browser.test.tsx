@@ -131,13 +131,13 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
       signedIn = active;
       await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" })));
     }),
-    host: (availability: "Online" | "Offline") => act(async () => {
+    host: async (availability: "Online" | "Offline") => {
       const online = availability === "Online";
       connectivity.mockReturnValue(online);
-      window.dispatchEvent(new Event(online ? "online" : "offline"));
+      await act(() => Promise.resolve(window.dispatchEvent(new Event(online ? "online" : "offline"))));
       await expect.poll(() => runtime.runPromise(Effect.flatMap(Workspaces, (workspace) =>
         Effect.map(workspace.get(), ({ device }) => device.connectivity)))).toBe(availability);
-    }),
+    },
     person: (event: AccountEvent) => act(() => runtime.runPromise(Effect.flatMap(Effect.service(AccountsMachine), (a) => a.send(event, "AccountPerson")))),
     company: async () => Schema.decodeUnknownSync(Kept)(await (await fetch(new URL("/fake/account", cloud), { headers: { authorization: `Bearer ${secret}` } })).json()),
   };
@@ -292,6 +292,8 @@ it("See all my email in one place", async () => {
   // spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"
   const card = page.getByRole("button", { name: /^Email/ });
   await expect.element(card).toHaveAccessibleDescription(/Your Riverside Power bill is ready/);
+  // spec/app/mailboxes.md, "The Home Email card says Waiting for the internet, Not connected, or how many are new"
+  await expect.element(card).toHaveAccessibleName(/5 new/);
   // spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"
   await host("Offline");
   await expect.element(card).toHaveAccessibleName(/Waiting for the internet/);
@@ -489,7 +491,7 @@ it("See all my email in one place", async () => {
 }, 300_000);
 
 it("Write or reply and confirm before sending", async () => {
-  const { secret, host, company } = await start();
+  const { secret, host, person, company } = await start();
   const sent = async (title: string) => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === title && m.labels.includes("SENT")).map((m) => ({ ...m, from: b.address })));
   const sentWith = async (title: string) => (await sent(title)).map((m) => m.from);
   // spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"
@@ -618,12 +620,15 @@ it("Write or reply and confirm before sending", async () => {
   const sends = async () => (await company()).changes.filter((c) => c.receipt.kind === "send" && c.receipt.state === "succeeded").map((c) => c.receipt.requestId);
   const before = await sends();
   await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(page.getByText("Waiting in Outbox until you’re back online")).toBeVisible();
   await click(row("Outbox 1"));
-  const waiting = email(/Re: Lunch on Sunday\?/);
+  const waiting = email(/Ruth.*Re: Lunch on Sunday\?/);
   await expect.element(waiting).toBeVisible();
   await expect.element(page.getByText("Just now")).toBeVisible();
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
+  const delivered = expect.element(page.getByText("Your email to Ruth was sent"), { timeout: 60_000 }).toBeVisible();
   await host("Online");
+  await delivered;
   await expect.element(waiting).not.toBeInTheDocument();
   await click(row("All inboxes"));
   await expect.element(row("Outbox")).not.toBeInTheDocument();
@@ -660,6 +665,16 @@ it("Write or reply and confirm before sending", async () => {
   await host("Online");
   await expect.poll(() => sentWith("Recital photos")).toHaveLength(1);
   await expect.element(row("Outbox")).not.toBeInTheDocument();
+
+  // spec/app/mailboxes.md, "The Home Email card says Waiting for the internet, Not connected, or how many are new"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"
+  await person({ type: "setUse", id: 1, use: { mail: false, calendar: true, contacts: true } });
+  const card = page.getByRole("button", { name: /^Email/ });
+  await click(page.getByRole("button", { name: "Close Email" }));
+  await expect.element(card).toHaveAccessibleName(/1 new/);
+  await click(card);
+  await opened(/St\. Mark’s Church Office/, "Thanksgiving dinner sign-up");
+  await click(page.getByRole("button", { name: "Close Email" }));
+  await expect.element(card).toHaveAccessibleName(/No new email/);
 }, 600_000);
 
 it(`Keep the latest draft count (spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open")`, async () => {
@@ -764,6 +779,8 @@ it('Open a link from the email I chose (spec/app/handoffs.md, "A link Email rele
   await openEmail();
   await opened(/Account Security/, "Urgent: confirm your password");
   await expect.element(flagged).toBeVisible();
+  await expect.element(page.getByText("Grace thinks this email is a scam. Don’t tap its links.")).toBeVisible();
+  await expect.element(page.getByText(/security-alert@acc0unt-help\.co/)).toBeVisible();
   await expect.element(page.getByRole("link", { name: /invalid\.example/ })).not.toBeInTheDocument();
   const target = flagged.element().textContent;
   await click(flagged);

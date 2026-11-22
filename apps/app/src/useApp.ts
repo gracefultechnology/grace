@@ -16,6 +16,7 @@ import { useMachine as useMailMachine } from "../gen/app__email.react.ts";
 import type { Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { useMachine as useProposalMachine } from "../gen/app__proposal.react.ts";
 import { Machine as PageLayers, historyFor } from "../gen/app__surface.effect.vibe";
+import type { Machine as MailChoices } from "../gen/app__mailboxes.effect.vibe";
 import type { HistoryDirection } from "../gen/app__deviceKeys.ts";
 import { useMachine as usePageLayers } from "../gen/app__surface.react.ts";
 import { type Event as WebsiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe";
@@ -48,7 +49,7 @@ import { PageHost } from "./page.vibe";
 import type { NoticeServices } from "./notices.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | CalendarNews | Accounts | Proposal | Instances | SignIns | NoticeServices | Library, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | CalendarNews | Accounts | Proposal | Instances | SignIns | NoticeServices | Library | MailChoices, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
