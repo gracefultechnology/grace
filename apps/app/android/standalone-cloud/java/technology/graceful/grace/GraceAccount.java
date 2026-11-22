@@ -222,6 +222,7 @@ public final class GraceAccount extends Plugin {
   });
  }
 
+ @PluginMethod public void inboxArrival(PluginCall call) { guide.inboxArrival(call); }
  @PluginMethod public void browserGuideLease(PluginCall call) { guide.browserGuideLease(call); }
 
  @PluginMethod public void chooseBrowserLink(PluginCall call) { guide.chooseBrowserLink(call); }

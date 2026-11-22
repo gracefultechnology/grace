@@ -151,25 +151,52 @@ pure def lawTheBrowserHostCannotRequestPrivateSignIn(b: B::Browser, origin: str)
   not(canControl(b, RequestPrivateSignIn({ id: b.selected, revision: b.revision, origin: origin }), BrowserControlHost))
 ```
 
-### Only the person can open their mail app from the current private tab
+### Only the person can open a verification app from the current private tab
 
-If the website asks for a code by email, the person taps **Check email** on
-the loaded private sign-in tab. Android opens a mail app through its normal
-app selection. Grace sends no address, search, message or code and receives
-no mail result. A stale request, another tab or a host request cannot open
-mail. The handoff leaves the private tab open and grants no website work or
-completion. If Android cannot open a mail app, the person can check on another
-device. Back or Android's app switcher returns to the same private tab, where
-the person enters the code directly on the website.
+On a loaded, secure private tab, **Sign-in help** explains how to choose a
+saved login or type it. When the site asks for verification, the person can
+open Grace Email immediately to check an existing message in their connected
+inbox. This choice starts no watch. They can also open their email or messages
+app, use an authenticator, or check another account or device. Only their choice on the current tab and revision can
+launch an app. Android receives the chosen app category alone. Back returns
+to the website where the person requested the code. The website decides
+whether to accept what the person submits. Opening or returning from another
+app leaves the guided task paused.
 
 ~~~quint
-pure def canCheckPrivateEmail(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
+pure def canOpenPrivateVerificationApp(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
   by == BrowserControlUser and id == b.selected and revision == b.revision and
-  B::activeTab(b).manualSignIn and B::activeTab(b).load == B::Loaded
-pure def lawPrivateEmailRequiresTheCurrentPersonTab(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
-  (by != BrowserControlUser or id != b.selected or revision != b.revision or
-    not(B::activeTab(b).manualSignIn) or B::activeTab(b).load != B::Loaded) implies
-    not(canCheckPrivateEmail(b, id, revision, by))
+  B::activeTab(b).manualSignIn and B::activeTab(b).secure and B::activeTab(b).load == B::Loaded
+pure def lawPrivateVerificationRequiresTheCurrentPersonTab(b: B::Browser, id: int, revision: int, by: BrowserControlActor): bool =
+  canOpenPrivateVerificationApp(b, id, revision, by) implies
+    (by == BrowserControlUser and id == b.selected and revision == b.revision and
+     B::activeTab(b).manualSignIn and B::activeTab(b).secure and B::activeTab(b).load == B::Loaded)
+~~~
+
+### A new-mail hint belongs to one approved private visit
+
+When the website requests an email and the person chooses to watch their
+connected inbox, Grace starts with the inbox as it is now. For up to five
+minutes it can report one new arrival. The hint says new mail arrived and
+offers to open email. It cannot identify a verification code, name its
+sender, complete sign-in or advance a task. Old mail gives no hint. The
+person can stop at any time. Closing help, leaving the foreground, reloading,
+switching accounts or grants, and changing tabs or documents end the watch.
+A new watch starts from a new baseline. Neither the cursor nor a hint is
+saved or sent to the model.
+
+~~~quint
+type PrivateInboxVisit = { tab: int, revision: int, loadVersion: int }
+pure val visitValues = Set({ tab: 2, revision: 2, loadVersion: 1 },
+  { tab: 1, revision: 2, loadVersion: 1 }, { tab: 2, revision: 1, loadVersion: 1 },
+  { tab: 2, revision: 2, loadVersion: 2 })
+pure def canWatchPrivateInbox(b: B::Browser, visit: PrivateInboxVisit): bool =
+  canOpenPrivateVerificationApp(b, visit.tab, visit.revision, BrowserControlUser) and
+  B::activeTab(b).loadVersion == visit.loadVersion
+pure def lawPrivateInboxRequiresTheSameDocument(b: B::Browser, visit: PrivateInboxVisit): bool =
+  canWatchPrivateInbox(b, visit) ==
+    (B::activeTab(b).load == B::Loaded and b.selected == visit.tab and b.revision == visit.revision and
+     B::activeTab(b).loadVersion == visit.loadVersion and B::activeTab(b).manualSignIn and B::activeTab(b).secure)
 ~~~
 
 ### Only the person can fill the current private website field

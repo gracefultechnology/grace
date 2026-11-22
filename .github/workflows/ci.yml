@@ -198,6 +198,19 @@ jobs:
               $record.detailDocument == $out.destination.documentId and
               $record.detailDocument == $out.hops[-1].documentId and
               $record.collectionDocument == ([$out.start] + $out.hops)[-2].documentId;
+            def witnessed_record_refusal:
+              .outcome as $out | $out.recordRefusal as $refusal |
+              ((.taskId | tonumber) as $id | $records | index($id) != null) and
+              .chatStatus == 200 and $out.chatProvider == "upstream" and .decisionProvider == "hosted" and
+              ($out.reviewedSteps | map(.kind)) == ["ReadLatestRecord"] and
+              $out.ringTap == true and .webArena.groundedNavigation == true and
+              .webArena.officialScore == 0 and .webArena.qualifiedHostedGuidance == false and
+              $out.destination.url == (.startUrl + "sales/order/history/") and
+              ($refusal.documentId | type == "string" and length > 0) and $refusal.documentId != $out.start.documentId and
+              $refusal.documentId == $out.destination.documentId and $refusal.documentId == $out.hops[-1].documentId and
+              $out.destination.url == $out.hops[-1].url and all($out.hops[]; .checked == false) and
+              $refusal.instruction == "I can’t verify which matching record is newest on this list." and $refusal.visibleAction == "View Order" and
+              $refusal.selection == "NoGuidedRecordSelection" and $refusal.receiptCount == 0 and $out.checkedRecord == null;
             def verified_action_budget:
               .outcome as $out |
               ($out.disclosures // []) as $menus |
@@ -237,6 +250,7 @@ jobs:
                 ($offer.branchMatches == false or $offer.leafMatches == false) and
                 $offer.offeredControl == ("Use “" + $offer.leaf + "” for this step")
                 else false end),
+              refusedRecord: (.outcome.miss == "insufficient-record-evidence" and witnessed_record_refusal),
               exhaustedBudget: (.outcome.miss == "action-budget-exhausted" and verified_action_budget),
               officialScore: .webArena.officialScore, noActionScore: .webArena.noActionScore,
               hostedGuidance: (.webArena.qualifiedHostedGuidance == true),
@@ -258,6 +272,7 @@ jobs:
             all(.[]; (.failed | not) and (.completed == (.miss == null)) and (.completed or (.cohort == "exploratory" and
               (.miss == "missing-reviewed-step" or .miss == "target-absent-from-open-menu" or .miss == "repeated-address" or
                 (.miss == "rejected-scoped-leaf" and .rejectedLeaf) or
+                (.miss == "insufficient-record-evidence" and .refusedRecord) or
                 (.miss == "action-budget-exhausted" and .exhaustedBudget)))) and
               .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1) and
               (.completed == false or (.checkedPlan and .officialScore == 1))) and
@@ -652,6 +667,9 @@ jobs:
       - name: Verify local Gmail delivery and account isolation
         if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm --filter @repo/app test --project node test/app.test.vibe -t "Google denies missing consent"
+      - name: Verify the pinned Worker against synthetic Gmail history
+        if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm --dir vendor/eliza --filter @elizaos/cloud exec vitest run test/cloud.test.vibe -t "watch for new mail"
       - name: Exercise Google consent and guided tasks across apps with local fixtures
         if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
         run: >-

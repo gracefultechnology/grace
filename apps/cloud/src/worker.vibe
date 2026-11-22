@@ -32,7 +32,7 @@ const cloud = cloudWorker<GraceCloud>(async (request, _env, db, account) => {
 
 export default {
   scheduled: cloud.scheduled,
-  async fetch(request: Request, env: GraceCloud) {
+  async fetch(request: Request, env: GraceCloud, lifetime?: Parameters<typeof cloud.fetch>[2]) {
     const url = new URL(request.url)
     if (url.origin === env.WEB_ORIGIN && url.pathname === "/.well-known/assetlinks.json" && request.method === "GET") return nativeAssetLinks(env)
     if (url.origin === env.WEB_ORIGIN && env.ASSETS && !url.pathname.startsWith("/api/")) {
@@ -50,6 +50,6 @@ export default {
       }))
     }
     if (url.origin !== env.PUBLIC_API_ORIGIN) return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
-    return cloud.fetch(request, env)
+    return cloud.fetch(request, env, lifetime)
   }
 }
