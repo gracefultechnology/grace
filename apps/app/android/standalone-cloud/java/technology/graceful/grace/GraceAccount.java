@@ -111,7 +111,7 @@ public final class GraceAccount extends Plugin {
 
  static boolean handles(Context context, Uri address) { return account(context).handles(address); }
 
- static Uri hostedView(Context context, String view) throws Exception { return account(context).hostedView(view); }
+ static Uri hostedView(Context context, String view) throws Exception { return GraceInboxAutofill.hostedEmail(context, view, account(context).hostedView(view)); }
 
  private static CloudDeviceAccount account(Context context) {
   return new CloudDeviceAccount(context, BuildConfig.CLOUD_WEB_ORIGIN, CLOUD_ORIGIN, BuildConfig.CLOUD_CALLBACK_PATH);
@@ -217,7 +217,7 @@ public final class GraceAccount extends Plugin {
 
  @PluginMethod public void openHostedView(PluginCall call) {
   ACCOUNT.execute(() -> {
-   try { open(account(getContext()).hostedView(call.getString("view")), call); }
+   try { open(hostedView(getContext(), call.getString("view")), call); }
    catch (Exception unavailable) { call.reject("Couldn't open the connected account view"); }
   });
  }
