@@ -279,6 +279,9 @@ export const fleetStatementCases = [
   { billerId: "above-all-satellite-localoop-inc-a40f31", template: "telecom" },
   { billerId: "a-federal-credit-union-ede01e", template: "bank-billpay" },
   { billerId: "american-eagle-financial-credit-union-e29614", template: "paymentus" },
+];
+
+export const fleetStatementRefusals = [
   { billerId: "ameren-illinois-7add9b", template: "kubra" },
   { billerId: "accura-healthcare-2b95c9", template: "rent-portal" },
 ];
@@ -444,7 +447,7 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
 }
 
 export async function fleetStatement(directory: string, billerId: string, receipts: string) {
-  const selected = fleetStatementCases.find((item) => item.billerId === billerId);
+  const selected = [...fleetStatementCases, ...fleetStatementRefusals].find((item) => item.billerId === billerId);
   if (!selected) throw new Error("Unknown Fleet statement biller");
   const taskId = billerId + ":view-bill";
   const record = (id: string, receipt: object) =>

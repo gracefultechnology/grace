@@ -37,7 +37,8 @@ function joinedFragments(lines: readonly string[]): string[] {
 
 function statementLabels(text: string): Labeled[] {
   const lines = joinedFragments(text.split(/\r?\n|[^\S\r\n]+·[^\S\r\n]+/u).map((line) => line.trim()).filter(Boolean));
-  return lines.flatMap((line, index) => [...line.matchAll(label)].flatMap((match) => {
+  let unboundDueDate = false;
+  const labels = lines.flatMap((line, index) => [...line.matchAll(label)].flatMap((match) => {
     const fact = facts.find((name) => match.groups?.[name] !== undefined);
     const words = fact === undefined ? undefined : match.groups?.[fact];
     if (fact === undefined || words === undefined) return [];
@@ -51,6 +52,12 @@ function statementLabels(text: string): Labeled[] {
       label: words.replace(/\s+/gu, " "),
       value: value.replace(/\s+/gu, " "),
     };
+    const next = index + (rest === "" ? 2 : 1);
+    const detachedBy = /^by(?:\s+|$)/iu.exec(lines[next] ?? "")?.[0];
+    if (found.fact === "AmountDue" && candidate === value && detachedBy !== undefined) {
+      const detached = lines[next]?.slice(detachedBy.length) || lines[next + 1] || "";
+      unboundDueDate ||= date.test(detached);
+    }
     const by = found.fact === "AmountDue" ? /^\s+by\s+/iu.exec(candidate.slice(value.length))?.[0] : undefined;
     const due = by === undefined ? undefined : date.exec(candidate.slice(value.length + by.length))?.[0];
     return by === undefined || due === undefined ? [found] : [found, {
@@ -59,10 +66,12 @@ function statementLabels(text: string): Labeled[] {
       value: due.replace(/\s+/gu, " "),
     }];
   }));
+  return { labels, unboundDueDate };
 }
 
 export function statementAnswer(text: string): StatementAnswer {
-  const found = statementLabels(text);
+  const { labels: found, unboundDueDate } = statementLabels(text);
+  if (unboundDueDate) return { tag: "Unread", reason: "NotFound" };
   const values = (fact: StatementFact) => [...new Set(found.filter((item) => item.fact === fact).map((item) => item.value))];
   const amounts = statementAmounts(values("AmountDue"), values("StatementBalance"), values("RemainingBalance"));
   const dates = values("DueDate");

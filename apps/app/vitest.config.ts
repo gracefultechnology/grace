@@ -13,7 +13,7 @@ import { project } from "vibestack/testing/vitest";
 import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
 import { hasHostedNavigation } from "./test/browser-receipt.ts";
-import { fleetFixture, fleetStatement, fleetStatementCases } from "./test/fleet.fixture.ts";
+import { fleetFixture, fleetStatement, fleetStatementCases, fleetStatementRefusals } from "./test/fleet.fixture.ts";
 import { webArena, webArenaPluginName, WebArenaEvaluatorError } from "./test/webarena.ts";
 
 const base = project({ root: import.meta.dirname, plugins: [tailwindcss()] });
@@ -429,7 +429,9 @@ async function releasedStatement(context: BrowserCommandContext, attempt: string
     try {
       const results = process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld";
       mkdirSync(results, { recursive: true });
-      const directory = mkdtempSync(join(results, action.billerId === undefined ? "released-statement-" : "fleet-view-bill-"));
+      const refusal = fleetStatementRefusals.some(({ billerId }) => billerId === action.billerId);
+      const prefix = action.billerId === undefined ? "released-statement-" : refusal ? "fleet-statement-refusal-" : "fleet-view-bill-";
+      const directory = mkdtempSync(join(results, prefix));
       episode = action.billerId === undefined ? await startReleasedStatement(releasedDirectory, directory)
         : await fleetStatement(releasedDirectory, action.billerId, directory);
       if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
@@ -773,7 +775,7 @@ declare module "vitest" {
     cloud: string;
     groundProxy: string;
     browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { exploratory: boolean; gradeWholeCohort: boolean })[];
-    billworldStatements: readonly { label: string; billerId?: string }[];
+    billworldStatements: readonly { label: string; billerId?: string; refuses?: true }[];
     realModel: boolean;
   }
 }
@@ -795,6 +797,7 @@ export default defineConfig(async (env) => {
   const billworldStatements = releasedDirectory === undefined ? [] : [
     { label: "released" },
     ...fleetStatementCases.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId })),
+    ...fleetStatementRefusals.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId, refuses: true as const })),
   ];
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
   return { ...config, resolve: { ...config.resolve, conditions: ["eliza-source", ...defaultClientConditions] }, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, billworldStatements, realModel: realModelCredential !== undefined }, globalSetup: ["test/setup.vibe"] } };
