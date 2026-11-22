@@ -474,6 +474,8 @@ The standalone Grace API returned HTTP 204 for the registered Android client and
 
 On November 22, the shared Eliza Cloud web and API origins in staging and production each returned HTTP 204, Password Backup protocol version 2 and `Cache-Control: no-store` for the Grace Android client. The tenant-scoped Steward response omitted the Grace native Google registration in both environments. An authenticated shared-cloud restore awaits tenant enrollment and qualification. [Shared Eliza production rollout](https://github.com/elizaOS/eliza/actions/runs/45009112234)
 
+The next Eliza Vibestack candidate built both Grace standalone-production ARM64 variants. Its shared-staging build reached a compatibility gap because upstream removed the legacy Cloud authentication module. Migrating the shared profile requires the canonical Android sign-in registration, callback and credential custody contracts. The live shared staging discovery response still omits the methods and Google configuration required by that contract. [Eliza native sign-in migration](https://github.com/elizaOS/eliza/commit/d3411e511ee90cb9b19aed1be6284a4c2b40ff91)
+
 ## PRD requirements
 
 ### Always-applicable rules
