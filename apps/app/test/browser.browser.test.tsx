@@ -257,7 +257,7 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
-type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "bind-native-landing" |
+type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "tap-guide-ring" | "observe-link-landing" | "bind-native-landing" |
   "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
 
 it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
@@ -503,8 +503,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       const bound = record && selection.tag === "StagedGuidedRecord" && selection.selection.documentId === previous.documentId
         ? selection.selection : undefined;
       const returningToRecord = record && linkGuidance.query()?.textContent?.includes("Go back one page in this list.") === true;
+      failureStage = "tap-guide-ring";
       await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
       outcome.ringTap = true;
+      failureStage = "observe-link-landing";
       await expect.poll(async () => {
         const document = await read();
         return document.documentId !== previous.documentId && document.readyState === "complete";
@@ -566,6 +568,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const failure = publicFailure(error, "Browser journey");
     outcome.failure = failure.message;
     outcome.failureStage = failureStage;
+    if (failureStage === "tap-guide-ring") outcome.linkUnavailable = page.getByRole("status", { name: "Link unavailable", exact: true }).query() !== null;
     if (!gradeWholeCohort) throw failure;
   } finally {
     await transport({ kind: "receipt", outcome }).catch((error: unknown) => {
