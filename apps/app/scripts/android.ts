@@ -1266,8 +1266,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         step = "find the password field on the BillWorld sign-in form";
         const passwordField = await waitForUi({ serial, file: screenFile, signal }, (nodes) => {
           const fields = nodes.filter(websitePassword);
-          return fields.length === 1 && nodes.some((node) => node.className === "android.widget.Button" && /^(sign\s*in|log\s*in)$/i.test(node.label))
-            ? fields[0] : undefined;
+          return fields.length === 1 ? fields[0] : undefined;
         }, "the BillWorld sign-in form");
         await tapNode(passwordField);
         step = "wait for Android’s saved-password offer";
