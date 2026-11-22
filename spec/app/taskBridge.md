@@ -239,7 +239,7 @@ pure def captureWebsiteCommand(preparation: P::Prep, command: W::WorkspaceEffect
 pure def formFillCommand(command: W::WorkspaceEffect): bool = match command {
   | Execute(details) => {
     val operation = details.effect
-    match operation { | Operate(action) => action.kind == X::FillOrdinary }
+    match operation { | Operate(operationDetails) => operationDetails.kind == X::FillOrdinary }
   }
   | _ => false
 }
