@@ -122,6 +122,7 @@ export function useWorkspace() {
     stepPrivate: (tab: number, direction: HistoryDirection) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.stepPrivate(tab, direction))),
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
     checkPrivateEmail: (tab: number, revision: number) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.checkPrivateEmail(tab, revision))),
+    opensWebsites: runtime.runSync(Effect.map(Effect.service(PageHost), (host) => host.opensWebsites)),
     /** The person's Close browser, which the page host also tells what websites asked. */
     closeBrowser: () => runtime.runPromiseExit(Effect.flatMap(Effect.service(PageHost), (host) => host.closeBrowser())),
   };

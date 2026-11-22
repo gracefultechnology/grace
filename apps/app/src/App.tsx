@@ -227,6 +227,7 @@ function Screen() {
               value={volume.muted ? "Muted" : `${volume.volume}%`} onClose={() => void send({ type: "dismissPopover" })}
               actions={<Button variant="capsule" size="pill" {...choose(muteChoice(volume, !volume.muted))}>{volume.muted ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}{volume.muted ? "Unmute" : "Mute"}</Button>}>
               <Slider className="mt-5 gap-4" label="Volume" decreaseLabel="Quieter" increaseLabel="Louder" step={10} value={volume.muted ? 0 : volume.volume}
+                onStep={(amount) => void send({ type: "adjustPreferenceLevel", levelStep: { tag: "VolumeBy", amount } })}
                 onValueChange={(level) => { const { disabled, onClick } = choose(volumeChoice(volume, level)); if (!disabled) onClick(); }} />
             </RailPopover>
           ) : (

@@ -397,6 +397,35 @@ lemma changePreferences_ensures(w: Workspace, settings: app__preferences_Display
   }
 }
 
+lemma adjustPreferenceLevel_ensures(w: Workspace, levelStep: app__preferences_LevelStep, by_: WorkspaceActor)
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysDeviceRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysBrowserRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysAssistantRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysExecutionRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCommitmentRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCommitmentRegistryIsCanonical(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCommitmentAssociation(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysPausedCommitmentCannotSubmit(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysOneTask(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysPausedTogether(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysRecordingHasPermission(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysOperationHasVisibleTask(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysEvidenceVersionsAreNonnegative(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysWakeRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysActiveWakePausesWebsiteWork(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysPreferencesRules(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCommitmentUsesCanonicalIdentity(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCurrentBeforeAction(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> alwaysCommitmentReviewUsesCurrentContext(adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepInterruptionsKeepTask(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepWakeNeverDispatchesWebsite(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_), []))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepEffectsRequireCurrentContext(w, adjustPreferenceLevel(w, levelStep, by_), []))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepCommitmentSwitchRetainsRecords(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_)))
+{
+  changePreferences_ensures(w, app__preferences_adjustedLevel(w.preferences.session, levelStep), by_);
+}
+
 lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysDeviceRules(savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> alwaysBrowserRules(savePreferences(w, by_)))
@@ -1365,6 +1394,30 @@ if inv(w) && canReceiveLoad(w, loadReport, by_) {
     BackgroundLoadKeepsSelected(w.browser, loadReport.id, loadReport.version, loadReport.result, loadReport.secure, loadReport.endedAt);
   }
 }
+}
+
+lemma lawATabIsWhereItsLoadEnded_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceActor)
+  ensures (lawATabIsWhereItsLoadEnded(w, loadReport, by_) == true)
+{
+  if app__browser_alwaysTabsAreWellFormed(w.browser) && canReceiveLoad(w, loadReport, by_) {
+    var b := w.browser;
+    var id := loadReport.id;
+    var endedAt := loadReport.endedAt;
+    var after := app__browser_finishPageLoad(b, id, loadReport.version, loadReport.result, loadReport.secure, endedAt);
+    ProofLib.FilterPointwise((t: app__browser_Tab) => (t.id == id), (t: app__browser_Tab) => (t.id == id),
+      (x: app__browser_Tab, y: app__browser_Tab) => (x.id == id ==> y == app__browser_endedAtCursor(x, endedAt).(load := loadReport.result, secure := loadReport.secure && loadReport.result == app__browser_Load.Loaded)), b.tabs, after.tabs);
+    var received := receiveLoad(w, loadReport, by_).browser;
+    assert received.tabs == after.tabs;
+    BrowserLookupFilter(b, id);
+    BrowserLookupFilter(after, id);
+    BrowserLookupFilter(received, id);
+    var matches := ProofLib.Filter((t: app__browser_Tab) => (t.id == id), b.tabs);
+    var holder :| holder in b.tabs && holder.id == id;
+    ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, holder);
+    var found := matches[|matches|-1];
+    ProofLib.FilterMember((t: app__browser_Tab) => (t.id == id), b.tabs, found);
+    app__browser_lawALoadRecordsWhereItEnded_ensures(found, endedAt);
+  }
 }
 
 lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: WorkspaceActor)

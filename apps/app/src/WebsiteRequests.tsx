@@ -1,4 +1,4 @@
-// spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Story: Save a file a website offers"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "A website message is answered once with OK, Cancel or typed text"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"
+// spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/websiteRequests.md, "Story: Save a file a website offers"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "A website message is answered once with OK, Cancel or typed text"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"
 import { Button, Card, CardFooter, CardTitle, Spinner, TextField } from "@repo/ui";
 import { CircleAlert, CircleCheck, X } from "lucide-react";
 import { useState } from "react";
@@ -25,7 +25,8 @@ function wording(ask: Ask, said: string): { title: string; words?: string; no: s
     case "SitePermission": return { title: `Let ${site(ask.origin)} use your ${devices(ask.kinds)}?`, no: "Don't allow", yes: "Allow" };
     case "OtherApp":
       if (ask.handoff === "RefusedLink") return { title: "This link can't open here.", no: "Close" };
-      return { title: ask.handoff === "DialApp" ? "Open the phone to call?" : ask.handoff === "SendToApp" ? "Open an app to send a message?" : "Open another app?", words: said.replace(/^[a-z]+:/i, ""), no: "Cancel", yes: "Open" };
+      return { title: ask.handoff === "DialApp" ? "Open the phone to call?" : ask.handoff === "SendToApp" ? "Open an app to send a message?" : "Open another app?",
+        words: ask.fallback === "" ? said.replace(/^[a-z]+:/i, "") : `If no app opens it, ${site(ask.fallback)} opens here instead.`, no: "Cancel", yes: "Open" };
     case "BlockedSignIn": return { title: `${ask.provider} sign-in opens in your browser.`, no: "Cancel", yes: "Continue" };
   }
 }
