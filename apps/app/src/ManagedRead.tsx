@@ -304,18 +304,16 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
       setEditor({ key: projection, event: result.value, seriesFor: occurrenceId });
     } else setWriteNotice({ key: projection, text: "Grace couldn’t open the repeating appointment." });
   });
+  const proposalNumber = snapshot.kind === "calendar" ? snapshot.proposed?.number : undefined;
   const review = (change?: AppointmentChange) => startTransition(async () => {
     setWriteNotice(undefined);
-    await runtime.runPromise(Effect.flatMap(ManagedReads, (reads) => reads.review({ accountId, grant }, change)));
+    await runtime.runPromise(Effect.flatMap(ManagedReads, (reads) => reads.review({ accountId, grant }, change, proposalNumber)));
   });
   const write = (action: ManagedWrite) => startTransition(async () => {
     setWriteNotice(undefined);
-    const out = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.change({ accountId, grant }, action)));
+    const out = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.change({ accountId, grant }, action, proposalNumber)));
     const receipt = Exit.isSuccess(out) ? out.value : undefined;
-    if (action.kind === "appointment") {
-      setEditor(undefined);
-      await runtime.runPromise(Effect.flatMap(ManagedReads, (reads) => reads.send({ kind: "dismissProposal" })));
-    }
+    if (action.kind === "appointment" && receipt) setEditor(undefined);
     const text = !receipt ? "Grace couldn’t confirm that change. Refresh to check what Google saved."
       : action.kind === "trash" ? "Moved to Trash."
         : action.kind === "undo" ? "Message restored."
