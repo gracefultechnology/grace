@@ -101,7 +101,10 @@ pure def editsRecent(browserInput: BrowserInput): bool = match browserInput {
 pure def lawRecentEditsKeepPage(b: B::Browser, browserInput: BrowserInput, by: BrowserControlActor): bool =
   editsRecent(browserInput) implies
     (control(b, browserInput, by).revision == b.revision and control(b, browserInput, by).tabs == b.tabs)
-pure val bValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"))
+pure val privateVisit = B::openPrivateSignIn(B::initial, "https://utility.example")
+pure val loadedPrivateVisit = B::finishPageLoad(privateVisit, privateVisit.selected,
+  B::activeTab(privateVisit).loadVersion, B::Loaded, true, "https://utility.example")
+pure val bValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"), loadedPrivateVisit)
 pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAddress, DismissAddress,
   RequestClearHistory, SelectTab({ id: 1 }), SelectTab({ id: 2 }), CloseTab({ id: 1 }),
   OpenPrivateSignIn({ url: "https://utility.example" }),
@@ -162,6 +165,13 @@ until the person resumes and Grace receives a fresh ordinary-page observation.
 
 ~~~quint
 type PrivateCodeField = { tab: int, revision: int, loadVersion: int, document: int, fieldId: int, topOrigin: str, fieldOrigin: str }
+pure val testCodeField: PrivateCodeField = {
+  tab: loadedPrivateVisit.selected, revision: loadedPrivateVisit.revision,
+  loadVersion: B::activeTab(loadedPrivateVisit).loadVersion, document: 1, fieldId: 1,
+  topOrigin: "https://utility.example", fieldOrigin: "https://utility.example"
+}
+pure val offeredValues = Set(testCodeField, { ...testCodeField, fieldOrigin: "https://other.example" })
+pure val focusedValues = offeredValues.union(Set({ ...testCodeField, document: 2 }, { ...testCodeField, fieldId: 2 }))
 pure def currentPrivateCodeField(b: B::Browser, focused: PrivateCodeField): bool = {
   val tab = B::activeTab(b)
   focused.tab == b.selected and focused.revision == b.revision and focused.loadVersion == tab.loadVersion and
