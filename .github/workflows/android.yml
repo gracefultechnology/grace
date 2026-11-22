@@ -57,7 +57,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper/dists
-          key: gradle-${{ runner.os }}-${{ runner.arch }}-jdk21-${{ hashFiles('apps/app/android/host.json', 'vendor/eliza/packages/os/android/host-templates/**', 'vendor/eliza/packages/os/android/*/build.gradle') }}
+          key: gradle-${{ runner.os }}-${{ runner.arch }}-jdk21-${{ hashFiles('apps/app/package.json', 'apps/app/android/host.json', 'vendor/eliza/packages/os/android/host-templates/**', 'vendor/eliza/packages/os/android/*/build.gradle') }}
       - uses: ./.github/actions/setup
         with:
           job: product
