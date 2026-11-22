@@ -128,8 +128,8 @@ type InboxCodeRequest = {
 type InboxCodeMatch = NoInboxCodeMatch | OneInboxCodeMatch({
   identity: I::MessageIdentity, request: InboxCodeRequest, receivedAt: int, expiresAt: int
 })
-pure def mayOfferInboxCode(m: Mailbox, active: InboxCodeRequest, result: InboxCodeMatch, now: int, by: MailActor): bool =
-  match result {
+pure def mayOfferInboxCode(m: Mailbox, active: InboxCodeRequest, inboxMatch: InboxCodeMatch, now: int, by: MailActor): bool =
+  match inboxMatch {
     | NoInboxCodeMatch => false
     | OneInboxCodeMatch(found) =>
       by == MailConnector and m.connection == Connected and m.canRead and
@@ -138,10 +138,10 @@ pure def mayOfferInboxCode(m: Mailbox, active: InboxCodeRequest, result: InboxCo
       I::validIdentity(found.identity) and found.identity == messageIdentity(m, found.identity.ref) and
       active.startedAt <= found.receivedAt and found.receivedAt <= now and now < found.expiresAt
   }
-pure def lawOnlyTheCurrentInboxRequestCanOfferAMessage(m: Mailbox, active: InboxCodeRequest, found: InboxCodeMatch, now: int, by: MailActor): bool =
-  mayOfferInboxCode(m, active, found, now, by) implies
+pure def lawOnlyTheCurrentInboxRequestCanOfferAMessage(m: Mailbox, active: InboxCodeRequest, inboxMatch: InboxCodeMatch, now: int, by: MailActor): bool =
+  mayOfferInboxCode(m, active, inboxMatch, now, by) implies
     (m.connection == Connected and m.canRead and by == MailConnector and
-      (match found {
+      (match inboxMatch {
         | NoInboxCodeMatch => false
         | OneInboxCodeMatch(matchedMessage) => matchedMessage.request == active and matchedMessage.identity == messageIdentity(m, matchedMessage.identity.ref) and
           matchedMessage.request.generation == m.generation and matchedMessage.receivedAt <= now and now < matchedMessage.expiresAt
@@ -1291,6 +1291,14 @@ stale callbacks, rejection and multiple messages.
 pure val ownerValues = Set("ownerA")
 pure val providerValues = Set("providerA")
 pure val accountValues = Set("accountA")
+pure val sampleInboxRequest: InboxCodeRequest = {
+  origin: "https://utility.example", requestId: "first", session: "sessionA", grant: "grantA", generation: 1, startedAt: 1
+}
+pure val activeValues = Set(sampleInboxRequest, { ...sampleInboxRequest, requestId: "replacement" },
+  { ...sampleInboxRequest, grant: "replacementGrant" })
+pure val inboxMatchValues = Set(NoInboxCodeMatch,
+  OneInboxCodeMatch({ identity: I::messageIdentity, request: sampleInboxRequest, receivedAt: 2, expiresAt: 4 }),
+  OneInboxCodeMatch({ identity: { ...I::messageIdentity, account: "other" }, request: sampleInboxRequest, receivedAt: 2, expiresAt: 4 }))
 pure val refValues = Set("messageA", "attachmentA")
 pure val folderValues = Set(I::InboxFolder, I::DraftsFolder, I::TrashFolder, I::PurgedFolder)
 pure val changeValues = Set(I::UnreadMessage, I::TrashMessage, I::RestoreMessage, I::PurgeMessage)
