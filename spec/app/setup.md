@@ -495,7 +495,7 @@ session authorizes a tablet only after the person confirms the tablet
 sign-in in the browser.
 
 Each source reports through its own event. The tablet's own Grace session
-reports whether this tablet is signed in, signed out, or needs to clear an
+reports whether this tablet is signed in, signed out, or needs to clear a
 previous sign-in whose owner could not be verified because the credential
 expired or the service rejected it. The Grace service's
 authenticated response reports only the web account, its plan and its Google
@@ -513,8 +513,11 @@ the account she is shown, and may confirm again for that same account while
 her earlier confirmation still holds, as after a sign-in that did not
 finish. She can cancel while Grace checks the account or waits for a sign-in
 code. The tablet must then ask again before she can confirm. The model records
-her confirmation. Just before it opens the tablet callback, the browser
-checks that the same request still has her confirmation. This runtime check,
+her confirmation. The tablet follows only the registered callback with the
+request's own state and one code, the check "Browser approval needs an
+explicit choice for the shown account" makes for a browser approval. Just
+before it opens the tablet callback, the browser checks that the same
+request still has her confirmation. This runtime check,
 which no rule here makes, prevents a late reply from reopening a cancelled
 request.
 
@@ -553,6 +556,8 @@ pure def reportedBy(source: AccountSource, report: GraceAccount): bool = match r
 }
 pure def mayBeginDeviceSignIn(account: GraceAccount): bool = account == GraceDeviceSignedOut
 pure def mayCleanupLegacySignIn(account: GraceAccount): bool = account == GraceDeviceSignInNeedsCleanup
+pure def lawASignInNeedingCleanupCannotBeginANewSignIn(account: GraceAccount): bool =
+  mayCleanupLegacySignIn(account) implies not(mayBeginDeviceSignIn(account))
 pure def sometimesLegacySignInNeedsCleanup(s: Setup): bool = mayCleanupLegacySignIn(s.graceAccount)
 pure def mayCheckAccountAgain(account: GraceAccount): bool = match account {
   | AccountUnavailable => true
@@ -823,19 +828,19 @@ screens.
 The rules below take the page registration, the freshness of the sign-in and
 the match to the shown account as inputs. All three must hold to offer
 Approve. Counting the action as approved also requires the person's explicit
-confirmation.
+confirmation, which is her tap on Approve. A request is registered only when
+it names the registered page and carries no field beyond the registered
+ones, so a request carrying the recovery key or a password is never
+registered. The service reports a stale sign-in or a changed account when it
+receives the action and shown account together.
 
-The browser checks that the native request belongs to its registered page,
-shows the action and account, and closes the approval on Cancel. The service
-checks the current account and sign-in freshness when it receives the action
-and shown account together. The browser accepts only the registered callback
-with the request's own state and exactly one code. The request carries
-neither the recovery key nor a password. The service and tablet bind the
-code to the original native request and enforce its single use. Native
-recovery checks that the exchange completed and was verified before using
-the approval. These browser, service and tablet checks run outside the two
-Setup laws below, which take registration, freshness, account match and
-confirmation as inputs.
+The browser, and the tablet for its own sign-in, follow a return only to the
+registered callback, with exactly one state that is the request's own and
+exactly one well-formed code. Cancel clears the saved request, so no later
+sign-in return resumes it, as "Google sign-in can resume only a pending
+browser approval" below requires. Binding the code to the original native
+request, its single use and the verified exchange before native recovery uses
+the approval are "A grant can be used once for the current request".
 
 ```quint
 pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
@@ -848,6 +853,14 @@ pure def lawOnlyApproveOnTheRegisteredPageForTheShownAccountApprovesABackup(regi
   not(mayApprovePasswordBackup(false, recentSignIn, sameAccount, confirmed)) and
   not(mayApprovePasswordBackup(registered, recentSignIn, sameAccount, false)) and
   not(mayApprovePasswordBackup(registered, recentSignIn, false, confirmed))
+pure def isTheRequestsOwnReturn(registeredCallback: bool, ownState: bool, states: int, codes: int, wellFormedCode: bool): bool =
+  registeredCallback and ownState and states == 1 and codes == 1 and wellFormedCode
+pure def lawOnlyTheRegisteredCallbackWithItsOwnStateAndOneCodeReturns(registeredCallback: bool, ownState: bool, states: int, codes: int, wellFormedCode: bool): bool =
+  not(isTheRequestsOwnReturn(false, ownState, states, codes, wellFormedCode)) and
+  not(isTheRequestsOwnReturn(registeredCallback, false, states, codes, wellFormedCode)) and
+  not(isTheRequestsOwnReturn(registeredCallback, ownState, states, codes, false)) and
+  (states != 1 implies not(isTheRequestsOwnReturn(registeredCallback, ownState, states, codes, wellFormedCode))) and
+  (codes != 1 implies not(isTheRequestsOwnReturn(registeredCallback, ownState, states, codes, wellFormedCode)))
 ```
 
 ### Google sign-in can resume only a pending browser approval
