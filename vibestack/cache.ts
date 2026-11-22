@@ -57,8 +57,7 @@ const keepSaid = () => {
     return false;
   }
 };
-function lasting(key: string, files: string[]) {
-  const now = stamp(files);
+function lasting(key: string, files: string[], now = stamp(files)) {
   const known = (said ??= readSaid())[key];
   return {
     value: known?.stamp === now ? known.value : undefined,
@@ -133,6 +132,7 @@ type Check = {
   lastPublished: number;
   changed?: boolean;
   closed?: boolean;
+  certified?: boolean;
 };
 const checking = new AsyncLocalStorage<Check>();
 
@@ -140,14 +140,25 @@ const MAX_PENDING_ENTRIES = 16;
 const MAX_PENDING_BYTES = 8 * 1024 ** 2;
 const PUBLISH_INTERVAL_MS = 1_000;
 
-export function publishChecked() {
+function includePrograms(check: Check) {
+  for (const program of check.programs.values()) if (program?.id) check.verify.add(program);
+}
+
+export class InstallationChanged extends Error {
+  constructor() { super("a tool installation changed during this check; run the check again"); }
+}
+
+function publishChecked(complete = false) {
   const check = checking.getStore();
   if (!check) return;
-  check.changed ||= [...check.verify].some((program) => !program.unchanged());
-  if (check.changed) {
+  if (complete) includePrograms(check);
+  const replaced = [...check.verify].some((program) => !program.unchanged());
+  if (replaced || check.changed) {
+    check.changed = true;
     check.pending.clear();
     check.verify.clear();
-    throw new Error("a tool installation changed during this check; run the check again");
+    if (replaced) throw new InstallationChanged();
+    return;
   }
   if (!check.pending.size) return;
   for (const [file, bytes] of check.pending) writeWhole(file, bytes);
@@ -155,6 +166,14 @@ export function publishChecked() {
   check.verify.clear();
   check.bytes = 0;
   check.lastPublished = performance.now();
+}
+
+export function certifyInstallation() {
+  const check = checking.getStore();
+  if (!check) return;
+  publishChecked(true);
+  if (check.changed) throw new InstallationChanged();
+  check.certified = true;
 }
 
 function installation() {
@@ -176,7 +195,7 @@ export const steady = <T>(run: () => Promise<T>) => {
   return checking.run(check, async () => {
     try {
       const result = await run();
-      publishChecked();
+      if (!check.certified) publishChecked(true);
       return result;
     } finally {
       check.closed = true;
@@ -198,61 +217,124 @@ function perCheck<T>(read: () => Promise<T>): () => Promise<T> {
 }
 
 const TOOL_PACKAGES = { quint: "@informalsystems/quint", lsc: "lemmascript" } as const;
-type Program = { exe: string; id: string; unchanged: () => boolean };
+type Program = { exe: string; id: string | undefined; unchanged: () => boolean };
 const latest = new Map<keyof typeof TOOL_PACKAGES, Program>();
 
-function launcherDigest(exe: string, packageDir: string): string {
+function virtualStore(dir: string): string | undefined {
+  for (let at = dir; at !== path.dirname(at); at = path.dirname(at)) if (path.basename(at) === ".pnpm") return at;
+  return undefined;
+}
+
+function pnpmSearchPaths(from: string, store: string): string[] {
+  const paths: string[] = [];
+  for (let dir = from; dir.startsWith(store + path.sep) || dir === store; dir = path.dirname(dir)) {
+    if (path.basename(dir) !== "node_modules") paths.push(path.join(dir, "node_modules"));
+  }
+  return paths;
+}
+
+function launcherInputs(exe: string, packageDir: string, exists: (file: string) => boolean): { digest: string; extra: string[] } | undefined {
+  const ambient = process.env.NODE_PATH?.split(path.delimiter) ?? [];
+  const fallback = () => ambient.length ? undefined : { digest: executableDigest(exe), extra: [] };
   const launcher = fs.realpathSync(exe);
-  if (path.basename(path.dirname(launcher)) !== ".bin") return executableDigest(exe);
+  if (path.basename(path.dirname(launcher)) !== ".bin") return fallback();
   const bytes = fs.readFileSync(launcher);
-  if (!isUtf8(bytes)) return executableDigest(exe);
-  let store = packageDir;
-  while (store !== path.dirname(store) && path.basename(store) !== ".pnpm") store = path.dirname(store);
-  if (path.basename(store) !== ".pnpm") return executableDigest(exe);
-  const prefix = store + path.sep;
-  return sha(...bytes.toString("utf8").split("\n").map((line) => {
+  if (!isUtf8(bytes)) return fallback();
+  const store = virtualStore(packageDir);
+  const text = bytes.toString("utf8");
+  if (!store) return /\bNODE_PATH\s*=/.test(text) ? undefined : fallback();
+  const manifest = JSON.parse(fs.readFileSync(path.join(packageDir, "package.json"), "utf8"));
+  const name = path.basename(exe).replace(/\.cmd$/i, "");
+  const bin = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.[name];
+  const known = new Set(pnpmSearchPaths(bin ? path.dirname(path.resolve(packageDir, bin)) : packageDir, store));
+  if (ambient.length && ambient.join(path.delimiter) !== pnpmSearchPaths(path.dirname(ambient[0]), store).join(path.delimiter)) return undefined;
+  const lines: string[] = [];
+  for (const line of text.split("\n")) {
     const assignment = /^( *export NODE_PATH="| *@SET "NODE_PATH=)([^"\r]*)("\r?)$/.exec(line);
-    if (!assignment) return JSON.stringify(line);
+    if (!assignment) {
+      if (/\bNODE_PATH\s*=/.test(line)) return undefined;
+      lines.push(JSON.stringify(line));
+      continue;
+    }
     const [, before, paths, after] = assignment;
-    return JSON.stringify([before, paths.split(before.includes("export") ? ":" : ";").map((entry) =>
-      entry.startsWith(prefix) && !entry.split(path.sep).includes("..") ? [entry.slice(prefix.length)] : entry), after]);
-  }));
+    const relative: (string | string[])[] = [];
+    for (const entry of paths.split(before.includes("export") ? ":" : ";")) {
+      if (entry === "$NODE_PATH" || entry === "%NODE_PATH%") relative.push(entry);
+      else if (known.has(entry) && (path.dirname(entry) === packageDir || !entry.startsWith(packageDir + path.sep) || !exists(entry))) relative.push([path.relative(store, entry)]);
+      else return undefined;
+    }
+    lines.push(JSON.stringify([before, relative, after]));
+  }
+  return { digest: sha(...lines), extra: ambient.filter((dir) => !known.has(dir)) };
+}
+
+type Stamps = Iterable<readonly [string, string]>;
+const fileStamp = (file: string, follow = true) => {
+  const stat = (follow ? fs.statSync : fs.lstatSync)(file, { bigint: true, throwIfNoEntry: false });
+  return stat ? `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}` : "";
+};
+const sameFiles = (files: Stamps, links: Stamps) => {
+  for (const [file, stamp] of files) if (fileStamp(file) !== stamp) return false;
+  for (const [file, stamp] of links) if (fileStamp(file, false) !== stamp) return false;
+  return true;
+};
+const isStamps = (value: unknown): value is [string, string][] => Array.isArray(value) && value.every((entry) =>
+  Array.isArray(entry) && entry.length === 2 && typeof entry[0] === "string" && typeof entry[1] === "string");
+
+function readProgram(index: string, key: string): Omit<Program, "exe"> | undefined {
+  try {
+    const data: unknown = JSON.parse(zstdDecompressSync(fs.readFileSync(index)).toString("utf8"));
+    if (!Array.isArray(data)) return undefined;
+    const [saved, id, files, links] = data;
+    if (saved !== key || typeof id !== "string" || !/^[a-f0-9]{64}$/.test(id) || !isStamps(files) || !files.length || !isStamps(links)) return undefined;
+    const unchanged = () => sameFiles(files, links);
+    if (unchanged()) return { id, unchanged };
+  } catch {
+    return undefined;
+  }
 }
 
 function packageGraph(exe: string, name: string) {
   const observations = new Map<string, string>();
   const links = new Map<string, string>();
-  const state = (file: string, follow = true) => {
-    const stat = (follow ? fs.statSync : fs.lstatSync)(file, { bigint: true, throwIfNoEntry: false });
-    return stat ? `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}` : "";
-  };
   const observed = (file: string) => {
-    if (!observations.has(file)) observations.set(file, state(file));
+    if (!observations.has(file)) observations.set(file, fileStamp(file));
     return observations.get(file) !== "";
   };
   const contents = (root: string) => {
-    const entries: string[] = [];
+    const files: { name: string; file?: string; target?: string }[] = [];
+    const signature = createHash("sha256");
+    const record = (file: string) => {
+      const exists = observed(file);
+      signature.update(JSON.stringify([file, observations.get(file), links.get(file)]));
+      return exists;
+    };
     const walk = (dir: string, ancestors: Set<string>) => {
-      observed(dir);
+      record(dir);
       const real = fs.realpathSync(dir);
       if (ancestors.has(real)) return;
       const parents = new Set(ancestors).add(real);
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (entry.name === "node_modules" || entry.name === ".git") continue;
         const file = path.join(dir, entry.name);
-        const relative = path.relative(root, file).split(path.sep).join("/");
-        if (entry.isSymbolicLink()) links.set(file, state(file, false));
-        if (!observed(file)) entries.push(JSON.stringify([relative, null]));
-        else if (entry.isDirectory() || (entry.isSymbolicLink() && fs.statSync(file).isDirectory())) walk(file, parents);
-        else entries.push(JSON.stringify([relative, createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
+        const name = path.relative(root, file).split(path.sep).join("/");
+        if (entry.isSymbolicLink()) links.set(file, fileStamp(file, false));
+        const target = entry.isSymbolicLink() ? fs.readlinkSync(file) : undefined;
+        if (!record(file)) files.push({ name, target });
+        else if (entry.isDirectory() || (entry.isSymbolicLink() && fs.statSync(file).isDirectory())) {
+          files.push({ name: name + "/", target });
+          walk(file, parents);
+        } else files.push({ name, file, target });
       }
     };
     walk(root, new Set());
-    return sha(...entries.sort());
+    const { value, keep } = lasting(`package contents ${root}`, [root], signature.digest("hex"));
+    return value ?? keep(sha(...files.map(({ name, file, target }) =>
+      JSON.stringify([name, target, file && createHash("sha256").update(fs.readFileSync(file)).digest("hex")])).sort()));
   };
   const observeLocation = (file: string) => {
     const present = observed(file);
-    if (present && path.basename(file) !== "package.json" && fs.lstatSync(file).isSymbolicLink()) links.set(file, state(file, false));
+    if (present && path.basename(file) !== "package.json" && fs.lstatSync(file).isSymbolicLink()) links.set(file, fileStamp(file, false));
     return present;
   };
   const seen = new Map<string, number>();
@@ -274,18 +356,41 @@ function packageGraph(exe: string, name: string) {
     }
     return index;
   };
+  const exposed = (dirs: string[]) => {
+    const search: [string, number][][] = [];
+    for (const directory of dirs) {
+      const entries: [string, number][] = [];
+      search.push(entries);
+      if (!observeLocation(directory)) continue;
+      for (const first of fs.readdirSync(directory).sort()) {
+        if (first === ".bin") continue;
+        const scope = path.join(directory, first);
+        if (!observeLocation(scope)) return undefined;
+        const names = first.startsWith("@") && fs.statSync(scope).isDirectory()
+          ? fs.readdirSync(scope).sort().map((next) => `${first}/${next}`) : [first];
+        for (const name of names) {
+          const file = path.join(directory, name);
+          if (!observeLocation(file) || !observed(path.join(file, "package.json"))) return undefined;
+          const target = fs.realpathSync(file);
+          if (virtualStore(target) !== virtualStore(directory)) return undefined;
+          entries.push([name, visit(target)]);
+        }
+      }
+    }
+    return search;
+  };
   observed(exe);
-  if (fs.lstatSync(exe).isSymbolicLink()) links.set(exe, state(exe, false));
+  if (fs.lstatSync(exe).isSymbolicLink()) links.set(exe, fileStamp(exe, false));
   observed(path.dirname(exe));
   const [main, loaded] = packageRoots(exe, name, observeLocation);
   if (!main) throw new Error(`no ${name} with a version is installed beside ${exe} or these tools; run pnpm install`);
   const roots = [visit(main), loaded && visit(loaded)];
-  return { graph, roots, main, contents, unchanged: () => [...observations].every(([file, at]) => state(file) === at)
-    && [...links].every(([file, at]) => state(file, false) === at) };
+  return { graph, roots, main, contents, observed, exposed, files: observations, links, unchanged: () => sameFiles(observations, links) };
 }
 
 export const installedPackages = (exe: string, name: string) => packageGraph(exe, name).graph.map((p) => p.version).sort();
 
+let programSource: string | undefined;
 export function installedProgram(root: string, tool: keyof typeof TOOL_PACKAGES): Program | undefined {
   const scope = checking.getStore();
   const key = `${tool}\0${path.resolve(root)}`;
@@ -297,10 +402,22 @@ export function installedProgram(root: string, tool: keyof typeof TOOL_PACKAGES)
   }
   let previous = latest.get(tool);
   if (previous?.exe !== exe || !previous.unchanged()) {
-    const { graph, roots, main, contents, unchanged } = packageGraph(exe, TOOL_PACKAGES[tool]);
-    const packages = graph.map(({ dir, version, dependencies }) => [version, contents(dir), dependencies]);
-    const id = sha(launcherDigest(exe, main), JSON.stringify([roots, packages]), `node@${process.versions.node}:${process.platform}:${process.arch}`);
-    latest.set(tool, previous = { exe, id, unchanged });
+    const searchPath = process.env.NODE_PATH;
+    const index = path.join(path.dirname(LASTING), `installed-${tool}${searchPath ? "-host" : ""}.json.zst`);
+    const key = sha(programSource ??= code(closure("cache")), import.meta.dirname, path.resolve(exe), searchPath ?? "", process.version, process.platform, process.arch);
+    let installed = unsure || previous?.exe === exe ? undefined : readProgram(index, key);
+    if (!installed) {
+      const { graph, roots, main, contents, observed, exposed, files, links, unchanged } = packageGraph(exe, TOOL_PACKAGES[tool]);
+      const launcher = launcherInputs(exe, main, observed);
+      const search = launcher && exposed(launcher.extra);
+      const id = launcher && search && sha(launcher.digest, JSON.stringify([roots, ...search, graph.map(({ dir, version, dependencies }) => [version, contents(dir), dependencies])]), `node@${process.versions.node}:${process.platform}:${process.arch}`);
+      installed = { id, unchanged };
+      if (id && !unsure) {
+        try { writeWhole(index, zstdCompressSync(JSON.stringify([key, id, [...files], [...links]]))); } catch { /* optional cache */ }
+      }
+    }
+    const { id, unchanged } = installed;
+    latest.set(tool, previous = { exe, id, unchanged: () => process.env.NODE_PATH === searchPath && unchanged() });
   }
   const { id, unchanged } = previous;
   const program = { exe, id, unchanged: () => findBin(tool, root) === exe && unchanged() };
@@ -483,13 +600,15 @@ type Stage = (typeof STAGES)[number];
  * what is installed now.
  */
 const toolchains = new Map<string, Promise<string>>();
-async function toolchainId(root: string, stage: Stage): Promise<string> {
+async function toolchainId(root: string, stage: Stage): Promise<string | undefined> {
   const everything = stage === "tests" || stage === "traces" || stage === "explore";
   const versions = (stage === "action" || stage === "prove" || stage === "simulate" ? []
     : ["@informalsystems/quint", "typescript", "vibelang", ...everything ? ["lemmascript"] : []]).map(packageVersion);
   for (const tool of ["quint", "lsc"] as const) {
     if (!everything && !(tool === "quint" ? stage === "simulate" : stage === "prove")) continue;
-    versions.push(installedProgram(root, tool)?.id ?? `no ${tool} launcher`);
+    const program = installedProgram(root, tool);
+    if (program && !program.id) return undefined;
+    versions.push(program?.id ?? `no ${tool} launcher`);
   }
   const verifier = stage === "prove" ? await verifierIdentity() : everything ? await verifierIdentity().catch(() => "no verifier") : "";
   const known = [stage, ...versions, verifier].join(" ");
@@ -512,7 +631,7 @@ async function toolchainId(root: string, stage: Stage): Promise<string> {
 /** The remembered results of one check: whether it may read them, and every entry it read or wrote. */
 export interface Memory { root: string; fresh: boolean; used: Set<string>; cacheValue?: (value: unknown) => unknown }
 /** An entry of `.spec-cache`: JSON, compressed, since a run of the simulator says megabytes. */
-interface Entry { name: string; file: string; evaluator?: string | null }
+interface Entry { name: string; file: string; reusable: boolean; evaluator?: string }
 const formats = [["zst", zstdDecompressSync], ["gz", gunzipSync]] as const;
 const primaryExtension = `.${formats[0][0]}`;
 const localCache = (root: string) => path.join(root, ".spec-cache");
@@ -529,10 +648,12 @@ export async function withFormalCache<T>(directory: string, run: () => Promise<T
   }
 }
 
-export async function entry(root: string, stage: Stage, key: string[], evaluates = ["simulate", "tests", "traces", "explore"].includes(stage)): Promise<Entry> {
-  const evaluator = evaluates ? evaluatorForCheck(root) ?? null : undefined;
-  const name = `${stage}-${sha(await toolchainId(root, stage), ...evaluator ? [evaluator] : [], ...key).slice(0, 24)}.json${primaryExtension}`;
-  return { name, file: cacheFile(root, name), evaluator };
+export async function entry(root: string, stage: Stage, key: (string | undefined)[], evaluates = ["simulate", "tests", "traces", "explore"].includes(stage)): Promise<Entry> {
+  const evaluator = evaluates ? evaluatorForCheck(root) : undefined;
+  const inputs = [await toolchainId(root, stage), ...evaluates ? [evaluator] : [], ...key];
+  const reusable = inputs.every((input) => input !== undefined);
+  const name = `${stage}-${sha(...inputs.map((input) => input ?? "")).slice(0, 24)}.json${primaryExtension}`;
+  return { name, file: cacheFile(root, name), reusable, evaluator };
 }
 /** Entries are deleted when unused for a while (see collectGarbage), so a hit says the entry is in use. */
 function use(memory: Memory, name: string) {
@@ -541,10 +662,10 @@ function use(memory: Memory, name: string) {
   try { const now = new Date(); fs.utimesSync(cacheFile(memory.root, name), now, now); } catch { /* still a hit */ }
 }
 /** What an entry holds, or undefined. An entry that cannot be read, cut short by a kill or a full disk, is deleted and is a miss. */
-export function recall<T>(memory: Memory, { name, file, evaluator }: Entry): T | undefined {
+export function recall<T>(memory: Memory, { name, file, reusable }: Entry): T | undefined {
   memory.used.add(name);
   const check = checking.getStore();
-  if (memory.fresh || evaluator === null || check?.changed || check?.closed) return undefined;
+  if (memory.fresh || !reusable || check?.changed || check?.closed) return undefined;
   const fileBase = file.slice(0, -primaryExtension.length);
   const nameBase = name.slice(0, -primaryExtension.length);
   for (const [extension, decompress] of formats) {
@@ -566,15 +687,16 @@ export function recall<T>(memory: Memory, { name, file, evaluator }: Entry): T |
   return undefined;
 }
 /** Remember `value` under an entry, unless this process cannot say which tools computed it: then the next check computes it again. */
-export function store(memory: Memory, { name, file, evaluator }: Entry, value: unknown, action?: { program: Program; began: number }) {
+export function store(memory: Memory, { name, file, evaluator, reusable }: Entry, value: unknown, action?: { program: Program; began: number }) {
   memory.used.add(name);
   const check = checking.getStore();
-  if (unsure || check?.changed || check?.closed || evaluator === null) return;
+  if (unsure || check?.changed || check?.closed || !reusable) return;
   if (evaluator !== undefined && !stableInstallation(evaluatorIdentity(memory.root) === evaluator)) return;
   if (action && !check && !action.program.unchanged()) return;
   const bytes = zstdCompressSync(JSON.stringify(memory.cacheValue ? memory.cacheValue(value) : value));
   sharedCache(name)?.used.add(name);
   if (action) check?.verify.add(action.program);
+  else if (check) includePrograms(check);
   if (!check?.verify.size) {
     writeWhole(file, bytes);
     return;

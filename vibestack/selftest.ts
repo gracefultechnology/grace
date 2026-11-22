@@ -2189,6 +2189,22 @@ function eachCheck() {
     await runCli(script, root, "check", "--json");
     assert.equal(unmarked, entries);
     assert.equal(remembered(), unmarked);
+    if (process.platform !== "win32") {
+      const shim = path.join(root, "node_modules/.bin/quint");
+      fs.unlinkSync(shim);
+      fs.copyFileSync(path.join(nodeModules, ".bin/quint"), shim);
+      const retry = await exec(process.execPath, ["--input-type=module", "--eval", `
+        import fs from "node:fs";
+        import { check } from "./vibestack/formal.ts";
+        let models = 0;
+        const result = await check(".", false, (step) => {
+          if (step.stage === "model" && ++models === 1) fs.linkSync("node_modules/.bin/quint", "second-install-quint");
+        });
+        console.log(JSON.stringify([models, result.results.filter(s => s.stage === "model").length, result.results.filter(s => !s.ok).map(s => s.stage)]));
+      `], root);
+      assert.equal(retry.status, 0, retry.stderr);
+      assert.deepEqual(JSON.parse(retry.stdout), [2, 1, ["review"]]);
+    }
     fs.writeFileSync(path.join(root, "tsconfig.json"), '{"compilerOptions":{"noEmit":true},"include":["gen/*.ts"]}');
     if (process.platform !== "win32") {
       const compiler = path.join(root, "node_modules/.bin/vibelang");
@@ -3762,7 +3778,7 @@ describe("the tools", { concurrency: true }, () => {
 });
 
 test("the same installed Quint shares verification results across checkouts and distinct launchers and patches keep their own", { skip: process.platform === "win32" }, async () => {
-  const install = (patch: string) => {
+  const install = (patch: string, fallback?: string) => {
     const root = toolchain(scratch({}));
     const modules = path.join(root, "node_modules");
     const store = path.join(modules, ".pnpm");
@@ -3772,11 +3788,16 @@ test("the same installed Quint shares verification results across checkouts and 
     fs.unlinkSync(path.join(modules, "@informalsystems"));
     fs.mkdirSync(dir, { recursive: true });
     fs.symlinkSync(path.dirname(dir), path.join(modules, "@informalsystems"));
-    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@informalsystems/quint", version: "1.0.0", bin: "cli.js" }));
-    fs.writeFileSync(path.join(dir, "cli.js"), "export {};\n");
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "@informalsystems/quint", version: "1.0.0", bin: "cli.cjs", dependencies: { values: "1.0.0" } }));
+    fs.writeFileSync(path.join(dir, "cli.cjs"), 'require("node:fs").writeFileSync("ir.json", JSON.stringify(require("values")));\n');
+    const lookup = fallback ? "secondary/node_modules" : locator;
+    const values = path.join(store, lookup, "values");
+    fs.mkdirSync(values, { recursive: true });
+    fs.writeFileSync(path.join(values, "package.json"), JSON.stringify({ name: "values", version: "1.0.0" }));
+    fs.writeFileSync(path.join(values, "index.js"), `module.exports = ${JSON.stringify(fallback ?? "default")};\n`);
     const shim = path.join(modules, ".bin/quint");
-    fs.writeFileSync(shim, `#!/bin/sh\nexport NODE_PATH="${store}/${locator}:${store}/node_modules:$NODE_PATH"\nexec node "$(dirname "$0")/../.pnpm/${locator}/@informalsystems/quint/cli.js" "$@"\n`, { mode: 0o755 });
-    return { root, shim };
+    fs.writeFileSync(shim, `#!/bin/sh\nexport NODE_PATH="${store}/${lookup}:${store}/node_modules:$NODE_PATH"\nexec node "$(dirname "$0")/../.pnpm/${locator}/@informalsystems/quint/cli.cjs" "$@"\n`, { mode: 0o755 });
+    return { root, shim, values };
   };
   const identity = async (root: string) => {
     const { installedProgram }: { installedProgram: typeof lookupTool } = await import(path.join(root, "vibestack/cache.ts"));
@@ -3813,7 +3834,7 @@ test("the same installed Quint shares verification results across checkouts and 
     });
     await assert.rejects(steady(async () => {
       write(first);
-      const source = "node_modules/@informalsystems/quint/cli.js";
+      const source = "node_modules/@informalsystems/quint/cli.cjs";
       const original = fs.readFileSync(source);
       fs.appendFileSync(source, "export const changed = true;");
       fs.writeFileSync(source, original);
@@ -3821,8 +3842,47 @@ test("the same installed Quint shares verification results across checkouts and 
     }), /tool installation changed/);
     assert.equal(fs.existsSync(tainted.file), false, "an edit and restore cannot publish a stale action");
     assert.equal(recall(memory, first), first.name, "the prior verified action survives");
+    await assert.rejects(steady(async () => {
+      installedProgram(".", "quint");
+      assert.equal(recall(memory, first), first.name);
+      fs.appendFileSync("node_modules/@informalsystems/quint/cli.cjs", " ");
+    }), /tool installation changed/);
   `], left.root);
   assert.equal(publication.status, 0, publication.stderr);
+  const results = [];
+  for (const selection of ["left", "right"]) {
+    const project = install("first", selection);
+    const child = await exec(process.execPath, ["--input-type=module", "--eval", `
+      import fs from "node:fs";
+      import { act } from "./vibestack/action.ts";
+      const run = async () => (await act({ root: ".", fresh: false, used: new Set() }, "quint", ["typecheck"], "run", {})).files["ir.json"];
+      const first = await run();
+      fs.writeFileSync(${JSON.stringify(path.join(project.values, "index.js"))}, 'module.exports = "revised";');
+      console.log(JSON.stringify([first, await run()]));
+    `], project.root);
+    assert.equal(child.status, 0, child.stderr);
+    results.push([...JSON.parse(child.stdout), toolRuns(path.join(project.root, ".spec-cache"))]);
+  }
+  assert.deepEqual(results, [['"left"', '"revised"', []], ['"right"', '"revised"', []]]);
+  const hosted = install("first");
+  const store = path.join(hosted.root, "node_modules/.pnpm");
+  const modules = path.join(store, "runner@1/node_modules");
+  const runner = path.join(modules, "runner");
+  fs.mkdirSync(runner, { recursive: true });
+  fs.writeFileSync(path.join(runner, "package.json"), '{"name":"runner","version":"1.0.0"}');
+  const provided = path.join(modules, "values");
+  fs.renameSync(hosted.values, provided);
+  const checked = await exec(process.execPath, ["--input-type=module", "--eval", `
+    import fs from "node:fs";
+    import { act } from "./vibestack/action.ts";
+    const run = async () => (await act({ root: ".", fresh: false, used: new Set() }, "quint", ["typecheck"], "run", {})).files["ir.json"];
+    const values = [await run(), await run()];
+    fs.writeFileSync(${JSON.stringify(path.join(provided, "index.js"))}, 'module.exports = "from host";');
+    console.log(JSON.stringify([...values, await run()]));
+  `], hosted.root, { ...process.env, NODE_PATH: [path.join(runner, "node_modules"), modules, path.join(store, "node_modules")].join(path.delimiter) });
+  assert.equal(checked.status, 0, checked.stderr);
+  assert.deepEqual([JSON.parse(checked.stdout), toolRuns(path.join(hosted.root, ".spec-cache")).length], [['"default"', '"default"', '"from host"'], 2]);
+
 });
 
 test("a trace integer of 16 or more digits that Quint wrote as a BigNumber decodes to the same integer", () => {
