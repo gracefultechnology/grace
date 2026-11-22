@@ -313,6 +313,16 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const decisions = await Effect.runPromise(decisionCloud(cloud, secret));
     await transport({ kind: "decisionRoute", cloud, deadlineMs: decisions.deadlineMs });
     const { workspace } = await launch(native.plugin, decisions.host);
+    const bindNativeLanding = async (url: string, timeout: number) => {
+      failureStage = "bind-native-landing";
+      const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
+      native.started(url);
+      native.finished(url);
+      await expect.poll(() => {
+        const tab = workspace().browser.tabs[0];
+        return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
+      }, { timeout }).toEqual({ address: url, arrived: true });
+    };
     await userEvent.click(page.getByRole("button", { name: "Internet" }));
     const address = page.getByRole("textbox", { name: "Address" });
     await userEvent.fill(address, startUrl);
@@ -361,14 +371,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       expect(landed.documentId).not.toBe(initial.documentId);
       expect(landed.readyState).toBe("complete");
       expect(matchesPublicSearch(new URL(landed.url), submitted)).toBe(true);
-      failureStage = "bind-native-landing";
-      const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
-      native.started(landed.url);
-      native.finished(landed.url);
-      await expect.poll(() => {
-        const tab = workspace().browser.tabs[0];
-        return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
-      }, { timeout: 15_000 }).toEqual({ address: landed.url, arrived: true });
+      await bindNativeLanding(landed.url, 15_000);
       failureStage = "wait-for-check-controls";
       const resume = page.getByRole("button", { name: "Resume Grace", exact: true });
       await expect.element(resume, { timeout: 15_000 }).toBeVisible();
@@ -560,14 +563,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         forwardPath.push(landed.url);
         visited.add(landed.url);
       }
-      failureStage = "bind-native-landing";
-      const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
-      native.started(landed.url);
-      native.finished(landed.url);
-      await expect.poll(() => {
-        const tab = workspace().browser.tabs[0];
-        return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
-      }, { timeout: browserObservationTimeoutMs }).toEqual({ address: landed.url, arrived: true });
+      await bindNativeLanding(landed.url, browserObservationTimeoutMs);
       failureStage = "wait-for-check-controls";
       const resume = page.getByRole("button", { name: "Resume Grace" });
       const check = page.getByRole("button", { name: "Check page", exact: true });
