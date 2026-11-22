@@ -632,7 +632,7 @@ it("Write or reply and confirm before sending", async () => {
   await expect.element(row("Outbox")).not.toBeInTheDocument();
 }, 600_000);
 
-it(`Keep the saved draft count while the Inbox refresh is delayed (spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open")`, async () => {
+it(`Keep the latest draft count (spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open")`, async () => {
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const captured = Latch.makeUnsafe();
   const release = Latch.makeUnsafe();
