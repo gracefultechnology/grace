@@ -3437,8 +3437,10 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   await Effect.runPromise(Effect.provide(script(cloud, secret, [{ said: rewritten, answer }, { said: request, answer }]), client));
   const home = "https://example.org/";
   const result = home + "results?q=green+tea";
-  const frame = await pinnedPage("statements", home, (html) => html.replace(/<body\b[^>]*>[\s\S]*<\/body>/u,
-    '<body><header><form method="get"><input type="text" name="q" role="combobox" placeholder="Search the site"></form></header><main><h1>Public catalogue</h1></main><form><label>Newsletter email <input type="email"></label><button type="submit">Subscribe</button></form></body>'));
+  const frame = await pinnedPage("statements", home, (html) => html
+    .replace("</head>", `<script>(${String(pageCommand)})(null, "");</script></head>`)
+    .replace(/<body\b[^>]*>[\s\S]*<\/body>/u,
+      '<body><header><form method="get"><input type="text" name="q" role="combobox" placeholder="Search the site"></form></header><main><h1>Public catalogue</h1></main><form><label>Newsletter email <input type="email"></label><button type="submit">Subscribe</button></form></body>'));
   const heading = frame.document.querySelector("h1")!;
   const searchField = frame.document.querySelector('input[name="q"]')!;
   let url = home;
