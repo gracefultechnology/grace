@@ -329,14 +329,16 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     const reviewed = workspace().review.request.steps;
     const named = reviewed.find(step => step.tag === "ReachNamedPage");
+    const record = reviewed.find(step => step.tag === "ReadLatestRecord");
     if (named) outcome.reviewedDestination = named.subject;
-    if (requiredStep === "ReachNamedPage") {
+    if (requiredStep) {
       outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: guidedDetails(step).subject }));
-      if (exploratory && !named && reviewed.length > 0) {
+      const matches = reviewed.some(step => step.tag === requiredStep);
+      if (exploratory && !matches && reviewed.length > 0) {
         outcome.miss = "missing-reviewed-step";
         return;
       }
-      expect(named).toBeDefined();
+      expect(matches).toBe(true);
       expect(reviewed).toHaveLength(1);
     }
     await userEvent.click(page.getByRole("button", { name: "Collapse", exact: true }));
@@ -356,6 +358,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       return tokens.length > 0 && tokens.every(word => namedWords.has(word));
     };
     const visited = new Set([initial.url]);
+    const forwardPath = [initial.url];
     const disclosed = new Set<string>();
     const disclosures: { url: string; documentId: string; snapshotId: string; instruction: string; label: string; pointer: { x: number; y: number }; before: number; after: number }[] = [];
     outcome.disclosures = disclosures;
@@ -364,10 +367,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     outcome.hops = hops;
     const menuRetries: { documentId: string; instruction: string }[] = [];
     outcome.menuRetries = menuRetries;
-    const actionLimit = named ? 8 : 1;
+    const actionLimit = named || record ? 8 : 1;
     const actionsTaken = () => hops.length + disclosures.length + menuRetries.length + Number(outcome.nameCorrection !== undefined);
     const stopAtActionLimit = () => {
-      if (!exploratory || !named || actionsTaken() !== actionLimit) return false;
+      if (!exploratory || !(named || record) || actionsTaken() !== actionLimit) return false;
       outcome.miss = "action-budget-exhausted";
       return true;
     };
@@ -470,6 +473,12 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
           lastInstruction = instruction;
         }
       }
+      if (record) await expect.element(linkGuidance.or(guidanceFailure).first(), { timeout: 45_000 }).toBeVisible();
+      if (record && guidanceFailure.query() !== null) throw new Error("Record guidance could not verify the next link");
+      const selection = workspace().plan.recordSelection;
+      const bound = record && selection.tag === "StagedGuidedRecord" && selection.selection.documentId === previous.documentId
+        ? selection.selection : undefined;
+      const returningToRecord = record && linkGuidance.query()?.textContent?.includes("Go back one page in this list.") === true;
       await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
       outcome.ringTap = true;
       await expect.poll(async () => {
@@ -478,12 +487,18 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       }, { timeout: 30_000 }).toBe(true);
       const landed = await read();
       outcome.destination = { url: landed.url, documentId: landed.documentId };
-      if (exploratory && visited.has(landed.url)) {
+      const expectedReturn = returningToRecord && forwardPath.at(-2) === landed.url;
+      if (exploratory && !expectedReturn && visited.has(landed.url)) {
         outcome.miss = "repeated-address";
         return;
       }
-      expect(visited.has(landed.url)).toBe(false);
-      visited.add(landed.url);
+      if (expectedReturn) {
+        forwardPath.pop();
+      } else {
+        expect(visited.has(landed.url)).toBe(false);
+        forwardPath.push(landed.url);
+        visited.add(landed.url);
+      }
       failureStage = "bind-native-landing";
       const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
       native.started(landed.url);
@@ -505,9 +520,17 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       const checked = finished.query() !== null;
       const reason = continuing.query()?.textContent;
       hops.push({ url: landed.url, documentId: landed.documentId, checked, checkResultWaitMs: Math.round(performance.now() - checkReturnedAt), reason });
+      if (checked && record) {
+        const receipts = workspace().plan.receipts;
+        if (!bound || bound.documentId !== previous.documentId || bound.documentId === landed.documentId ||
+            receipts.length !== 1 || receipts[0]?.sourceKey !== bound.key)
+          throw new Error("The checked detail did not complete the reviewed record selection");
+        outcome.checkedRecord = { collectionDocument: previous.documentId, detailDocument: landed.documentId };
+      }
       if (checked) break;
-      expect(named).toBeDefined();
-      expect([`I couldn’t verify “${named?.subject}” on this page. Check the page again or try another link.`, privateFormRecovery]).toContain(reason);
+      expect(named ?? record).toBeDefined();
+      if (named) expect([`I couldn’t verify “${named.subject}” on this page. Check the page again or try another link.`, privateFormRecovery]).toContain(reason);
+      if (record) await expect.element(continuing).toBeVisible();
       expect(workspace().plan.receipts).toHaveLength(0);
       previous = landed;
     }
@@ -802,3 +825,124 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   await expect.poll(() => openings().map((o) => o.failed)).toEqual([true]);
   expect(count("navigate")).toBe(before + 1);
 }, 180_000);
+
+it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mismatched detail", "wrong record kind", "ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "public list"] as const)('Check the latest item across record pages ($0) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (scenario) => {
+  localStorage.clear();
+  const status = scenario === "earlier winner" ? "cancelled" : "completed";
+  const requested = `Show the most recent ${status} order`;
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said: requested, answer: JSON.stringify({ text: "Review this record selection.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReadLatestRecord", collection: "Order", status }] }] }),
+  }]), client));
+  const decisions = await Effect.runPromise(decisionCloud(cloud, secret));
+  const route = commands.recordPage;
+  const { url } = Schema.decodeUnknownSync(Schema.Struct({ url: Schema.NonEmptyString }))(await route({
+    kind: "open", scenario, decisionUrl: new URL("/api/v1/decisions", cloud).href,
+  }));
+  onTestFinished(() => route({ kind: "close" }).then(() => undefined));
+  let shown: string | null | undefined;
+  const native = androidPagePluginAtItsBoundary({
+    createSurface(request) {
+      if (request.url !== url) return Promise.reject(new Error("The record fixture address changed"));
+      native.started(url);
+      native.finished(url);
+      return Promise.resolve();
+    },
+    presentSurface(request) {
+      shown = request.id;
+      return Promise.resolve();
+    },
+    async readPage(request) {
+      if (request.id !== shown) throw new Error("The record fixture is not in front");
+      return Schema.decodeUnknownSync(SelectorRead)(await route({ kind: "read", selector: request.selector }));
+    },
+    async controlPage(request) {
+      if (request.id !== shown && request.command.guidance?.kind !== "hide") throw new Error("The record fixture is not in front");
+      return Schema.decodeUnknownSync(BrowserControl)(await route({ kind: "control", request }));
+    },
+  });
+  const { ui, workspace } = await launch(native.plugin, decisions.host);
+  await userEvent.click(ui.getByRole("button", { name: "Internet", exact: true }));
+  await userEvent.fill(ui.getByRole("textbox", { name: "Address" }), url);
+  await userEvent.click(ui.getByRole("button", { name: "Go", exact: true }));
+  await expect.poll(() => workspace().browser.tabs[0]?.load).toBe("Loaded");
+  await userEvent.click(ui.getByRole("button", { name: "Ask Grace", exact: true }));
+  await userEvent.click(ui.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
+  await expect.element(ui.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
+  await userEvent.fill(ui.getByRole("textbox", { name: "Message to Grace" }), requested);
+  await userEvent.click(ui.getByRole("button", { name: "Send", exact: true }));
+  await expect.element(ui.getByRole("region", { name: "Review read plan" })).toBeVisible();
+  await userEvent.click(ui.getByRole("button", { name: "Collapse", exact: true }));
+  await userEvent.click(ui.getByRole("button", { name: "Start read plan" }));
+  const show = ui.getByRole("button", { name: "Show me the link", exact: true });
+  const check = ui.getByRole("button", { name: "Check page", exact: true });
+  const next = (path: string) => new URL(path, url).href;
+  const follow = async (path: string) => {
+    await expect.poll(async () => (await route({ kind: "tapGuide" })).tapped, { timeout: 15_000 }).toBe(true);
+    const destination = next(path);
+    await expect.poll(async () => (await route({ kind: "read" })).url, { timeout: 15_000 }).toBe(destination);
+    native.started(destination);
+    native.finished(destination);
+    await expect.poll(() => ({ address: typedAddress(), load: workspace().browser.tabs[0]?.load })).toEqual({ address: destination, load: "Loaded" });
+    const resume = ui.getByRole("button", { name: "Resume Grace", exact: true });
+    await expect.element(resume).toBeVisible();
+    expect(workspace().assistant.activity).toBe("Paused");
+    expect(workspace().plan.receipts).toHaveLength(0);
+    await userEvent.click(resume);
+    await expect.poll(() => workspace().assistant.activity).toBe("Rechecking");
+  };
+  const point = async () => {
+    await userEvent.click(show);
+    await expect.element(ui.getByRole("status", { name: "Link guide result" }), { timeout: 15_000 }).toBeVisible();
+  };
+  if (["ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account"].includes(scenario)) {
+    await userEvent.click(show);
+    await expect.element(ui.getByRole("status", { name: "Link unavailable" }), { timeout: 15_000 }).toBeVisible();
+    expect((await route({ kind: "tapGuide" })).tapped).toBe(false);
+    expect(workspace().plan.receipts).toHaveLength(0);
+    expect(await route({ kind: "requests" })).toEqual({ count: 0, leaked: false });
+    return;
+  }
+  if (scenario === "public list") {
+    await point();
+    await follow("/view/1");
+    await userEvent.click(check);
+    await expect.element(ui.getByText("Read checks complete", { exact: true }), { timeout: 15_000 }).toBeVisible();
+    expect(workspace().plan.receipts).toMatchObject([{ evidence: "Checked the latest matching record." }]);
+    expect(await route({ kind: "requests" })).toEqual({ count: 0, leaked: false });
+    return;
+  }
+  if (scenario === "later winner") {
+    await point();
+    await follow("/list");
+    expect(workspace().plan.receipts).toHaveLength(0);
+  }
+  await point();
+  await follow("/list?page=2");
+  expect(workspace().plan.receipts).toHaveLength(0);
+  await userEvent.click(show);
+  if (scenario === "tied latest" || scenario === "changed scope") {
+    await expect.element(ui.getByRole("status", { name: "Link unavailable" }), { timeout: 15_000 }).toBeVisible();
+    expect((await route({ kind: "tapGuide" })).tapped).toBe(false);
+    expect(workspace().plan.receipts).toHaveLength(0);
+  } else {
+    await expect.element(ui.getByRole("status", { name: "Link guide result" }), { timeout: 15_000 }).toBeVisible();
+    if (scenario === "earlier winner") {
+      await follow("/list");
+      await point();
+    }
+    await follow(scenario === "earlier winner" ? "/view/1" : "/view/2");
+    await userEvent.click(check);
+    if (scenario === "mismatched detail" || scenario === "wrong record kind") {
+      await expect.element(ui.getByRole("status", { name: "Page check result" }), { timeout: 15_000 }).toBeVisible();
+      expect(workspace().plan.receipts).toHaveLength(0);
+    } else {
+      await expect.element(ui.getByText("Read checks complete", { exact: true }), { timeout: 15_000 }).toBeVisible();
+      expect(workspace().plan.receipts).toMatchObject([{ evidence: "Checked the latest matching record." }]);
+      expect(JSON.stringify(workspace().plan.receipts)).not.toContain("private-canary");
+    }
+  }
+  expect(await route({ kind: "requests" })).toEqual({ count: 0, leaked: false });
+}, 120_000);

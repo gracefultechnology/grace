@@ -1,16 +1,17 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
-import { Effect, Latch, Layer, ManagedRuntime, Option, Schema } from "effect";
+import { Effect, Fiber, Latch, Layer, ManagedRuntime, Option, Result, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { cdp, commands, type Locator, page, userEvent } from "vitest/browser";
 import { allowedUse, chooseProvider, initial as initialAccounts, sheetResult } from "../gen/app__accounts.ts";
+import { activeTab, tabUrl } from "../gen/app__browser.ts";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { defaults, effectiveBrightness } from "../gen/app__preferences.ts";
-import { Machine as Workspaces, type GuidedCheckpoint } from "../gen/app__workspace.effect.vibe";
+import { machineOver, Machine as Workspaces, type GuidedCheckpoint } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { agentTextLimit, personSays, tabletShows } from "../src/agentTurn.ts";
 import { PasswordsClientError } from "@elizaos/os/bridges/passwords";
@@ -19,7 +20,7 @@ import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
 import { application } from "../src/app.vibe";
 import { Conversation } from "../src/conversation.vibe";
-import { GuidedRecovery } from "../src/guidedRecovery.vibe";
+import { guidedRecovery, GuidedRecovery } from "../src/guidedRecovery.vibe";
 import { FileCatalog, FileLease, FileStorage } from "../src/files.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
 import { ManagedReads } from "../src/managedReads.vibe";
@@ -1048,7 +1049,7 @@ it('Ask for email help (spec/app/conversation.md, "A turn may start without her 
 });
 
 it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an available control from Grace's reply")`, async () => {
-  // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
+  // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/workspace.md, "The latest matching record must be selected on its collection and verified on arrival"
   const { agent, requests, answer, listeners, stopped, created, refused } = deviceAgent();
   const runtime = ManagedRuntime.make(application(undefined, undefined, { native: true, agent }));
   const host = document.body.appendChild(document.createElement("div"));
@@ -1188,6 +1189,31 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
     await expect.element(input).toBeVisible();
     expect(review.query()).toBeNull();
     expect(plan.query()).toBeNull();
+
+    const reviewRecord = (collection: string, status: string) =>
+      ({ kind: "proposeReadPlan", steps: [{ kind: "ReadLatestRecord", collection, status }] });
+    for (const [words, collection, status] of [
+      ["Show my most recent order marked canceled.", "order", "canceled"],
+      ["Open the latest invoice that was paid.", "invoice", "paid"],
+    ]) {
+      await offer(words, [reviewRecord(collection, status)]);
+      await expect.element(review.getByRole("list", { name: "Read plan" })).toHaveTextContent(
+        `Latest record in “${collection}” with status “${status}”`);
+      expect(plan.query()).toBeNull();
+      await act(() => userEvent.click(page.getByRole("button", { name: "Close Grace" })));
+      await expect.element(review).not.toBeInTheDocument();
+      await act(() => userEvent.click(reopen));
+      await expect.element(input).toBeVisible();
+    }
+    for (const [index, words] of [
+      "Show my most recent order, and tell me which invoice was canceled.",
+      "Show my latest order. That was canceled last week.",
+      "Show the latest order that was not canceled.",
+    ].entries()) {
+      await offer(words, [reviewRecord("order", "canceled")]);
+      await expect.poll(() => refusal.elements().length).toBe(5 + index);
+      expect(review.query()).toBeNull();
+    }
 
     await offer(ownSpelling, [{ kind: "ReachNamedPage", target: "Grace's Help Center" }]);
     await expect.element(review.getByText(ownSpelling, { exact: true })).toBeVisible();
@@ -1395,7 +1421,12 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
       const asked = JSON.stringify({ text: question, isQuestion: true, answers: chips });
       const said = ["Call Anne for me", "Yes, please", "Call Anne again", "Call Anne once more", "Mute the next reply", "Read another question", "Read the last question"];
       const done = "I’ll ring her now.";
-      const talk = () => act(() => userEvent.click(page.getByRole("switch", { name: "Mic off" })));
+      const micOff = page.getByRole("switch", { name: "Mic off" });
+      const talk = async () => {
+        await expect.element(micOff).toBeVisible();
+        await expect.element(micOff).toBeEnabled();
+        await press(micOff);
+      };
 
       replies.push(asked, done);
       nextTranscript = said[0];
@@ -1562,6 +1593,11 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let changed: string[] = [];
   const reminders: number[] = [];
   const literalText = "<strong>This stays plain text.</strong>";
+  const destination = "https://receipt.example/statement_(2026)";
+  let body = literalText;
+  let historyId = "8";
+  let labels = ["INBOX"];
+  let statusOwner = person.id;
   const originalText = "<script>Original attachment</script>";
   const originalHash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(originalText))),
     (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -1651,7 +1687,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       case "/api/v1/billing/subscription": return reply({ status: "inactive", canManage: false, canCheckout: true });
       case "/api/v1/eliza/google/status":
         return reply({
-          accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: connectorConfigured, connected: connectorConfigured,
+          accountId: statusOwner, provider: "google", side: "owner", mode: "cloud_managed", configured: connectorConfigured, connected: connectorConfigured,
           identity: connectorConfigured ? { email: person.email } : null, connectionId: connectorConfigured ? grant : null,
           grantedCapabilities: connectorConfigured ? ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"] : [],
         });
@@ -1678,9 +1714,9 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         });
         expect(Object.fromEntries(api.searchParams)).toEqual({ messageId: mail.externalId, grantId: grant });
         return reply({
-          accountId: replyFromOwner ? person.id : "different-owner", message: mail, historyId: "8", attachments: [attachment, archive, pdf, ...photoParts.map(({ part }) => part)], bodyTextAvailable: true,
+          accountId: replyFromOwner ? person.id : "different-owner", message: { ...mail, labels, fromEmail: "robin@example.test", metadata: { historyId } }, historyId, attachments: [attachment, archive, pdf, ...photoParts.map(({ part }) => part)], bodyTextAvailable: true,
           reply: { recipient: "robin@example.test", subject: "Your receipt" },
-          bodyText: replyFromOwner ? literalText : "Another person’s message",
+          bodyText: replyFromOwner ? body : "Another person’s message",
         });
       case "/api/v1/eliza/google/gmail/attachment": {
         attachmentReads++;
@@ -1914,6 +1950,47 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Gmail accepted your email.")).toBeVisible();
     expect(sent).toEqual(["reply", "new"]);
     await tap("Close Email");
+    const browser = () => runtime.runSync(Effect.flatMap(Workspaces, (m) => m.get())).browser;
+    const initialTabs = browser().tabs;
+    body = `See ${destination}.`;
+    labels = ["SPAM"];
+    const messageLink = page.getByRole("link", { name: destination });
+    const openMessage = async () => { await tap(/^Email/); await tap(/Your receipt/); };
+    await openMessage();
+    await expect.element(page.getByText(/Gmail marked this message as spam/)).toBeVisible();
+    await tap("Reply");
+    await expect.element(messageLink).not.toBeInTheDocument();
+    await tap("Close draft");
+    await act(() => messageLink.click());
+    const confirmation = page.getByRole("dialog", { name: "Open this link?" });
+    await expect.element(confirmation.getByText(destination, { exact: true })).toBeVisible();
+    await tap("Stay in email");
+    expect(browser().tabs).toEqual(initialTabs);
+    await act(() => messageLink.click());
+    historyId = "9";
+    await tap("Open in Browser");
+    await expect.element(page.getByText(/This link couldn’t open/)).toBeVisible();
+    expect(browser().tabs).toEqual(initialTabs);
+    await tap("Back to Inbox");
+    await tap(/Your receipt/);
+    await act(() => messageLink.click());
+    statusOwner = "another-grace-account";
+    await tap("Open in Browser");
+    await expect.element(page.getByText(/This link couldn’t open/)).toBeVisible();
+    expect(browser().tabs).toEqual(initialTabs);
+    statusOwner = person.id;
+    await act(() => messageLink.click());
+    await tap("Open in Browser");
+    await expect.poll(() => tabUrl(activeTab(browser()))).toBe(destination);
+    expect(browser().tabs.slice(0, -1).map((tab) => tab.id)).toEqual(initialTabs.map((tab) => tab.id));
+    await tap("Home");
+    labels = ["INBOX"];
+    body = `Plain address ${destination}?current=1.`;
+    await openMessage();
+    await act(() => page.getByRole("link", { name: `${destination}?current=1` }).click());
+    await expect.poll(() => tabUrl(activeTab(browser()))).toBe(`${destination}?current=1`);
+    expect(browser().tabs).toHaveLength(initialTabs.length + 2);
+    await tap("Home");
     await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: /Dentist/ })));
     await expect.element(page.getByText("Bring your glasses.", { exact: true })).toBeVisible();
     expect(reminders).toEqual([]);
@@ -2523,6 +2600,36 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
     await sync();
     await sync();
     expect(Object.keys(localStorage).some((key) => key.startsWith("grace/guided-task-"))).toBe(false);
+
+    let held = await runtime.runPromise(workspace.get());
+    const writing = Latch.makeUnsafe();
+    const finish = Latch.makeUnsafe();
+    const queued = await Effect.runPromise(machineOver(() => Effect.sync(() => held), (next) => Effect.gen(function*() {
+      if (held.device.surface === "Email" && next.device.surface === "Browser") {
+        writing.openUnsafe();
+        yield* finish.await;
+      }
+      held = next;
+    })));
+    const { state: email } = await Effect.runPromise(queued.send({ type: "visit", destination: "Email" }, "Person"));
+    const selected = { task: email.assistant.taskId, version: email.assistant.workVersion };
+    await runtime.runPromise(Effect.gen(function*() {
+      const recovery = yield* GuidedRecovery;
+      yield* recovery.keepProgress();
+      const handoff = yield* Effect.forkChild(queued.send({ type: "openReleasedEmailLink", release: {
+        link: "https://utility.example/bill", deviceVersion: email.device.contextVersion, browserRevision: email.browser.revision,
+      } }, "Host"));
+      yield* writing.await;
+      const end = yield* Effect.forkChild(Effect.result(recovery.abandon(selected)), { startImmediately: true });
+      finish.openUnsafe();
+      yield* Fiber.join(handoff);
+      const verdict = yield* Fiber.join(end);
+      expect(Result.isFailure(verdict) ? verdict.failure._tag : "Ended").toBe("Rejected");
+      const { device, assistant } = yield* queued.get();
+      expect([device.surface, assistant.taskId, assistant.activity, assistant.workVersion]).toEqual([
+        "Browser", selected.task, "Paused", selected.version + 1,
+      ]);
+    }).pipe(Effect.provide(guidedRecovery(false, undefined).pipe(Layer.provide(Layer.succeed(Workspaces, queued))))));
 
     readable = true;
     lost = true;

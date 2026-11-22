@@ -335,7 +335,7 @@ upgrade preserves the previous encrypted owner record and the local vault.
 Shared and standalone builds request fresh Passwords approval on the selected
 Cloud’s first-party browser page. The native secure-store client checks the
 account, organization and current approval before recovery. Each APK registers
-one `GraceAccount` implementation.
+one `GraceAccount` implementation. The public shared environments currently return the S256 registration without the canonical sign-in methods. Use a compatible shared deployment to qualify this migration before distributing a shared-profile APK.
 
 `android/agent.json` names the admitted agent routes, `agent/character.json`
 supplies the character, and `agent/policy.json` owns the action allowlist. The upstream agent

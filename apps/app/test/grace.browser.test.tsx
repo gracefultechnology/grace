@@ -132,10 +132,11 @@ it('Ask Grace to help with my email (spec/app/agentActions.md, "Story: Ask Grace
   await expect.poll(async () => (await mailbox()).composeVisible).toBe(false);
 
   await say("Forward Ruth's photos.", { text: "Who should get them?", actions: [{ kind: "openMessage", message: "mail:1:family" }, { kind: "forwardMessage" }] });
-  const photos = (await mailbox()).assets.map((a) => a.name);
-  expect(photos).toHaveLength(3);
-  await expect.poll(async () => { const m = await mailbox(); return [m.composeVisible, m.draft.subject, m.draftAttachments.map((a) => a.name)]; })
-    .toEqual([true, "Fwd: Lunch on Sunday?", photos]);
+  const photos = ["Bow.png", "Piano.png", "Flowers.png"];
+  await expect.poll(async () => {
+    const m = await mailbox();
+    return [m.composeVisible, m.draft.subject, m.assets.map((a) => a.name), m.draftAttachments.map((a) => a.name)];
+  }).toEqual([true, "Fwd: Lunch on Sunday?", photos, photos]);
   await say("To Susan.", { text: "It is addressed to Susan. Tap Send when you are ready.", actions: [{ kind: "addressEmail", to: "Susan" }] });
   await expect.poll(async () => (await mailbox()).draft.to).toBe("susan@family.test");
   expect(await sentSubjects()).toEqual([]);

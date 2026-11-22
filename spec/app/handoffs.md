@@ -432,17 +432,22 @@ never sends mail and leaves the messages and the outbox as they were. With a rea
 
 ```quint
 type LinkHandoff = LinkDeclined | OpenedLink({ device: S::Shell, mail: E::Mailbox, browser: B::Browser })
-pure def mayOpenEmailLink(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): bool =
+type EmailDestination = { device: S::Shell, browser: B::Browser }
+pure def mayShowEmailDestination(device: S::Shell, browser: B::Browser, link: str): bool =
   device.surface == S::Email and S::canOpenSurface(device, S::Browser) and
-  reader.view == E::Message and not(reader.composeVisible) and reader.link.ref == reader.messageRef and
-  E::canLinkOpened(reader, link, E::MailHost) and E::selectedMessageIsCurrent(reader) and
   not(B::hasTab(browser, browser.nextId)) and B::canNavigate(browser, link)
+pure def showEmailDestination(device: S::Shell, browser: B::Browser, link: str): EmailDestination = {
+  device: S::openSurface(device, S::Browser), browser: B::navigate(B::openTab(browser), link)
+}
+pure def mayOpenEmailLink(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): bool =
+  mayShowEmailDestination(device, browser, link) and
+  reader.view == E::Message and not(reader.composeVisible) and reader.link.ref == reader.messageRef and
+  E::canLinkOpened(reader, link, E::MailHost) and E::selectedMessageIsCurrent(reader)
 pure def openEmailLink(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): LinkHandoff =
-  if (mayOpenEmailLink(device, reader, browser, link)) OpenedLink({
-    device: S::openSurface(device, S::Browser),
-    mail: E::linkOpened(reader, link, E::MailHost),
-    browser: B::navigate(B::openTab(browser), link)
-  }) else LinkDeclined
+  val target = showEmailDestination(device, browser, link)
+  if (mayOpenEmailLink(device, reader, browser, link))
+    OpenedLink({ device: target.device, mail: E::linkOpened(reader, link, E::MailHost), browser: target.browser })
+  else LinkDeclined
 pure def lawOnlyAReleasedLinkOpens(device: S::Shell, reader: E::Mailbox, browser: B::Browser, link: str): bool =
   val handoff = openEmailLink(device, reader, browser, link)
   (reader.link.status != E::LinkReleased or reader.link.link != link or reader.view != E::Message or

@@ -69,6 +69,7 @@ export function webPage() {
     return {
       privateSignIn: false,
       opensWebsites: false,
+      readRecordText: () => Effect.fail(new PageFailed({ cause: "This browser cannot inspect another website." })),
       readPrimaryHeading: () => Effect.fail(new PageFailed({ cause: "This browser cannot inspect another website." })),
       hasNavigationMenu: () => Effect.succeed(false),
       visibleMenuChild: () => Effect.succeed(false),

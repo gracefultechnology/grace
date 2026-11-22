@@ -174,19 +174,30 @@ jobs:
           test -n "$GRACE_BENCHMARK_CLEF_ORIGIN" && test -n "$GRACE_BENCHMARK_CLEF_KEY"
           tasks='[260,261,262,263,264,298,299]'
           required='[260,261,262,263]'
+          records='[298,299]'
           git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
             jq -e --arg start "$SHOPPING_ORIGIN/" --arg results "$WEBARENA_RESULTS" \
-              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$tasks" --argjson required "$required" \
+              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$tasks" --argjson required "$required" --argjson records "$records" \
               '[.[] | select(.task_id as $id | $tasks | index($id)) |
                 {taskId: (.task_id | tostring), intent, startUrl: $start, receipt: ($results + "/task-" + (.task_id | tostring) + ".json"),
                  siteStorageState: $state, evaluator: "webarena"} +
                 (if .task_id as $id | $required | index($id) then {} else {exploratory: true} end) +
-                (if .task_id == 260 then {} else {chat: "upstream", requiredStep: "ReachNamedPage"} end)] |
+                (if .task_id == 260 then {} else {chat: "upstream", requiredStep:
+                  (if .task_id as $id | $records | index($id) then "ReadLatestRecord" else "ReachNamedPage" end)} end)] |
                 select(map(.taskId | tonumber) == $tasks)' > "$GRACE_BROWSER_BENCHMARK_FILE"
           browser_exit=0
           pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' |
             tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
-          jq -es --argjson tasks "$tasks" --argjson required "$required" '
+          jq -es --argjson tasks "$tasks" --argjson required "$required" --argjson records "$records" '
+            def checked_record:
+              .outcome as $out | $out.checkedRecord as $record |
+              (($out.reviewedSteps // []) | map(.kind)) == ["ReadLatestRecord"] and
+              ($record.collectionDocument | type == "string" and length > 0) and
+              ($record.detailDocument | type == "string" and length > 0) and
+              $record.detailDocument != $record.collectionDocument and
+              $record.detailDocument == $out.destination.documentId and
+              $record.detailDocument == $out.hops[-1].documentId and
+              $record.collectionDocument == ([$out.start] + $out.hops)[-2].documentId;
             def verified_action_budget:
               .outcome as $out |
               ($out.disclosures // []) as $menus |
@@ -229,8 +240,12 @@ jobs:
               exhaustedBudget: (.outcome.miss == "action-budget-exhausted" and verified_action_budget),
               officialScore: .webArena.officialScore, noActionScore: .webArena.noActionScore,
               hostedGuidance: (.webArena.qualifiedHostedGuidance == true),
-              checkedPlan: (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
-                (.outcome.reviewedDestination | length) > 0 and .outcome.hops[-1].checked == true))})
+              checkedPlan: (.outcome.hops[-1].checked == true and
+                (.outcome.destination.documentId | type == "string" and length > 0) and
+                .outcome.hops[-1].documentId == .outcome.destination.documentId and
+                .outcome.start.documentId != .outcome.destination.documentId and
+                (.taskId == "260" or (.chatStatus == 200 and .outcome.chatProvider == "upstream" and
+                  (if (.taskId | tonumber) as $id | $records | index($id) then checked_record else (.outcome.reviewedDestination | length) > 0 end))))})
           ' "$WEBARENA_RESULTS"/task-*.json > "$WEBARENA_RESULTS/scorecard.json"
           jq -r '
             "### WebArena Shopping",
@@ -244,7 +259,8 @@ jobs:
               (.miss == "missing-reviewed-step" or .miss == "target-absent-from-open-menu" or .miss == "repeated-address" or
                 (.miss == "rejected-scoped-leaf" and .rejectedLeaf) or
                 (.miss == "action-budget-exhausted" and .exhaustedBudget)))) and
-              .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1)) and
+              .noActionScore == 0 and (.officialScore == 0 or .officialScore == 1) and
+              (.completed == false or (.checkedPlan and .officialScore == 1))) and
             all(.[] | select(.cohort == "required"); .officialScore == 1 and .hostedGuidance and .checkedPlan)
           ' "$WEBARENA_RESULTS/scorecard.json"
           test "$browser_exit" -eq 0
