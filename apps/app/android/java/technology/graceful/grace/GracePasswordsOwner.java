@@ -106,6 +106,8 @@ final class GracePasswordsOwner {
 
  static synchronized long generation() { return generation; }
 
+ static synchronized boolean enrollmentInProgress() { return enrollment != null; }
+
  static boolean accountChanging() { return changingAccount; }
 
  static synchronized boolean admitted(Context context) {

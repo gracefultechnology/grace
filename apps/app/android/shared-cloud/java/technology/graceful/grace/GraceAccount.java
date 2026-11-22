@@ -44,6 +44,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
  private GraceBrowserGuide guide;
  private GraceSharedSpeech speech;
  private CredentialReader.Subscription custodySubscription;
+ private Runnable signOutCanonical;
 
  static CloudDeviceAccount.Session session(Context context) throws Exception {
   if (GracePasswordsOwner.accountChanging()) throw new IllegalStateException("Account change in progress");
@@ -96,6 +97,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
   }
   SignInCustody delegate = DeviceCustody.custody(context, registration);
   SharedGraceCredentials legacy = new SharedGraceCredentials(context);
+  signOutCanonical = () -> delegate.signOut(expected);
   return new SignInCustody() {
    @Override public int beginSignIn(Environment environment) throws Refused {
     if (environment != expected || enrollment == null) throw new Refused(Failure.REJECTED);
@@ -147,8 +149,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
     if (environment != expected) throw new IllegalStateException("Mismatched shared Cloud profile");
     try {
      changeAccount(context, () -> {
-      legacy.signOut();
-      delegate.signOut(environment);
+      legacy.signOut(false, signOutCanonical);
       return null;
      });
     } catch (Exception unavailable) { throw new IllegalStateException("Cloud sign-out could not be confirmed", unavailable); }
@@ -194,7 +195,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
  }
 
  private void publishSession() {
-  try { notifyListeners("sessionChanged", projection(session(getContext())), true); }
+  try { notifyListeners("sessionChanged", accountProjection(), true); }
   catch (Exception unavailable) { }
  }
 
@@ -202,9 +203,17 @@ public final class GraceAccount extends ElizaSignInPlugin {
   return GracePasswordsOwner.accountStatus(session);
  }
 
+ private JSObject accountProjection() throws Exception {
+  synchronized (CREDENTIAL_CHANGE) {
+   var context = getContext();
+   if (new SharedGraceCredentials(context).needsCleanup()) return projection(null).put("legacySignInNeedsCleanup", true);
+   return projection(session(context));
+  }
+ }
+
  @Override @PluginMethod public void status(PluginCall call) {
   ACCOUNT.execute(() -> {
-   try { call.resolve(projection(session(getContext()))); }
+   try { call.resolve(accountProjection()); }
    catch (Exception unavailable) { call.reject("Device account is unavailable"); }
   });
  }
@@ -214,6 +223,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
   if (call.getData().has("method") && !"browser".equals(method)) { call.reject("Unknown sign-in method"); return; }
   ACCOUNT.execute(() -> {
    try {
+    GracePasswordsOwner.Enrollment lease;
     synchronized (CREDENTIAL_CHANGE) {
      var legacy = new SharedGraceCredentials(getContext());
      legacy.recoverOwner();
@@ -224,9 +234,9 @@ public final class GraceAccount extends ElizaSignInPlugin {
       finishEnrollment(call);
       return;
      }
+     lease = GracePasswordsOwner.beginEnrollment(getContext());
+     enrollment = lease;
     }
-    var lease = GracePasswordsOwner.beginEnrollment(getContext());
-    enrollment = lease;
     try {
      PluginCall requested = accountCall(call, data -> {
       if (!"signed-in-as".equals(data.optString("verdict"))) { call.reject("Cloud sign-in could not complete"); return; }
@@ -270,6 +280,22 @@ public final class GraceAccount extends ElizaSignInPlugin {
     call.resolve();
    }, null));
   } catch (RuntimeException unavailable) { call.reject("Couldn't sign out on this device"); }
+ }
+
+ @PluginMethod public void cleanupLegacySignIn(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try {
+    synchronized (CREDENTIAL_CHANGE) {
+     if (GracePasswordsOwner.enrollmentInProgress()) throw new IllegalStateException("Sign-in is in progress");
+     var context = getContext();
+     changeAccount(context, () -> {
+      new SharedGraceCredentials(context).signOut(true, signOutCanonical);
+      return null;
+     });
+    }
+    call.resolve();
+   } catch (Exception unavailable) { call.reject("Couldn't clear the previous sign-in on this device"); }
+  });
  }
 
  @Override protected void handleOnDestroy() {

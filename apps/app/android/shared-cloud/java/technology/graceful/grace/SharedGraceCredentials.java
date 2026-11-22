@@ -20,6 +20,8 @@ final class SharedGraceCredentials {
  private static final String VERIFIED_OWNER = "verified-owner";
  private static final String REPAIRED_CREDENTIAL = "canonical-owner-verified";
  private static final String PENDING = "shared-pending";
+ private static final String SIGN_OUT = "legacy-sign-out";
+ private static final String UNSELECTED = "unselected";
  private static final String GENERATION = "credential-intent";
  private static final String RENEWAL_REQUEST = "mobile-key-renewal-request-v1";
  private static final String RENEWAL_RECEIPT = "mobile-key-renewal-v1";
@@ -33,7 +35,7 @@ final class SharedGraceCredentials {
   }
  }
 
- private record Snapshot(String key, String receipt, String retiring, String pending, String owner, String repaired, String generation) {
+ private record Snapshot(String key, String receipt, String retiring, String pending, String owner, String repaired, String generation, String signOut) {
   @Override public String toString() { return "Legacy credential slots"; }
  }
  private record Key(String localId, String serverId, String secret, long expiresAt) {
@@ -90,6 +92,7 @@ final class SharedGraceCredentials {
  void recoverOwner() throws Exception {
   Snapshot saved;
   synchronized (JsonCredentialSlots.LOCK) { saved = snapshot(); }
+  if (saved.signOut() != null) throw needsVerification();
   Key key = key(saved.key());
   OwnerBinding prior = owner(saved.owner());
   Receipt receipt = receipt(saved.receipt());
@@ -108,9 +111,8 @@ final class SharedGraceCredentials {
   long now = System.currentTimeMillis();
   Key verification = key;
   if (key.expiresAt() <= now) {
-   if (!renewal || receipt.after() == null || receipt.after().expiresAt() <= now || !key.equals(receipt.before()) ||
-       receipt.confirmedGeneration() == null || !receipt.confirmedGeneration().equals(saved.generation())) throw needsVerification();
-   verification = receipt.after();
+   verification = liveSuccessor(saved, key, receipt, now);
+   if (verification == null) throw needsVerification();
   }
   var authority = DeviceCustody.legacyCredentials(context, BuildConfig.CLOUD_API_ORIGIN);
   if (receipt != null && !renewal) {
@@ -130,20 +132,48 @@ final class SharedGraceCredentials {
   }
  }
 
- void signOut() throws Exception {
+ boolean needsCleanup() throws Exception {
+  synchronized (JsonCredentialSlots.LOCK) { return needsCleanup(snapshot()); }
+ }
+
+ private boolean needsCleanup(Snapshot saved) throws Exception {
+  Key selected = key(saved.key());
+  if (saved.signOut() != null) {
+   if (selected != null && !selected.localId().equals(saved.signOut())) throw needsVerification();
+   if (!UNSELECTED.equals(saved.signOut())) identifier(saved.signOut());
+   retirementSecrets(saved, selected, receipt(saved.receipt()));
+   return true;
+  }
+  long now = System.currentTimeMillis();
+  if (selected == null || selected.expiresAt() <= 0 || selected.expiresAt() > now ||
+      saved.owner() != null || saved.repaired() != null) return false;
+  Receipt receipt = receipt(saved.receipt());
+  matchingOwner(selected, receipt, null);
+  retirementSecrets(saved, selected, receipt);
+  return liveSuccessor(saved, selected, receipt, now) == null;
+ }
+
+ private static Key liveSuccessor(Snapshot saved, Key selected, Receipt receipt, long now) {
+  if (receipt == null || receipt.after() == null || !selected.equals(receipt.before()) ||
+      receipt.confirmedGeneration() == null || !receipt.confirmedGeneration().equals(saved.generation()) ||
+      receipt.after().expiresAt() <= now) return null;
+  return receipt.after();
+ }
+
+ void signOut(boolean cleanupOnly, Runnable signOutCanonical) throws Exception {
   Snapshot saved;
   synchronized (JsonCredentialSlots.LOCK) { saved = snapshot(); }
-  Set<String> secrets = new LinkedHashSet<>();
-  add(secrets, key(saved.key()));
-  Receipt receipt = receipt(saved.receipt());
-  if (receipt != null) {
-   add(secrets, receipt.before());
-   add(secrets, receipt.after());
-  }
-  JSONObject duty = saved.retiring() == null ? null : new JSONObject(saved.retiring());
-  while (duty != null) {
-   secrets.add(secret(duty.getString("token")));
-   duty = duty.has("earlier") ? duty.getJSONObject("earlier") : null;
+  if ((cleanupOnly || saved.signOut() != null) && !needsCleanup(saved)) throw needsVerification();
+  Key selected = key(saved.key());
+  Set<String> secrets = retirementSecrets(saved, selected, receipt(saved.receipt()));
+  synchronized (JsonCredentialSlots.LOCK) { requireSnapshot(saved); }
+  signOutCanonical.run();
+  if (secrets.isEmpty() && saved.receipt() == null && saved.pending() == null &&
+      saved.owner() == null && saved.repaired() == null && saved.signOut() == null) return;
+  synchronized (JsonCredentialSlots.LOCK) {
+   requireSnapshot(saved);
+   if (saved.signOut() == null) save(SIGN_OUT, selected == null ? UNSELECTED : selected.localId());
+   saved = snapshot();
   }
   if (!secrets.isEmpty()) {
    var authority = DeviceCustody.legacyCredentials(context, BuildConfig.CLOUD_API_ORIGIN);
@@ -153,11 +183,27 @@ final class SharedGraceCredentials {
   }
   synchronized (JsonCredentialSlots.LOCK) {
    requireSnapshot(saved);
-   for (String slot : new String[]{PENDING, receiptSlot, retiringSlot, credentialSlot, VERIFIED_OWNER, REPAIRED_CREDENTIAL}) save(slot, null);
+   for (String slot : new String[]{PENDING, receiptSlot, retiringSlot, VERIFIED_OWNER, REPAIRED_CREDENTIAL, credentialSlot, SIGN_OUT}) save(slot, null);
   }
  }
 
+ private static Set<String> retirementSecrets(Snapshot saved, Key selected, Receipt receipt) throws Exception {
+  Set<String> secrets = new LinkedHashSet<>();
+  add(secrets, selected);
+  if (receipt != null) {
+   add(secrets, receipt.before());
+   add(secrets, receipt.after());
+  }
+  JSONObject duty = saved.retiring() == null ? null : new JSONObject(saved.retiring());
+  while (duty != null) {
+   secrets.add(secret(duty.getString("token")));
+   duty = duty.has("earlier") ? duty.getJSONObject("earlier") : null;
+  }
+  return secrets;
+ }
+
  private OwnerBinding binding(Snapshot saved) throws Exception {
+  if (saved.signOut() != null) throw needsVerification();
   Key key = key(saved.key());
   Receipt receipt = receipt(saved.receipt());
   OwnerBinding prior = owner(saved.owner());
@@ -232,7 +278,7 @@ final class SharedGraceCredentials {
 
  private Snapshot snapshot() throws Exception {
   return new Snapshot(read(credentialSlot), read(receiptSlot), read(retiringSlot), read(PENDING),
-   read(VERIFIED_OWNER), read(REPAIRED_CREDENTIAL), read(GENERATION));
+   read(VERIFIED_OWNER), read(REPAIRED_CREDENTIAL), read(GENERATION), read(SIGN_OUT));
  }
 
  private void requireSnapshot(Snapshot saved) throws Exception {
