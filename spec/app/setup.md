@@ -1093,11 +1093,9 @@ pure def lawCancelledPasswordBackupRequestCannotBeApproved(pending: PasswordBack
 
 Verifying ownership, saving and restoring require a fresh Android unlock
 confirmation for that operation, even when the foreground Passwords screen is already open.
-A tablet with saved passwords asks the owner before linking those
-passwords to the account. Passwords and the recovery key stay in the
-protected native flow and are kept out of the agent. The cloud receives
-only the encrypted snapshot. Restore fills an empty vault in one step.
-Removing a cloud copy leaves local passwords available.
+Passwords and the recovery key stay in the protected native flow and are
+kept out of the agent. The cloud receives only the encrypted snapshot.
+Restore fills an empty vault in one step.
 
 ```quint
 type RecoveryPresence = ForegroundVaultAccess | ConfirmedRecoveryUnlock | EndedRecoveryUnlock
