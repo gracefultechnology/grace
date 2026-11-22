@@ -412,3 +412,22 @@ For offline preparation, prefetch the pinned OCI image, upstream checkout and Py
 The separate Shopping Admin fixture uses `am1n3e/webarena-verified-shopping_admin@sha256:d0531dd27ed98d0c459ff9e88118bf2ed8b660b0ed99c38837db46c065a5be13`. Start it on a separate loopback HTTPS origin and use the published synthetic login to save a private Chromium storage-state file. Load the official `/admin` start and verify its authenticated redirect to `/admin/admin/dashboard/`. Declare that observed dashboard URL as `startUrl` for task `157`, along with the unchanged official intent, storage-state and receipt paths, `evaluator: "webarena"`, `chat: "upstream"` and `requiredStep: "ReachNamedPage"`. Run the same browser command. Task navigation stays on the Admin origin and the browser sends only GET or HEAD requests. [Shopping Admin environment](https://servicenow.github.io/webarena-verified/v1.2.3/environments/shopping_admin/)
 
 The first authenticated attempt returned a follow-up question about finding the Customers control. After the planner began offering reviewed navigation before seeing a matching control, task 157 proposed a named step. Grace paused on the authenticated dashboard before sending a guidance request. A redacted native snapshot showed one form-owned text field with no declared search semantics. Grace’s private-form policy treats that unclassified field as a reason to hand control back to the person. The pinned evaluator scored both the observed dashboard and the no-action control 0. This case remains outside the required workflow. [Frozen Admin source](https://github.com/gracefultechnology/grace-new/tree/2b029bf9)
+
+#### Latest records and website account evidence
+
+An account dashboard can display a verified account and a recent record. A
+generic “My Orders” link carries no account identity to the next document.
+A same-name account can reuse the same order number, address, date and status.
+The browser journey switches to such an account on the way to the history,
+visits the colliding detail, then returns to the original account dashboard.
+None of those later visits can produce a checked-record receipt.
+
+A supported private site can show the same explicit, stable account ID or
+email on every collection page and on the selected record detail. Grace
+compares that identity within the same secure website origin, including on
+pagination and the direct detail visit. The record link identifies the record
+within that account. The current native text reader can bind a read to the
+loaded page. The browser’s owner and session identify Grace’s surface.
+Website account evidence must come from the site. A scoped reader would
+need to verify the selected region and reject active forms independently of
+the account check.

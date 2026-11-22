@@ -887,7 +887,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   expect(count("navigate")).toBe(before + 1);
 }, 180_000);
 
-it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mismatched detail", "wrong record kind", "ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "short dates", "public list"] as const)('Check the latest item across record pages ($0) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (scenario) => {
+it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mismatched detail", "wrong record kind", "ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "same-name account switch", "short dates", "public list"] as const)('Check the latest item across record pages ($0) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (scenario) => {
   localStorage.clear();
   const status = scenario === "earlier winner" ? "cancelled" : "completed";
   const requested = `Show the most recent ${status} order`;
@@ -940,10 +940,14 @@ it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mism
   const show = ui.getByRole("button", { name: "Show me the link", exact: true });
   const check = ui.getByRole("button", { name: "Check page", exact: true });
   const next = (path: string) => new URL(path, url).href;
-  const follow = async (path: string) => {
-    await expect.poll(async () => (await route({ kind: "tapGuide" })).tapped, { timeout: 15_000 }).toBe(true);
+  const follow = async (path: string, label?: "View order" | "My Account") => {
+    if (label) expect((await route({ kind: "manualRecordLink", label })).tapped).toBe(true);
+    else await expect.poll(async () => (await route({ kind: "tapGuide" })).tapped, { timeout: 15_000 }).toBe(true);
     const destination = next(path);
-    await expect.poll(async () => (await route({ kind: "read" })).url, { timeout: 15_000 }).toBe(destination);
+    await expect.poll(async () => {
+      const landed = await route({ kind: "read" });
+      return { url: landed.url, readyState: landed.readyState };
+    }, { timeout: 15_000 }).toEqual({ url: destination, readyState: "complete" });
     native.started(destination);
     native.finished(destination);
     await expect.poll(() => ({ address: typedAddress(), load: workspace().browser.tabs[0]?.load })).toEqual({ address: destination, load: "Loaded" });
@@ -958,6 +962,28 @@ it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mism
     await userEvent.click(show);
     await expect.element(ui.getByRole("status", { name: "Link guide result" }), { timeout: 15_000 }).toBeVisible();
   };
+  if (scenario === "same-name account switch") {
+    const readRecordRow = async () => Schema.decodeUnknownSync(SelectorRead)(await route({ kind: "read", selector: "main table tbody tr" })).text;
+    const preview = await readRecordRow();
+    await point();
+    await follow("/list");
+    expect(await readRecordRow()).toBe(preview);
+    await userEvent.click(show);
+    await expect.element(ui.getByRole("status", { name: "Record check unavailable" }), { timeout: 15_000 }).toBeVisible();
+    expect(await route({ kind: "inspectGuide" })).toEqual({ ringAvailable: false });
+    const checkUnverified = async () => {
+      await userEvent.click(check);
+      await expect.element(ui.getByRole("status", { name: "Page check result" }), { timeout: 15_000 }).toBeVisible();
+      expect(workspace().plan).toMatchObject({ recordSelection: { tag: "NoGuidedRecordSelection" }, receipts: [] });
+    };
+    await follow("/view/1", "View order");
+    await checkUnverified();
+    await follow("/home", "My Account");
+    await checkUnverified();
+    expect(await route({ kind: "accountVisits" })).toEqual({ visits: ["/home:A", "/list:B", "/view/1:B", "/home:A"] });
+    expect(await route({ kind: "requests" })).toEqual({ count: 0, leaked: false });
+    return;
+  }
   if (["ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "short dates"].includes(scenario)) {
     await userEvent.click(show);
     await expect.element(ui.getByRole("status", { name: scenario === "ambiguous collection" ? "Link unavailable" : "Record check unavailable" }), { timeout: 15_000 }).toBeVisible();
