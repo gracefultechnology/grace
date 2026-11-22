@@ -108,6 +108,10 @@ export function browserFiles(): FilesPort {
       if (!row || (row.entry.kind === "pdf" ? page < 1 || page > row.entry.pages : page !== 0)) return undefined
       return { id, page, image: "data:" + contentType(row.entry.name) + ";base64," + row.data }
     })),
+    content: ({ lease, id }) => runPromise(read(lease, "readonly", (rows) => {
+      const row = rows.find((item) => item.entry.id === id)
+      return row && { id, mimeType: contentType(row.entry.name), data: row.data }
+    })),
     remove: ({ lease, id }) => runPromise(read(lease, "readwrite", (rows, store) => {
       const row = rows.find((item) => item.entry.id === id)
       if (!row || row.entry.kind !== "photo") return undefined
