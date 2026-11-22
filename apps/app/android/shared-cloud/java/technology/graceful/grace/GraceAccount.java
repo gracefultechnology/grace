@@ -22,13 +22,11 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import java.io.IOException;
 import java.net.URI;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 @CapacitorPlugin(name = "GraceAccount")
@@ -40,21 +38,14 @@ public final class GraceAccount extends ElizaSignInPlugin {
   case "shared-staging" -> "staging";
   default -> throw new IllegalArgumentException("Invalid shared Cloud profile");
  };
- private static final String STEWARD_TENANT = "production".equals(ENVIRONMENT) ? "elizacloud" : "elizacloud-staging";
  private static final URI API = URI.create(BuildConfig.CLOUD_API_ORIGIN);
  private static final Uri CALLBACK = Uri.parse(BuildConfig.CLOUD_WEB_ORIGIN + BuildConfig.CLOUD_CALLBACK_PATH);
 
- private enum BackupAuthority { UNAVAILABLE, CANONICAL, STEWARD }
- private interface ApproveBackup {
-  PasswordBackupApproval approve(GoogleSignIn.Picked.Token token, BooleanSupplier confirm) throws IOException;
- }
- private record BackupPicker(GoogleSignIn.Challenge challenge, ApproveBackup approve) {}
  private record BackupAttempt(GracePasswordRecovery.Operation operation, CloudDeviceAccount.Session owner,
-                              long generation, CancellationSignal picker, BackupAuthority authority) {}
+                              long generation, CancellationSignal picker) {}
  private volatile GracePasswordsOwner.Enrollment enrollment;
  private final AtomicReference<BackupAttempt> backupAttempt = new AtomicReference<>();
  private SharedPasswordBackup passwordBackup;
- private GraceLegacyPasswordBackup legacyPasswordBackup;
  private GracePasswordRecovery recovery;
  private GraceBrowserGuide guide;
  private GraceSharedSpeech speech;
@@ -109,7 +100,6 @@ public final class GraceAccount extends ElizaSignInPlugin {
    throw new IllegalStateException("Mismatched shared Cloud registration");
   }
   passwordBackup = new SharedPasswordBackup(registration, expected);
-  legacyPasswordBackup = new GraceLegacyPasswordBackup(registration, expected, STEWARD_TENANT, "grace");
   SignInCustody delegate = DeviceCustody.custody(context, registration);
   SharedGraceCredentials legacy = new SharedGraceCredentials(context);
   signOutCanonical = () -> delegate.signOut(expected);
@@ -379,14 +369,12 @@ public final class GraceAccount extends ElizaSignInPlugin {
  }
 
  private boolean passwordRecoveryReady() {
-  try { return GracePasswordsOwner.stableSession(getContext()) != null && readyBackupAuthority() != BackupAuthority.UNAVAILABLE; }
+  try { return GracePasswordsOwner.stableSession(getContext()) != null && canStartBackup() && passwordBackup.available(); }
   catch (Exception unavailable) { return false; }
  }
 
- private BackupAuthority readyBackupAuthority() {
-  if (passwordBackup == null || !hasGooglePlayServices() || !recovery.deviceReady()) return BackupAuthority.UNAVAILABLE;
-  if (passwordBackup.available()) return BackupAuthority.CANONICAL;
-  return legacyPasswordBackup.available() ? BackupAuthority.STEWARD : BackupAuthority.UNAVAILABLE;
+ private boolean canStartBackup() {
+  return passwordBackup != null && hasGooglePlayServices() && recovery.deviceReady();
  }
 
  @PluginMethod public void showPasswordRecovery(PluginCall call) {
@@ -419,12 +407,11 @@ public final class GraceAccount extends ElizaSignInPlugin {
      controller.failed(operation, "Sign in to Grace to use cloud backup.");
      return;
     }
-    var authority = readyBackupAuthority();
-    if (authority == BackupAuthority.UNAVAILABLE) {
+    if (!canStartBackup()) {
      controller.failed(operation, "Password recovery is unavailable.");
      return;
     }
-    var attempt = new BackupAttempt(operation, owner, GracePasswordsOwner.generation(), new CancellationSignal(), authority);
+    var attempt = new BackupAttempt(operation, owner, GracePasswordsOwner.generation(), new CancellationSignal());
     if (!backupAttempt.compareAndSet(null, attempt)) {
      controller.failed(operation, "Password recovery is already open.");
      return;
@@ -439,25 +426,14 @@ public final class GraceAccount extends ElizaSignInPlugin {
  private void startBackupPicker(BackupAttempt attempt) {
   try {
    var owner = new PasswordBackupApproval.Owner(attempt.owner().accountId(), attempt.owner().organizationId());
-   BooleanSupplier active = () -> backupCurrent(attempt);
-   var picker = switch (attempt.authority()) {
-    case CANONICAL -> {
-     var approval = passwordBackup.begin(attempt.operation().purpose, owner, attempt.owner().token(), active);
-     yield new BackupPicker(approval.challenge(), approval::approve);
-    }
-    case STEWARD -> {
-     var approval = legacyPasswordBackup.begin(attempt.operation().purpose, owner, active);
-     yield new BackupPicker(approval.challenge(), approval::approve);
-    }
-    case UNAVAILABLE -> throw new IllegalStateException("No native password backup service");
-   };
+   var approval = passwordBackup.begin(attempt.operation().purpose, owner, attempt.owner().token(), () -> backupCurrent(attempt));
    getActivity().runOnUiThread(() -> {
     if (attempt.picker().isCanceled() || !recovery.isCurrent(attempt.operation()) || !recovery.deviceReady()) {
      finishBackup(attempt, null);
      return;
     }
-    GoogleSignIn.pick(getActivity(), picker.challenge(), attempt.picker(),
-     result -> ACCOUNT.execute(() -> completeBackup(attempt, picker.approve(), result)));
+    GoogleSignIn.pick(getActivity(), approval.challenge(), attempt.picker(),
+     result -> ACCOUNT.execute(() -> completeBackup(attempt, approval, result)));
    });
   } catch (Exception unavailable) {
    finishBackup(attempt, "Grace could not start password backup.");
@@ -473,7 +449,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
   } catch (Exception changed) { return false; }
  }
 
- private void completeBackup(BackupAttempt attempt, ApproveBackup approval, GoogleSignIn.Picked result) {
+ private void completeBackup(BackupAttempt attempt, SharedPasswordBackup.Attempt approval, GoogleSignIn.Picked result) {
   if (!(result instanceof GoogleSignIn.Picked.Token token) || !backupCurrent(attempt)) {
    finishBackup(attempt, null);
    return;
