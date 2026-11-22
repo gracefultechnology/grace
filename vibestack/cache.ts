@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { isUtf8 } from "node:buffer";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -140,6 +141,24 @@ const TOOL_PACKAGES = { quint: "@informalsystems/quint", lsc: "lemmascript" } as
 type Program = { exe: string; id: string; unchanged: () => boolean };
 const latest = new Map<keyof typeof TOOL_PACKAGES, Program>();
 
+function launcherDigest(exe: string, packageDir: string): string {
+  const launcher = fs.realpathSync(exe);
+  if (path.basename(path.dirname(launcher)) !== ".bin") return executableDigest(exe);
+  const bytes = fs.readFileSync(launcher);
+  if (!isUtf8(bytes)) return executableDigest(exe);
+  let store = packageDir;
+  while (store !== path.dirname(store) && path.basename(store) !== ".pnpm") store = path.dirname(store);
+  if (path.basename(store) !== ".pnpm") return executableDigest(exe);
+  const prefix = store + path.sep;
+  return sha(...bytes.toString("utf8").split("\n").map((line) => {
+    const assignment = /^( *export NODE_PATH="| *@SET "NODE_PATH=)([^"\r]*)("\r?)$/.exec(line);
+    if (!assignment) return JSON.stringify(line);
+    const [, before, paths, after] = assignment;
+    return JSON.stringify([before, paths.split(before.includes("export") ? ":" : ";").map((entry) =>
+      entry.startsWith(prefix) && !entry.split(path.sep).includes("..") ? [entry.slice(prefix.length)] : entry), after]);
+  }));
+}
+
 function packageGraph(exe: string, name: string) {
   const observations = new Map<string, string>();
   const state = (file: string) => {
@@ -149,6 +168,25 @@ function packageGraph(exe: string, name: string) {
   const observed = (file: string) => {
     if (!observations.has(file)) observations.set(file, state(file));
     return observations.get(file) !== "";
+  };
+  const contents = (root: string) => {
+    const entries: string[] = [];
+    const walk = (dir: string, ancestors: Set<string>) => {
+      observed(dir);
+      const real = fs.realpathSync(dir);
+      if (ancestors.has(real)) return;
+      const parents = new Set(ancestors).add(real);
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === "node_modules" || entry.name === ".git") continue;
+        const file = path.join(dir, entry.name);
+        const relative = path.relative(root, file).split(path.sep).join("/");
+        if (!observed(file)) entries.push(JSON.stringify([relative, null]));
+        else if (entry.isDirectory() || (entry.isSymbolicLink() && fs.statSync(file).isDirectory())) walk(file, parents);
+        else entries.push(JSON.stringify([relative, createHash("sha256").update(fs.readFileSync(file)).digest("hex")]));
+      }
+    };
+    walk(root, new Set());
+    return sha(...entries.sort());
   };
   const installed = (dependency: string, from: string) => {
     for (let dir = from; ; dir = path.dirname(dir)) {
@@ -161,7 +199,7 @@ function packageGraph(exe: string, name: string) {
     }
   };
   const seen = new Map<string, number>();
-  const graph: { version: string; dependencies: [string, number | null][] }[] = [];
+  const graph: { dir: string; version: string; dependencies: [string, number | null][] }[] = [];
   const visit = (dir: string): number => {
     const previous = seen.get(dir);
     if (previous !== undefined) return previous;
@@ -172,7 +210,7 @@ function packageGraph(exe: string, name: string) {
     const index = graph.length;
     seen.set(dir, index);
     const dependencies: [string, number | null][] = [];
-    graph.push({ version: `${pkg.name}@${pkg.version}`, dependencies });
+    graph.push({ version: `${pkg.name}@${pkg.version}`, dir, dependencies });
     for (const dependency of Object.keys({ ...pkg.dependencies, ...pkg.optionalDependencies, ...pkg.peerDependencies }).sort()) {
       const at = installed(dependency, dir);
       dependencies.push([dependency, at ? visit(at) : null]);
@@ -184,7 +222,7 @@ function packageGraph(exe: string, name: string) {
   const main = installed(name, path.resolve(exe, "../../..")) ?? loaded;
   if (!main) throw new Error(`no ${name} with a version is installed beside ${exe} or these tools; run pnpm install`);
   const roots = [visit(main), loaded && visit(loaded)];
-  return { graph, roots, unchanged: () => [...observations].every(([file, at]) => state(file) === at) };
+  return { graph, roots, main, contents, unchanged: () => [...observations].every(([file, at]) => state(file) === at) };
 }
 
 export const installedPackages = (exe: string, name: string) => packageGraph(exe, name).graph.map((p) => p.version).sort();
@@ -200,8 +238,9 @@ export function installedProgram(root: string, tool: keyof typeof TOOL_PACKAGES)
   }
   let previous = latest.get(tool);
   if (previous?.exe !== exe || !previous.unchanged()) {
-    const { graph, roots, unchanged } = packageGraph(exe, TOOL_PACKAGES[tool]);
-    const id = sha(executableDigest(exe), JSON.stringify([roots, graph]), `node@${process.versions.node}:${process.platform}:${process.arch}`);
+    const { graph, roots, main, contents, unchanged } = packageGraph(exe, TOOL_PACKAGES[tool]);
+    const packages = graph.map(({ dir, version, dependencies }) => [version, contents(dir), dependencies]);
+    const id = sha(launcherDigest(exe, main), JSON.stringify([roots, packages]), `node@${process.versions.node}:${process.platform}:${process.arch}`);
     latest.set(tool, previous = { exe, id, unchanged });
   }
   const { id, unchanged } = previous;
