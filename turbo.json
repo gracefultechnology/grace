@@ -75,12 +75,17 @@
       ],
       "outputs": ["dist/**", "$TURBO_ROOT$/vendor/eliza/packages/cloud/dist/{gen,src}/**"]
     },
+    "@repo/app#gen": {
+      "inputs": [
+        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,core,os}/package.json",
+        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,core,os}/src/**",
+        "$TURBO_ROOT$/vendor/eliza/packages/os/browser/src/**",
+        "$TURBO_ROOT$/vendor/eliza/packages/{os,cloud}/{gen,android,aosp}/**/*.{ts,tsx,mjs,js,vibe}"
+      ],
+      "outputs": []
+    },
     "@repo/app#build": {
       "dependsOn": ["gen", "//#gen", "^build"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,os}/src/**"
-      ],
       "outputs": ["dist/**"]
     },
     "@repo/app#typecheck": {
@@ -88,11 +93,6 @@
         "gen",
         "//#gen",
         "^build"
-      ],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/vendor/eliza/packages/{os,cloud}/package.json",
-        "$TURBO_ROOT$/vendor/eliza/packages/{os,cloud}/{src,gen,android,aosp}/**/*.{ts,tsx,mjs,js,vibe}"
       ],
       "outputs": [
         ".vibe/declarations/**"
