@@ -89,7 +89,7 @@ const loose = Object.fromEntries(["no-explicit-any", "no-unsafe-argument", "no-u
 
 export default defineConfig(
   // Generated, disposable or vendored, and .claude/worktrees holds other checkouts of this repository.
-  globalIgnores(["vendor/", "apps/app/artifacts/", "**/gen/", "!vibestack/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
+  globalIgnores(["vendor/", "apps/app/artifacts/", "**/gen/", "!vibestack/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.wrangler/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
   { linterOptions: { reportUnusedDisableDirectives: "error", reportUnusedInlineConfigs: "error" } },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
