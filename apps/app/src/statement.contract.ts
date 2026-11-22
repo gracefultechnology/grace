@@ -22,7 +22,7 @@ const others = [
   "Statement balance $12.00 credit", "Autopay date 12/03/26", "Due upon receipt",
 ] as const;
 const layouts = ["colon", "space", "next", "dot"] as const;
-const kinds = ["due", "balance", "remaining", "agreeing", "conflict", "cents", "missingDate", "unqualifiedBalance", "conflictingDue", "pairedDate", "conflictingDate", "unboundDate"] as const;
+const kinds = ["due", "balance", "remaining", "agreeing", "conflict", "cents", "missingDate", "unqualifiedBalance", "conflictingDue", "pairedDate", "conflictingDate", "unboundDate", "labeledDate"] as const;
 
 const pick = <T>(values: readonly T[], n: number): T => values[((Math.trunc(n) % values.length) + values.length) % values.length];
 
@@ -43,7 +43,7 @@ const statements = Arbitrary.schema(Schema.Struct({
 })).pipe(Arbitrary.map((drawn) => {
   const kind = pick(kinds, drawn.kind);
   const pairedDate = kind === "pairedDate" || kind === "conflictingDate";
-  const [shownAmount, readAmount] = pick(pairedDate || kind === "unboundDate" ? amounts.filter(([shown, read]) => shown === read) : amounts, drawn.amount);
+  const [shownAmount, readAmount] = pick(pairedDate || kind === "unboundDate" || kind === "labeledDate" ? amounts.filter(([shown, read]) => shown === read) : amounts, drawn.amount);
   const [shownOther] = pick(amounts.filter(([, read]) => read !== readAmount), drawn.other);
   const date = pick(dates, drawn.date);
   const labelOf = (of: StatementFact) => of === "StatementBalance" ? pick(balanceLabels, drawn.balanceLabel)
@@ -57,7 +57,8 @@ const statements = Arbitrary.schema(Schema.Struct({
   const left = kind === "remaining" || kind === "agreeing" || kind === "conflict"
     ? [placed(labelOf("RemainingBalance"), split(shownAmount, drawn.split + 1), "colon")]
     : kind === "conflictingDue" ? [placed("Payment due", shownOther, "colon")] : [];
-  const facts = kind === "unboundDate" ? [owed + "\n by \n" + date, "Due date: January 1, 2001"] : pairedDate ? kind === "pairedDate" ? [datedAmount] : [datedAmount, due]
+  const facts = kind === "unboundDate" || kind === "labeledDate"
+    ? [owed + "\n by \n" + date, kind === "labeledDate" ? due : "Due date: January 1, 2001"] : pairedDate ? kind === "pairedDate" ? [datedAmount] : [datedAmount, due]
     : kind === "missingDate" ? [owed] : drawn.together && !owed.includes("\n") && !due.includes("\n") ? [`${owed}. ${due}.`] : drawn.order ? [due, owed] : [owed, due];
   const noise = drawn.noise.map((n) => pick(others, n));
   const lines = [...noise.slice(0, 2), ...facts.flatMap((line, k) => [line, ...noise.slice(2 + k * 2, 4 + k * 2)]), ...left, ...noise.slice(6)];

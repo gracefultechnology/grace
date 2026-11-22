@@ -37,7 +37,7 @@ function joinedFragments(lines: readonly string[]): string[] {
 
 function statementLabels(text: string): Labeled[] {
   const lines = joinedFragments(text.split(/\r?\n|[^\S\r\n]+·[^\S\r\n]+/u).map((line) => line.trim()).filter(Boolean));
-  let unboundDueDate = false;
+  const detachedDates = new Set<string>();
   const labels = lines.flatMap((line, index) => [...line.matchAll(label)].flatMap((match) => {
     const fact = facts.find((name) => match.groups?.[name] !== undefined);
     const words = fact === undefined ? undefined : match.groups?.[fact];
@@ -56,7 +56,8 @@ function statementLabels(text: string): Labeled[] {
     const detachedBy = /^by(?:\s+|$)/iu.exec(lines[next] ?? "")?.[0];
     if (found.fact === "AmountDue" && candidate === value && detachedBy !== undefined) {
       const detached = lines[next]?.slice(detachedBy.length) || lines[next + 1] || "";
-      unboundDueDate ||= date.test(detached);
+      const value = date.exec(detached)?.[0];
+      if (value !== undefined) detachedDates.add(value.replace(/\s+/gu, " "));
     }
     const by = found.fact === "AmountDue" ? /^\s+by\s+/iu.exec(candidate.slice(value.length))?.[0] : undefined;
     const due = by === undefined ? undefined : date.exec(candidate.slice(value.length + by.length))?.[0];
@@ -66,15 +67,15 @@ function statementLabels(text: string): Labeled[] {
       value: due.replace(/\s+/gu, " "),
     }];
   }));
-  return { labels, unboundDueDate };
+  return { labels, detachedDates };
 }
 
 export function statementAnswer(text: string): StatementAnswer {
-  const { labels: found, unboundDueDate } = statementLabels(text);
-  if (unboundDueDate) return { tag: "Unread", reason: "NotFound" };
+  const { labels: found, detachedDates } = statementLabels(text);
   const values = (fact: StatementFact) => [...new Set(found.filter((item) => item.fact === fact).map((item) => item.value))];
   const amounts = statementAmounts(values("AmountDue"), values("StatementBalance"), values("RemainingBalance"));
   const dates = values("DueDate");
+  if ([...detachedDates].some((value) => !dates.includes(value))) return { tag: "Unread", reason: "NotFound" };
   const amount = facts.flatMap((fact) => found.filter((item) => item.fact === fact && item.value === amounts[0]))[0];
   const due = found.find((item) => item.fact === "DueDate");
   if (!hasOneStatementAnswer(amounts, dates) || amount === undefined || due === undefined)
