@@ -355,6 +355,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
   });
  }
 
+ @PluginMethod public void inboxArrival(PluginCall call) { guide.inboxArrival(call); }
  @PluginMethod public void browserGuideLease(PluginCall call) { guide.browserGuideLease(call); }
  @PluginMethod public void chooseBrowserLink(PluginCall call) { guide.chooseBrowserLink(call); }
  @PluginMethod public void startSpeech(PluginCall call) { speech.start(call); }

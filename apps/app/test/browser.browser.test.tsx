@@ -474,7 +474,29 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         }
       }
       if (record) await expect.element(linkGuidance.or(guidanceFailure).first(), { timeout: 45_000 }).toBeVisible();
-      if (record && guidanceFailure.query() !== null) throw new Error("Record guidance could not verify the next link");
+      if (record && guidanceFailure.query() !== null) {
+        const instruction = guidanceFailure.element().textContent;
+        if (!exploratory || requiredStep !== "ReadLatestRecord" || instruction !== "I can’t verify which matching record is newest on this list.")
+          throw new Error("Record guidance could not verify the next link");
+        await expect.element(guidanceFailure).toBeVisible();
+        const action = Schema.decodeUnknownSync(SelectorRead)(await transport({
+          kind: "read", selector: "#my-orders-table tbody tr td.actions a.view",
+        }));
+        const current = await read();
+        const last = hops.at(-1);
+        expect(action.text.trim()).toBe("View Order");
+        expect(action.url).toBe(current.url);
+        expect(current).toMatchObject({ url: previous.url, documentId: previous.documentId, readyState: "complete" });
+        expect(last).toMatchObject({ url: current.url, documentId: current.documentId, checked: false });
+        const { recordSelection, receipts } = workspace().plan;
+        expect(recordSelection.tag).toBe("NoGuidedRecordSelection");
+        expect(receipts).toHaveLength(0);
+        expect(finished.query()).toBeNull();
+        outcome.recordRefusal = { documentId: current.documentId, instruction, visibleAction: action.text.trim(),
+          selection: recordSelection.tag, receiptCount: receipts.length };
+        outcome.miss = "insufficient-record-evidence";
+        return;
+      }
       const selection = workspace().plan.recordSelection;
       const bound = record && selection.tag === "StagedGuidedRecord" && selection.selection.documentId === previous.documentId
         ? selection.selection : undefined;

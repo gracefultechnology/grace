@@ -14,6 +14,7 @@ interface AccountPlugin {
   manageAccount(): Promise<void>;
   openHostedView(options: { view: "email" | "calendar" }): Promise<void>;
   browserGuideLease(): Promise<unknown>;
+  inboxArrival(input: { lease: string; cursor?: string }): Promise<unknown>;
   chooseBrowserLink(input: { lease: string; goal: string; candidates: readonly { id: string; label: string }[] }): Promise<unknown>;
   startSpeech(): Promise<unknown>;
   stopSpeech(input: { sessionId: string }): Promise<void>;

@@ -30,7 +30,7 @@ import { fileStorage, library } from "./files.vibe"
 import { instances, reading } from "./instances.vibe"
 import { mailing } from "./mail.vibe"
 import { nativePage } from "./nativePage.vibe"
-import { type SurfacePlugin, type WiFiPlugin, type PasswordBackupPlugin, webView } from "./surfacePlugin.ts"
+import { type SurfacePlugin, type WiFiPlugin, type PasswordBackupPlugin, type OpenPrivateVerificationApp, webView } from "./surfacePlugin.ts"
 import { websiteTask } from "./websiteTask.vibe"
 import { pageHost } from "./page.vibe"
 import { reminderPlugin, type AccountBridge, type ReminderPlugin } from "./accountPlugin.ts"
@@ -107,7 +107,7 @@ const services = (cloud: CloudLink | undefined) => cloud === undefined
   ? Layer.mergeAll(signIns, calendars(false))
   : Layer.provide(Layer.mergeAll(reading, signIns, mailing, Layer.provideMerge(calendarFeeds, calendars(true))), linked(cloud))
 
-type TabletPlatform = { native: boolean; account?: AccountBridge; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; display?: PreferenceDevice; reminders?: ReminderPlugin; vault?: PasswordVault; backup?: PasswordBackupPlugin; openPrivateEmail?: () => Promise<void> }
+type TabletPlatform = { native: boolean; account?: AccountBridge; agent?: EmbeddedAgent; files?: FilesPort; preferences?: PreferenceRecords; display?: PreferenceDevice; reminders?: ReminderPlugin; vault?: PasswordVault; backup?: PasswordBackupPlugin; openPrivateVerificationApp?: OpenPrivateVerificationApp }
 
 export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin, host: (TabletPlatform | CloudLink) & { guideDecision?: GuideDecision; guidedTasks?: GuidedTaskRecords } = { native: false }, vault?: PasswordVault, backup?: PasswordBackupPlugin) {
   const platform = "native" in host ? host : { native: false }
@@ -121,7 +121,7 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const guidance = Layer.provideMerge(agent, services(cloud))
   const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup))
   const noticed = Layer.provideMerge(notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), recoverable)
-  const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateEmail), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native, cloud !== undefined, platform.account), voice), noticed)
+  const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateVerificationApp), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native, cloud !== undefined, platform.account), voice), noticed)
   const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary), shell)
   const controlled = Layer.provideMerge(Layer.mergeAll(replyControls(platform.native), conversation(cloud)), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)

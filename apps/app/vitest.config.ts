@@ -1,6 +1,8 @@
 import tailwindcss from "@tailwindcss/vite";
 import { defaultClientConditions } from "vite";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomInt } from "node:crypto";
+import { once } from "node:events";
+import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Schema } from "effect";
@@ -585,11 +587,152 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
   return observeSite(open.site, action);
 }
 
+async function privateVerification(context: BrowserCommandContext, cloud: string, key: string) {
+  const gmail = new URL(cloud);
+  if (gmail.protocol !== "http:" || gmail.hostname !== "127.0.0.1" || !key.startsWith("fake-key-"))
+    throw new Error("Private verification requires the local synthetic provider");
+  const run = randomUUID();
+  const password = randomUUID();
+  const delivered = new Set<string>();
+  const visits = new Map<string, { current: string; accepted: boolean }>();
+  const mailbox = "owner@grace.test";
+  const mailHeaders = { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+  const SearchResult = Schema.Struct({ messages: Schema.Array(Schema.Struct({ externalId: Schema.String })) });
+  const OpenedMessage = Schema.Struct({ bodyText: Schema.String });
+  const site = createServer(async (request, response) => {
+    const [visit, action] = (request.url ?? "").slice(1).split("/");
+    if (!visit || !["primary", "foreign"].includes(visit)) {
+      response.writeHead(404).end();
+      return;
+    }
+    const send = (title: string, body: string, status = 200) => response.writeHead(status, {
+      "Content-Type": "text/html", "Cache-Control": "no-store",
+      "Content-Security-Policy": "default-src 'none'; form-action 'self'; frame-ancestors 'none'",
+    }).end(`<!doctype html><html lang="en"><title>${title}</title><main><h1>${title}</h1>${body}</main></html>`);
+    try {
+      if (request.method === "GET" && action === undefined) {
+        send("Synthetic website sign-in", `<form method="post" action="/${visit}/sign-in">
+          <label>Username <input name="username" autocomplete="username" required></label>
+          <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+          <button>Sign in</button></form>`);
+        return;
+      }
+      if (request.method !== "POST") { response.writeHead(404).end(); return; }
+      let body = "";
+      for await (const part of request) {
+        body += String(part);
+        if (body.length > 512) { response.writeHead(413).end(); return; }
+      }
+      const form = new URLSearchParams(body);
+      const previous = visits.get(visit);
+      const correctLogin = action === "sign-in" && form.get("username") === mailbox && form.get("password") === password;
+      if (correctLogin || (action === "replace" && previous && !previous.accepted)) {
+        let current: string;
+        do { current = String(randomInt(100000, 1000000)); } while (delivered.has(current));
+        const mailed = await fetch(new URL("/fake/gmail/incoming", gmail), {
+          method: "POST", headers: mailHeaders, body: JSON.stringify({
+            to: mailbox, from: "Synthetic issuer", fromEmail: "issuer@grace.test",
+            subject: `${run} ${visit} verification code`, body: `Your verification code is ${current}.`,
+          }),
+        });
+        if (!mailed.ok) { send("Delivery failed", "", 502); return; }
+        delivered.add(current);
+        visits.set(visit, { current, accepted: false });
+      } else if (action === "verify" && previous && !previous.accepted) {
+        if (form.get("code") === previous.current) {
+          previous.accepted = true;
+          send("Code accepted", "");
+          return;
+        }
+      } else {
+        send("Sign-in refused", "", 403);
+        return;
+      }
+      send("Confirm your test email", `${action === "verify" ? '<p role="status">The code was rejected.</p>' : ""}
+        <form method="post" action="/${visit}/verify"><label>Verification code
+        <input name="code" inputmode="numeric" autocomplete="one-time-code" required></label><button>Verify code</button></form>
+        <form method="post" action="/${visit}/replace"><button>Send a replacement</button></form>`);
+    } catch {
+      send("Synthetic issuer failed", "", 500);
+    }
+  });
+  site.listen(0, "127.0.0.1");
+  let primary: Page | undefined;
+  let foreign: Page | undefined;
+  let phase = "start issuer";
+  try {
+    await once(site, "listening");
+    const address = site.address();
+    if (!address || typeof address === "string") throw new Error("Missing local site");
+    const enter = async (visit: "primary" | "foreign") => {
+      const page = await context.context.newPage();
+      if (visit === "primary") primary = page;
+      else foreign = page;
+      page.setDefaultTimeout(10_000);
+      await page.goto(`http://127.0.0.1:${address.port}/${visit}`);
+      await page.getByLabel("Username", { exact: true }).fill(mailbox);
+      await page.getByLabel("Password", { exact: true }).fill(password);
+      await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await page.getByRole("heading", { name: "Confirm your test email" }).waitFor();
+      return page;
+    };
+    const mailCode = async (visit: string) => {
+      const name = "/api/v1/eliza/google/gmail";
+      const search = new URL(name + "/search", gmail);
+      search.searchParams.set("query", `in:inbox ${run} ${visit}`);
+      const listed = await fetch(search, { headers: mailHeaders });
+      if (!listed.ok) throw new Error("Mailbox unavailable");
+      const message = Schema.decodeUnknownSync(SearchResult)(await listed.json()).messages[0];
+      if (!message) throw new Error("Synthetic verification mail missing");
+      const read = new URL(name + "/read", gmail);
+      read.searchParams.set("messageId", message.externalId);
+      const opened = await fetch(read, { headers: mailHeaders });
+      if (!opened.ok) throw new Error("Synthetic message unavailable");
+      const text = Schema.decodeUnknownSync(OpenedMessage)(await opened.json()).bodyText;
+      const code = text.match(/^Your verification code is ([0-9]{6})\.$/)?.[1];
+      if (!code) throw new Error("Invalid synthetic message");
+      return code;
+    };
+    const submit = async (page: Page, code: string) => {
+      await page.getByLabel("Verification code", { exact: true }).fill(code);
+      await page.getByRole("button", { name: "Verify code", exact: true }).click();
+    };
+    phase = "sign in and deliver two independent messages";
+    const page = await enter("primary");
+    await enter("foreign");
+    const previous = await mailCode("primary");
+    const other = await mailCode("foreign");
+    phase = "reject foreign code";
+    await submit(page, other);
+    await page.getByText("The code was rejected.", { exact: true }).waitFor();
+    phase = "reject replaced code";
+    await page.getByRole("button", { name: "Send a replacement" }).click();
+    const replacement = await mailCode("primary");
+    await submit(page, previous);
+    await page.getByText("The code was rejected.", { exact: true }).waitFor();
+    phase = "accept current code only on website";
+    await submit(page, replacement);
+    await page.getByRole("heading", { name: "Code accepted" }).waitFor();
+    if (visits.get("foreign")?.accepted !== false) throw new Error("Independent visit was affected");
+  } catch {
+    throw new Error(`Synthetic sign-in journey did not finish at ${phase}`);
+  } finally {
+    try {
+      await Promise.all([primary?.close(), foreign?.close()]);
+      await context.page.bringToFront();
+    } finally {
+      site.closeAllConnections();
+      await new Promise<void>((done) => { site.close(() => done()); });
+    }
+  }
+}
+
 declare module "vitest/browser" {
   interface BrowserCommands {
     benchmarkSurface: (action: SiteAction) => Promise<Record<string, unknown>>;
     recordPage: (action: RecordAction) => Promise<Record<string, unknown>>;
     googleConsent: (endpoint: string, address: string) => Promise<void>;
+    privateVerification: (cloud: string, key: string) => Promise<void>;
     releasedStatement: (attempt: string, action: StatementAction) => Promise<Record<string, unknown>>;
     realModel: (system: string, messages: readonly { role: "user" | "assistant"; content: string }[]) => Promise<string>;
   }
@@ -613,7 +756,7 @@ export default defineConfig(async (env) => {
           ...entry,
           ...(official && { plugins: [{ name: webArenaPluginName, api: official }] }),
           optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto", "effect/References", "effect/testing", "pdf-lib"] },
-          test: { ...entry.test, ...(official && { globalSetup: ["test/webarena.ts"] }), browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, recordPage, releasedStatement, realModel } } },
+          test: { ...entry.test, ...(official && { globalSetup: ["test/webarena.ts"] }), browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, privateVerification, recordPage, releasedStatement, realModel } } },
         }
       : entry);
   const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
