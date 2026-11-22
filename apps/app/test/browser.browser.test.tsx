@@ -257,6 +257,9 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
+type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "bind-native-landing" |
+  "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
+
 it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
   const publicFailure = (failure: unknown, stage: "Browser setup" | "Browser journey" | "Benchmark grading or cleanup") => {
@@ -269,6 +272,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   await transport({ kind: "begin", taskId });
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
   let selected: string | null | undefined;
+  let failureStage: BrowserJourneyStage = "prepare-journey";
   const outcome: Record<string, unknown> = {
     chatProvider: "fixture", observationPermission: "awaiting permission",
     operator: "trusted Chromium mouse input at visible guide ring",
@@ -369,6 +373,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     };
     let previous = initial;
     while (actionsTaken() < actionLimit) {
+      failureStage = "follow-guidance";
       try {
         await userEvent.click(showLink);
       } catch (error) {
@@ -479,6 +484,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       }
       expect(visited.has(landed.url)).toBe(false);
       visited.add(landed.url);
+      failureStage = "bind-native-landing";
       const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
       native.started(landed.url);
       native.finished(landed.url);
@@ -486,11 +492,14 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         const tab = workspace().browser.tabs[0];
         return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
       }, { timeout: browserObservationTimeoutMs }).toEqual({ address: landed.url, arrived: true });
+      failureStage = "wait-for-check-controls";
       const resume = page.getByRole("button", { name: "Resume Grace" });
       const check = page.getByRole("button", { name: "Check page", exact: true });
       await expect.element(resume.or(check).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
       if (resume.query() !== null) await userEvent.click(resume);
+      failureStage = "check-page";
       await userEvent.click(check);
+      failureStage = "observe-check-result";
       const checkReturnedAt = performance.now();
       await expect.element(finished.or(continuing).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
       const checked = finished.query() !== null;
@@ -503,11 +512,13 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       previous = landed;
     }
     if (!hops.at(-1)?.checked && stopAtActionLimit()) return;
+    failureStage = "confirm-completion";
     await expect.element(finished).toBeVisible();
     outcome.graceTerminal = plan.element().textContent;
   } catch (error) {
     const failure = publicFailure(error, "Browser journey");
     outcome.failure = failure.message;
+    outcome.failureStage = failureStage;
     if (!gradeWholeCohort) throw failure;
   } finally {
     await transport({ kind: "receipt", outcome }).catch((error: unknown) => {

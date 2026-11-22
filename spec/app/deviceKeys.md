@@ -9,7 +9,9 @@ dispatches `launcher-home`. This library decides what each key means for the
 current [shell](./shell.md), [assistant](./assistant.md),
 [browser](./browser.md) and [what websites ask](./websiteRequests.md); each
 decision is one existing [workspace](./workspace.md) or website requests
-event, whose own rules say what else it changes.
+event, whose own rules say what else it changes. It also holds the gate on
+Grace's task steps while a website's question holds the person, since it is
+where the workspace and what websites ask meet.
 Reference: the previous application's HardwareBack (NA-1).
 
 ## Story: Step back inside Grace before leaving
@@ -222,4 +224,37 @@ pure def lawLauncherHomeLeavesOnlyGraceToStepBack(shell: S::Shell, a: A::Assista
   WS::canVisit(w, S::Home, WS::Person) implies
     (afterHome == DismissKeyboard or afterHome == Unconsumed) and
     (afterHome == Unconsumed iff (a.keyboard == A::NoKeyboard or shell.surface != S::Home or shell.homePage == S::PasswordsCard))
+```
+
+## Story: Answer a website before Grace goes on
+
+> As an older adult, when a website asks me something while Grace is working
+> on it, Grace waits for my answer and then carries on where she was.
+
+### A task waits while a website's question holds me, and goes on after my answer
+
+Grace waits before observing, preparing, dispatching or verifying a task step,
+advancing a reviewed plan, or submitting or completing a commitment. This
+includes a guided calendar write. The Host checks observations and completions.
+The Actuator dispatches operations and submits commitments. The website holds
+the person while its question is presented or an allowed permission is waiting
+for Android. At the time of each step both the website and the step's own
+workspace guard must allow it, including after an asynchronous read.
+
+The person can still answer, stop, or leave. Grace can restore a paused plan
+and keep an acknowledgement from work already sent. Applying that evidence
+to advance the task waits for release and must still match the task. Answering
+the last website message releases the hold. If another question or Android
+decision remains, it continues to hold the person.
+
+```quint
+pure def taskMayAdvance(r: WR::WebsiteRequests, workspaceAdmits: bool): bool =
+  workspaceAdmits and not(WR::holdsThePerson(r))
+pure def lawAHeldTaskDoesNotAdvance(r: WR::WebsiteRequests, workspaceAdmits: bool): bool =
+  WR::holdsThePerson(r) implies not(taskMayAdvance(r, workspaceAdmits))
+pure def lawAnsweringHerOnlyQuestionLetsTheTaskGoOn(r: WR::WebsiteRequests, id: int, choice: WR::Choice,
+  answeredBy: WR::WebsiteActor, workspaceAdmits: bool): bool =
+  WR::canAnswer(r, id, choice, answeredBy) and WR::isMessage(WR::presented(r).ask) and
+    r.requests.length() == 1 and r.asking.length() == 0
+    implies taskMayAdvance(WR::answer(r, id, choice, answeredBy).state, workspaceAdmits) == workspaceAdmits
 ```

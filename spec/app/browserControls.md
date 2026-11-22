@@ -126,6 +126,8 @@ The tablet receives a current request from the person and derives the HTTPS orig
 
 A few fixed phrases open it at once, even while Cloud reasoning is unavailable. Any other way she asks goes to Grace, whose reply can offer Private sign-in as a control for the secure page selected when she asked, named by that site. Her tap on it is the request, for that page and revision; Grace never sends it herself.
 
+When the conversation has no reply controls, Grace directs her to the website’s own sign-in form.
+
 ```quint
 pure def directSignInRequest(words: str): bool =
   words == "fill my password" or words == "use my saved password" or words == "use a saved password" or

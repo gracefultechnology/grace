@@ -330,12 +330,18 @@ Shared Eliza Cloud uses the selected deployment's registered App Link at
 verification through Steward and a separate native choice for the action.
 Each deployment accepts grants for its own acknowledged account and request.
 Shared profiles compile Grace’s Steward client from `android/steward-auth`.
-Its source and MIT license come from Grace’s previous Eliza pin
-`67d4b9121ae40355eb46898bd0df868ba197ab4a`. The client exchanges a fresh Steward session at
+Its source and MIT license match the module in Grace’s previous Eliza pin
+`0633f633ab703b61e6f424949c28f513b235c011`. The client exchanges a fresh Steward session at
 `POST /api/v1/app-auth/mobile/password-backup` and checks the returned account
 and organization before recovery. The standalone profile uses Grace Cloud’s
 browser approval and the native secure-store client. Each APK registers one
 `GraceAccount` implementation.
+
+Both shared Eliza Cloud deployments currently use the Steward registration
+and native approval protocol. Eliza OS’s canonical sign-in module has a
+different registration and browser approval protocol. The matching Cloud
+services and Android App Links need to be verified together before moving
+Grace’s shared profiles to that module.
 
 `android/agent.json` names the admitted agent routes, `agent/character.json`
 supplies the character, and `agent/policy.json` owns the action allowlist. The upstream agent

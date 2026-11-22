@@ -1,4 +1,6 @@
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/surface.md, "Story: Use the website under Grace's controls"
+import { Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe"
+import { WebsiteTask } from "./websiteTask.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { Machine as Workspaces, canConfirmGuidedNameCorrection, mayGuideReadLink, nextOutcome, publicGuidedLink, type GuidedNameCorrection, type Workspace } from "../gen/app__workspace.effect.vibe"
@@ -146,26 +148,50 @@ effect function decisionSession(native: boolean, fixture?: GuideDecision): (Deci
   return { accountId: scope.accountId, choose: async (request, signal) => await choose(request, signal), current: async () => (await runPromise(browserSessionScope()))?.session === scope.session }
 }
 
+effect function inBranch(page: NativePage.Shape, id: PageId, url: string, branch: readonly PublicMenu[], selector: string | null | undefined) {
+  if (branch.length === 0) return true
+  if (!selector) return false
+  for (const [index, menu] of branch.entries()) {
+    if (!(try page.visibleMenuChild(id, menu.selector, branch[index + 1]?.selector ?? selector, url))) return false
+  }
+  return true
+}
+
+const menuChoices = (page: NativePage.Shape, guided: NonNullable<ReturnType<typeof context>>, target: string,
+  branch: readonly PublicMenu[], skipped: readonly PublicMenu[]) => effect (snapshot: LinkObservation, publicOnly: boolean) => {
+  const allLinks = links(snapshot, guided.url, target, publicOnly || branch.length > 0 || guided.approvedHref !== undefined)
+    .filter((link) => guided.approvedHref === undefined || (link.href === guided.approvedHref && link.exact))
+  if (branch.length === 0 && skipped.length === 0) return allLinks
+  const children: PublicLink[] = []
+  for (const link of allLinks) {
+    if (!link.pointable || branch.some((menu) => menu.selector === link.selector)) continue
+    let excluded = false
+    for (const menu of skipped) {
+      if (link.selector === menu.selector || (try inBranch(page, guided.id, guided.url.href, [menu], link.selector))) {
+        excluded = true
+        break
+      }
+    }
+    if (!excluded && (try inBranch(page, guided.id, guided.url.href, branch, link.selector))) children.push(link)
+  }
+  return children
+}
+
 export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.effect(BrowserGuide, effect {
+  const website = try WebsiteTask
+  const requests = try WebsiteRequests
   const workspace = try Workspaces
   const page = try NativePage
   const setup = try Setup
   const recovery = try GuidedRecovery
   const authority = effect () => guidedAuthority(try setup.get(), webView.window.location.hash)
-  const currentContext = effect () => context(try workspace.get(), try authority())
-  effect function inBranch(id: PageId, url: string, branch: readonly PublicMenu[], selector: string | null | undefined) {
-    if (branch.length === 0) return true
-    if (!selector) return false
-    for (const [index, menu] of branch.entries()) {
-      if (!(try page.visibleMenuChild(id, menu.selector, branch[index + 1]?.selector ?? selector, url))) return false
-    }
-    return true
-  }
+  const currentContext = effect () => (try website.clear) ? context(try workspace.get(), try authority()) : undefined
   let triedMenus: { key: string; documentId: string; menus: PublicMenu[] } | undefined
   let active: { id: PageId; key: string; account: DecisionSession; alternateHref?: string; branch?: readonly PublicMenu[] } | undefined
-  try fork.scoped Stream.runForEach(workspace.changes, effect (state) => {
+  const changes = Stream.merge(Stream.as(workspace.changes, undefined), Stream.as(requests.changes, undefined))
+  try fork.scoped Stream.runForEach(changes, effect () => {
     const old = active
-    if (old !== undefined && context(state, try authority())?.key !== old.key) {
+    if (old !== undefined && (try currentContext())?.key !== old.key && active === old) {
       active = undefined
       page.clearGuide(old.id) catch () => undefined
     }
@@ -194,7 +220,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         const fresh = page.observeLinks(shown.id) catch () => undefined
         const state = guidedPageState(fresh, start.url.href, "GuidePublicLinks")
         const candidate = fresh && links(fresh, start.url, correction.label, true).find((link) => link.href === correction.href && link.exact && link.pointable)
-        return fresh !== undefined && candidate !== undefined && (try inBranch(start.id, start.url.href, shown.branch ?? [], candidate.selector)) &&
+        return fresh !== undefined && candidate !== undefined && (try inBranch(page, start.id, start.url.href, shown.branch ?? [], candidate.selector)) &&
           fresh.documentId === correction.documentId &&
           (state === "Ordinary" || state === "PublicOnly") && hasPublicName(fresh, start.url, correction.label, correction.href)
       }
@@ -251,24 +277,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         return { kind: "Unavailable", words, tryAnotherMenu: true, alternateHref }
       }
       let disclosed: LinkObservation | undefined
-      effect function visibleChoices(snapshot: LinkObservation, publicOnly: boolean) {
-        const allLinks = links(snapshot, guided.url, target, publicOnly || branch.length > 0 || guided.approvedHref !== undefined)
-          .filter((link) => guided.approvedHref === undefined || (link.href === guided.approvedHref && link.exact))
-        if (branch.length === 0 && skipped.length === 0) return allLinks
-        const children: PublicLink[] = []
-        for (const link of allLinks) {
-          if (!link.pointable || branch.some((menu) => menu.selector === link.selector)) continue
-          let excluded = false
-          for (const menu of skipped) {
-            if (link.selector === menu.selector || (try inBranch(guided.id, guided.url.href, [menu], link.selector))) {
-              excluded = true
-              break
-            }
-          }
-          if (!excluded && (try inBranch(guided.id, guided.url.href, branch, link.selector))) children.push(link)
-        }
-        return children
-      }
+      const visibleChoices = menuChoices(page, guided, target, branch, skipped)
       let retries = 0
       while (retries < 2) {
         if ((try currentContext())?.key !== start.key) return changed
@@ -304,7 +313,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
                 current.pointable === candidate.pointable && current.selector === candidate.selector)))
                 return { retry: false, stopped: changed }
               for (const candidate of candidates) {
-                if (!(await runPromise(inBranch(start.id, start.url.href, branch, candidate.selector)))) return { retry: false, stopped: changed }
+                if (!(await runPromise(inBranch(page, start.id, start.url.href, branch, candidate.selector)))) return { retry: false, stopped: changed }
               }
               signal.throwIfAborted()
               const answer = await account.choose({ kind: "choice", goal: decisionGoal, candidates: options }, signal)
@@ -333,7 +342,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
         const matches = links(current, start.url, target, state === "PublicOnly" || branch.length > 0 || start.approvedHref !== undefined)
           .filter((link) => link.href === winner.href && link.selector === winner.selector && (branch.length === 0 || link.pointable))
         const node = matches.length === 1 ? matches[0] : undefined
-        if (!node || !(try inBranch(start.id, start.url.href, branch, node.selector)) || (try currentContext())?.key !== start.key) return changed
+        if (!node || !(try inBranch(page, start.id, start.url.href, branch, node.selector)) || (try currentContext())?.key !== start.key) return changed
         const opensMenu = target !== "" && !node.exact && node.menuItem && node.selector !== null && node.selector !== undefined &&
           (try page.hasNavigationMenu(start.id, node.selector, start.url.href))
         if (node.samePage && !opensMenu) return unavailable
@@ -348,10 +357,12 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
           if (freshState !== "Ordinary" && freshState !== "PublicOnly") return freshState === "PrivateForm" ? privateForm : unobservable
           const shown = links(fresh, start.url, target, freshState === "PublicOnly" || start.approvedHref !== undefined).find((link) => link.href === node.href && link.selector === node.selector)
           if (shown === undefined) return changed
-          pointed = page.pointAt(start.id, fresh.documentId, {
+          const pointing = try website.start(Effect.map(currentContext(), (live) => live?.key === start.key), page.pointAt(start.id, fresh.documentId, {
             kind: "show", id: fresh.result.snapshotId, snapshotId: fresh.result.snapshotId,
             nodeId: shown.id, origin: start.url.origin, expiresAt, text: shown.label, assistantName: "Grace"
-          }) catch () => false
+          }))
+          if (typeof pointing === "string") return changed
+          pointed = Fiber.join(pointing) catch () => false
         }
         if (!pointed) return changed
         const currentAccount = tryPromise(() => account.current()) catch () => false
