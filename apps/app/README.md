@@ -120,8 +120,8 @@ the working directory), `GRACE_KEYSTORE_PASSWORD`,
 `GRACE_KEY_ALIAS` and `GRACE_KEY_PASSWORD` are all set (`signing` in `android/host.json`; Gradle
 refuses a partial set, and the build fails if they are set and a release comes out unsigned),
 otherwise `<flavor>-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
-produced with its processor type, size, SHA-256 and the signer the newest installed build-tools'
-`apksigner` verified; a debug build removes release APKs left by an earlier `--release` run. The build
+produced with its processor type, size, SHA-256 and the signer verified by `apksigner` from
+Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. The build
 fails unless an APK carries the agent (`assets/agent/agent.mjs`, `libeliza_node.so` for exactly
 one processor type, `assets/agent/inventory.json` and every file that inventory lists, which the
 service unpacks before it starts), and if it carries an on-device model or local
