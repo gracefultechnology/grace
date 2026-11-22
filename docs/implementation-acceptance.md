@@ -24,9 +24,13 @@ production dependency graph crosses into four Eliza packages.
 | Eliza package | Grace consumer |
 | --- | --- |
 | `@elizaos/cloud` | Grace Cloud wraps `/worker` and imports `/store` for migration. The tablet's browser guide uses `/clef-decisions`. Account enrollment, billing, managed Google data and attachment handoff use the scoped HTTPS routes. |
-| `@elizaos/os` | The app imports the public browser-address and bridge contracts and the pinned password client source. Android consumes the public host, runtime and APK tooling, and AOSP uses the launcher-overlay export. The host uses OS browser, passwords, Wi-Fi and reminders modules, with secure storage and the embedded-agent bridge. |
+| `@elizaos/os` | The app imports the public browser-address and Passwords bridge contracts. Android consumes the public host, runtime and APK tooling, and AOSP uses the launcher-overlay export. The host uses OS browser, passwords, Wi-Fi and reminders modules, with secure storage and the embedded-agent bridge. |
 | `@elizaos/agent` | The Android build compiles and stages the device bundle from the pinned checkout. Grace uses the authenticated local socket for status, turns, streaming and cancellation. |
 | `@elizaos/core` | The Android build compiles Core for the Agent bundle. Cloud and OS also depend on Core upstream. |
+
+The shared Eliza Cloud Android profiles compile the Grace-owned Steward client
+for native sign-in and per-action Passwords approval. Standalone Grace Cloud
+uses the OS device account and the protected browser approval page.
 
 The device Agent plugin load list is empty. Grace's native Capacitor bridge
 registrations are part of its Android host. Its React screens, components,
