@@ -727,6 +727,29 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
     assert.equal(result.traces[0]?.at(-1)?.state, 38);
   });
 
+  test("simulation and probes preserve guarded transitions and outputs when only the state enables an event", async () => {
+    const root = oneRule("counter", "Open and commit", `type Change = { state: int, out: List[str] }
+pure val initial: int = 0
+pure def canOpen(n: int): bool = n == 0
+pure def open(n: int, label: bool): Change = { state: 1, out: List(if (label) "yes" else "no") }
+pure def canCommit(n: int, approved: bool): bool = n == 1 and approved
+pure def commit(n: int, approved: bool): Change = if (approved) { state: 2, out: List("saved") } else { state: 3, out: List("wrong") }
+pure def alwaysValid(n: int): bool = n <= 2`);
+    const spec = readSpecs(root)[0];
+    const model = await gen(root, spec);
+    const domain = await import(pathToFileURL(path.join(root, "gen", "counter.ts")).href);
+    const harness = { memory: { root, fresh: true, used: new Set<string>() }, model, files: harnessFiles(spec, [spec], model) };
+    const [safety, probe] = await Promise.all(["step", "probe"].map((step) => simulate(harness, "inv", 64, 64, step)));
+    assert.equal(safety.broken, false);
+    assert.equal(probe.broken, false);
+    for (const trace of [...safety.traces, ...probe.traces]) replay(domain, trace, model);
+    const emitted = safety.traces.flat().flatMap((step) => step.out ?? []);
+    assert.deepEqual(new Set(emitted), new Set(["yes", "no", "saved"]));
+    const commits = probe.traces.flat().flatMap(({ evaluated }) => evaluated?.name === "commit" ? [{ picks: evaluated.picks, result: evaluated.result }] : []);
+    assert.ok(commits.length > 0);
+    assert.ok(commits.every(({ picks, result }) => picks.approved === true && JSON.stringify(result) === '{"state":2,"out":["saved"]}'));
+  });
+
   test("a concrete witness uses the original guards and rules and supplies its steps to replay", async () => {
     const modelSource = `pure val initial: int = 0
 pure def publish(n: int, amount: int): int = amount
@@ -2760,7 +2783,15 @@ function eachCheck() {
     for (const directory of ["vibestack/studio", ...fs.readdirSync(path.join(copy, "packages")).map((name) => `packages/${name}`)])
       for (const output of ["gen", "dist", "generated", "node_modules", ".spec-cache", ".cache", ".vibe", ".turbo", "storybook-static"])
         assert.ok(!fs.existsSync(path.join(copy, directory, output)), `${directory}/${output} is produced by the scratch build`);
-    const dependencies = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["install", "--offline", "--frozen-lockfile", "--ignore-scripts"], copy);
+    const modulesManifest = path.join(nodeModules, ".modules.yaml");
+    assert.ok(fs.existsSync(modulesManifest), "The packaged command selftest needs a pnpm workspace install. Run pnpm install.");
+    const { parse: parseYaml } = await import("yaml");
+    const storeDir = (parseYaml(fs.readFileSync(modulesManifest, "utf8")) as { storeDir?: unknown } | null)?.storeDir;
+    assert.ok(typeof storeDir === "string" && path.isAbsolute(storeDir), `Missing absolute pnpm store path in ${modulesManifest}`);
+    const installEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => name.toLowerCase().replaceAll("-", "_") !== "npm_config_store_dir"));
+    installEnv.npm_config_store_dir = storeDir;
+    const dependencies = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm",
+      ["install", "--offline", "--frozen-lockfile", "--ignore-scripts"], copy, installEnv);
     assert.equal(dependencies.status, 0, dependencies.stdout + dependencies.stderr);
     const built = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build"], copy, { ...process.env, TURBO_CACHE: "local:rw" });
     assert.equal(built.status, 0, built.stdout + built.stderr);
@@ -2858,8 +2889,7 @@ function eachCheck() {
   });
 
   test("owner generation mirrors the same artifact as the whole tree and checks its dependency closure", async () => {
-    const script = path.join(project, "vibestack/spec.ts");
-    const root = scratch({
+    const root = toolchain(scratch({
       "package.json": PACKAGE["package.json"],
       "packages/target/package.json": JSON.stringify({ name: "@repo/target" }),
       "packages/other/package.json": JSON.stringify({ name: "@repo/other" }),
@@ -2867,7 +2897,15 @@ function eachCheck() {
       "spec/target/index.md": ruleSpec('import lib.* from "../lib"\npure val targetValue = baseValue'),
       "spec/lib.md": ruleSpec("pure val baseValue = 1"),
       "spec/other/index.md": ruleSpec("pure val otherValue = 2"),
-    });
+    }), "quint", "lsc");
+    const script = path.join(root, "vibestack/spec.ts");
+    const linkDuringGeneration = (phase: string) => {
+      if (process.platform === "win32") return;
+      const shim = path.join(root, "node_modules/.bin/quint");
+      fs.unlinkSync(shim);
+      fs.writeFileSync(shim, `#!/bin/sh\nln "$0" '${path.join(root, phase)}' 2>/dev/null || true\nexec '${path.join(nodeModules, ".bin/quint")}' "$@"\n`, { mode: 0o755 });
+    };
+    linkDuringGeneration("install-during-full-generation");
     const all = await runCli(script, root, "gen");
     assert.equal(all.status, 0, all.stdout + all.stderr);
     const target = path.join(root, "packages/target/gen");
@@ -2877,6 +2915,7 @@ function eachCheck() {
     const before = fs.readFileSync(unrelated, "utf8");
     fs.rmSync(target, { recursive: true });
     fs.appendFileSync(path.join(root, "spec/other/index.md"), "\n[Missing](./missing.md)\n");
+    linkDuringGeneration("install-during-owner-generation");
     const scoped = await runCli(script, root, "gen", "--owner", "target");
     assert.equal(scoped.status, 0, scoped.stdout + scoped.stderr);
     assert.deepEqual(outputs(), expected);
@@ -3932,6 +3971,54 @@ test("the same installed Quint shares verification results across checkouts and 
   assert.equal(checked.status, 0, checked.stderr);
   assert.deepEqual([JSON.parse(checked.stdout), toolRuns(path.join(hosted.root, ".spec-cache")).length], [['"default"', '"default"', '"from host"'], 2]);
 
+});
+
+test("check phase timings end a simulation before later definitions finish generating", { skip: process.platform === "win32" }, async () => {
+  const root = toolchain(scratch({
+    "spec/counter.md": ruleSpec("pure val initial: int = 0\npure def bump(n: int): int = n + 1\npure def alwaysPositive(n: int): bool = n > 0"),
+    "spec/definitions.md": ruleSpec("pure val answer: int = 42"),
+  }), "quint");
+  const shim = path.join(root, "node_modules/.bin/quint");
+  fs.renameSync(shim, `${shim}-real`);
+  fs.writeFileSync(shim, `#!/bin/sh
+basedir="$(dirname "$0")"
+if [ "$1:$4" = typecheck:definitions.qnt ]; then node "$basedir/../../wait-for-simulation.mjs" || exit $?; fi
+exec "$basedir/quint-real" "$@"
+`, { mode: 0o755 });
+  fs.writeFileSync(path.join(root, "wait-for-simulation.mjs"), `
+    import fs from "node:fs";
+    import { setTimeout } from "node:timers/promises";
+    const marker = new URL("./simulation-finished", import.meta.url);
+    const deadline = performance.now() + 60_000;
+    while (!fs.existsSync(marker) && performance.now() < deadline) await setTimeout(20);
+    if (!fs.existsSync(marker)) throw new Error("no simulation result was saved");
+    await setTimeout(300);
+  `);
+  const child = await exec(process.execPath, ["--input-type=module", "--eval", `
+    import assert from "node:assert/strict";
+    import { channel } from "node:diagnostics_channel";
+    import fs from "node:fs";
+    import path from "node:path";
+    import { check } from "./vibestack/pipeline.ts";
+    const rename = fs.renameSync;
+    fs.renameSync = (from, to) => {
+      rename(from, to);
+      if (/^simulate-.*\\.json\\./.test(path.basename(to))) fs.writeFileSync("simulation-finished", "");
+    };
+    const events = [];
+    channel("vibestack:check:phase").subscribe(event => events.push(event));
+    const result = await check(process.cwd());
+    assert.ok(result.results.some(r => r.ok && r.stage === "model" && r.where === "spec/definitions.md" && r.summary.includes("definitions only")));
+    assert.ok(result.results.some(r => !r.ok && r.stage === "always" && r.where === "spec/counter.md" && r.summary.includes("fix the model")), JSON.stringify(result.results));
+    const time = (phase, event) => events.find(e => e.phase === phase && e.event === event).elapsedMs;
+    assert.ok(time("simulation", "start") <= time("simulation", "end"));
+    assert.ok(time("generation", "end") - time("simulation", "end") >= 200, JSON.stringify(events));
+    events.length = 0;
+    const interrupted = new Error("ordinary generation failure");
+    await assert.rejects(check(process.cwd(), false, () => { throw interrupted; }), error => error === interrupted);
+    assert.deepEqual(events.map(({ phase, event }) => [phase, event]), [["generation", "start"], ["generation", "end"]]);
+  `], root);
+  assert.equal(child.status, 0, child.stdout + child.stderr);
 });
 
 test("a trace integer of 16 or more digits that Quint wrote as a BigNumber decodes to the same integer", () => {
