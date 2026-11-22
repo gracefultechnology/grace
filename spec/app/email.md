@@ -107,6 +107,47 @@ pure def terminalUnsaved(m: Mailbox): bool = (m.sendStatus == Sent or m.sendStat
 pure def heldSend(m: Mailbox): bool = unresolved(m) or terminalUnsaved(m)
 ```
 
+### A private sign-in suggestion requires one current message from the website's issuer
+
+A person who enables email-code suggestions on her tablet can stay on the
+website during sign-in. The inbox connector matches the website's current
+request to one message for her connected mailbox. It verifies the issuer's
+association with the website, the intended recipient and the request. The
+browser supplies the website origin from the focused private field.
+
+Grace keeps only the request and message identities in this model. The
+connector checks the live mailbox grant again when delivering a suggestion.
+A replacement request retires the earlier request, even if its email arrives
+late. An ambiguous match, a changed session, a revoked grant or an expired
+message leaves the field alone.
+
+```quint
+type InboxCodeRequest = {
+  origin: str, requestId: str, session: str, grant: str, generation: int, startedAt: int
+}
+type InboxCodeMatch = NoInboxCodeMatch | OneInboxCodeMatch({
+  identity: I::MessageIdentity, request: InboxCodeRequest, receivedAt: int, expiresAt: int
+})
+pure def mayOfferInboxCode(m: Mailbox, active: InboxCodeRequest, result: InboxCodeMatch, now: int, by: MailActor): bool =
+  match result {
+    | NoInboxCodeMatch => false
+    | OneInboxCodeMatch(found) =>
+      by == MailConnector and m.connection == Connected and m.canRead and
+      active.origin != "" and active.requestId != "" and active.session != "" and active.grant != "" and
+      active.generation == m.generation and active.startedAt >= 0 and found.request == active and
+      I::validIdentity(found.identity) and found.identity == messageIdentity(m, found.identity.ref) and
+      active.startedAt <= found.receivedAt and found.receivedAt <= now and now < found.expiresAt
+  }
+pure def lawOnlyTheCurrentInboxRequestCanOfferAMessage(m: Mailbox, active: InboxCodeRequest, found: InboxCodeMatch, now: int, by: MailActor): bool =
+  mayOfferInboxCode(m, active, found, now, by) implies
+    (m.connection == Connected and m.canRead and by == MailConnector and
+      (match found {
+        | NoInboxCodeMatch => false
+        | OneInboxCodeMatch(item) => item.request == active and item.identity == messageIdentity(m, item.identity.ref) and
+          item.request.generation == m.generation and item.receivedAt <= now and now < item.expiresAt
+      }))
+```
+
 ### Official authentication binds the chosen identity and the current request
 
 Beginning or retrying authentication invalidates old read callbacks. Reconnecting
