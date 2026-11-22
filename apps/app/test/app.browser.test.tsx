@@ -46,7 +46,7 @@ const graceWindow = () => document.querySelector<HTMLElement>("section[aria-labe
  */
 function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown, autoRoute = false, readPage?: (options: Record<string, unknown>) => unknown) {
   const calls: Call[] = [];
-  const android = { allows: true };
+  const android: { allows: boolean; verdict?: Promise<void> } = { allows: true };
   const privateSignIn = { allows: true };
   const held = { starts: false };
   const starts: (() => void)[] = [];
@@ -67,7 +67,7 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
       if (method === "controlPage" && controlPage) return Promise.resolve(controlPage(options));
       if (method === "answerSitePermission") {
         const outcome = options.grant !== true ? "denied" : android.allows ? "granted" : "android-refused";
-        return Promise.resolve({ granted: outcome === "granted", outcome });
+        return Promise.resolve(android.verdict).then(() => ({ granted: outcome === "granted", outcome }));
       }
       if (method === "purgeProfiles") return new Promise((resolve) => purges.push((clean) => resolve({ purged: 1, clean })));
       // Grace's own navigation ends what the page holds, then starts its next page (definitions.ts, pageStarted).
@@ -178,9 +178,11 @@ function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
 }
 
 async function cloudReadPlan(native: ReturnType<typeof fakePlugin>, cloud: string, secret: string) {
-  const view = tabletView(ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret })));
+  const runtime = ManagedRuntime.make(application(native.plugin, undefined, { url: cloud, key: secret }));
+  const view = tabletView(runtime);
   await view.render();
-  return { ...routedControls(native), dispose: view.dispose };
+  const checkStep = () => runtime.runPromise(Effect.flatMap(Conversation, (conversation) => conversation.checkGuidedRead()));
+  return { ...routedControls(native), dispose: view.dispose, checkStep };
 }
 
 const sentTurn = (body: unknown) => {
@@ -2614,7 +2616,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     .replace("<h1>Usage</h1>", "<h1>Today's usage</h1><p>Updated <span id='clock'>10:41:07</span></p>")) };
   const guideShow = Schema.is(Schema.Struct({ subaction: Schema.Literal("guide"), guidance: Schema.Struct({ kind: Schema.Literal("show"), snapshotId: Schema.String, nodeId: Schema.String }) }));
   let pinned: (typeof card & { url: string }) | undefined;
-  let betweenReads: (() => void) | undefined;
+  let betweenReads: (() => void | Promise<void>) | undefined;
   const blankNewsletterEmail = {
     id: "newsletter-email", tag: "input", type: "email", fieldName: "email", label: "Sign Up for Our Newsletter:",
     sensitive: null, form: { index: 2, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: false,
@@ -2629,8 +2631,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         const result = { ...pinned.frame.snapshot(command), url: pinned.url };
         const change = betweenReads;
         betweenReads = undefined;
-        change?.();
-        return { documentId: pinned.id, frameScope: "main", result };
+        const reply = { documentId: pinned.id, frameScope: "main", result };
+        return change ? Promise.resolve(change()).then(() => reply) : reply;
       }
       return { documentId: currentPage.id, frameScope: "main", result: {
         snapshotId: currentPage.id, domRevision, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
@@ -2951,6 +2953,39 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await tap(readStatement);
     await expect.poll(() => result.query()?.textContent).toBe("This is an earlier statement. Open the current one.");
     card.frame.document.title = "Statements & Documents";
+
+    // spec/app/deviceKeys.md, "A task waits while a website's question holds me, and goes on after my answer"
+    const snapshotRequested = Latch.makeUnsafe();
+    const releaseSnapshot = Latch.makeUnsafe();
+    betweenReads = () => { snapshotRequested.openUnsafe(); return Effect.runPromise(releaseSnapshot.await); };
+    const checking = tablet.checkStep();
+    try {
+      await Effect.runPromise(snapshotRequested.await);
+      await native.ask("dialogRequested", { id: "tab-1", dialogId: "statement-message", kind: "confirm", message: "Keep this statement open?" });
+      const dialog = page.getByRole("alertdialog");
+      await routeTo(dialog);
+      releaseSnapshot.openUnsafe();
+      expect(await checking).toBe("Refused");
+      await tap(dialog.getByRole("button", { name: "Cancel" }));
+    } finally {
+      releaseSnapshot.openUnsafe();
+    }
+
+    const androidVerdict = Latch.makeUnsafe();
+    native.android.verdict = Effect.runPromise(androidVerdict.await);
+    native.android.allows = false;
+    try {
+      await native.ask("sitePermissionRequested", { id: "tab-1", requestId: "statement-microphone", origin,
+        kinds: ["microphone"], topFrame: true, androidPermissions: ["android.permission.RECORD_AUDIO"] });
+      await tap(page.getByRole("button", { name: "Allow", exact: true }));
+      await expect.poll(() => native.calls("answerSitePermission").at(-1)).toMatchObject({ requestId: "statement-microphone", grant: true });
+      expect(await tablet.checkStep()).toBe("Refused");
+    } finally {
+      androidVerdict.openUnsafe();
+      delete native.android.verdict;
+    }
+    await routeTo(page.getByText("Android didn't allow your microphone."));
+    await tap(page.getByRole("button", { name: "Close", exact: true }));
     await tap(readStatement);
     await expect.element(readStatement).toBeEnabled();
     expect(result.query()).toBeNull();
