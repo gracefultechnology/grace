@@ -1,0 +1,111 @@
+// spec/app/browserControls.md, "A new-mail hint belongs to one approved private visit"
+import { Machine as Workspaces, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Machine as Setup, type Setup as SetupState, mayReadManaged } from "../gen/app__setup.effect.vibe"
+import { Machine as PageLayers, pageRuns, pageShows } from "../gen/app__surface.effect.vibe"
+import { type PrivateInboxVisit, canWatchPrivateInbox } from "../gen/app__browserControls.effect.vibe"
+import { accountPlugin } from "./accountPlugin.ts"
+import { accountFetch, apiOrigin, nativeBrowserGuideLease } from "./graceAccount.vibe"
+import { googleRoute, inboxArrivalRoute } from "./cloudRequests.vibe"
+import { webView } from "./surfacePlugin.ts"
+
+const InboxArrival = Schema.Struct({
+  cursor: Schema.NonEmptyString.check(Schema.isMaxLength(4096)),
+  arrived: Schema.Boolean,
+})
+
+export type ArrivalStatus = "waiting" | "arrived" | "unavailable" | "expired" | "cleared"
+
+type InboxOwner = { kind: "device"; lease: string } | { kind: "web"; account: string; grant: string }
+
+function sameInbox(state: SetupState, owner: InboxOwner): boolean {
+  if (owner.kind === "device") return state.graceAccount.tag === "GraceDeviceSignedIn"
+  return state.graceAccount.tag === "GraceSignedIn" && state.graceAccount.accountId === owner.account &&
+    state.googleLink.tag === "GoogleLinkConnected" && state.googleLink.grant === owner.grant &&
+    mayReadManaged(state.graceAccount, state.googleLink, "ManagedEmail")
+}
+
+effect function inboxOwner(state: SetupState): (InboxOwner | undefined)!unknown {
+  if (state.graceAccount.tag === "GraceDeviceSignedIn") {
+    const lease = try nativeBrowserGuideLease()
+    return lease ? { kind: "device", lease } : undefined
+  }
+  if (state.graceAccount.tag !== "GraceSignedIn" || state.googleLink.tag !== "GoogleLinkConnected" ||
+      !state.googleLink.grant || !mayReadManaged(state.graceAccount, state.googleLink, "ManagedEmail")) return undefined
+  return { kind: "web", account: state.graceAccount.accountId, grant: state.googleLink.grant }
+}
+
+error InboxUnavailable
+
+effect function arrival(owner: InboxOwner, cursor?: string) {
+  const raw: unknown = try timeout(effect {
+    if (owner.kind === "device") {
+      const bridge = accountPlugin
+      if (bridge === undefined) throw new InboxUnavailable()
+      return try tryPromise(() => bridge.inboxArrival({ lease: owner.lease, cursor }))
+    }
+    const params = new URLSearchParams({ grantId: owner.grant })
+    if (cursor !== undefined) params.set("cursor", cursor)
+    const response = try tryPromise((signal) => accountFetch(apiOrigin + googleRoute + inboxArrivalRoute + "?" + params, {
+      method: "GET", headers: { Accept: "application/json" }, signal,
+    }))
+    if (!response.ok) throw new InboxUnavailable()
+    return try tryPromise(() => response.json())
+  }, "12 seconds")
+  return try Schema.decodeUnknownEffect(InboxArrival)(raw)
+}
+
+export effect function watchInboxArrival(visit: PrivateInboxVisit, notify: (status: ArrivalStatus) => void) {
+  const desk = try Workspaces
+  const setup = try Setup
+  const layer = try PageLayers
+  const visitMatches = (w: Workspace) => pageShows(w.device, w.assistant) && canWatchPrivateInbox(w.browser, visit)
+  const owner = inboxOwner(try setup.get()) catch () => undefined
+  if (!owner || !visitMatches(try desk.get()) || !pageRuns(try layer.get()) || (try sync(() => webView.hidden()))) {
+    notify("unavailable")
+    return
+  }
+  const stopped = <A>(stream: Stream.Stream<A>) => Stream.map(stream, () => undefined)
+  const bridge = accountPlugin
+  const nativeChanged = owner.kind === "device" && bridge !== undefined ? Stream.filterEffect(
+    Stream.callback<void>((queue) => acquireRelease(
+      promise(() => bridge.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })),
+      (handle) => promise(() => handle.remove()),
+    )),
+    effect () => (nativeBrowserGuideLease() catch () => undefined) !== owner.lease,
+  ) : Stream.empty
+  const invalidated = Stream.mergeAll([
+    nativeChanged,
+    stopped(Stream.filter(desk.changes, (w) => !visitMatches(w))),
+    stopped(Stream.filter(setup.changes, (s) => !sameInbox(s, owner))),
+    stopped(Stream.filter(layer.changes, (p) => !pageRuns(p))),
+    stopped(Stream.filter(Stream.fromEventListener(webView.document, "visibilitychange"), () => webView.hidden())),
+  ], { concurrency: "unbounded" })
+  const current = effect () => !(try sync(() => webView.hidden())) && visitMatches(try desk.get()) &&
+    pageRuns(try layer.get()) && sameInbox(try setup.get(), owner)
+  let shown = false
+  const poll = effect {
+    if (!(try current())) return "cleared" as const
+    const baseline = try arrival(owner)
+    if (baseline.arrived) throw new InboxUnavailable()
+    if (!(try current())) return "cleared" as const
+    notify("waiting")
+    let cursor = baseline.cursor
+    while (true) {
+      try Effect.sleep("5 seconds")
+      if (!(try current())) return "cleared" as const
+      const change = try arrival(owner, cursor)
+      if (!(try current())) return "cleared" as const
+      if (change.arrived) {
+        shown = true
+        notify("arrived")
+        return try Effect.never
+      }
+      cursor = change.cursor
+    }
+  }
+  const result = Effect.raceFirst(
+    Effect.raceFirst(poll, Effect.as(Effect.sleep("5 minutes"), "expired" as const)),
+    Effect.as(Stream.runHead(invalidated), "cleared" as const)
+  ) catch () => "unavailable" as const
+  notify((try current()) && !shown ? result : "cleared")
+}

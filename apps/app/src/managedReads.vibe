@@ -8,7 +8,7 @@ import type { SavedFile } from "../gen/app__files.effect.vibe"
 import { Library } from "./files.vibe"
 import { accountPlugin, reminderPlugin } from "./accountPlugin.ts"
 import { AccountActions, apiOrigin, currentManagedMailGrant } from "./graceAccount.vibe"
-import { namesCode, withholdMail } from "./private.ts"
+import { namesCode, withhold } from "./private.ts"
 import { type GoogleChange, type GoogleRead, googleRoute } from "./cloudRequests.vibe"
 import { messageLinkParts } from "./messageLinks.vibe"
 import { webView } from "./surfacePlugin.ts"
@@ -42,7 +42,7 @@ const partIdField = Schema.String.check(Schema.isPattern(/^[0-9.]{1,32}$/))
 const historyField = Schema.String.check(Schema.isPattern(/^[0-9]{1,20}$/))
 const supportedMedia = Schema.Literals(["application/pdf", "text/plain", "image/png", "image/jpeg", "image/webp"])
 schema AttachmentDescriptor { partId: string; name: attachmentName; mimeType: idField; size: Schema.Int; supported: boolean }
-const MailBody = Schema.Struct({ accountId: idField, message: Schema.Struct({ ...MailRow.fields, snippet: Schema.optionalKey(Schema.String) }), historyId: Schema.NullOr(historyField),
+const MailBody = Schema.Struct({ accountId: idField, message: Schema.Struct({ ...MailRow.fields, fromEmail: Schema.optionalKey(nullableText), snippet: Schema.optionalKey(Schema.String) }), historyId: Schema.NullOr(historyField),
   attachments: Schema.Array(AttachmentDescriptor), reply: Schema.optional(Schema.NullOr(MailReply)), bodyText: Schema.String, bodyTextAvailable: Schema.Boolean })
 export function actionableMailBody(selected: typeof MailBody.Type | undefined) {
   return selected?.bodyTextAvailable && selected.historyId && selected.message.labels &&
@@ -116,7 +116,7 @@ type HomeOccurrence = { accountId: string; grant: string; id: string; version: s
 type ReadIntent = Intent & { homeOccurrence?: HomeOccurrence }
 type Command = (({ kind: "mailFolder"; folder: ManagedFolder; search: string } | { kind: "calendarWindow"; move: Navigation; day: number }) & WriteScope) | { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" | "saveAttachment" | "savePhotos" }
 
-export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | (
+export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | { kind: "confidentialMail" } | (
   { accountId: string; googleEmail: string; grant: string; id: string; version: string } &
   ({ kind: "mail"; subjectForGrace: string } | { kind: "calendar"; title: string; startAt: string })
 )
@@ -650,10 +650,11 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       const version = selected?.message.metadata?.historyId
       if (!selected || !version || selected.accountId !== scope.accountId) return { kind: "unavailable" }
       const { message, bodyText, bodyTextAvailable } = selected
-      const subjectForGrace = Effect.try(() => {
-        const coded = !bodyTextAvailable || namesCode([message.from, message.subject, message.snippet ?? "", bodyText].join("\n"))
-        return withholdMail({ text: message.subject, passwords: [] }, coded)
-      }) catch () => undefined
+      if (!bodyTextAvailable) return { kind: "unavailable" }
+      const coded = Effect.try(() => namesCode([message.from, message.fromEmail ?? "", message.subject, message.snippet ?? "", bodyText].join("\n"))) catch () => undefined
+      if (coded === undefined) return { kind: "unavailable" }
+      if (coded) return { kind: "confidentialMail" }
+      const subjectForGrace = Effect.try(() => withhold({ text: message.subject, passwords: [] })) catch () => undefined
       if (subjectForGrace === undefined) return { kind: "unavailable" }
       return { ...ownership, kind: "mail", id: message.externalId, version, subjectForGrace }
     }

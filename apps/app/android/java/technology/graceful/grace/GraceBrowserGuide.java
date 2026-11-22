@@ -44,6 +44,22 @@ final class GraceBrowserGuide {
   return guideLease;
  }
 
+ void inboxArrival(PluginCall call) {
+  CHOICES.execute(() -> {
+   var lease = currentGuideLease();
+   try {
+    if (lease == null || !lease.id().equals(call.getString("lease"))) throw new IllegalStateException();
+    String cursor = call.getString("cursor");
+    if (cursor != null && (cursor.isEmpty() || cursor.length() > 4096)) throw new IllegalArgumentException();
+    var packet = GraceOwnerRead.read(GraceOwnerRead.Endpoint.INBOX_ARRIVAL,
+     cursor == null ? "" : "?cursor=" + android.net.Uri.encode(cursor), lease.owner());
+    if (!(packet.opt("arrived") instanceof Boolean arrived) || !(packet.opt("cursor") instanceof String next)
+     || next.isEmpty() || next.length() > 4096 || !currentDecisionOwner(lease)) throw new IllegalStateException();
+    call.resolve(new JSObject().put("cursor", next).put("arrived", arrived));
+   } catch (Exception unavailable) { call.reject("Inbox check unavailable"); }
+  });
+ }
+
  void chooseBrowserLink(PluginCall call) {
   CHOICES.execute(() -> {
    var lease = currentGuideLease();

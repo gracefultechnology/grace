@@ -18,7 +18,7 @@ import { Agent, type GraceAction } from "./agent.vibe"
 import { BrowserGuide } from "./browserGuide.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
-import { type Help, helpWith, type Last, looker, render, sendable, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
+import { confidentialMail, type Help, helpWith, type Last, looker, render, sendable, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
 import { Instances, tablet } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
 import { withhold } from "./private.ts"
@@ -122,7 +122,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
   if (read === "ReadMail" || read === "ReadCalendar" || read === "SaveMailAppointment") {
     const selected = try managed.guidedSelection()
     if (selected.kind !== "legacy") {
-      if (selected.kind === "unavailable" || workspace.plan.steps.some((step) => step.tag === "SaveMailAppointment")) return undefined
+      if ((selected.kind !== "mail" && selected.kind !== "calendar") || workspace.plan.steps.some((step) => step.tag === "SaveMailAppointment")) return undefined
       const identity = [selected.accountId, selected.googleEmail, selected.id]
       const { grant, version } = selected
       if (read === "ReadMail" && selected.kind === "mail")
@@ -145,7 +145,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const { identity, revision, loaded } = messageRecord(box, box.messageRef)
       const content = scene.content(account, box.messageRef)
       if (!loaded || identity.owner !== box.owner || identity.account !== box.account || identity.provider !== box.provider ||
-          identity.ref !== box.messageRef || content === undefined) return undefined
+          identity.ref !== box.messageRef || content === undefined || confidentialMail(content)) return undefined
       return receipt({ tag: "CurrentMessage", account, owner: identity.owner, address: identity.account,
         ref: identity.ref, generation: box.generation, revision, version: content.version },
         [identity.provider, identity.owner, identity.account, identity.ref], content.subject === "" ? "The open message has no subject." : "Open message: " + content.subject)
@@ -341,6 +341,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     const system = { role: "system", content: `${character.system}\n\n${noControls}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(last), news, try managed.guidedSelection()).text}${help}` }
     const { origin } = w.assistant.conversation
     const started = origin === "HerRequest" ? [] : [{ role: "user", content: origin === "AskedForHelp" ? helpAsked : hostStarted }]
+    if (privateSurfaceActive(try workspace.get())) return
     const said = ask(link, [system, ...outgoing, ...started]) catch () => undefined
     const reply = try decoded(said)
     if (said === undefined || reply === undefined) return try fail(token, w.assistant.workVersion)
