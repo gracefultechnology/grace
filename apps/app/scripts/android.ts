@@ -980,7 +980,7 @@ function deviceNodes(xml: string) {
   return Array.from(xml.matchAll(/<node\b[^>]*>/g)).flatMap(([node]) => {
     const attr = (name: string) => new RegExp(` ${name}="([^"]*)"`).exec(node)?.[1] ?? "";
     const bounds = /^\[(\d+),(\d+)\]\[(\d+),(\d+)\]$/.exec(attr("bounds"));
-    return bounds ? [{
+    return bounds && Number(bounds[1]) < Number(bounds[3]) && Number(bounds[2]) < Number(bounds[4]) ? [{
       x: Math.round((Number(bounds[1]) + Number(bounds[3])) / 2),
       y: Math.round((Number(bounds[2]) + Number(bounds[4])) / 2),
       label: attr("text"), description: attr("content-desc"), id: attr("resource-id").split("/").at(-1),
@@ -1251,11 +1251,30 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
             !document.querySelector('textarea[aria-label="Message to Grace"]')?.getClientRects().length`, AbortSignal.timeout(30_000));
           step = "open the episode using the private address control";
           await page.step({ type: entry.href, into: "Private website address", replace: true });
+          await page.until(`document.activeElement?.matches('input[aria-label="Private website address"]') &&
+            document.activeElement.value === ${JSON.stringify(entry.href)}`, AbortSignal.timeout(30_000));
+          step = "load the encrypted BillWorld page in the private tab";
           await page.step({ press: "Enter" });
+          await page.until(`(() => {
+            const address = document.querySelector('input[aria-label="Private website address"]');
+            return URL.parse(address?.value)?.origin === ${JSON.stringify(origin.origin)} &&
+              (address.getAttribute('aria-describedby') ?? '').split(' ').some((id) =>
+                document.getElementById(id)?.textContent === 'Encrypted connection');
+          })()`, AbortSignal.timeout(60_000));
         }, 900);
-        step = "request Android autofill and choose the matching entry";
-        await tap((node) => node.password && node.className === "android.widget.EditText", "the website password field");
+        const websitePassword = (node: DeviceNode) => node.packageName === identity.appId && node.enabled && node.password;
+        step = "find the password field on the BillWorld sign-in form";
+        const passwordField = await waitForUi({ serial, file: screenFile, signal }, (nodes) => {
+          const fields = nodes.filter(websitePassword);
+          return fields.length === 1 && nodes.some((node) => node.className === "android.widget.Button" && /^(sign\s*in|log\s*in)$/i.test(node.label))
+            ? fields[0] : undefined;
+        }, "the BillWorld sign-in form");
+        await tapNode(passwordField);
+        step = "confirm Android focused the BillWorld password field";
+        await waitForNode((node) => websitePassword(node) && node.focused, "the focused website password field");
+        step = "wait for Android’s saved-password offer";
         await tap((node) => node.label === "Fill with a saved password", "Android's fill offer");
+        step = "choose the matching saved sign-in";
         await tap((node) => node.packageName === identity.appId && node.label.includes(login.label), "the matching sign-in");
       },
     });
