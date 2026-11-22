@@ -6,7 +6,7 @@ import { Agent } from "./agent.vibe"
 import type { EmbeddedAgent } from "./agentPlugin.ts"
 import { agentTextLimit, personSays, tabletShows, turnText } from "./agentTurn.ts"
 import { looker, render, sendable } from "./context.vibe"
-import { Conversation } from "./conversation.vibe"
+import { Conversation, helpAsked } from "./conversation.vibe"
 import { withhold } from "./private.ts"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { ManagedReads, guidedAuthority, guidedOwner } from "./managedReads.vibe"
@@ -131,14 +131,18 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
     const transcript = scene.assistant.conversation
     const { messages } = transcript
     const index = messages.length - 1
+    const source = try turns.turnSource(token)
     const message = messages[index]
-    if (message === undefined || message.author !== "HumanMessage") return
-    if ((try Effect.orDie(Effect.try(() => sendable(transcript)))) === undefined) {
+    const words = transcript.origin === "HerRequest" && message?.author === "HumanMessage" ? message.text : undefined
+    const help = transcript.origin === "AskedForHelp" && source.origin === "AskedForHelp" ? source.context : undefined
+    if (transcript.generation !== token || (words === undefined && help === undefined)) return
+    if (words !== undefined && (try Effect.orDie(Effect.try(() => sendable(transcript)))) === undefined) {
       workspace.send({ type: "purgePrivate", token, messageIndex: index, purgeDraft: false }, "Host") catch () => undefined
       return
     }
     const shown = render(try look(), try Clock.currentTimeMillis, { notDone: [], unread: [] }, [], try managed.guidedSelection())
-    const { text } = try Effect.orDie(Effect.try(() => turnText([tabletShows, ...shown.text.split("\n")], `${personSays} ${JSON.stringify(message.text)}`, agentTextLimit)))
+    const prompt = words === undefined ? `${help}\n${helpAsked}` : `${personSays} ${JSON.stringify(words)}`
+    const { text } = try Effect.orDie(Effect.try(() => turnText([tabletShows, ...shown.text.split("\n")], prompt, agentTextLimit)))
     effect {
       const current = try Ref.get(opened)
       const conversation = current !== undefined && current.messages < messages.length ? current.conversation : (try timeout(createConversation(plugin), turnTimeout))
@@ -150,33 +154,35 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
       const shouldSpeak = audible((try workspace.get()).preferences.session)
       try Effect.uninterruptible(effect {
         const before = try workspace.get()
-        if (privateSurfaceActive(before)) return
+        if (privateSurfaceActive(before) || before.assistant.conversation.generation !== token ||
+            before.assistant.conversation.turn !== "Thinking") return
         const plan = reply.actions.find((action) => action.kind === "proposeReadPlan")
         if (plan !== undefined) {
           const workVersion = scene.assistant.workVersion
           if (before.assistant.workVersion !== workVersion || !sameContext(replyControlContext(before), request.context) ||
-              before.assistant.conversation.messages.at(-1)?.text !== message.text) return
-          const origin = try turns.turnOrigin(token)
+              (words !== undefined && before.assistant.conversation.messages.at(-1)?.text !== words)) return
+          const { origin } = source
           const supported = plan.steps.every((item) => typeof item === "string"
             ? item === "ReadBrowser" || item === "ReadChangedBrowser" || item === "ReadStatement"
             : item.kind === "ReachNamedPage")
-          const eligible = reply.actions.length === 1 && supported && safe === reply.text && !reply.isQuestion && fromPerson(origin)
+          const eligible = words !== undefined && reply.actions.length === 1 && supported && safe === reply.text && !reply.isQuestion && fromPerson(origin)
           const applied = eligible ? try agent.apply([plan], { generation: token, workVersion, origin, authority }) : []
           const current = try workspace.get()
           if (privateSurfaceActive(current) || current.assistant.workVersion !== workVersion ||
-              !sameContext(replyControlContext(current), request.context) || current.assistant.conversation.turn !== "Thinking" || current.assistant.conversation.messages.at(-1)?.text !== message.text) return
+              !sameContext(replyControlContext(current), request.context) || current.assistant.conversation.turn !== "Thinking" || (words !== undefined && current.assistant.conversation.messages.at(-1)?.text !== words)) return
           const { review } = current
           const offered = applied.some((item) => item.outcome === "Applied") &&
             review.generation === token && review.workVersion === workVersion &&
             review.request.owner === guidedOwner(guidedAuthority(try setup.get(), webView.window.location.hash), review.request.steps)
-          const words = offered ? "Review the selected-item checks before starting." : "I can’t prepare that read plan on this tablet."
-          workspace.send({ type: "interact", input: { tag: "Respond", token, text: words,
+          const planReply = offered ? "Review the selected-item checks before starting." : "I can’t prepare that read plan on this tablet."
+          workspace.send({ type: "interact", input: { tag: "Respond", token, text: planReply,
             isQuestion: false, answers: [], audible: false } }, "Host") catch () => undefined
           return
         }
         const response: Event = { type: "interact", input: { tag: "Respond", token, text: safe,
           isQuestion: reply.isQuestion, answers: choicesSafe ? [...reply.answers] : [], audible: shouldSpeak } }
-        if (safe === reply.text && sameContext(replyControlContext(before), request.context) && enabled(before, response, "Host")) {
+        if (safe === reply.text && scene.assistant.workVersion === before.assistant.workVersion &&
+            sameContext(replyControlContext(before), request.context) && enabled(before, response, "Host")) {
           try controls.offer(request, step(before, response, "Host").state, reply.actions)
         }
         try workspace.send(response, "Host")
