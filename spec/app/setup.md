@@ -1143,35 +1143,73 @@ pure def lawForegroundVaultCannotAuthorizeRestore(ownerMatches: bool, recoveryKe
 
 ### Removing the cloud copy keeps the tablet's passwords
 
-A removal approved for the current request deletes the cloud copy and
-leaves every password on the tablet as it was. An approval for any other
-action removes nothing.
+A removal starts only with an approval for the current remove request.
+Starting it consumes that approval and remembers the operation's binding.
+The native host records the cloud copy as removed only when the selected
+deployment acknowledges that operation. A refusal or an unconfirmed result
+does not change the last confirmed cloud status. A reply for another
+operation cannot complete the current one, and a finished operation cannot
+be completed again. Every password on the tablet stays as it was.
 
 ```quint
 type PasswordCloudCopy = StoredPasswordBackup | NoPasswordBackup
-type PasswordStores = { tabletEntries: List[str], cloudCopy: PasswordCloudCopy }
-pure def removePasswordBackup(stores: PasswordStores, removal: PasswordBackupRequest, approval: PasswordBackupApproval): PasswordStores =
-  match removal {
+type PasswordStores = { tabletEntries: List[str], lastConfirmedCloudCopy: PasswordCloudCopy }
+type PasswordRemoval = NoPasswordRemoval | AwaitingPasswordRemoval({ binding: PasswordBackupBinding })
+type PasswordRemovalReply = { binding: PasswordBackupBinding, acknowledged: bool }
+type PasswordRemovalStart = { request: PasswordBackupRequest, removal: PasswordRemoval }
+type PasswordRemovalResult = { stores: PasswordStores, removal: PasswordRemoval }
+pure def beginPasswordBackupRemoval(removalRequest: PasswordBackupRequest, removalApproval: PasswordBackupApproval): PasswordRemovalStart =
+  val closed = { request: removalRequest, removal: NoPasswordRemoval }
+  match removalRequest {
     | PendingPasswordBackupRequest(request) =>
-      if (request.binding.purpose == DeletePasswordBackup and mayUsePasswordBackupGrant(removal, approval)) { ...stores, cloudCopy: NoPasswordBackup } else stores
-    | ClosedPasswordBackupRequest => stores
+      if (request.binding.purpose == DeletePasswordBackup and mayUsePasswordBackupGrant(removalRequest, removalApproval))
+        { request: consumePasswordBackupGrant(removalRequest, removalApproval), removal: AwaitingPasswordRemoval({ binding: request.binding }) }
+      else closed
+    | ClosedPasswordBackupRequest => closed
+  }
+pure def finishPasswordBackupRemoval(stores: PasswordStores, removal: PasswordRemoval, removalReply: PasswordRemovalReply): PasswordRemovalResult =
+  val unchanged = { stores: stores, removal: removal }
+  match removal {
+    | AwaitingPasswordRemoval(active) =>
+      if (samePasswordBackupBinding(active.binding, removalReply.binding))
+        { stores: if (removalReply.acknowledged) { ...stores, lastConfirmedCloudCopy: NoPasswordBackup } else stores, removal: NoPasswordRemoval }
+      else unchanged
+    | NoPasswordRemoval => unchanged
   }
 pure val removalBindingSample: PasswordBackupBinding = { ...sharedPasswordBackupSample, purpose: DeletePasswordBackup }
-pure val storesValues: Set[PasswordStores] = Set({ tabletEntries: List(), cloudCopy: StoredPasswordBackup })
-  .union(Set({ tabletEntries: List("bank", "pharmacy"), cloudCopy: StoredPasswordBackup }))
-  .union(Set({ tabletEntries: List("bank"), cloudCopy: NoPasswordBackup }))
-pure val removalValues: Set[PasswordBackupRequest] = pendingValues
-  .union(Set(PendingPasswordBackupRequest({ binding: removalBindingSample })))
+pure val standaloneRemovalSample: PasswordBackupBinding = { ...standalonePasswordBackupSample, purpose: DeletePasswordBackup }
+pure val storesValues: Set[PasswordStores] = Set({ tabletEntries: List(), lastConfirmedCloudCopy: StoredPasswordBackup })
+  .union(Set({ tabletEntries: List("bank", "pharmacy"), lastConfirmedCloudCopy: StoredPasswordBackup }))
+  .union(Set({ tabletEntries: List("bank"), lastConfirmedCloudCopy: NoPasswordBackup }))
+pure val removalRequestValues: Set[PasswordBackupRequest] = pendingValues
+  .union(Set(PendingPasswordBackupRequest({ binding: removalBindingSample }), PendingPasswordBackupRequest({ binding: standaloneRemovalSample })))
 pure val removalApprovalValues: Set[PasswordBackupApproval] = approvalValues
-  .union(Set(SharedNativePasswordApproval({ binding: removalBindingSample })))
-pure def lawRemovingBackupKeepsTabletPasswords(stores: PasswordStores, removal: PasswordBackupRequest, removalApproval: PasswordBackupApproval): bool =
-  removePasswordBackup(stores, removal, removalApproval).tabletEntries == stores.tabletEntries
-pure def lawApprovedRemovalDeletesCloudCopy(stores: PasswordStores, binding: PasswordBackupBinding): bool =
-  validPasswordBackupBinding(binding) and binding.purpose == DeletePasswordBackup implies
-    removePasswordBackup(stores, PendingPasswordBackupRequest({ binding: binding }),
-      if (binding.profile == StandaloneGraceProduction) StandaloneBrowserPasswordApproval({ binding: binding })
-      else SharedNativePasswordApproval({ binding: binding })).cloudCopy == NoPasswordBackup
-pure def lawOtherActionCannotRemoveBackup(stores: PasswordStores, binding: PasswordBackupBinding, removalApproval: PasswordBackupApproval): bool =
-  binding.purpose != DeletePasswordBackup implies
-    removePasswordBackup(stores, PendingPasswordBackupRequest({ binding: binding }), removalApproval) == stores
+  .union(Set(SharedNativePasswordApproval({ binding: removalBindingSample }), StandaloneBrowserPasswordApproval({ binding: standaloneRemovalSample })))
+pure val removalValues: Set[PasswordRemoval] = Set(NoPasswordRemoval,
+  AwaitingPasswordRemoval({ binding: removalBindingSample }), AwaitingPasswordRemoval({ binding: standaloneRemovalSample }))
+pure val removalReplyValues: Set[PasswordRemovalReply] = Set(
+  { binding: removalBindingSample, acknowledged: true }, { binding: removalBindingSample, acknowledged: false },
+  { binding: standaloneRemovalSample, acknowledged: true }, { binding: standaloneRemovalSample, acknowledged: false },
+  { binding: { ...removalBindingSample, requestId: "old" }, acknowledged: true })
+pure def lawOnlyCurrentDeleteApprovalStartsRemoval(removalRequest: PasswordBackupRequest, removalApproval: PasswordBackupApproval): bool =
+  val started = beginPasswordBackupRemoval(removalRequest, removalApproval)
+  match removalRequest {
+    | PendingPasswordBackupRequest(pending) =>
+      if (pending.binding.purpose == DeletePasswordBackup and mayUsePasswordBackupGrant(removalRequest, removalApproval))
+        started.removal == AwaitingPasswordRemoval({ binding: pending.binding }) and started.request == ClosedPasswordBackupRequest
+      else started == { request: removalRequest, removal: NoPasswordRemoval }
+    | ClosedPasswordBackupRequest => started == { request: removalRequest, removal: NoPasswordRemoval }
+  }
+pure def lawRemovingBackupKeepsTabletPasswords(stores: PasswordStores, removal: PasswordRemoval, removalReply: PasswordRemovalReply): bool =
+  finishPasswordBackupRemoval(stores, removal, removalReply).stores.tabletEntries == stores.tabletEntries
+pure def lawOnlyMatchingRemovalAcknowledgementClearsCopy(stores: PasswordStores, removal: PasswordRemoval, removalReply: PasswordRemovalReply): bool =
+  val result = finishPasswordBackupRemoval(stores, removal, removalReply)
+  match removal {
+    | AwaitingPasswordRemoval(active) =>
+      if (samePasswordBackupBinding(active.binding, removalReply.binding))
+        result.removal == NoPasswordRemoval and result.stores.lastConfirmedCloudCopy ==
+          (if (removalReply.acknowledged) NoPasswordBackup else stores.lastConfirmedCloudCopy)
+      else result == { stores: stores, removal: removal }
+    | NoPasswordRemoval => result == { stores: stores, removal: removal }
+  }
 ```
