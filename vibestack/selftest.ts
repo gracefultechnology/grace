@@ -803,7 +803,9 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
       "app/src/main.css": '@source "../../kit/scanned";\n',
       "app/src/a.contract.ts": 'import "unused";\n', "app/src/a.proof.dfy": "lemma A() {}\n", "app/spec/a.md": "# A\n", "app/test/a.test.ts": 'import "unused";\n',
       "app/vitest.config.ts": 'import "unused";\n', "app/test/bombadil.ts": "export {};\n", "app/gen/a.ts": "export const a = 1;\n", "app/gen/a.qnt": "module a {}\n",
-      "kit/package.json": JSON.stringify({ exports: { ".": "./src/index.ts" } }), "kit/src/index.ts": 'export * from "./b.ts";\n', "kit/src/b.ts": "export const b = 1;\n",
+      "kit/package.json": JSON.stringify({ exports: { ".": "./src/index.ts", "./items/*": { browser: "./parts/item-*.js", default: "./build/items/*.js" } } }),
+      "kit/src/index.ts": 'export * from "./b.ts";\n', "kit/src/b.ts": "export const b = 1;\n",
+      "kit/parts/item-one.js": "export default 1;\n", "kit/parts/item-/nested.txt": "\n",
       "kit/src/c.ts": "export const c = 1;\n", "kit/README.md": "# Kit\n", "kit/scanned/x.ts": 'import "unused";\n',
       "served/package.json": JSON.stringify({ bin: { "served-cli": "./cli.js" } }), "served/cli.js": "\n",
       "unused/package.json": JSON.stringify({ exports: "./index.ts" }), "unused/index.ts": "\n",
@@ -821,14 +823,32 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
       ...Object.fromEntries(["app/src/main.ts", "app/src/main.css", "app/src/a.contract.ts", "app/src/a.proof.dfy", "app/spec/a.md", "app/test/a.test.ts", "app/vitest.config.ts",
         "app/test/bombadil.ts", "app/gen/a.qnt", "kit/src/b.ts", "kit/src/c.ts", "kit/README.md", "kit/scanned/x.ts", "served/cli.js", "unused/index.ts",
         "shared/b.ts", "shared/c.ts", "shared/copied.txt"].map((f) => [f, changed(f)])),
+      "kit/parts/item-one.js": changed("kit/parts/item-one.js"),
+      "kit/package.json": changed("kit/package.json", (text) => text.replace('"./items/*"', '"./renamed/*"')),
       "app/gen/a.ts": changed("app/gen/a.ts"), "app/gen/b.ts": changed("app/gen/b.ts"),
       "aliased/gen/a.ts": (() => { const before = pageInputs(path.join(workspace, "aliased")); fs.appendFileSync(path.join(workspace, "aliased/gen/a.ts"), " "); return pageInputs(path.join(workspace, "aliased")) !== before; })(),
     }, {
       "app/src/main.ts": true, "app/src/main.css": true, "app/src/a.contract.ts": false, "app/src/a.proof.dfy": false, "app/spec/a.md": false, "app/test/a.test.ts": false,
       "app/vitest.config.ts": false, "app/test/bombadil.ts": true, "app/gen/a.qnt": false, "kit/src/b.ts": true, "kit/src/c.ts": false, "kit/README.md": false,
       "kit/scanned/x.ts": true, "served/cli.js": true, "unused/index.ts": false, "shared/b.ts": true, "shared/c.ts": false, "shared/copied.txt": true,
+      "kit/parts/item-one.js": true, "kit/package.json": true,
       "app/gen/a.ts": true, "app/gen/b.ts": false, "aliased/gen/a.ts": true,
     }, "the page reads its code, the files and directories it names, what the packages it imports or runs export, and the generated modules it imports, or all of them where it names none; not what only its checks read, nor what a file it only scans imports");
+    const beforeBuild = pageInputs(page);
+    const build = path.join(workspace, "kit/build");
+    fs.mkdirSync(build);
+    fs.writeFileSync(path.join(build, "sibling.js"), "export default 0;\n");
+    assert.equal(pageInputs(page), beforeBuild, "a sibling of an absent wildcard directory is outside the offered tree");
+    const items = path.join(build, "items");
+    fs.mkdirSync(items);
+    const built = path.join(items, "one.js");
+    fs.writeFileSync(built, "export default 2;\n");
+    assert.notEqual(pageInputs(page), beforeBuild, "an export appearing under a previously absent directory invalidates the exploration");
+    fs.unlinkSync(built);
+    assert.equal(pageInputs(page), beforeBuild);
+    fs.rmdirSync(items);
+    fs.symlinkSync("items", items, "dir");
+    assert.throws(() => pageInputs(page), { code: "ELOOP" });
   });
 
   test("a rule whose prose or model changed names the code that cites it, for a person to read again", () => {
@@ -3254,7 +3274,30 @@ export function useShown(counter: ManagedRuntime.ManagedRuntime<Machine, never>,
     // Nothing stored starts from `initial`, and a stored state goes on from where it was; what the rules refuse, or what is no state, leaves the store as it is; a machine steps from what another over the same store stored since, and its guard is judged by it.
     const kept = await exec(process.execPath, ["--import", "vibelang/register", "--input-type=module", "-e", `import assert from "node:assert/strict"; import { Effect } from "effect"; import { counted, twoPages } from "./src/kept.vibe";
 assert.deepEqual(await Promise.all([undefined, "1", "2", "7", "{"].map((before) => Effect.runPromise(counted(before)))), [[1, "1"], [2, "2"], ["Rejected", "2"], ["NotAState", "7"], ["NotAState", "{"]]);
-assert.deepEqual(await Effect.runPromise(twoPages()), [1, 2, "Rejected", "2"]);`], root);
+assert.deepEqual(await Effect.runPromise(twoPages()), [1, 2, "Rejected", "2"]);
+const { machineOver } = await import("./gen/index.effect.vibe");
+const { Deferred, Fiber, Ref } = await import("effect");
+const outcome = await Effect.runPromise(Effect.gen(function*() {
+  const kept = yield* Ref.make(0);
+  const firstSaving = yield* Deferred.make();
+  const resume = yield* Deferred.make();
+  const machine = yield* machineOver(() => Ref.get(kept), (n) => Effect.gen(function*() {
+    if (n === 1) {
+      yield* Deferred.succeed(firstSaving, undefined);
+      yield* Deferred.await(resume);
+    }
+    yield* Ref.set(kept, n);
+  }));
+  const first = yield* Effect.forkChild(machine.send({ type: "inc" }));
+  yield* Deferred.await(firstSaving);
+  let source = "first";
+  const pending = yield* Effect.forkChild(Effect.flip(machine.send({ type: "inc" }, () => source === "first")), { startImmediately: true });
+  source = "replacement";
+  yield* Deferred.succeed(resume, undefined);
+  yield* Fiber.join(first);
+  return [(yield* Fiber.join(pending))._tag, yield* machine.get(), yield* machine.send({ type: "inc" }, (current) => current === 1)];
+}));
+assert.deepEqual(outcome, ["Rejected", 1, 2]);`], root);
     assert.equal(kept.status, 0, kept.stdout + kept.stderr);
     // An owner's package.json decides for its own gen/, whatever the root's says.
     const tree = scratch({ "spec/index.md": "# Product\n", "spec/app/index.md": ruleSpec(COUNTER), "spec/plain/index.md": ruleSpec(COUNTER), "apps/app/package.json": manifest("@scratch/app"), "apps/plain/package.json": "{}" });
@@ -3362,8 +3405,8 @@ test("the lint refuses, in a project's own code, a comment that is neither a cit
   const found = async (file: string, lines: string[]) => (await eslint.lintText(lines.join("\n"), { filePath: path.join(project, file) }))[0]!.messages
     .filter((m) => m.fatal || m.ruleId === "no-console" || m.ruleId?.startsWith("code/")).map((m) => `${m.line} ${m.ruleId ?? "inline config"}`);
   assert.deepEqual(await found("apps/app/src/probe.vibe", [
-    `// spec/app/index.md, "Story: Say hello"; spec/app/index.md, "A rule"`,
-    `/* spec/app/index.md, "Story: Say hello" */`,
+    `// spec/app/index.md, "Story: Manage my saved passwords privately"; spec/app/index.md, "Passwords displays sign-in details only while the vault is available"`,
+    `/* spec/app/index.md, "Story: Manage my saved passwords privately" */`,
     "//@ ghost",
     "/** @model spec/app/index.md */",
     "// a note",

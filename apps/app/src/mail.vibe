@@ -201,8 +201,7 @@ export const mailing = Layer.effect(Mail, effect {
   }
 
   effect function say(id: number, text: string) {
-    if (quiet.has(id)) quiet.delete(id)
-    else try show(text)
+    if (!quiet.delete(id)) try show(text)
   }
 
   effect function people() {
@@ -256,11 +255,13 @@ export const mailing = Layer.effect(Mail, effect {
         try closeUndo(box, record)
       }
     }
-    if (before.draftStorage === "DraftSaving" && after.draftStorage === "DraftSaved") try say(account.id, "Saved to Drafts")
+    const savedDraft = before.draftStorage === "DraftSaving" && after.draftStorage === "DraftSaved"
+    const deletedDraft = before.draftStorage === "DraftDeleting" && after.draftStorage === "DraftUnstored"
+    if (savedDraft) try say(account.id, "Saved to Drafts")
     if (after.draftStorage === "DraftUnstored" && (before.draftStorage === "DraftDeleting" || after.draftRequest > before.draftRequest)) try say(account.id, "Email discarded")
     if (draftStoreBusy(before) && after.draftStorage === "DraftStoreFailed") quiet.delete(account.id)
     if (after.draftStorage !== "DraftStoreFailed") undeleted(account.id, false)
-    if (before.draftStorage === "DraftDeleting" && after.draftStorage === "DraftUnstored" && after.folder === "DraftsFolder") try relist(box)
+    if ((savedDraft || deletedDraft) && after.folder === "DraftsFolder") try relist(box)
     const restored = changes.filter((c) => c.change === "RestoreMessage").map((c) => c.record)
     if (restored.length > 0) {
       try show(`Moved back to ${folderNames[restored[0].folder] ?? "Inbox"}`)

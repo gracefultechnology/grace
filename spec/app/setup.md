@@ -674,6 +674,11 @@ from the connected account's provider. The calendar opens on the current
 week. Changing the week, month or selected day shows appointments from the
 chosen dates. Both views start with read access. A message opens into a
 plain-text preview for the chosen reference, never executable HTML.
+When the person opens a web address in that preview, Grace checks the selected
+message’s current Gmail revision, displayed body, account and grant. A Gmail
+Spam label holds the destination for a separate confirmation. A checked read
+without that label releases the address on tap. An incomplete read grants no
+link action. The Browser opens the released address in one new tab.
 A preview carries no authority to inspect attachments, reply or forward.
 The application checks the account bound to each provider result. A
 tablet's hosted handoff retains the selected view through sign-in, and
@@ -727,7 +732,8 @@ pure def lawADeviceSessionAloneDoesNotSendGoogle(link: GoogleLink, accountId: st
 
 ### Trash and Calendar changes use the exact selected version
 
-The owner may separately enable Trash and Undo, and appointment changes. Undo
+The owner may separately enable Trash and Undo, and appointment changes. Gmail
+offers Move to Trash when the opened message still carries the Inbox label. Undo
 is available only once the provider confirms moving the selected message to
 Trash. Appointments are read back to the person before confirmation. For a
 new weekly or monthly appointment, the review includes its frequency and

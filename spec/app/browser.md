@@ -586,6 +586,8 @@ The new-tab view renders at most two rows of these records according to its
 available width. Each nonempty destination appears once. Removing a shortcut
 does not close its tab or delete the provider's records. Cancelling Clear
 keeps the list unchanged; a changed history invalidates the pending question.
+The simulation includes the destination recorded after a completed visit so
+it can exercise removing that recent website.
 
 ```quint
 pure def canRemoveRecent(b: Browser, url: str): bool = b.recent.includes(url)
@@ -601,4 +603,5 @@ pure def alwaysRecentDestinationsAreDistinct(b: Browser): bool =
   b.recent.every(url => url != "" and b.recent.select(visit => visit == url).length() == 1)
 pure def stepRevisionNeverMovesBack(before: Browser, after: Browser): bool = after.revision >= before.revision
 pure def sometimesRecentWebsiteExists(b: Browser): bool = b.recent.length() > 0
+pure val urlValues = Set("", "a", "b", redirectedTo)
 ```

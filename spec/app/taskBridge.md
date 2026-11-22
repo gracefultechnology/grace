@@ -1,7 +1,12 @@
 # Join a task's preparation to its review, its fills and its view
 
-This stateless library connects [bill preparation](./prep.md) to the existing
-[workspace review](./workspace.md), without state or a payment/review transition.
+This library connects [task preparation](./prep.md) to the existing
+[workspace review](./workspace.md), without a payment or review transition of
+its own. The host keeps each queued website command with its original fill
+source and preparation version. It retains the accepted handoff and task ID
+until the journal acknowledges the matching attempt, then follows that attempt
+through its progress link. On retirement the host keeps the link only if
+Workspace has finished that attempt with matching durable evidence.
 For every Prep handoff, the host must use this conversion, then consume
 its result through existing `reviewCommitment` with the authenticated Host actor.
 It also holds the gate the actuator checks before Grace fills a task's form, and
@@ -119,10 +124,11 @@ pure def lawCurrentPreparationConverts(
 
 ### Finite examples cover a current handoff and retired source or destination versions
 
-Each workspace example has one accepted transfer: preparation version 4, reached
-through the existing owners' operations, with the payment revision and attempt
-that workspace holds. Other examples retain those transfers while their
-preparation pauses, or with a payload field or captured token that is stale. The examples are simulation inputs and do not restrict runtime values.
+A preparation handed off at version 4 converts when the current workspace can
+accept its payment revision and attempt. An unbound task, a changed page or a
+different account can prevent conversion. The examples also cover a paused,
+resumed or retired preparation, a yes or no to filling, and stale payloads or
+captured tokens. Runtime values range beyond these finite simulation examples.
 
 ```quint
 pure val preparationValues = {
@@ -196,7 +202,10 @@ pure val byValues = Set(WS::Host, WS::Person, WS::Store, WS::Actuator)
 
 When the host queues a website command it keeps the complete emitted Workspace
 effect, the current preparation version and where the write came from. A fill
-issued outside a task keeps that origin. A task fill carries the identity of
+here is Grace typing an ordinary form value (`FillOrdinary`), not a sign-in
+identifier or a private entry; choosing, navigating and every other operation
+keep their existing Workspace checks. A fill issued outside a task keeps that
+origin. A task fill carries the identity of
 the assistant task that owns this preparation, the full verified provider
 subject (including account and bill or appointment reference), and the typed
 values for that form. The host captures this once from the owning task and
@@ -251,7 +260,7 @@ pure def fillPermitted(
         | TaskForm(taskForm) => match read {
           | NoTaskForm => false
           | VerifiedForm(verified) => verified.command == queued.command and verified.key == taskForm.key and
-              taskForm.key == preparation.key and taskForm.task == fillWorkspace.execution.task and
+              taskForm.key == preparation.key and taskForm.task == fillWorkspace.assistant.taskId and
               taskForm.key.owner == fillWorkspace.execution.owner and taskForm.key.origin == fillWorkspace.execution.origin and
               taskForm.key.account == fillWorkspace.execution.matchedAccount and verified.fill == taskForm.fill and
               P::graceMayFill(preparation, verified.fill)

@@ -36,7 +36,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [A bill as a task kind: its facts and fitting payment](./billKind.md)
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./prep.md)
-- [Verified preparation to the current payment review](./taskBridge.md)
+- [Join a task's preparation to its review, its fills and its view](./taskBridge.md)
 - [Commitment authorization, durable attempts and provider outcomes](./commitment.md)
 - [One canonical bill across Email, Calendar and browser entry points](./handoffs.md)
 - [Composed navigation, interruption and execution](./workspace.md)

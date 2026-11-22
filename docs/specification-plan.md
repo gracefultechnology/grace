@@ -143,7 +143,14 @@ The same release passed all 100 Fleet billers across 26 template families. The a
 
 The four offline Google and cross-app Chromium journeys passed in GitHub
 Actions on a temporary self-hosted Linux runner at workflow commit `00db25d`.
-To repeat them, dispatch `ci` with `cross_app_only` enabled.
+To repeat them, dispatch `ci` with `cross_app_only` enabled. The same job checks
+local Gmail delivery in the Node test before running Chromium. To run just
+the delivery check after installing the workspace dependencies, use
+`pnpm --filter @repo/app test --project node test/app.test.vibe -t "Google denies missing consent"`.
+It sends an ordinary synthetic appointment message to a newly connected
+mailbox, finds it by subject and reads it by its returned ID. It also checks
+that another account cannot deliver or read it and that an expired grant
+cannot receive another fixture message.
 [Offline GitHub Actions run](https://github.com/gracefultechnology/grace-new/actions/runs/44253536091)
 
 To reproduce the BillWorld jobs on their own, dispatch `ci` with `billworld`
