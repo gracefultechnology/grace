@@ -93,8 +93,9 @@ pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser
 
 Run `git submodule update --init vendor/eliza` from the repository root. Grace uses the Android
 consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
-The Android build generates the Eliza Core and Agent owners from the pinned checkout and builds
-the device entry and its verified bundle in `vendor/eliza/packages/agent/dist/bundle`. The build
+The Android build generates Eliza Core, Cloud and Agent models from the pinned checkout. It
+compiles the Cloud client used by the Agent, then builds the device entry and its verified
+bundle in `vendor/eliza/packages/agent/dist/bundle`. The build
 downloads each target's pinned Node runtime from Eliza's public Android Node prerelease when the
 executable and build manifest are absent in `vendor/eliza/packages/os/dist/android/<abi>`. The
 runtime lock is Eliza's `packages/os/aosp/runtime/node.lock.json`. The OS stager checks the runtime digest,

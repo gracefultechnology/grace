@@ -230,8 +230,10 @@ function resolveNodeRuntime(directory: string, lock: typeof NodeLock.Type, abi: 
 function bundleAgent(commit: string, bundle: string) {
   const generate = (owner: string) => execFileSync("pnpm", ["--dir", upstream, "gen", "--owner", owner], { stdio: "inherit" });
   generate("core");
+  generate("cloud");
   generate("agent");
   execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/core", "build"], { stdio: "inherit" });
+  execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/cloud", "exec", "vibelang", "-p", "tsconfig.build.json"], { stdio: "inherit" });
   execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/agent", "exec", "vibelang", "-p", "tsconfig.device.json"], { stdio: "inherit" });
   const build = path.join(upstream, "packages/agent/dist/src/bundle/build.js");
   execFileSync(process.execPath, ["--input-type=module", "--eval", [
