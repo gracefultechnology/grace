@@ -93,8 +93,9 @@ pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser
 
 Run `git submodule update --init vendor/eliza` from the repository root. Grace uses the Android
 consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
-The Android build generates the Eliza Core and Agent owners from the pinned checkout and builds
-the device entry and its verified bundle in `vendor/eliza/packages/agent/dist/bundle`. The build
+The Android build generates Eliza's Core, Cloud and Agent models from the pinned checkout.
+It builds Core and the browser-safe Cloud client before compiling the Android Agent entry.
+The verified device bundle is written to `vendor/eliza/packages/agent/dist/bundle`. The build
 downloads each target's pinned Node runtime from Eliza's public Android Node prerelease when the
 executable and build manifest are absent in `vendor/eliza/packages/os/dist/android/<abi>`. The
 runtime lock is Eliza's `packages/os/aosp/runtime/node.lock.json`. The OS stager checks the runtime digest,
@@ -325,22 +326,16 @@ must publish Android Digital Asset Links for the release signer to validate the 
 sessions expire after seven days, when the person signs in again. Standalone
 password recovery uses a fresh approval on Grace Cloud's registered browser page.
 
-Shared Eliza Cloud uses the selected deployment's registered App Link at
-`/auth/grace/callback`. Password backup and recovery ask for fresh native Google
-verification through Steward and a separate native choice for the action.
-Each deployment accepts grants for its own acknowledged account and request.
-Shared profiles compile Eliza OS’s Android authentication client from
-`packages/os/android/cloud-auth`. It exchanges a fresh Steward session at
-`POST /api/v1/app-auth/mobile/password-backup` and checks the returned account
-and organization before recovery. The standalone profile uses Grace Cloud’s
-browser approval and the native secure-store client. Each APK registers one
-`GraceAccount` implementation.
+Shared profiles use Eliza OS’s Android `sign-in` module. Google sign-in can use
+the Android picker or the selected deployment’s verified `/auth/grace/callback`
+App Link. Existing shared accounts must sign in again with the same account
+and organization before Grace uses the new native credential store. The
+upgrade preserves the previous encrypted owner record and the local vault.
 
-This release pins Eliza `0633f633`, which includes the shared Android client
-and the protected Passwords approval return. Upstream retired `cloud-auth` in
-favor of `packages/os/android/sign-in`. Moving to that module requires
-migrating Grace’s shared account bridge and verifying backup approval and the
-registered callbacks in both shared deployments. [Upstream release decision](https://github.com/elizaOS/eliza/pull/39975#issuecomment-7073379611)
+Shared and standalone builds request fresh Passwords approval on the selected
+Cloud’s first-party browser page. The native secure-store client checks the
+account, organization and current approval before recovery. Each APK registers
+one `GraceAccount` implementation.
 
 `android/agent.json` names the admitted agent routes, `agent/character.json`
 supplies the character, and `agent/policy.json` owns the action allowlist. The upstream agent

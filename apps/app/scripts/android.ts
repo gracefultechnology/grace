@@ -15,7 +15,7 @@ import { buildAndroidConsumer } from "@elizaos/os/android/build-consumer.mjs";
 import { generateAndroidConsumerHost } from "@elizaos/os/android/consumer-host.mjs";
 import { readApkSignerDigest } from "@elizaos/os/android/apk-distribution.mjs";
 import { resolveAndroidSdkRoot, resolveJavaHome } from "@elizaos/os/android/toolchain.ts";
-import config, { androidPaths } from "../capacitor.config.ts";
+import config, { androidPaths, CloudProfile, cloudProfiles, standaloneProfile } from "../capacitor.config.ts";
 
 const app = path.resolve(import.meta.dirname, "..");
 const upstream = path.resolve(app, "../../vendor/eliza");
@@ -25,26 +25,10 @@ export const identity = Schema.decodeUnknownSync(
   Schema.Struct({ appId: Schema.String, appName: Schema.String, android: Schema.Struct({ path: Schema.String }) }),
 )(config);
 const activity = `${identity.appId}/.MainActivity`;
-const standaloneProfile = "standalone-production";
-const CloudProfile = Schema.Literals([standaloneProfile, "shared-production", "shared-staging"]);
-type CloudProfile = typeof CloudProfile.Type;
-const cloudProfiles = {
-  "standalone-production": {
-    apiOrigin: "https://api.graceforseniors.com", webOrigin: "https://app.graceforseniors.com",
-    agentOrigin: "https://api.graceforseniors.com",
-    callbackPath: "/android/auth/callback", environment: "production", sources: "standalone-cloud",
-  },
-  "shared-production": {
-    apiOrigin: "https://cloud.eliza.app", webOrigin: "https://cloud.eliza.app",
-    agentOrigin: "https://api.eliza.app",
-    callbackPath: "/auth/grace/callback", environment: "production", sources: "shared-cloud",
-  },
-  "shared-staging": {
-    apiOrigin: "https://cloud-staging.eliza.app", webOrigin: "https://cloud-staging.eliza.app",
-    agentOrigin: "https://api-staging.eliza.app",
-    callbackPath: "/auth/grace/callback", environment: "staging", sources: "shared-cloud",
-  },
-} as const satisfies Record<CloudProfile, object>;
+const sharedSignInModules = ["sign-in", "secure-store", "agent-service", "runtime-files"].map((module) => ({
+  name: `eliza-${module}`, source: { root: "upstream", path: `packages/os/android/${module}` },
+  appDependency: module === "sign-in" || module === "secure-store",
+}));
 const apkOutput = (cloudProfile: CloudProfile) => cloudProfile === standaloneProfile ? "artifacts" : `artifacts/cloud-profiles/${cloudProfile}`;
 const forbiddenEntry = new RegExp([
   String.raw`\.(gguf|onnx|ort|tflite|safetensors|pte|task)$`,
@@ -230,8 +214,10 @@ function resolveNodeRuntime(directory: string, lock: typeof NodeLock.Type, abi: 
 function bundleAgent(commit: string, bundle: string) {
   const generate = (owner: string) => execFileSync("pnpm", ["--dir", upstream, "gen", "--owner", owner], { stdio: "inherit" });
   generate("core");
+  generate("cloud");
   generate("agent");
   execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/core", "build"], { stdio: "inherit" });
+  execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/cloud", "exec", "vibelang", "-p", "tsconfig.client.json"], { stdio: "inherit" });
   execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/agent", "exec", "vibelang", "-p", "tsconfig.device.json"], { stdio: "inherit" });
   const build = path.join(upstream, "packages/agent/dist/src/bundle/build.js");
   execFileSync(process.execPath, ["--input-type=module", "--eval", [
@@ -260,7 +246,7 @@ function agentRuntime(abi: Abi) {
     if (!existsSync(bundleFile) || !existsSync(bundleManifest)
         || Schema.decodeUnknownSync(BundlePin)(readJson(bundleManifest)).sourceCommit !== commit) {
       const sourceEdits = git(upstream, "status", "--porcelain", "--", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml",
-        "packages/core", "packages/agent", "packages/os", "spec", "vibestack");
+        "packages/core", "packages/cloud", "packages/agent", "packages/os", "spec", "vibestack");
       if (sourceEdits) throw new Error("The Eliza device source has uncommitted changes");
       bundleAgent(commit, bundle);
     }
@@ -304,7 +290,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
     profile: {
       ...profile,
       modules: selected.sources === "shared-cloud"
-        ? [...profile.modules, { name: "eliza-cloud-auth", source: { root: "upstream", path: "packages/os/android/cloud-auth" } }]
+        ? [...profile.modules, ...sharedSignInModules]
         : profile.modules,
       embeddedAgent: {
         ...profile.embeddedAgent,
