@@ -1,5 +1,5 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Story: Save, share and remove the chosen file"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"
-import { Effect, Latch, Layer, ManagedRuntime, Schema } from "effect";
+import { Effect, Fiber, Latch, Layer, ManagedRuntime, Schema } from "effect";
 import { FetchHttpClient } from "effect/http";
 import { act } from "react";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
@@ -638,41 +638,44 @@ it(`Keep the latest draft count (spec/app/email.md, "Drafts shows the provider's
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const captured = Latch.makeUnsafe();
   const release = Latch.makeUnsafe();
-  const returned = Latch.makeUnsafe();
+  const settled = Latch.makeUnsafe();
   const fetch = window.fetch.bind(window);
   let hold = false;
   const delayed: typeof fetch = async (input, init) => {
     const path = new URL(input instanceof Request ? input.url : input, location.href).pathname;
     const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+    if (!hold || method !== "GET" || !path.endsWith("/inbox-v1/drafts")) return fetch(input, init);
+    hold = false;
+    const reader = Fiber.getCurrent();
+    if (!reader) throw new Error("The draft count has no active reader");
+    reader.addObserver(() => settled.openUnsafe());
     const response = await fetch(input, init);
-    if (hold && method === "GET" && path.endsWith("/inbox-v1/drafts")) {
-      hold = false;
-      captured.openUnsafe();
-      await Effect.runPromise(release.await);
-      returned.openUnsafe();
-    }
+    captured.openUnsafe();
+    await Effect.runPromise(release.await);
     return response;
   };
   localStorage.clear();
   localStorage.setItem("accounts", JSON.stringify(connected(initial, "Gmail", gmail, "Gmail")));
   const app = application(undefined, undefined, { url: cloud, key: secret });
   const view = tabletView(ManagedRuntime.make(Layer.provide(app, Layer.succeed(FetchHttpClient.Fetch, delayed))));
-  const save = async (title: string) => {
+  const save = async (title: string, delayCount: boolean) => {
     await click(page.getByRole("button", { name: "Write" }));
-    await click(page.getByRole("button", { name: "Susan" }));
+    const susan = page.getByRole("button", { name: "Susan", exact: true });
+    await expect.element(susan).toBeVisible();
+    await click(susan);
     await act(() => userEvent.fill(subject(), title));
+    hold = delayCount;
     await click(page.getByRole("button", { name: "Back to Inbox" }));
   };
   try {
     await view.render();
     await click(page.getByRole("button", { name: /^Email/ }));
     await expect.element(email(/Main St Clinic/)).toBeVisible();
-    hold = true;
-    await save("Lunch tomorrow");
+    await save("Lunch tomorrow", true);
     await Effect.runPromise(captured.await);
-    await save("Tea next week");
+    await save("Tea next week", false);
     await expect.element(row("Drafts 2")).toBeVisible();
-    await act(async () => { release.openUnsafe(); await Effect.runPromise(returned.await); });
+    await act(async () => { release.openUnsafe(); await Effect.runPromise(settled.await); });
     await expect.element(row("Drafts 2")).toBeVisible();
   } finally {
     release.openUnsafe();
