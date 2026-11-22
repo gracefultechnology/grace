@@ -142,9 +142,10 @@ pure def closeBrowser(b: Browser): Browser = {
 ## Story: Sign in privately on a website
 
 > On a secure website, I can ask Grace to open a separate private sign-in tab
-> and fill a saved password through Android. I choose the login and press the
-> site's sign-in button myself. If the site asks for a code by email, I open my
-> mail app and return to this private tab to enter the code myself.
+> and choose a saved login through Android, or type my own. I submit on the
+> site. If it asks for verification, I can open Grace Email to find mail that
+> has already arrived. I can also watch for new mail or use another email app,
+> messages, an authenticator or another device. I return to the same website to finish.
 
 ### A private sign-in tab keeps its purpose until it closes
 

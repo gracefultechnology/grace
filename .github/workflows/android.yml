@@ -16,7 +16,11 @@ on:
       - packages/design-system/**
       - vendor/eliza
       - .gitmodules
+      - .nvmrc
       - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - patches/**
+      - tsconfig.base.json
       - .github/workflows/android.yml
       - .github/actions/setup/**
   push:
@@ -33,6 +37,8 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-24.04
+    env:
+      TURBO_CACHE: local:rw
     strategy:
       fail-fast: false
       matrix:
@@ -44,6 +50,7 @@ jobs:
           submodules: true
       - uses: ./.github/actions/setup
         with:
+          job: product
           verification: "false"
       # Caches ~/.gradle (Gradle 8.13 and the dependencies), keyed by the generated host's inputs.
       - uses: actions/setup-java@v5

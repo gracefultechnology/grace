@@ -1,16 +1,19 @@
-// spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open their mail app from the current private tab"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
+// spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open a verification app from the current private tab"; spec/app/browserControls.md, "A new-mail hint belongs to one approved private visit"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 // spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"
 import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, Button, NewTabPage } from "@repo/ui";
-import { Mail } from "lucide-react";
-import { type ComponentProps, useRef, useState } from "react";
+import { CircleHelp } from "lucide-react";
+import { type ComponentProps, useCallback, useRef, useState } from "react";
 import { canStepPrivate, type HistoryDirection } from "../gen/app__deviceKeys.ts";
-import { historyFor } from "../gen/app__surface.ts";
-import { type BrowserInput, canCheckPrivateEmail } from "../gen/app__browserControls.ts";
+import { useMachine as useSetup } from "../gen/app__setup.react.ts";
+import { historyFor, pageShows } from "../gen/app__surface.ts";
+import { type BrowserInput, type PrivateInboxVisit, canOpenPrivateVerificationApp, canWatchPrivateInbox } from "../gen/app__browserControls.ts";
 import { type Browser as BrowserModel, type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, showsSecureIndicator, tabUrl, visibleTabs } from "../gen/app__browser.ts";
 import { parseBrowserAddressInput } from "@elizaos/os/browser/address";
 import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
-import { Part } from "./page.vibe";
-import { useDraft, usePasswordGuide, usePageLayer, useWorkspace } from "./useApp.ts";
+import { watchInboxArrival } from "./inboxArrival.vibe";
+import { Part, type VerificationAppHandoff } from "./page.vibe";
+import { useDraft, usePasswordGuide, usePageLayer, useRuntime, useWorkspace } from "./useApp.ts";
+import type { PrivateVerificationApp } from "./surfacePlugin.ts";
 import { WebsiteRequests, site } from "./WebsiteRequests.tsx";
 
 const tabStrip = Part.Strip();
@@ -50,6 +53,96 @@ function secureOrigin(address: string): string {
   return parsed?.protocol === "https:" && !parsed.username && !parsed.password ? parsed.origin : "";
 }
 
+type SignInHelpProps = {
+  visit: PrivateInboxVisit;
+  openVerificationApp: (app: PrivateVerificationApp) => Promise<VerificationAppHandoff>;
+  canWatch: boolean;
+  openInbox: ((visit: PrivateInboxVisit) => void) | undefined;
+  dismiss: () => void;
+};
+
+const arrivalMessages = {
+  starting: "Starting new mail watch…",
+  waiting: "Watching for new mail in your connected inbox.",
+  arrived: "New mail arrived",
+  unavailable: "New mail alerts are unavailable. You can still open email.",
+  expired: "New mail watch ended.",
+};
+
+function SignInHelp({ visit, openVerificationApp, canWatch, openInbox, dismiss }: SignInHelpProps) {
+  const runtime = useRuntime();
+  const [handoff, setHandoff] = useState<VerificationAppHandoff | "opening">();
+  const [arrival, setArrival] = useState<keyof typeof arrivalMessages>();
+  const openingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const watchingRef = useRef<AbortController | undefined>(undefined);
+  const stop = useCallback(() => {
+    watchingRef.current?.abort();
+    watchingRef.current = undefined;
+    setArrival(undefined);
+  }, []);
+  const watchPanel = useCallback((element: HTMLElement | null) => {
+    if (!element) return;
+    mountedRef.current = true;
+    const visibility = () => { if (document.hidden) stop(); };
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      mountedRef.current = false;
+      document.removeEventListener("visibilitychange", visibility);
+      watchingRef.current?.abort();
+      watchingRef.current = undefined;
+    };
+  }, [stop]);
+  const start = () => {
+    if (!canWatch || watchingRef.current || document.hidden) return;
+    const request = new AbortController();
+    watchingRef.current = request;
+    setArrival("starting");
+    setHandoff(undefined);
+    void runtime.runPromise(watchInboxArrival(visit, (status) => {
+      if (watchingRef.current === request && !document.hidden) setArrival(status === "cleared" ? undefined : status);
+    }), { signal: request.signal }).catch(() => {
+      if (watchingRef.current === request && !document.hidden) setArrival("unavailable");
+    }).finally(() => {
+      if (watchingRef.current === request) watchingRef.current = undefined;
+    });
+  };
+  const openApp = (app: PrivateVerificationApp) => {
+    if (openingRef.current || document.hidden) return;
+    stop();
+    openingRef.current = true;
+    setHandoff("opening");
+    void openVerificationApp(app).catch((): VerificationAppHandoff => "unavailable").then((result) => {
+      openingRef.current = false;
+      if (mountedRef.current) setHandoff(result);
+    });
+  };
+  return (
+    <section ref={watchPanel} aria-label="Sign-in help" className="pointer-events-auto flex flex-col gap-2 bg-card px-4 py-2 text-body text-label-ink">
+      <p>Choose a saved login from Android or type it on the website. Enter verification codes and submit only on the website that asked for them.</p>
+      <div className="flex flex-wrap gap-2">
+        {canWatch && openInbox && <Button variant="capsule" size="pill" disabled={handoff === "opening"} onClick={() => {
+          if (document.hidden) return;
+          stop();
+          dismiss();
+          openInbox(visit);
+        }}>Open Grace Email</Button>}
+        <Button variant="capsule" size="pill" disabled={handoff === "opening"} onClick={() => openApp("email")}>Open email app</Button>
+        <Button variant="capsule" size="pill" disabled={handoff === "opening"} onClick={() => openApp("messages")}>Open messages</Button>
+        {canWatch && (arrival === "starting" || arrival === "waiting" || arrival === "arrived" ?
+          <Button variant="capsule" size="pill" onClick={stop}>Stop watching</Button> :
+          <Button variant="capsule" size="pill" disabled={handoff === "opening"} onClick={start}>Watch for new mail</Button>)}
+        <Button variant="capsule" size="pill" onClick={() => { stop(); dismiss(); }}>Dismiss</Button>
+      </div>
+      <p>Use the account or authenticator the website named, or check on another device. Return to this tab to finish signing in.</p>
+      {arrival !== undefined && <p role="status">{arrivalMessages[arrival]}</p>}
+      {handoff === "requested" && <p role="status">Android received your request. Use Back or the app switcher to return here.</p>}
+      {handoff === "unavailable" && <p role="status">This app couldn’t open on this device.</p>}
+      {handoff === "stale" && <p role="status">Return to the current private website and try again.</p>}
+    </section>
+  );
+}
+
 type PrivateToolbarProps = {
   active: Tab;
   browser: BrowserModel;
@@ -57,14 +150,25 @@ type PrivateToolbarProps = {
   offered: (direction: HistoryDirection) => boolean;
   step: (direction: HistoryDirection) => void;
   navigate: (tab: number, address: string) => Promise<boolean>;
-  checkEmail: (() => Promise<boolean>) | undefined;
+  openVerificationApp: ((app: PrivateVerificationApp) => Promise<VerificationAppHandoff>) | undefined;
+  openInbox: SignInHelpProps["openInbox"];
 };
 
-function PrivateToolbar({ active, browser, edit, offered, step, navigate, checkEmail }: PrivateToolbarProps) {
+function PrivateToolbar({ active, browser, edit, offered, step, navigate, openVerificationApp, openInbox }: PrivateToolbarProps) {
   const fieldRef = useRef<HTMLInputElement>(null);
+  const helpButtonRef = useRef<HTMLButtonElement>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | undefined>(undefined);
-  const [emailNotice, setEmailNotice] = useState<{ loadVersion: number; words: string }>();
+  const { state: account } = useSetup(useRuntime());
+  const grant = account?.googleLink.tag === "GoogleLinkConnected" && account.googleLink.mail
+    ? account.googleLink.grant : undefined;
+  const inbox = account?.graceAccount.tag === "GraceSignedIn" && grant
+    ? [account.graceAccount.accountId, grant]
+    : account?.graceAccount.tag === "GraceDeviceSignedIn" ? ["device"] : undefined;
+  const [help, setHelp] = useState<{ revision: number; loadVersion: number }>();
+  const helpAvailable = draft === null && openVerificationApp !== undefined;
+  const currentHelp = helpAvailable && help?.revision === browser.revision && help.loadVersion === active.loadVersion ? help : undefined;
+  if (help && !currentHelp) setHelp(undefined);
   const go = () => {
     if (draft === null || secureOrigin(draft) === "") {
       setNotice("Enter a secure website address beginning with https://.");
@@ -83,24 +187,18 @@ function PrivateToolbar({ active, browser, edit, offered, step, navigate, checkE
     <>
       <BrowserToolbar className="pointer-events-auto" canGoBack={offered("HistoryBack")} canGoForward={offered("HistoryForward")} canGo={draft !== null}
         reloadable onReload={() => edit({ tag: "Reload" })} onBack={() => step("HistoryBack")} onForward={() => step("HistoryForward")}
-        onGo={go} trailing={checkEmail ? (
-          <Button variant="capsule" size="pill" title="Use when this website asks for an email code" onClick={() => {
-            const loadVersion = active.loadVersion;
-            setEmailNotice({ loadVersion, words: "Check the mailbox the website named, then return here. Enter a code only on the website where you requested it." });
-            void checkEmail().catch(() => false).then((opened) => {
-              if (!opened) setEmailNotice({ loadVersion, words: "Your mail app couldn’t open. Check that mailbox on another device, then return to the website that asked for the code." });
-            });
-          }}><Mail aria-hidden /> Check email</Button>
+        onGo={go} trailing={helpAvailable ? (
+          <Button ref={helpButtonRef} variant="capsule" size="pill" aria-expanded={currentHelp !== undefined} onClick={() => {
+            setHelp(currentHelp ? undefined : { revision: browser.revision, loadVersion: active.loadVersion });
+          }}><CircleHelp aria-hidden /> Sign-in help</Button>
         ) : undefined}>
         <AddressBar ref={fieldRef} value={draft ?? tabUrl(active)} secureAddress={showsSecureIndicator(browser, draft !== null) ? tabUrl(active) : undefined} label="Private website address" enterKeyHint="go" aria-invalid={notice !== undefined || undefined}
-          notice={notice} onValueChange={(text) => { setDraft(text); setNotice(undefined); setEmailNotice(undefined); }} onSubmit={go} />
+          notice={notice} onValueChange={(text) => { setDraft(text); setNotice(undefined); }} onSubmit={go} />
       </BrowserToolbar>
-      {emailNotice?.loadVersion === active.loadVersion && (
-        <div className="pointer-events-auto flex items-center gap-2 bg-card px-4 py-2 text-body text-label-ink">
-          <span className="flex-1" role="status">{emailNotice.words}</span>
-          <Button variant="capsule" size="pill" onClick={() => setEmailNotice(undefined)}>Dismiss</Button>
-        </div>
-      )}
+      {currentHelp && openVerificationApp && <SignInHelp key={JSON.stringify([active.id, browser.revision, active.loadVersion, inbox])}
+        visit={{ tab: active.id, revision: browser.revision, loadVersion: active.loadVersion }}
+        openVerificationApp={openVerificationApp} canWatch={inbox !== undefined} openInbox={openInbox}
+        dismiss={() => { setHelp(undefined); helpButtonRef.current?.focus(); }} />}
     </>
   );
 }
@@ -109,7 +207,7 @@ function PrivateToolbar({ active, browser, edit, offered, step, navigate, checkE
 export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert" | "aria-hidden">) {
   const strip = useWatch(tabStrip);
   const { guide } = usePasswordGuide();
-  const { workspace, can, send, closeBrowser, navigatePrivate, stepPrivate, checkPrivateEmail, opensWebsites } = useWorkspace();
+  const { workspace, can, send, current, closeBrowser, navigatePrivate, stepPrivate, openPrivateVerificationApp, opensWebsites } = useWorkspace();
   const layer = usePageLayer();
   const browser = workspace?.browser;
   const active = browser && activeTab(browser);
@@ -129,6 +227,11 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
     edit({ tag: "DismissAddress" });
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
   };
+  const email = { type: "visit", destination: "Email" } as const;
+  const openConnectedInbox = (visit: PrivateInboxVisit) => {
+    const now = current();
+    if (pageShows(now.device, now.assistant) && canWatchPrivateInbox(now.browser, visit)) void send(email);
+  };
   const fixWifi = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
   const secureAddress = showsSecureIndicator(browser, false) ? tabUrl(active) : undefined;
   const failure = failures[active.load];
@@ -147,8 +250,8 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
       }
       toolbar={active.manualSignIn ? <PrivateToolbar key={active.id} active={active} browser={browser} edit={edit} navigate={navigatePrivate}
         offered={(direction) => !!layer && canStepPrivate(workspace.device, browser, historyFor(layer, active.id), direction)}
-        step={(direction) => void stepPrivate(active.id, direction)}
-        checkEmail={canCheckPrivateEmail(browser, active.id, browser.revision, "BrowserControlUser") ? () => checkPrivateEmail(active.id, browser.revision) : undefined} /> : (
+        step={(direction) => void stepPrivate(active.id, direction)} openInbox={can(email) ? openConnectedInbox : undefined}
+        openVerificationApp={pageShows(workspace.device, workspace.assistant) && canOpenPrivateVerificationApp(browser, active.id, browser.revision, "BrowserControlUser") ? (app) => openPrivateVerificationApp(active.id, browser.revision, app) : undefined} /> : (
         <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
           reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}>
