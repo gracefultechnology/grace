@@ -423,7 +423,8 @@ A linked attempt with a verified failure or return did not go through. A positiv
 outcome is done when its current result, evidence and reference are all saved.
 During a person's form entry the task waits for them. A paused task is stopped,
 a blocked preparation could not continue, and an attempt being checked waits
-for the website.
+for the website at the outcome step. A completed task shows its outcome or
+Calendar recording. A failure or return stays on the outcome step.
 
 When ending a task the host takes the link returned by `progressAtEnd` in the
 same operation as retiring its preparation. It keeps a reference only when
@@ -453,6 +454,16 @@ pure def lawDoneMeansASavedPositiveOutcome(view: TaskView): bool =
   val c = view.workspace.commitment
   taskStatus(view) == Done implies
     (joined(view) and c.stage == CM::Resolved and CM::positiveOutcome(c.result) and c.reference != "" and not(CM::outcomeNeedsSave(c)))
+pure def lawTheStatusAgreesWithTheStep(view: TaskView): bool =
+  val shown = currentStep(view)
+  val status = taskStatus(view)
+  match status {
+    | Done => shown == K::OutcomeStep or shown == K::RecordStep
+    | DidNotGoThrough => shown == K::OutcomeStep
+    | WaitingForProvider => shown == K::OutcomeStep
+    | WaitingForPerson => waitsForPerson(shown) or (shown == K::FormStep and view.preparation.fillBy == P::PersonFills)
+    | _ => true
+  }
 pure def lawUnlinkedResultsCannotFinishThePreparation(view: TaskView): bool =
   not(joined(view)) implies (currentStep(view) == preparationStep(view.preparation) and
     taskStatus(view) != Done and taskStatus(view) != DidNotGoThrough and taskStatus(view) != WaitingForProvider)
