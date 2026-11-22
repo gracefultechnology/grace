@@ -277,6 +277,10 @@ export const fleetStatementCases = [
   { billerId: "aflac-dental-insurance-60fdf1", template: "insurance" },
   { billerId: "ace-cash-express-bill-payment-5a3f3c", template: "invoice-portal" },
   { billerId: "above-all-satellite-localoop-inc-a40f31", template: "telecom" },
+  { billerId: "a-federal-credit-union-ede01e", template: "bank-billpay" },
+  { billerId: "american-eagle-financial-credit-union-e29614", template: "paymentus" },
+  { billerId: "ameren-illinois-7add9b", template: "kubra" },
+  { billerId: "accura-healthcare-2b95c9", template: "rent-portal" },
 ];
 
 const StatementRoutes = Schema.Struct({ routes: Schema.Struct({
