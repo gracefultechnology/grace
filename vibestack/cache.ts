@@ -507,7 +507,7 @@ async function toolchainId(root: string, stage: Stage): Promise<string> {
 }
 
 /** The remembered results of one check: whether it may read them, and every entry it read or wrote. */
-export interface Memory { root: string; fresh: boolean; used: Set<string> }
+export interface Memory { root: string; fresh: boolean; used: Set<string>; cacheValue?: (value: unknown) => unknown }
 /** An entry of `.spec-cache`: JSON, compressed, since a run of the simulator says megabytes. */
 interface Entry { name: string; file: string; evaluator?: string | null }
 const formats = [["zst", zstdDecompressSync], ["gz", gunzipSync]] as const;
@@ -569,7 +569,7 @@ export function store(memory: Memory, { name, file, evaluator }: Entry, value: u
   if (unsure || check?.changed || check?.closed || evaluator === null) return;
   if (evaluator !== undefined && !stableInstallation(evaluatorIdentity(memory.root) === evaluator)) return;
   if (action && !check && !action.program.unchanged()) return;
-  const bytes = zstdCompressSync(JSON.stringify(value));
+  const bytes = zstdCompressSync(JSON.stringify(memory.cacheValue ? memory.cacheValue(value) : value));
   sharedCache(name)?.used.add(name);
   if (action) check?.verify.add(action.program);
   if (!check?.verify.size) {
