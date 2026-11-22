@@ -2,7 +2,7 @@
 import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { createRoot } from "react-dom/client";
-import { expect, inject, it, onTestFinished, type TestContext } from "vitest";
+import { afterEach, beforeEach, describe, expect, inject, it, onTestFinished, type TestContext } from "vitest";
 import { commands, page, userEvent } from "vitest/browser";
 import { loadWaitSeconds } from "../gen/app__browser.ts";
 import { Machine as PageLayers } from "../gen/app__surface.effect.vibe";
@@ -516,19 +516,22 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   }
 }, 240_000);
 
-it.for(inject("billworldStatements"))('Read the $label BillWorld statement (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', { timeout: 120_000 }, async ({ billerId }, context) => {
-  const attempt = crypto.randomUUID();
-  context.onTestFinished(async () => { await commands.releasedStatement(attempt, { kind: "close" }); });
+async function prepareBillWorldStatement(attempt: string, billerId: string | undefined, context: TestContext) {
   const transport = async (action: Parameters<typeof commands.releasedStatement>[1]) => {
     context.signal.throwIfAborted();
     const result = await commands.releasedStatement(attempt, action);
     context.signal.throwIfAborted();
     return result;
   };
-  const { url, taskId, question } = Schema.decodeUnknownSync(Schema.Struct({
+  const statement = Schema.decodeUnknownSync(Schema.Struct({
     url: Schema.NonEmptyString, taskId: Schema.NonEmptyString, question: Schema.NonEmptyString,
   }))(await transport({ kind: "prepare", billerId }));
-  expect(taskId).toBe(billerId === undefined ? "task_md9" : billerId + ":view-bill");
+  expect(statement.taskId).toBe(billerId === undefined ? "task_md9" : billerId + ":view-bill");
+  return { ...statement, transport };
+}
+
+async function readBillWorldStatement(billerId: string | undefined, context: TestContext, prepared: Awaited<ReturnType<typeof prepareBillWorldStatement>>) {
+  const { url, taskId, question, transport } = prepared;
   let shown: string | null | undefined;
   let observations = 0;
   const native = androidPagePluginAtItsBoundary({
@@ -591,7 +594,24 @@ it.for(inject("billworldStatements"))('Read the $label BillWorld statement (spec
       results: [{ pass: true }, { pass: true }, { pass: true }, { pass: true }, { pass: true }],
     });
   }
-});
+}
+
+for (const { billerId, label } of inject("billworldStatements")) {
+  describe("BillWorld", () => {
+    let attempt: string;
+    let prepared: Awaited<ReturnType<typeof prepareBillWorldStatement>> | undefined;
+    beforeEach(async (context) => {
+      attempt = crypto.randomUUID();
+      prepared = undefined;
+      if (billerId !== undefined) prepared = await prepareBillWorldStatement(attempt, billerId, context);
+    }, 240_000);
+    afterEach(async () => { await commands.releasedStatement(attempt, { kind: "close" }); });
+    it(`Read the ${label} BillWorld statement (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")`, { timeout: 120_000 }, async (context) => {
+      if (billerId !== undefined && prepared === undefined) throw new Error("The Fleet statement fixture did not finish before the journey");
+      await readBillWorldStatement(billerId, context, prepared ?? await prepareBillWorldStatement(attempt, billerId, context));
+    });
+  });
+}
 
 it('Enter a website and understand loading or failure (spec/app/browser.md, "Story: Enter a website and understand loading or failure")', async () => {
   const unavailable = Object.assign(new Error("No app on this device opens this link"), { code: "EXTERNAL_APP_UNAVAILABLE" });
