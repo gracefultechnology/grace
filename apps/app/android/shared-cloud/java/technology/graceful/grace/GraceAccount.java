@@ -248,7 +248,10 @@ public final class GraceAccount extends ElizaSignInPlugin {
      closeEnrollment(lease);
      throw refused;
     }
-   } catch (Exception unavailable) { call.reject("Couldn't open sign-in"); }
+   } catch (Exception unavailable) {
+    publishSession();
+    call.reject("Couldn't open sign-in");
+   }
   });
  }
 

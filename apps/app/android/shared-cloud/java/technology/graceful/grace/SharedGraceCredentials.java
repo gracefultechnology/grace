@@ -8,6 +8,9 @@ import ai.eliza.plugins.signin.DeviceKeyClient.Acknowledgement;
 import android.content.Context;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.Set;
@@ -21,6 +24,7 @@ final class SharedGraceCredentials {
  private static final String REPAIRED_CREDENTIAL = "canonical-owner-verified";
  private static final String PENDING = "shared-pending";
  private static final String SIGN_OUT = "legacy-sign-out";
+ private static final String REJECTED_KEY = "legacy-rejected-key";
  private static final String UNSELECTED = "unselected";
  private static final String GENERATION = "credential-intent";
  private static final String RENEWAL_REQUEST = "mobile-key-renewal-request-v1";
@@ -35,7 +39,7 @@ final class SharedGraceCredentials {
   }
  }
 
- private record Snapshot(String key, String receipt, String retiring, String pending, String owner, String repaired, String generation, String signOut) {
+ private record Snapshot(String key, String receipt, String retiring, String pending, String owner, String repaired, String generation, String signOut, String rejectedKey) {
   @Override public String toString() { return "Legacy credential slots"; }
  }
  private record Key(String localId, String serverId, String secret, long expiresAt) {
@@ -121,7 +125,17 @@ final class SharedGraceCredentials {
   } else if (renewal && receipt.after() != null && key.equals(receipt.after())) {
    authority.acknowledge(key.serverId(), key.secret());
   }
-  if (!(authority.user(verification.secret()) instanceof Answer.Answered<Account> answered)) throw needsVerification();
+  Answer<Account> result = authority.user(verification.secret());
+  if (verification.equals(key) && result instanceof Answer.Refused<Account> refused &&
+      refused.status() == 401 && refused.reason().credential()) {
+   Key successor = liveSuccessor(saved, key, receipt, System.currentTimeMillis());
+   if (successor != null) result = authority.user(successor.secret());
+   else if (prior == null && saved.repaired() == null) synchronized (JsonCredentialSlots.LOCK) {
+    requireSnapshot(saved);
+    save(REJECTED_KEY, credentialEvidence(saved));
+   }
+  }
+  if (!(result instanceof Answer.Answered<Account> answered)) throw needsVerification();
   var verified = new Owner(answered.value().userId(), answered.value().organizationId());
   if (prior != null && !prior.owner().equals(verified)) throw needsVerification();
   synchronized (JsonCredentialSlots.LOCK) {
@@ -145,8 +159,8 @@ final class SharedGraceCredentials {
    return true;
   }
   long now = System.currentTimeMillis();
-  if (selected == null || selected.expiresAt() <= 0 || selected.expiresAt() > now ||
-      saved.owner() != null || saved.repaired() != null) return false;
+  if (selected == null || selected.expiresAt() <= 0 || saved.owner() != null || saved.repaired() != null) return false;
+  if (selected.expiresAt() > now && (saved.rejectedKey() == null || !saved.rejectedKey().equals(credentialEvidence(saved)))) return false;
   Receipt receipt = receipt(saved.receipt());
   matchingOwner(selected, receipt, null);
   retirementSecrets(saved, selected, receipt);
@@ -160,6 +174,12 @@ final class SharedGraceCredentials {
   return receipt.after();
  }
 
+ private static String credentialEvidence(Snapshot saved) throws Exception {
+  byte[] digest = MessageDigest.getInstance("SHA-256")
+   .digest((Objects.toString(saved.generation(), "") + "\u0000" + saved.key()).getBytes(StandardCharsets.UTF_8));
+  return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+ }
+
  void signOut(boolean cleanupOnly, Runnable signOutCanonical) throws Exception {
   Snapshot saved;
   synchronized (JsonCredentialSlots.LOCK) { saved = snapshot(); }
@@ -169,7 +189,7 @@ final class SharedGraceCredentials {
   synchronized (JsonCredentialSlots.LOCK) { requireSnapshot(saved); }
   signOutCanonical.run();
   if (secrets.isEmpty() && saved.receipt() == null && saved.pending() == null &&
-      saved.owner() == null && saved.repaired() == null && saved.signOut() == null) return;
+      saved.owner() == null && saved.repaired() == null && saved.rejectedKey() == null && saved.signOut() == null) return;
   synchronized (JsonCredentialSlots.LOCK) {
    requireSnapshot(saved);
    if (saved.signOut() == null) save(SIGN_OUT, selected == null ? UNSELECTED : selected.localId());
@@ -183,7 +203,7 @@ final class SharedGraceCredentials {
   }
   synchronized (JsonCredentialSlots.LOCK) {
    requireSnapshot(saved);
-   for (String slot : new String[]{PENDING, receiptSlot, retiringSlot, VERIFIED_OWNER, REPAIRED_CREDENTIAL, credentialSlot, SIGN_OUT}) save(slot, null);
+   for (String slot : new String[]{PENDING, receiptSlot, retiringSlot, VERIFIED_OWNER, REPAIRED_CREDENTIAL, REJECTED_KEY, credentialSlot, SIGN_OUT}) save(slot, null);
   }
  }
 
@@ -278,7 +298,7 @@ final class SharedGraceCredentials {
 
  private Snapshot snapshot() throws Exception {
   return new Snapshot(read(credentialSlot), read(receiptSlot), read(retiringSlot), read(PENDING),
-   read(VERIFIED_OWNER), read(REPAIRED_CREDENTIAL), read(GENERATION), read(SIGN_OUT));
+   read(VERIFIED_OWNER), read(REPAIRED_CREDENTIAL), read(GENERATION), read(SIGN_OUT), read(REJECTED_KEY));
  }
 
  private void requireSnapshot(Snapshot saved) throws Exception {
