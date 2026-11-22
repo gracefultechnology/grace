@@ -1,5 +1,5 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
-import { type Setup as SetupState, Machine as Setup, isSelectedVersion, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
+import { type Setup as SetupState, Machine as Setup, isSelectedVersion, isTheSelectedSeries, trashableVersion, changeReceiptMatches, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, Machine as Workspaces, type GuidedStep, type ReleasedEmailLink } from "../gen/app__workspace.effect.vibe"
 import { initial as initialCalendarView, type Navigation, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { dayOf, midnight, navigation } from "./calendarWindow.vibe"
@@ -101,7 +101,7 @@ type ReadyScope = Extract<Scope, { kind: "ready" }>
 type Mail = { linkReview?: ReleasedEmailLink; replying?: boolean; folder: ManagedFolder; search: string; counts?: typeof MailCounts.Type; proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
 export function inboxTrashVersion(mail: Mail) {
   const row = mail.selected?.message
-  return mail.folder !== "trash" && row?.labels?.includes("INBOX") && !row.labels.includes("TRASH") ? row.metadata?.historyId : undefined
+  return trashableVersion(mail.folder === "trash", row?.labels?.includes("INBOX") === true, row?.labels?.includes("TRASH") === true, row?.metadata?.historyId ?? "")
 }
 type Calendar = { window: ViewWindow; proposed?: StagedWork; kind: "calendar"; accountId: string; grant: string; rows: readonly EventRow[]; next: string | null; from: string; until: string; selected?: EventRow; series?: EventRow }
 export type ManagedSnapshot =
@@ -436,10 +436,10 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
 
   effect function readSeries(scope: ReadyScope, shown: Calendar, occurrenceId: string) {
     const selected = shown.selected
-    if (shown.accountId !== scope.accountId || shown.grant !== scope.grant || selected?.externalId !== occurrenceId || !selected.seriesId) return undefined
+    if (shown.accountId !== scope.accountId || shown.grant !== scope.grant || !isTheSelectedSeries(selected?.externalId ?? "", selected?.seriesId ?? "", occurrenceId, selected?.seriesId ?? "")) return undefined
     const found = try query("calendar/series", { grantId: scope.grant, occurrenceId }, Series, authorization)
     return managedReadMatches(scope.accountId, found.accountId, occurrenceId, found.occurrenceId) &&
-      found.event.externalId === selected.seriesId ? found.event : undefined
+      isTheSelectedSeries(selected?.externalId ?? "", selected?.seriesId ?? "", occurrenceId, found.event.externalId) ? found.event : undefined
   }
 
   effect function stage(proposal: ProposedWork) {
@@ -462,7 +462,7 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
       if (saved.operationId || saved.recipient || saved.subject || saved.text) return false
       try keepMailDraft(accountId, email, { recipient: proposal.recipient, subject: proposal.subject, text: proposal.text }, proposal.replyTo)
     } else if (proposal.kind === "trash") {
-      if (shown.kind !== "mail" || !shown.selected || !isSelectedVersion(shown.selected.message.externalId, inboxTrashVersion(shown) ?? "", proposal.id, proposal.version) ||
+      if (shown.kind !== "mail" || !shown.selected || !isSelectedVersion(shown.selected.message.externalId, inboxTrashVersion(shown), proposal.id, proposal.version) ||
         !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedTrash")) return false
     } else {
       if (shown.kind !== "calendar" || !mayChangeManaged(account.graceAccount, account.googleLink, accountId, grant, "ManagedAppointmentChange")) return false
@@ -500,11 +500,11 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     const shown = try SubscriptionRef.get(latest)
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.grant !== grant || shown.accountId !== accountId) return undefined
     if (action.kind === "trash" && (shown.kind !== "mail" || !shown.selected ||
-      !isSelectedVersion(shown.selected.message.externalId, inboxTrashVersion(shown) ?? "", action.id, action.version))) return undefined
+      !isSelectedVersion(shown.selected.message.externalId, inboxTrashVersion(shown), action.id, action.version))) return undefined
     if (action.kind === "appointment" && action.action !== "create") {
       if (shown.kind !== "calendar") return undefined
       const target = action.seriesFor === undefined ? shown.selected
-        : shown.selected?.externalId === action.seriesFor && shown.selected.seriesId === action.id ? shown.series : undefined
+        : isTheSelectedSeries(shown.selected?.externalId ?? "", shown.selected?.seriesId ?? "", action.seriesFor, action.id) ? shown.series : undefined
       if (!target || !isSelectedVersion(target.externalId, target.etag ?? "", action.id, action.version)) return undefined
     }
     const operationId = try Effect.try(() => webView.window.crypto.randomUUID())
@@ -515,7 +515,7 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
       : { ...common, messageId: action.id, version: action.version, undoOf: action.kind === "undo" ? action.prior : undefined }
     const receipt = try postChange(action.kind === "appointment" ? "calendar/change" : "gmail/trash", payload, ActionReceipt, authorization)
     const expected = "id" in action ? action.id : operationId.replaceAll("-", "")
-    if (!managedReadMatches(accountId, receipt.accountId, expected, receipt.itemId) || receipt.operationId !== operationId ||
+    if (!changeReceiptMatches(accountId, receipt.accountId, expected, receipt.itemId, operationId, receipt.operationId) ||
       !(try still(scope))) return undefined
     if (action.kind === "trash" && shown.kind === "mail") {
       const remaining = { ...shown, counts: undefined, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined, attachment: undefined, proposed: undefined }
