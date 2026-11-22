@@ -52,16 +52,17 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+      - uses: ./.github/actions/setup
+        with:
+          job: product
+          verification: "false"
       - uses: actions/cache@v6
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper/dists
-          key: gradle-${{ runner.os }}-${{ runner.arch }}-jdk21-${{ hashFiles('apps/app/package.json', 'apps/app/android/host.json', 'vendor/eliza/packages/os/android/host-templates/**', 'vendor/eliza/packages/os/android/*/build.gradle') }}
-      - uses: ./.github/actions/setup
-        with:
-          job: product
-          verification: "false"
+          key: gradle-${{ runner.os }}-${{ runner.arch }}-jdk21-${{ hashFiles('apps/app/node_modules/@capacitor/android/package.json', 'apps/app/node_modules/@capacitor/android/capacitor/build.gradle', 'apps/app/android/host.json', 'vendor/eliza/packages/os/android/host-templates/**', 'vendor/eliza/packages/os/android/*/build.gradle') }}
+          restore-keys: gradle-${{ runner.os }}-${{ runner.arch }}-jdk21-
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools platforms;android-36 build-tools;36.0.0
