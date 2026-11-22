@@ -303,7 +303,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
       scan = undefined
       switch (collection.kind) {
         case "PrivateForm": return recordUnavailable(privateFormRecovery)
-        case "PublicOnly": return recordUnavailable("I can only help with public links on this page. Check the records on the website yourself.")
+        case "PublicOnly": return recordUnavailable(`I can only read public links here. Check every page for “${start.outcome.status}”, then open the matching records to compare their full dates.`)
         case "NeedsScope": return recordUnavailable("I can’t verify which website account these records belong to. Confirm the account on the website and check its records there.")
         case "NeedsCoverage": return recordCoverage
         case "NeedsDate": return recordDates
