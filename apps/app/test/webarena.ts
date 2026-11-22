@@ -106,14 +106,17 @@ function launchEvaluator({ python, root, env, startupTimeoutMs = 30 * 60_000, gr
     if (closing || !lines) throw new WebArenaEvaluatorError(phase, closing ? "closed" : "protocol");
     const signal = deadline ? AbortSignal.any([terminal.signal, deadline]) : terminal.signal;
     const finished = new AbortController();
+    const failure = () => {
+      const reason: unknown = signal.reason;
+      return new WebArenaEvaluatorError(phase, reason === "spawn" || reason === "closed" ? reason : deadline?.aborted ? "deadline" : "exit");
+    };
     const interrupted = async (): Promise<never> => {
       if (!signal.aborted) await once(signal, "abort", { signal: finished.signal });
-      const reason: unknown = signal.reason;
-      throw new WebArenaEvaluatorError(phase, reason === "spawn" || reason === "closed" || reason === "exit" ? reason : "deadline");
+      throw failure();
     };
     try {
       const next = await Promise.race([interrupted(), lines.next()]);
-      if (next.done) throw new WebArenaEvaluatorError(phase, "exit");
+      if (next.done || signal.aborted) throw failure();
       return next.value;
     } finally {
       finished.abort();
@@ -265,17 +268,13 @@ export async function setup(project: TestProject) {
     project.vite.config.plugins.find(({ name }) => name === webArenaPluginName)?.api;
   if (typeof api?.start !== "function" || typeof api.close !== "function")
     throw new Error("The WebArena project has no evaluator lifecycle");
-  const unsubscribe = project.vitest.onCancel(api.close);
-  project.vitest.onClose(api.close);
-  const teardown = async () => {
-    unsubscribe();
-    await api.close();
-  };
-  try {
+  const prepare = async () => {
+    project.vitest.onCancel(api.close);
     await api.start();
-    return teardown;
-  } catch (error) {
-    await teardown();
-    throw error;
-  }
+  };
+  project.vitest.onServerRestart(api.close);
+  project.vitest.onClose(api.close);
+  project.vitest.onTestsRerun(prepare);
+  await prepare();
+  return api.close;
 }
