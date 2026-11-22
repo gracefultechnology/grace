@@ -34,6 +34,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [The vocabulary of a task: its kind, subject and terms](./task.md)
 - [The task kinds: what each needs, its facts and its fill](./taskKinds.md)
 - [A bill as a task kind: its facts and fitting payment](./billKind.md)
+- [A visit as a task kind: its facts and fitting booking](./bookingKind.md)
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./prep.md)
 - [Join a task's preparation to its review, its fills and its view](./taskBridge.md)
