@@ -40,17 +40,17 @@ import billKind as BK from "./billKind"
 import commitment as CM from "./commitment"
 import task as T from "./task"
 import taskKinds as K from "./taskKinds"
-import workspace as W from "./workspace"
+import workspace as WS from "./workspace"
 import interaction as I from "./interaction"
 import shell as S from "./shell"
 import browser as B from "./browser"
 import browserControls as BC from "./browserControls"
 import execution as X from "./execution"
 
-type ScopedPreparedReview = { handoff: P::PrepEffect, captured: W::CommitmentTokens }
-type ReviewConversion = ReviewDeclined | ReviewConverted({ report: W::CurrentReview })
+type ScopedPreparedReview = { handoff: P::PrepEffect, captured: WS::CommitmentTokens }
+type ReviewConversion = ReviewDeclined | ReviewConverted({ report: WS::CurrentReview })
 
-pure def reportFromHandoff(transfer: ScopedPreparedReview): W::CurrentReview =
+pure def reportFromHandoff(transfer: ScopedPreparedReview): WS::CurrentReview =
   val handoff = transfer.handoff
   match handoff {
     | Review(details) => {
@@ -73,17 +73,17 @@ pure def preparationMatchesHandoff(preparation: P::Prep, transfer: ScopedPrepare
   }
 
 pure def convertPreparedReview(
-  preparation: P::Prep, w: W::Workspace,
-  transfer: ScopedPreparedReview, by: W::WorkspaceActor
+  preparation: P::Prep, w: WS::Workspace,
+  transfer: ScopedPreparedReview, by: WS::WorkspaceActor
 ): ReviewConversion =
-  if (preparationMatchesHandoff(preparation, transfer) and W::commitmentTokensMatch(w, transfer.captured) and
-      W::canReviewCommitment(w, reportFromHandoff(transfer), by))
+  if (preparationMatchesHandoff(preparation, transfer) and WS::commitmentTokensMatch(w, transfer.captured) and
+      WS::canReviewCommitment(w, reportFromHandoff(transfer), by))
     ReviewConverted({ report: reportFromHandoff(transfer) })
   else ReviewDeclined
 
 pure def lawConversionKeepsCurrentChoice(
-  preparation: P::Prep, w: W::Workspace,
-  transfer: ScopedPreparedReview, by: W::WorkspaceActor
+  preparation: P::Prep, w: WS::Workspace,
+  transfer: ScopedPreparedReview, by: WS::WorkspaceActor
 ): bool =
   val converted = convertPreparedReview(preparation, w, transfer, by)
   match converted {
@@ -95,23 +95,23 @@ pure def lawConversionKeepsCurrentChoice(
 }
 
 pure def lawConversionRequiresCurrentWorkspace(
-  preparation: P::Prep, w: W::Workspace,
-  transfer: ScopedPreparedReview, by: W::WorkspaceActor
+  preparation: P::Prep, w: WS::Workspace,
+  transfer: ScopedPreparedReview, by: WS::WorkspaceActor
 ): bool =
   val converted = convertPreparedReview(preparation, w, transfer, by)
   match converted {
   | ReviewDeclined => true
-  | ReviewConverted(value) => W::commitmentTokensMatch(w, transfer.captured) and
-    W::canReviewCommitment(w, value.report, by)
+  | ReviewConverted(value) => WS::commitmentTokensMatch(w, transfer.captured) and
+    WS::canReviewCommitment(w, value.report, by)
 }
 
 pure def lawCurrentPreparationConverts(
-  preparation: P::Prep, w: W::Workspace,
-  transfer: ScopedPreparedReview, by: W::WorkspaceActor
+  preparation: P::Prep, w: WS::Workspace,
+  transfer: ScopedPreparedReview, by: WS::WorkspaceActor
 ): bool =
   val converted = convertPreparedReview(preparation, w, transfer, by)
-  (preparationMatchesHandoff(preparation, transfer) and W::commitmentTokensMatch(w, transfer.captured) and
-    W::canReviewCommitment(w, reportFromHandoff(transfer), by)) implies match converted {
+  (preparationMatchesHandoff(preparation, transfer) and WS::commitmentTokensMatch(w, transfer.captured) and
+    WS::canReviewCommitment(w, reportFromHandoff(transfer), by)) implies match converted {
       | ReviewDeclined => false
       | ReviewConverted(value) => value.report == reportFromHandoff(transfer)
     }
@@ -125,14 +125,11 @@ that workspace holds. Other examples retain those transfers while their
 preparation pauses, or with a payload field or captured token that is stale. The examples are simulation inputs and do not restrict runtime values.
 
 ```quint
-pure val chosenPreparationValues = {
+pure val preparationValues = {
   val begun = P::begin(P::initial, CM::exampleKey, "source", T::Person)
   val signed = P::inspectAccess(begun, { key: CM::exampleKey, version: 1, access: P::SignedIn }, T::Host)
   val facts = P::readFacts(signed, { key: CM::exampleKey, version: 2, evidence: "source", facts: K::sampleBillFacts }, T::Host)
-  Set(P::choose(P::confirmFacts(facts, T::Person), CM::exampleTerms, T::Person))
-}
-pure val preparationValues = {
-  val chosen = chosenPreparationValues.getOnlyElement()
+  val chosen = P::choose(P::confirmFacts(facts, T::Person), CM::exampleTerms, T::Person)
   val yes = P::decideFill(chosen, P::GraceFills, chosen.version, T::Person)
   val no = P::decideFill(yes, P::PersonFills, yes.version, T::Person)
   val verified = P::verifyForm(chosen, { ...CM::exampleReview, revision: 4 }, T::Host)
@@ -142,37 +139,34 @@ pure val preparationValues = {
     .union(Set(yes, no, P::decideFill(no, P::GraceFills, no.version, T::Person)))
     .union(Set(P::pause(yes, T::Host), P::retire(handed, handed.version, T::Host)))
 }
-pure val loadedTaskValues = {
-  val started = W::changeLifecycle(W::initial, W::StartupSucceeded, W::Host)
-  val opened = W::openGrace(W::visit(started, S::Browser, W::Person), W::Person)
-  val allowed = W::setBrowserObservation(opened, { allowed: true,
-    deviceVersion: opened.device.contextVersion, browserRevision: opened.browser.revision }, W::Person)
-  val available = W::setAvailability(allowed,
-    { connection: S::Online, reasoning: true, microphone: true, observation: true }, W::Host)
-  val compact = W::interact(available, I::Resize({ expanded: false }), W::Person)
-  val begun = W::begin(compact,
-    { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, W::Person)
-  Set(W::receiveLoad(begun, { id: begun.browser.selected,
-    version: B::tabById(begun.browser, begun.browser.selected).loadVersion, result: B::Loaded,
-    secure: false, endedAt: "https://utility.example" }, W::Host))
-}
 pure val wValues = {
-  val loaded = loadedTaskValues.getOnlyElement()
-  val observed = W::observe(loaded, { deviceVersion: loaded.device.contextVersion,
+  val started = WS::changeLifecycle(WS::initial, WS::StartupSucceeded, WS::Host)
+  val opened = WS::openGrace(WS::visit(started, S::Browser, WS::Person), WS::Person)
+  val allowed = WS::setBrowserObservation(opened, { allowed: true,
+    deviceVersion: opened.device.contextVersion, browserRevision: opened.browser.revision }, WS::Person)
+  val available = WS::setAvailability(allowed,
+    { connection: S::Online, reasoning: true, microphone: true, observation: true }, WS::Host)
+  val compact = WS::interact(available, I::Resize({ expanded: false }), WS::Person)
+  val begun = WS::begin(compact,
+    { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, WS::Person)
+  val loaded = WS::receiveLoad(begun, { id: begun.browser.selected,
+    version: B::tabById(begun.browser, begun.browser.selected).loadVersion, result: B::Loaded,
+    secure: false, endedAt: "https://utility.example" }, WS::Host)
+  val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion,
     browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
-    website: X::goodObservation, checkpoint: "Read the current account" }, W::Host)
-  val bound = W::bindCommitment(observed, CM::exampleKey, W::Person)
-  val reviewed = W::reviewCommitment(bound,
+    website: X::goodObservation, checkpoint: "Read the current account" }, WS::Host)
+  val bound = WS::bindCommitment(observed, CM::exampleKey, WS::Person)
+  val reviewed = WS::reviewCommitment(bound,
     { deviceVersion: bound.device.contextVersion, browserRevision: bound.browser.revision,
-      taskVersion: bound.assistant.workVersion, review: CM::exampleReview }, W::Host)
-  val changed = W::changePage(bound, BC::PageChanged({ id: bound.browser.selected, revision: bound.browser.revision }), W::Host)
-  val resumed = W::resume(changed, W::Person)
-  val other = W::observe(resumed, {
+      taskVersion: bound.assistant.workVersion, review: CM::exampleReview }, WS::Host)
+  val changed = WS::changePage(bound, BC::PageChanged({ id: bound.browser.selected, revision: bound.browser.revision }), WS::Host)
+  val resumed = WS::resume(changed, WS::Person)
+  val other = WS::observe(resumed, {
     deviceVersion: resumed.device.contextVersion, browserRevision: resumed.browser.revision,
     taskVersion: resumed.assistant.workVersion, checkpoint: "Read the other account",
     website: { ...X::goodObservation, generation: resumed.execution.generation, matchedAccount: "other-account" }
-  }, W::Host)
-  Set(W::initial, bound, reviewed, changed, other)
+  }, WS::Host)
+  Set(WS::initial, loaded, bound, reviewed, changed, other)
 }
 pure val transferValues = {
   val details = { key: CM::exampleKey, proposal: CM::exampleTerms, evidence: "source", version: 4 }
@@ -190,7 +184,7 @@ pure val transferValues = {
     .union(valid.map(t => { ...t, captured: { ...t.captured, revision: t.captured.revision + 1 } }))
     .union(valid.map(t => { ...t, captured: { ...t.captured, attempt: t.captured.attempt + 1 } }))
 }
-pure val byValues = Set(W::Host, W::Person, W::Store, W::Actuator)
+pure val byValues = Set(WS::Host, WS::Person, WS::Store, WS::Actuator)
 ```
 
 ## Story: Grace types into a task's form only after I said yes
@@ -226,12 +220,15 @@ the actuator's contract; the host supplies and verifies the page evidence.
 
 ```quint
 import actuation as AC from "./actuation"
+import conversation as C from "./conversation"
+import preferences as R from "./preferences"
+import wake as W from "./wake"
 
 type FillSource = OutsidePreparation | TaskForm({ task: str, key: T::Subject, fill: K::Fill })
-type QueuedWebsiteCommand = { command: W::WorkspaceEffect, prepVersion: int, source: FillSource }
-type FormRead = NoTaskForm | VerifiedForm({ command: W::WorkspaceEffect, key: T::Subject, fill: K::Fill })
+type QueuedWebsiteCommand = { command: WS::WorkspaceEffect, prepVersion: int, source: FillSource }
+type FormRead = NoTaskForm | VerifiedForm({ command: WS::WorkspaceEffect, key: T::Subject, fill: K::Fill })
 
-pure def captureWebsiteCommand(preparation: P::Prep, command: W::WorkspaceEffect, preparedTask: str): QueuedWebsiteCommand =
+pure def captureWebsiteCommand(preparation: P::Prep, command: WS::WorkspaceEffect, preparedTask: str): QueuedWebsiteCommand =
   { command: command, prepVersion: preparation.version,
     source: if (preparation.phase == P::NoTask) OutsidePreparation
       else TaskForm({ task: preparedTask, key: preparation.key, fill: K::fillOf(preparation.choice) }) }
@@ -239,12 +236,12 @@ pure def captureWebsiteCommand(preparation: P::Prep, command: W::WorkspaceEffect
 pure def writesFormField(operation: X::WebsiteEffect): bool = match operation {
   | Operate(details) => details.kind == X::FillOrdinary
 }
-pure def formFillCommand(command: W::WorkspaceEffect): bool = match command {
+pure def formFillCommand(command: WS::WorkspaceEffect): bool = match command {
   | Execute(details) => writesFormField(details.effect)
   | _ => false
 }
 pure def fillPermitted(
-  preparation: P::Prep, fillWorkspace: W::Workspace, queued: QueuedWebsiteCommand, read: FormRead, by: W::WorkspaceActor
+  preparation: P::Prep, fillWorkspace: WS::Workspace, queued: QueuedWebsiteCommand, read: FormRead, by: WS::WorkspaceActor
 ): bool = {
   val source = queued.source
   AC::currentEffect(fillWorkspace, queued.command, by) and
@@ -262,27 +259,27 @@ pure def fillPermitted(
       }))
 }
 pure def lawNoFillWithoutTheirYes(
-  preparation: P::Prep, fillWorkspace: W::Workspace, queued: QueuedWebsiteCommand, read: FormRead
+  preparation: P::Prep, fillWorkspace: WS::Workspace, queued: QueuedWebsiteCommand, read: FormRead
 ): bool =
   (formFillCommand(queued.command) and (preparation.phase != P::NoTask or queued.source != OutsidePreparation) and
     preparation.fillBy != P::GraceFills)
-    implies not(fillPermitted(preparation, fillWorkspace, queued, read, W::Actuator))
+    implies not(fillPermitted(preparation, fillWorkspace, queued, read, WS::Actuator))
 pure def lawPausedOrCheckedFormIsNotFilled(
-  preparation: P::Prep, fillWorkspace: W::Workspace, queued: QueuedWebsiteCommand, read: FormRead
+  preparation: P::Prep, fillWorkspace: WS::Workspace, queued: QueuedWebsiteCommand, read: FormRead
 ): bool =
   (formFillCommand(queued.command) and (preparation.phase != P::NoTask or queued.source != OutsidePreparation) and
     (not(preparation.live) or preparation.phase != P::Preparing))
-    implies not(fillPermitted(preparation, fillWorkspace, queued, read, W::Actuator))
+    implies not(fillPermitted(preparation, fillWorkspace, queued, read, WS::Actuator))
 pure def lawAnOldFillCannotGainFreshConsent(
-  preparation: P::Prep, fillWorkspace: W::Workspace, queued: QueuedWebsiteCommand, read: FormRead
+  preparation: P::Prep, fillWorkspace: WS::Workspace, queued: QueuedWebsiteCommand, read: FormRead
 ): bool =
   (formFillCommand(queued.command) and queued.prepVersion != preparation.version)
-    implies not(fillPermitted(preparation, fillWorkspace, queued, read, W::Actuator))
+    implies not(fillPermitted(preparation, fillWorkspace, queued, read, WS::Actuator))
 pure def lawATaskFillUsesItsOwnVerifiedForm(
-  preparation: P::Prep, fillWorkspace: W::Workspace, queued: QueuedWebsiteCommand, read: FormRead
+  preparation: P::Prep, fillWorkspace: WS::Workspace, queued: QueuedWebsiteCommand, read: FormRead
 ): bool = {
   val source = queued.source
-  (formFillCommand(queued.command) and fillPermitted(preparation, fillWorkspace, queued, read, W::Actuator))
+  (formFillCommand(queued.command) and fillPermitted(preparation, fillWorkspace, queued, read, WS::Actuator))
     implies match source {
       | OutsidePreparation => preparation.phase == P::NoTask and read == NoTaskForm
       | TaskForm(taskForm) => taskForm.key == preparation.key and taskForm.task == fillWorkspace.assistant.taskId and
@@ -292,33 +289,40 @@ pure def lawATaskFillUsesItsOwnVerifiedForm(
     }
 }
 
-pure val fieldWriteValues = loadedTaskValues.map(loaded => {
-  val observed = W::observe(loaded, { deviceVersion: loaded.device.contextVersion, browserRevision: loaded.browser.revision,
+pure val fillWorkspaceValues: Set[WS::Workspace] = {
+  val loaded = wValues.filter(w => w.commitment.stage == CM::Empty and w.assistant.taskId == "task").getOnlyElement()
+  val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion, browserRevision: loaded.browser.revision,
     taskVersion: loaded.assistant.workVersion, checkpoint: "Read the payment form", website: { ...X::goodObservation,
-      generation: loaded.execution.generation, targets: List({ id: "bill-amount", consequence: X::AskFirst, inReach: true }) } }, W::Host)
-  val queued = W::prepare(observed, AC::sampleOperationRequest(observed, "bill-amount", "chosen-payment", X::FillOrdinary), W::Host)
-  W::dispatch(queued, AC::sampleOperationTokens(queued), W::Actuator)
-})
-pure val fillWorkspaceValues = fieldWriteValues.map(write => write.state)
-  .union(Set(W::initial, AC::ordinarySample(AC::observedSample(W::initial)).state))
-pure val capturedFillValues = fieldWriteValues.map(write => {
-  val chosen = chosenPreparationValues.getOnlyElement()
-  val yes = P::decideFill(chosen, P::GraceFills, chosen.version, T::Person)
-  captureWebsiteCommand(yes, write.out.nth(0), "task")
-})
+      generation: loaded.execution.generation, targets: List({ id: "bill-amount", consequence: X::AskFirst, inReach: true }) } }, WS::Host)
+  val queued = WS::prepare(observed, AC::sampleOperationRequest(observed, "bill-amount", "chosen-payment", X::FillOrdinary), WS::Host)
+  val write = WS::dispatch(queued, AC::sampleOperationTokens(queued), WS::Actuator)
+  Set(queued, write.state, WS::initial, AC::ordinarySample(AC::observedSample(WS::initial)).state)
+}
 pure val queuedValues = {
-  val queued = capturedFillValues.getOnlyElement()
+  val pending = fillWorkspaceValues.filter(w => w.execution.phase == X::Queued).getOnlyElement()
+  val write = WS::dispatch(pending, AC::sampleOperationTokens(pending), WS::Actuator)
+  val chosen = preparationValues.filter(p => p.phase == P::Preparing and p.fillBy == P::NotAsked).getOnlyElement()
+  val yes = P::decideFill(chosen, P::GraceFills, chosen.version, T::Person)
+  val queued = captureWebsiteCommand(yes, write.out.nth(0), "task")
   Set(queued, captureWebsiteCommand(P::initial, queued.command, ""),
     { ...queued, source: TaskForm({ task: "other-task", key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }) },
-    { ...queued, command: AC::ordinarySample(AC::observedSample(W::initial)).out.nth(0) })
+    { ...queued, command: AC::ordinarySample(AC::observedSample(WS::initial)).out.nth(0) })
 }
+pure val operationValues: Set[X::WebsiteEffect] = queuedValues.map(q => {
+  val command = q.command
+  match command {
+    | Execute(details) => Set(details.effect)
+    | _ => Set()
+  }
+}).flatten()
 pure val readValues = {
-  val original = { command: capturedFillValues.getOnlyElement().command, key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }
+  val outside = queuedValues.filter(q => q.source == OutsidePreparation).getOnlyElement()
+  val original = { command: outside.command, key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }
   Set(NoTaskForm, VerifiedForm(original),
     VerifiedForm({ ...original, key: { ...CM::exampleKey, account: "other-account" } }),
     VerifiedForm({ ...original, key: { ...CM::exampleKey, ref: "other-bill" } }),
     VerifiedForm({ ...original, fill: K::fillOf(T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } })) }),
-    VerifiedForm({ ...original, command: AC::ordinarySample(AC::observedSample(W::initial)).out.nth(0) }))
+    VerifiedForm({ ...original, command: AC::ordinarySample(AC::observedSample(WS::initial)).out.nth(0) }))
 }
 ```
 
@@ -349,12 +353,12 @@ import assistant as A from "./assistant"
 type AcceptedTaskReview = { task: str, transfer: ScopedPreparedReview }
 type TaskAttemptLink = { task: str, key: T::Subject, preparationVersion: int, attempt: int }
 type TaskProgress = NoLinkedAttempt | Following({ link: TaskAttemptLink }) | FinishedAttempt({ link: TaskAttemptLink })
-type TaskView = { preparation: P::Prep, workspace: W::Workspace, progress: TaskProgress }
+type TaskView = { preparation: P::Prep, workspace: WS::Workspace, progress: TaskProgress }
 
-pure def journaledTaskAttempt(preparation: P::Prep, w: W::Workspace, accepted: AcceptedTaskReview): TaskProgress =
+pure def journaledTaskAttempt(preparation: P::Prep, w: WS::Workspace, accepted: AcceptedTaskReview): TaskProgress =
   val c = w.commitment
   val captured = accepted.transfer.captured
-  if (preparationMatchesHandoff(preparation, accepted.transfer) and W::currentCommitmentContext(w) and
+  if (preparationMatchesHandoff(preparation, accepted.transfer) and WS::currentCommitmentContext(w) and
       accepted.task != "" and accepted.task == w.commitmentTask and c.stage == CM::Guarded and c.fresh and
       w.device.contextVersion == captured.deviceVersion and w.browser.revision == captured.browserRevision and
       w.assistant.workVersion == captured.taskVersion and
@@ -368,7 +372,7 @@ pure def sameAttempt(view: TaskView, link: TaskAttemptLink): bool =
   view.preparation.key == link.key and view.workspace.commitment.key == link.key and
   link.attempt > 0 and view.workspace.commitment.attempt == link.attempt
 
-pure def finishedWithReceipt(w: W::Workspace): bool =
+pure def finishedWithReceipt(w: WS::Workspace): bool =
   val c = w.commitment
   w.assistant.activity == A::Finished and c.stage == CM::Resolved and
     c.evidence != "" and w.assistant.evidence == c.evidence and not(CM::outcomeNeedsSave(c)) and
@@ -482,44 +486,43 @@ pure def lawEndingTheFinishedRunKeepsItsReceipt(view: TaskView): bool =
   joined(view) and view.preparation.phase == P::HandedOff and finishedWithReceipt(view.workspace)
     implies (joined(ended) and taskStatus(ended) == taskStatus(view))
 
-pure val guardedViewValues = wValues.filter(w => w.commitment.stage == CM::Draft and W::currentCommitmentContext(w)).map(w => {
-  val chosen = chosenPreparationValues.getOnlyElement()
-  val form = P::verifyForm(chosen, { ...CM::exampleReview, revision: chosen.version }, T::Host)
-  val handed = P::handOff(form, T::Actuator)
-  val transfer = { handoff: handed.out.nth(0), captured: AC::sampleCommitmentTokens(w) }
-  val converted = convertPreparedReview(handed.state, w, transfer, W::Host)
-  match converted {
-    | ReviewDeclined => { preparation: handed.state, workspace: w, progress: NoLinkedAttempt }
-    | ReviewConverted(delivered) => {
-      val reviewed = W::reviewCommitment(w, delivered.report, W::Host)
-      val readBack = W::readBackCommitment(reviewed, AC::sampleCommitmentTokens(reviewed), W::Host)
-      val guarded = W::journalCommitment(readBack, AC::sampleCommitmentTokens(readBack), true, W::Store)
-      { preparation: handed.state, workspace: guarded,
-        progress: journaledTaskAttempt(handed.state, guarded, { task: reviewed.commitmentTask, transfer: transfer }) }
+pure val viewValues: Set[TaskView] = {
+  val chosen = preparationValues.filter(p => p.phase == P::Preparing and p.fillBy == P::NotAsked).getOnlyElement()
+  val guarded = wValues.filter(w => w.commitment.stage == CM::Draft and WS::currentCommitmentContext(w)).map(w => {
+    val form = P::verifyForm(chosen, { ...CM::exampleReview, revision: chosen.version }, T::Host)
+    val handed = P::handOff(form, T::Actuator)
+    val transfer = { handoff: handed.out.nth(0), captured: AC::sampleCommitmentTokens(w) }
+    val converted = convertPreparedReview(handed.state, w, transfer, WS::Host)
+    match converted {
+      | ReviewDeclined => { preparation: handed.state, workspace: w, progress: NoLinkedAttempt }
+      | ReviewConverted(delivered) => {
+        val reviewed = WS::reviewCommitment(w, delivered.report, WS::Host)
+        val readBack = WS::readBackCommitment(reviewed, AC::sampleCommitmentTokens(reviewed), WS::Host)
+        val journaled = WS::journalCommitment(readBack, AC::sampleCommitmentTokens(readBack), true, WS::Store)
+        { preparation: handed.state, workspace: journaled,
+          progress: journaledTaskAttempt(handed.state, journaled, { task: reviewed.commitmentTask, transfer: transfer }) }
+      }
     }
-  }
-})
-pure val checkingViewValues = guardedViewValues.map(v =>
-  { ...v, workspace: W::observeCommitmentTap(v.workspace, AC::sampleCommitmentTokens(v.workspace), W::Host) })
-pure def outcomeView(view: TaskView, result: CM::Outcome): TaskView =
-  val w = view.workspace
-  val report = { ...CM::exampleOutcome, key: w.commitment.key, revision: w.commitment.revision,
-    attempt: w.commitment.attempt, result: result, reference: if (CM::positiveOutcome(result)) "receipt" else "" }
-  { ...view, workspace: W::recordCommitment(w, { deviceVersion: w.device.contextVersion,
-    browserRevision: w.browser.revision, taskVersion: w.assistant.workVersion, report: report }, W::Host) }
-pure val observedViewValues = checkingViewValues.map(v => outcomeView(v, CM::Completed))
-  .union(checkingViewValues.map(v => outcomeView(v, CM::VerifiedFailure)))
-pure val savedViewValues = observedViewValues.map(v => { ...v, workspace: W::saveCommitment(v.workspace, {
-  key: v.workspace.commitment.key, revision: v.workspace.commitment.revision, succeeded: true }, W::Store) })
-pure val endedViewValues = savedViewValues.map(v => { ...v, progress: progressAtEnd(v, T::Host),
-  preparation: P::retire(v.preparation, v.preparation.version, T::Host) })
-pure val viewValues = guardedViewValues.union(checkingViewValues).union(observedViewValues)
-  .union(savedViewValues).union(endedViewValues)
-  .union(endedViewValues.map(v => { ...v, preparation: P::begin(v.preparation, v.preparation.key, "another request", T::Person) }))
-  .union(guardedViewValues.map(v => {
-    val chosen = chosenPreparationValues.getOnlyElement()
-    { ...v, preparation: P::decideFill(chosen, P::PersonFills, chosen.version, T::Person) }
-  }))
-  .union(guardedViewValues.map(v => { ...v, workspace: W::abandonTask(v.workspace, W::Person),
-    preparation: P::retire(v.preparation, v.preparation.version, T::Person), progress: progressAtEnd(v, T::Person) }))
+  })
+  val checking = guarded.map(v =>
+    { ...v, workspace: WS::observeCommitmentTap(v.workspace, AC::sampleCommitmentTokens(v.workspace), WS::Host) })
+  val observed = checking.map(view =>
+    Set(CM::Completed, CM::VerifiedFailure).map(result => {
+      val w = view.workspace
+      val report = { ...CM::exampleOutcome, key: w.commitment.key, revision: w.commitment.revision,
+        attempt: w.commitment.attempt, result: result, reference: if (CM::positiveOutcome(result)) "receipt" else "" }
+      { ...view, workspace: WS::recordCommitment(w, { deviceVersion: w.device.contextVersion,
+        browserRevision: w.browser.revision, taskVersion: w.assistant.workVersion, report: report }, WS::Host) }
+    })).flatten()
+  val saved = observed.map(v => { ...v, workspace: WS::saveCommitment(v.workspace, {
+    key: v.workspace.commitment.key, revision: v.workspace.commitment.revision, succeeded: true }, WS::Store) })
+  val ended = saved.map(v => { ...v, progress: progressAtEnd(v, T::Host),
+    preparation: P::retire(v.preparation, v.preparation.version, T::Host) })
+  guarded.union(checking).union(observed)
+    .union(saved).union(ended)
+    .union(ended.map(v => { ...v, preparation: P::begin(v.preparation, v.preparation.key, "another request", T::Person) }))
+    .union(guarded.map(v => { ...v, preparation: P::decideFill(chosen, P::PersonFills, chosen.version, T::Person) }))
+    .union(guarded.map(v => { ...v, workspace: WS::abandonTask(v.workspace, WS::Person),
+      preparation: P::retire(v.preparation, v.preparation.version, T::Person), progress: progressAtEnd(v, T::Person) }))
+}
 ```
