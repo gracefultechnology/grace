@@ -1666,10 +1666,11 @@ pure def lawSearchNeedsItsOwnObservation(w: Workspace, report: GuidedObservation
   isPublicSearch(report.step) implies not(canConfirmGuided(w, report, by))
 pure def lawWrongSearchCannotFinish(w: Workspace, searchCheck: GuidedSearchCheck, by: WorkspaceActor): bool =
   val searchedStep = searchCheck.report.step
-  (match searchedStep {
+  val mismatch = match searchedStep {
     | SearchPublicSite(target) => target.origin != searchCheck.origin or target.query != searchCheck.query or target.tabId != B::activeTab(w.browser).id
     | _ => true
-  }) implies not(canConfirmGuidedSearch(w, searchCheck, by))
+  }
+  mismatch implies not(canConfirmGuidedSearch(w, searchCheck, by))
 pure val sampleSearchCheck: GuidedSearchCheck = {
   report: { ...sampleReport, step: sampleSearchStep, version: 3, deviceVersion: 3, browserRevision: 4,
     sourceKey: "search-document", evidence: "Search results for green tea." },
