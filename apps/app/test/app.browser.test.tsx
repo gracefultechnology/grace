@@ -1499,6 +1499,7 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
 
 it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {
   // spec/app/email.md, "Story: Read an email and its original attachment"
+  // spec/app/email.md, "A private sign-in suggestion requires one current message from the website's issuer"
   const person = { id: "private-qa-account", email: "reader@example.test" };
   const time = new Date(Date.now() + 60 * 60 * 1000).toISOString();
   const end = new Date(Date.now() + 120 * 60 * 1000).toISOString();
@@ -1543,6 +1544,10 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const url = new URL(oldURL);
   url.hash = "email";
   url.searchParams.set("owner_hint", ownerHint);
+  const tabletRequest = "a".repeat(43);
+  const consentStamp = "b".repeat(64);
+  let tabletApproved = false;
+  url.searchParams.set("emailDevice", tabletRequest);
   window.history.replaceState(undefined, "", url);
 
   let signedIn = false;
@@ -1590,6 +1595,16 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     switch (api.pathname) {
       case "/api/auth/session": return reply({ account: signedIn ? person : null });
       case "/api/product/files/scope": return signedIn ? reply({ accountId: person.id, owner: filesScope, session: "7".repeat(64) }) : reply({}, 401);
+      case "/api/product/email/westvale/consent":
+        if (!signedIn || !connectorConfigured) return reply({}, 403);
+        if (options?.method === "POST") {
+          const expected = { request: tabletRequest, grant, accountId: person.id, stamp: consentStamp };
+          if (options.body !== JSON.stringify(expected)) return reply({}, 403);
+          tabletApproved = true;
+          return reply({ approved: true });
+        }
+        return api.searchParams.get("request") === tabletRequest
+          ? reply({ accountId: person.id, grant, stamp: consentStamp, approved: tabletApproved }) : reply({}, 403);
       case "/api/auth/refresh": return reply({}, 401);
       case "/api/auth/providers": return reply({ google: false, email: true, sms: false });
       case "/api/auth/email/send":
@@ -1752,6 +1767,8 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" })));
     });
     await expect.element(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
+    await tap("Allow Westvale Electric test codes on the paired tablet");
+    await expect.element(page.getByText("Westvale Electric test sign-in suggestions are on for the paired tablet.")).toBeVisible();
     const homeUrl = new URL(window.location.href);
     homeUrl.hash = "";
     window.history.replaceState(undefined, "", homeUrl);
