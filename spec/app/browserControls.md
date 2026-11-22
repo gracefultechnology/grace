@@ -101,7 +101,10 @@ pure def editsRecent(browserInput: BrowserInput): bool = match browserInput {
 pure def lawRecentEditsKeepPage(b: B::Browser, browserInput: BrowserInput, by: BrowserControlActor): bool =
   editsRecent(browserInput) implies
     (control(b, browserInput, by).revision == b.revision and control(b, browserInput, by).tabs == b.tabs)
-pure val bValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"))
+pure val privateVisit = B::openPrivateSignIn(B::initial, "https://utility.example")
+pure val loadedPrivateVisit = B::finishPageLoad(privateVisit, privateVisit.selected,
+  B::activeTab(privateVisit).loadVersion, B::Loaded, true, "https://utility.example")
+pure val bValues = Set(B::initial, B::navigate(B::initial, "https://utility.example"), loadedPrivateVisit)
 pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAddress, DismissAddress,
   RequestClearHistory, SelectTab({ id: 1 }), SelectTab({ id: 2 }), CloseTab({ id: 1 }),
   OpenPrivateSignIn({ url: "https://utility.example" }),
@@ -167,6 +170,39 @@ pure def lawPrivateEmailRequiresTheCurrentPersonTab(b: B::Browser, id: int, revi
   (by != BrowserControlUser or id != b.selected or revision != b.revision or
     not(B::activeTab(b).manualSignIn) or B::activeTab(b).load != B::Loaded) implies
     not(canCheckPrivateEmail(b, id, revision, by))
+~~~
+
+### Only the person can fill the current private website field
+
+During private sign-in the person enters a code on the website. Android
+manages any system suggestion for the focused field. A choice for a different
+field, document, tab or origin has no authority over the current field.
+Entering a value leaves the guided task pending until the person resumes and
+Grace checks the ordinary page.
+
+~~~quint
+type PrivateCodeField = { tab: int, revision: int, loadVersion: int, document: int, fieldId: int, topOrigin: str, fieldOrigin: str }
+pure val testCodeField: PrivateCodeField = {
+  tab: loadedPrivateVisit.selected, revision: loadedPrivateVisit.revision,
+  loadVersion: B::activeTab(loadedPrivateVisit).loadVersion, document: 1, fieldId: 1,
+  topOrigin: "https://utility.example", fieldOrigin: "https://utility.example"
+}
+pure val offeredValues = Set(testCodeField, { ...testCodeField, fieldOrigin: "https://other.example" })
+pure val focusedValues = offeredValues.union(Set({ ...testCodeField, document: 2 }, { ...testCodeField, fieldId: 2 }))
+pure def currentPrivateCodeField(b: B::Browser, focused: PrivateCodeField): bool = {
+  val tab = B::activeTab(b)
+  focused.tab == b.selected and focused.revision == b.revision and focused.loadVersion == tab.loadVersion and
+    tab.manualSignIn and tab.load == B::Loaded and tab.secure and focused.topOrigin != "" and
+    focused.topOrigin == B::tabUrl(tab) and focused.fieldOrigin == focused.topOrigin
+}
+pure def mayFillPrivateCodeField(b: B::Browser, offered: PrivateCodeField, focused: PrivateCodeField, by: BrowserControlActor): bool =
+  by == BrowserControlUser and offered == focused and currentPrivateCodeField(b, focused)
+pure def lawOnlyThePersonCanFillTheCurrentPrivateCodeField(b: B::Browser, offered: PrivateCodeField, focused: PrivateCodeField, by: BrowserControlActor): bool =
+  mayFillPrivateCodeField(b, offered, focused, by) implies
+    (by == BrowserControlUser and offered == focused and focused.tab == b.selected and focused.revision == b.revision and
+     focused.loadVersion == B::activeTab(b).loadVersion and B::activeTab(b).manualSignIn and
+     B::activeTab(b).load == B::Loaded and B::activeTab(b).secure and focused.fieldOrigin != "" and
+     focused.fieldOrigin == B::tabUrl(B::activeTab(b)))
 ~~~
 
 ### A private sign-in tab keeps its address and page position to itself

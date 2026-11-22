@@ -823,6 +823,7 @@ async function signInPrivately(native: ReturnType<typeof fakePlugin>, enter = fi
   }).toBe(enabled);
   await native.report("tab-2", "https://utility.example", 100, { canGoBack: true, canGoForward: false });
   await waitForBack(true);
+  await expect.element(address).toHaveValue("https://utility.example");
   expect(await pressBack()).toBe(true);
   await expect.poll(() => native.calls("goBack").at(-1)?.id).toBe("tab-2");
   await native.report("tab-2", "https://utility.example", 100, { canGoBack: false, canGoForward: true });
