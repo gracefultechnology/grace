@@ -26,8 +26,8 @@ write it supplies the original entry, the current Workspace and preparation,
 and the provider subject and actual typed values resolved for that exact
 command. The bridge's `fillPermitted` applies `currentEffect` here and, before
 Grace types into a task's form, requires `graceMayFill`. A failed check drops
-the write. A task that ends while a write is queued never turns that entry into
-permission for an ordinary fill.
+the write. A task that ends while a write is queued never turns that entry
+into permission for an ordinary fill.
 
 ```quint
 import workspace as WS from "./workspace"

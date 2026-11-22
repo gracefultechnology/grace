@@ -2,10 +2,11 @@
 
 This library connects [task preparation](./prep.md) to the existing
 [workspace review](./workspace.md), without a payment or review transition of
-its own. It defines values the host keeps between calls: the task's progress
-link, held from the journal acknowledgement and, after retirement, kept only as
-the finished attempt that `progressAtEnd` returns; the queued website command,
-from enqueue to claim; and the accepted review's hand-off receipt.
+its own. The host keeps each queued website command with its original fill
+source and preparation version. It retains the accepted handoff and task ID
+until the journal acknowledges the matching attempt, then follows that attempt
+through its progress link. On retirement the host keeps the link only if
+Workspace has finished that attempt with matching durable evidence.
 For every Prep handoff, the host must use this conversion, then consume
 its result through existing `reviewCommitment` with the authenticated Host actor.
 It also holds the gate the actuator checks before Grace fills a task's form, and
