@@ -229,7 +229,9 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
       onPointerMove={drag}
       onPointerUp={(event) => release(event)}
       onPointerCancel={(event) => release(event, true)}
-      onLostPointerCapture={(event) => release(event, true)}
+      onLostPointerCapture={(event) => {
+        if (event.target === event.currentTarget) release(event, true);
+      }}
       onClickCapture={swallowSwipeClick}
       className={cn("absolute inset-1.5 z-[1] touch-pan-y touch-pinch-zoom overflow-hidden font-sans", className)}
       {...props}
