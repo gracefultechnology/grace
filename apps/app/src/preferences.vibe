@@ -60,8 +60,9 @@ schema DeviceBrightness { percent?: Schema.Int }
 schema DeviceSettings { volume: DeviceVolume; brightness: DeviceBrightness }
 
 type DeviceChoice = Pick<DisplayPreferences, "brightness" | "volume" | "muted" | "nightDimming">
+const sameVolume = (a: DeviceChoice, b: DeviceChoice) => a.volume === b.volume && a.muted === b.muted
 const sameChoice = (a: DeviceChoice, b: DeviceChoice) =>
-  a.brightness === b.brightness && a.volume === b.volume && a.muted === b.muted && a.nightDimming === b.nightDimming
+  a.brightness === b.brightness && sameVolume(a, b) && a.nightDimming === b.nightDimming
 const stepFor = (level: number, { min, max }: DeviceVolume) => min + Math.round(level / 100 * (max - min))
 
 effect function deviceSettings(port: PreferenceDevice) {
@@ -81,9 +82,12 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
   const requests = Stream.merge(Stream.merge(chosen, Stream.map(Stream.tick("1 minute"), () => undefined)), reports)
   let confirmed: DeviceChoice | undefined
   const follow = effect () => {
-    const { device, preferences: { session, revision } } = try workspace.get()
-    if (device.readiness !== "Ready" || confirmed === undefined || confirmed.volume !== session.volume || confirmed.muted !== session.muted) return
+    const { device, preferences } = try workspace.get()
+    if (device.readiness !== "Ready" || confirmed === undefined || !sameVolume(confirmed, preferences.session)) return
     const { volume } = try deviceSettings(port)
+    const current = try workspace.get()
+    const { session, revision } = current.preferences
+    if (current.device.contextVersion !== device.contextVersion || !sameVolume(preferences.session, session)) return
     const { step, min, max, muted } = volume
     if (min < 0 || max <= min || step < min || step > max ||
         (muted === session.muted && (muted || step === stepFor(session.volume, volume)))) return
