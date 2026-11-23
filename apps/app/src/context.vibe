@@ -79,7 +79,8 @@ const outcomes: Record<Outcome, string> = {
   AlreadyInCalendar: "was not done: it is already in their calendar, or you already asked them",
   NothingAsked: "was not done: you are not waiting on their answer to a question",
   NotTheirAnswer: "was not done: the person has not answered your question yet, and asking you for help is not their answer, so it still waits for them",
-  NotOnScreen: "was not done: that is not on the screen"
+  NotOnScreen: "was not done: that is not on the screen",
+  RepeatsOnlyOnTablet: "was not done: only appointments kept On this tablet can repeat or stop repeating; an email account’s calendar keeps the repeats its company sent"
 }
 
 schema Field { type?: string; enum?: string[]; description?: string }
@@ -132,7 +133,7 @@ function calendarName(registry: Registry, key: number) {
 }
 
 function appointment(registry: Registry, key: number, d: EntryDetails) {
-  const extras = [cleaned(d.location), d.participant && `with ${cleaned(d.participant)}`, d.recurrence === "Weekly" ? "every week" : d.recurrence === "Monthly" ? "every month" : ""]
+  const extras = [cleaned(d.location), d.participant && `with ${cleaned(d.participant)}`, d.recurrence === "Weekly" ? "every week" : d.recurrence === "Monthly" ? "every month" : "", d.important ? "important" : ""]
   return `${quoted(cleaned(d.title))} ${when(d.startAt)}${extras.filter((e) => e !== "").map((e) => `, ${e}`).join("")} [${calendarName(registry, key)}]`
 }
 
@@ -181,6 +182,7 @@ function always(s: Scene, now: number): readonly string[] {
   const waiting = outboxCount(registry, mail)
   return [
     `The person’s calendar for the next two weeks: ${rows.length === 0 ? "nothing planned" : rows.map((r) => appointment(registry, r.key, r.details)).join("; ")}.`,
+    ...registry.accounts.some((a) => a.use.calendar) ? ["Only appointments On this tablet can repeat, start repeating or stop repeating; on an email account’s calendar keep the repeat it already has."] : [],
     ...pending.ask.tag === "NoAsk" ? [] : [`${asked(s, pending.ask)} It happens only if they say yes${pending.agreed > 0 ? ", and they have said yes" : ""}.`],
     `Email accounts on the tablet: ${registry.accounts.length === 0 ? "none yet" : registry.accounts.map((a) => {
       const box = mail.find((m) => m.account === a.id)

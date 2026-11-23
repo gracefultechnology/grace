@@ -81,6 +81,10 @@ effect function upgradedCalendar(text: string, account: number) {
       changed = true
       return { ...value, picker: "NoPicker" }
     }
+    if (typeof value === "object" && value !== null && "approvedRevision" in value && !("version" in value)) {
+      changed = true
+      return { ...value, version: "" }
+    }
     if (key !== "identity" || typeof value !== "object" || value === null || !("occurrenceId" in value) ||
         !("kind" in value) || !("sourceRef" in value) || "sourceAccount" in value) return value
     const sourceAccount = value.kind === "Appointment" && typeof value.sourceRef === "string" && value.sourceRef !== "" ? account : 0

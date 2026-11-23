@@ -20,6 +20,7 @@ const Repeat = of<Recurrence>()(["Once", "Weekly", "Monthly"])
 export const Remind = Schema.Literals(["NoReminder", "HourBefore", "DayBefore"])
 const appointment = {
   title: Words, day: Day, time: Clock, until: Schema.optionalKey(Clock), place: Schema.optionalKey(Words), who: Schema.optionalKey(Words), remind: Schema.optionalKey(Remind),
+  important: Schema.optionalKey(Schema.Boolean),
 }
 const action = <const Kind extends string, const Fields extends Schema.Struct.Fields>(kind: Kind, fields: Fields) =>
   Schema.Struct({ kind: Schema.Literal(kind), ...fields })
@@ -57,7 +58,7 @@ export const Action = Schema.Union([
   action("proposeFromMessage", appointment),
   action("proposeChange", {
     entry: Words, title: Schema.optionalKey(Words), day: Schema.optionalKey(Day), time: Schema.optionalKey(Clock), until: Schema.optionalKey(Clock),
-    place: Schema.optionalKey(Words), repeat: Schema.optionalKey(Repeat), remind: Schema.optionalKey(Remind),
+    place: Schema.optionalKey(Words), repeat: Schema.optionalKey(Repeat), remind: Schema.optionalKey(Remind), important: Schema.optionalKey(Schema.Boolean),
   }),
   action("proposeDeletion", { entry: Words, scope: of<DeleteScope>()(["ThisOccurrence", "EntireSeries"]) }),
   action("deleteAppointment", { entry: Words, scope: of<DeleteScope>()(["ThisOccurrence", "EntireSeries"]) }),

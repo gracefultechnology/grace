@@ -12,7 +12,7 @@ import { consent, type Request } from "../gen/app__request.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { day, dayOf, hour, longDate, midnight, timeLabel } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
-import { client, outage, script, signIn } from "./cloud.vibe";
+import { client, modelTurns, outage, script, signIn } from "./cloud.vibe";
 import { actOnScreen, mountGmail } from "./screen.tsx";
 import "../src/main.css";
 
@@ -33,9 +33,18 @@ const tile = (n: number, plans = "(\\s*has plans)?") => new RegExp(`^(Today|${ne
 
 async function company(key: string) {
   const response = await fetch(new URL("/fake/account", cloud), { headers: { authorization: `Bearer ${key}` } });
-  const { boxes } = await response.json() as { boxes: { calendar: { externalId: string; title: string; startAt: string }[] }[] };
+  const { boxes } = await response.json() as { boxes: { calendar: { externalId: string; title: string; startAt: string; etag: string }[] }[] };
   return boxes[0].calendar;
 }
+const atCompany = async (key: string, id: string, init: { method: "PATCH" | "DELETE"; body?: object }) => {
+  const etag = (await company(key)).find((e) => e.externalId === id)?.etag ?? "";
+  return fetch(new URL(`/api/v1/eliza/google/calendar/events/${encodeURIComponent(id)}`, cloud), {
+    method: init.method, headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "If-Match": etag },
+    ...init.body === undefined ? {} : { body: JSON.stringify(init.body) },
+  });
+};
+const toldGrace = async (key: string) => (await Effect.runPromise(Effect.provide(modelTurns(cloud, key), client))).map((t) => t.context).join("\n");
+const marked = (title: string, tag: string) => page.getByRole("button", { name: new RegExp(`Important\\s*${title}.*${tag}`) });
 
 const selectedGmailCalendar = Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(1)), (c) => c.get());
 const held = async (key: string) => (await company(key)).filter((e) => e.title !== "Joan’s birthday").map((e) => ({ title: e.title, startAt: Date.parse(e.startAt) }));
@@ -165,7 +174,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
     identity: { owner: gmailView.owner, calendarId: gmailView.calendarId, occurrenceId: "clinic-visit", sourceRef: "clinic", sourceAccount: 1, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" },
     details: {
       title: "Doctor’s appointment", location: "Main St clinic", participant: "Dr. Patel", notes: "From the clinic’s email · Visit form attached",
-      startAt, endAt: startAt + hour, timezone: gmailView.timezone, allDay: false, seriesId: "", recurrence: "Once" as const, reminderEnabled: true, leadTime: day, important: false,
+      startAt, endAt: startAt + hour, timezone: gmailView.timezone, allDay: false, seriesId: "", recurrence: "Once" as const, reminderEnabled: true, leadTime: day, important: true,
     },
   };
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "createResponse"), client));
@@ -187,7 +196,8 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await expect.poll(async () => (await company(secret)).map((e) => e.title), atCloud).toEqual(["Eye check with Dr. Patel", "Joan’s birthday", "Doctor’s appointment"]);
   await expect.element(page.getByText("From the clinic’s email · Visit form attached")).toBeVisible();
   await click("Back to Calendar");
-  await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
+  // spec/app/calendar.md, "Creation binds a unique occurrence and editing changes only its draft"
+  await expect.element(marked("Doctor’s appointment", "Gmail")).toBeVisible();
 
   // spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"
   await click("Ask Grace");
@@ -197,6 +207,13 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await expect.element(ringed("Eye check with Dr\\. Patel", "Your eye check")).toBeVisible();
   await click("Close this tip");
   await expect.element(page.getByRole("group", { name: "Your eye check" })).not.toBeInTheDocument();
+  // spec/app/agentActions.md, "Grace only asks about a calendar that shows, with a question that calendar would take"
+  await say("Make my eye check every week.", "Let me see.", [{ kind: "proposeChange", entry: `event:1:${eye}`, repeat: "Weekly" }]);
+  expect((await run(Effect.flatMap(Effect.service(Proposal), (p) => p.get()))).ask.tag).toBe("NoAsk");
+  await expect.element(row("Eye check with Dr\\. Patel", "Not added yet")).not.toBeInTheDocument();
+  await say("Why not?", "Only appointments on this tablet can repeat.", []);
+  expect(await toldGrace(secret)).toContain("proposeChange was not done: only appointments kept On this tablet can repeat or stop repeating");
+  expect(await toldGrace(secret)).toContain("Only appointments On this tablet can repeat");
 
   const original = (await run(selectedGmailCalendar)).entries.find((e) => e.identity.sourceRef === entry.identity.sourceRef && e.phase === "Saved");
   if (!original) throw new Error("The added appointment has no saved source");
@@ -204,7 +221,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await click("Close Calendar");
   const events = new URL("/api/v1/eliza/google/calendar/events", cloud);
   const headers = { authorization: `Bearer ${secret}`, "content-type": "application/json" };
-  const removed = await fetch(`${events}/${encodeURIComponent(original.identity.occurrenceId)}`, { method: "DELETE", headers });
+  const removed = await atCompany(secret, original.identity.occurrenceId, { method: "DELETE" });
   expect(removed.ok).toBe(true);
   const created = await fetch(events, { method: "POST", headers: { ...headers, "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify({
     title: entry.details.title, location: "West clinic", startAt: new Date(startAt).toISOString(),
@@ -285,9 +302,11 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
   await click("Add");
   await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), "Bridge club"));
   await act(() => userEvent.click(page.getByRole("radio", { name: "Every week" })));
+  // spec/app/calendar.md, "Creation binds a unique occurrence and editing changes only its draft"
+  await act(() => userEvent.click(page.getByRole("switch", { name: "Important" })));
   await click("Save");
   await expect.element(page.getByText("Saved to your calendar")).toBeVisible();
-  await expect.element(row("Bridge club", "On this tablet").first()).toBeVisible();
+  await expect.element(marked("Bridge club", "On this tablet").first()).toBeVisible();
   await expect.element(ringed("Bridge club", "Done").first()).toBeVisible();
   await click("Next week");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "\\s*has plans") })).toBeVisible();
@@ -349,10 +368,7 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
 it('Change and delete an appointment from email (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
   const { secret, eye, eyeAt: scheduled, eyeDay, toEyeWeek, run } = await start();
   const eyeAt = scheduled + 7 * 60_000 + 12_345;
-  const shifted = await fetch(new URL(`/api/v1/eliza/google/calendar/events/${encodeURIComponent(eye)}`, cloud), {
-    method: "PATCH", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
-    body: JSON.stringify({ startAt: new Date(eyeAt).toISOString(), endAt: new Date(eyeAt + hour / 2).toISOString() }),
-  });
+  const shifted = await atCompany(secret, eye, { method: "PATCH", body: { startAt: new Date(eyeAt).toISOString(), endAt: new Date(eyeAt + hour / 2).toISOString() } });
   expect(shifted.ok).toBe(true);
   const titles = async () => (await held(secret)).map((e) => e.title);
   await toEyeWeek();
@@ -375,14 +391,29 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await edit("Eye check at Riverside", "Never");
   await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
   await expect.poll(() => held(secret), atCloud).toEqual([{ title: "Eye check at Riverside", startAt: eyeAt }]);
+  // spec/app/calendarView.md, "A change at the company names the revision it read and never overwrites a newer one"
+  const newer = "Gmail has a newer version of this appointment, so the tablet didn’t change it. This is how it is now.";
+  expect((await atCompany(secret, eye, { method: "PATCH", body: { title: "Eye check in room 4" } })).ok).toBe(true);
+  await edit("Eye check at the front desk", "Never");
+  await expect.element(page.getByText(newer)).toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "Eye check in room 4" })).toBeVisible();
+  expect(await titles()).toEqual(["Eye check in room 4"]);
   await click("Back to Calendar");
   await click("Next week");
-  await expect.element(row("Eye check at Riverside")).not.toBeInTheDocument();
+  await expect.element(row("Eye check in room 4")).not.toBeInTheDocument();
   await click("Previous week");
-  await act(() => userEvent.click(row("Eye check at Riverside", "Gmail")));
+  await act(() => userEvent.click(row("Eye check in room 4", "Gmail")));
+  await expect.element(page.getByText(newer)).not.toBeInTheDocument();
+  expect((await atCompany(secret, eye, { method: "PATCH", body: { title: "Eye check in room 5" } })).ok).toBe(true);
   await click("Delete");
   await click("Delete it");
-  await expect.element(row("Eye check at Riverside")).not.toBeInTheDocument();
+  await expect.element(page.getByText(newer)).toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "Eye check in room 5" })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Delete it" })).not.toBeInTheDocument();
+  expect(await titles()).toEqual(["Eye check in room 5"]);
+  await click("Delete");
+  await click("Delete it");
+  await expect.element(row("Eye check in room 5")).not.toBeInTheDocument();
   await expect.poll(titles, atCloud).toEqual([]);
 }, journey);
 

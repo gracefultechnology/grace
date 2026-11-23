@@ -26,7 +26,7 @@ import { dayNumber } from "./schedule.ts"
 type Planned = { readonly commands: readonly AgentAction[]; readonly showsEmail: boolean }
 type Plan = Planned | "NotFound" | "NotYetAvailable" | undefined
 type Done = { readonly outcome: Outcome; readonly showsEmail: boolean }
-type Appointment = { readonly title: string; readonly day: string; readonly time: string; readonly until?: string; readonly place?: string; readonly who?: string; readonly remind?: typeof Remind.Type }
+type Appointment = { readonly title: string; readonly day: string; readonly time: string; readonly until?: string; readonly place?: string; readonly who?: string; readonly remind?: typeof Remind.Type; readonly important?: boolean }
 
 const leads: Record<typeof Remind.Type, number> = { NoReminder: 0, HourBefore: hour, DayBefore: dayLength }
 const zone = () => Intl.DateTimeFormat().resolvedOptions().timeZone
@@ -62,7 +62,7 @@ function details(a: Appointment, recurrence: Recurrence, seriesId: string, timez
   const lead = leads[a.remind ?? "HourBefore"]
   return {
     title: a.title, location: a.place ?? "", participant: a.who ?? "", notes, startAt, endAt: until > startAt ? until : startAt + hour, timezone,
-    allDay: false, seriesId, recurrence, reminderEnabled: lead > 0, leadTime: lead, important: false
+    allDay: false, seriesId, recurrence, reminderEnabled: lead > 0, leadTime: lead, important: a.important ?? false
   }
 }
 
@@ -133,7 +133,7 @@ function changed(s: Scene, action: Extract<GraceAction, { kind: "proposeChange" 
   return plain([{ tag: "ProposeChange", key: found.key, id: found.id, details: {
     ...moved, title: action.title ?? was.title, location: action.place ?? was.location, endAt: until > moved.startAt ? until : moved.endAt, recurrence,
     seriesId: was.seriesId !== "" || recurrence === "Once" ? was.seriesId : found.id,
-    reminderEnabled: lead === undefined ? was.reminderEnabled : lead > 0, leadTime: lead ?? was.leadTime
+    reminderEnabled: lead === undefined ? was.reminderEnabled : lead > 0, leadTime: lead ?? was.leadTime, important: action.important ?? was.important
   } }])
 }
 

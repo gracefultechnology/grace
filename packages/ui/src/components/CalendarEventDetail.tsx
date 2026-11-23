@@ -1,5 +1,6 @@
-import type { ComponentProps } from "react";
-import { AlarmClockPlus, X } from "lucide-react";
+import type { ComponentProps, ReactNode } from "react";
+import { AlarmClockPlus, TriangleAlert, X } from "lucide-react";
+import { Alert } from "./Alert.tsx";
 import { cn } from "../lib/cn.ts";
 import { BillOffer, type BillOfferProps } from "./BillOffer.tsx";
 import { Button } from "./Button.tsx";
@@ -31,6 +32,8 @@ export type CalendarEventDetailProps = ComponentProps<"div"> & {
   onDelete?: () => void;
   editLabel?: string;
   deleteLabel?: string;
+  /** A note above the details, such as her change not being made because the event changed elsewhere first. */
+  notice?: ReactNode;
   /** The bill a bill occurrence was saved from: already confirmed, so Open bill beside its payment status. */
   bill?: Omit<BillOfferProps, "confirmed" | "onConfirm" | "onDismiss">;
 };
@@ -57,6 +60,7 @@ export function CalendarEventDetail({
   editLabel = "Edit",
   deleteLabel = "Delete",
   bill,
+  notice,
   className,
   ...props
 }: CalendarEventDetailProps) {
@@ -71,6 +75,11 @@ export function CalendarEventDetail({
   ] as const;
   return (
     <div className={cn("font-sans", className)} {...props}>
+      {notice != null && (
+        <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mb-[18px] max-w-[880px]">
+          {notice}
+        </Alert>
+      )}
       <Panel className="max-w-[880px] pt-2">
         <ul className="m-0 list-none p-0">
           {lines.map(([glyph, text]) =>

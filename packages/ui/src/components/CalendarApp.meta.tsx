@@ -174,6 +174,7 @@ export const form: CalendarEventFormProps & { heading: string } = {
     options: ["No", "Day before", "1 hour before"],
     value: "1 hour before",
   },
+  important: { checked: false },
 };
 
 const openEvent = fn();
@@ -208,6 +209,10 @@ export const meta: ComponentMeta<CalendarAppProps> = {
     },
     "With connect banner": { banner: connectBanner },
     "Detail, reminder showing": { view: "detail", event: { ...detail, onDismissReminder: fn(), onSnoozeReminder: snooze } },
+    "Detail, changed elsewhere": {
+      view: "detail",
+      event: { ...detail, when: "Saturday, November 14 · 11 am to 12 pm", notice: "Gmail has a newer version of this appointment, so the tablet didn’t change it. This is how it is now." },
+    },
     Form: { view: "form" },
     "Form, picking a time": {
       view: "form",
