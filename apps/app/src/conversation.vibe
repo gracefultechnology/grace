@@ -156,7 +156,7 @@ effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, u
     : selected === undefined ? `${direct}${excluded}` : `${selected} + ${list}${excluded}`
   if (selected === undefined && !customerHelp) {
     const group = `section:not([role],[aria-label],[aria-labelledby]):has(> ${topic}:first-child + ${list}:last-child)`
-    const groups = `${indexStart} + ${region}:has(> ${group}:first-child + ${group})`
+    const groups = `${indexStart} + ${region}`
     const firstTopic = native.readRecordText(id, `${groups} > ${group}:first-child > ${topic}${excluded}`) catch () => undefined
     const nextTopic = native.readRecordText(id, `${groups} > ${group}:first-child + ${group} > ${topic}${excluded}`) catch () => undefined
     const labels = [firstTopic, nextTopic].map((read) => read?.url === url.href ? comparableName(normalizedHeading(read.text)) : "")
