@@ -3853,11 +3853,11 @@ assert.deepEqual(outcome, ["Rejected", 1, 2]);`], root);
     const closed = once(verifier, "close");
     try {
       await once(verifier, "message");
-      const [before] = toolCpuSeconds([verifier]);
+      const [before] = await toolCpuSeconds([verifier]);
       const reaped = once(verifier, "message");
       verifier.send("work");
       assert.equal((await reaped)[0], 0);
-      const [after] = toolCpuSeconds([verifier]);
+      const [after] = await toolCpuSeconds([verifier]);
       assert.ok(before?.complete && after?.complete && after.seconds - before.seconds >= 0.28, `CPU seconds before ${before?.seconds}, after ${after?.seconds}`);
     } finally {
       verifier.kill();
