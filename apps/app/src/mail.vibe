@@ -1,4 +1,4 @@
-// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/email.md, "Sending a saved draft takes it out of Drafts"; spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"
+// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/email.md, "Sending a saved draft takes it out of Drafts"; spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"
 import { Machine as Accounts, type Account } from "../gen/app__accounts.effect.vibe"
 import { canEditDraft, canQueueSend, canSendDraft, currentDraft, draftStoreBusy, emptyContent, enabled, type Event as MailEvent, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
@@ -9,7 +9,12 @@ import { Connector, sendableAttachment, sendableAttachments, type Contact, type 
 import { Library } from "./files.vibe"
 import { type Held, followAccounts, Instances } from "./instances.vibe"
 
-export type Note = { readonly id: number; readonly text: string }
+type MailNoticeSource = Readonly<Pick<Mailbox, "owner" | "provider" | "account"> & { id: number }>
+export type Note = { readonly id: number; readonly source: MailNoticeSource; readonly text: string }
+
+function noticeSource(id: number, { owner, provider, account }: Mailbox): MailNoticeSource {
+  return { id, owner, provider, account }
+}
 
 export type Board = {
   readonly note: Note | undefined; readonly undeleted: ReadonlySet<number>; readonly replies: ReadonlyMap<number, ReplyHeader>; readonly unsaved: ReadonlySet<string>
@@ -199,6 +204,22 @@ function nameIn(names: ReadonlyMap<string, string>, shelf: Instances.Shape, to: 
   return names.get(first.toLowerCase()) ?? (sender || first)
 }
 
+effect function contactsFor(registry: Accounts.Shape, connectionOf: (account: Account) => MailConnection, names: Map<string, string>) {
+  const a = try registry.get()
+  const found: Contact[] = []
+  names.clear()
+  for (const id of contactAccounts(a)) {
+    const account = a.accounts.find((x) => x.id === id)
+    if (account === undefined) continue
+    for (const c of (connectionOf(account).contacts() catch () => [])) {
+      if (found.some((f) => f.address.toLowerCase() === c.address.toLowerCase())) continue
+      names.set(c.address.toLowerCase(), c.name)
+      found.push(c)
+    }
+  }
+  return found
+}
+
 export const mailing = Layer.effect(Mail, effect {
   const registry = try Accounts
   const shelf = try Instances
@@ -225,8 +246,12 @@ export const mailing = Layer.effect(Mail, effect {
   const accountOf = effect (id: number) => (try registry.get()).accounts.find((a) => a.id === id)
   const connectionOf = (account: Account) => connector.mail({ provider: account.provider, address: account.address })
 
-  effect function show(text: string) {
-    const note = { id: counter.next, text }
+  effect function show(source: MailNoticeSource, text: string) {
+    const owned = try ownedMailbox(source.id)
+    if (!owned?.account.use.mail || source.owner === "" || owned.m.owner !== source.owner ||
+        owned.m.provider !== source.provider || owned.m.account !== source.account ||
+        owned.account.address !== source.account) return
+    const note = { id: counter.next, source, text }
     counter.next += 1
     post({ note })
     try fork.in(scope) effect {
@@ -235,24 +260,8 @@ export const mailing = Layer.effect(Mail, effect {
     }
   }
 
-  effect function say(id: number, text: string) {
-    if (!quiet.delete(id)) try show(text)
-  }
-
-  effect function people() {
-    const a = try registry.get()
-    const found: Contact[] = []
-    names.clear()
-    for (const id of contactAccounts(a)) {
-      const account = a.accounts.find((x) => x.id === id)
-      if (account === undefined) continue
-      for (const c of (connectionOf(account).contacts() catch () => [])) {
-        if (found.some((f) => f.address.toLowerCase() === c.address.toLowerCase())) continue
-        names.set(c.address.toLowerCase(), c.name)
-        found.push(c)
-      }
-    }
-    return found
+  effect function say(source: MailNoticeSource, text: string) {
+    if (!quiet.delete(source.id)) try show(source, text)
   }
 
   effect function prepareReply(id: number, mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
@@ -273,16 +282,17 @@ export const mailing = Layer.effect(Mail, effect {
       const opened = mail.read(record.identity.ref, after.generation) catch () => undefined
       if (opened !== undefined) shelf.remember(account.id, { content: opened.content, assets: opened.receipt.succeeded ? opened.receipt.assets : undefined }, { kind: "refreshed", receipt: opened.receipt })
     }
+    const source = noticeSource(account.id, after)
     const news = told(account.id, before, after).news
     if (news === "SentEmail") {
       try noteSent(registry, account.id, after.draft.to)
-      try show(`Sent to ${nameOf(after.draft.to, { id: account.id, ref: after.replyTo })}`)
+      try show(source, `Sent to ${nameOf(after.draft.to, { id: account.id, ref: after.replyTo })}`)
     }
-    if (news === "QueuedEmail") try show("Waiting in Outbox until you’re back online")
+    if (news === "QueuedEmail") try show(source, "Waiting in Outbox until you’re back online")
     const gone = leftOutbox(before, after)
     for (const q of gone) try noteSent(registry, account.id, q.snapshot.content.to)
-    if (gone.length === 1) try show(`Your email to ${nameOf(gone[0].snapshot.content.to, { id: account.id, ref: gone[0].snapshot.replyTo })} was sent`)
-    if (gone.length > 1) try show("Your waiting emails were sent")
+    if (gone.length === 1) try show(source, `Your email to ${nameOf(gone[0].snapshot.content.to, { id: account.id, ref: gone[0].snapshot.replyTo })} was sent`)
+    if (gone.length > 1) try show(source, "Your waiting emails were sent")
     for (const record of undoable(after).filter((r) => !undoable(before).some((o) => o.identity.ref === r.identity.ref))) {
       try fork.in(scope) effect {
         try sleep(undoFor)
@@ -291,17 +301,17 @@ export const mailing = Layer.effect(Mail, effect {
     }
     const savedDraft = before.draftStorage === "DraftSaving" && after.draftStorage === "DraftSaved"
     const deletedDraft = before.draftStorage === "DraftDeleting" && after.draftStorage === "DraftUnstored"
-    if (savedDraft) try say(account.id, "Saved to Drafts")
-    if (after.draftStorage === "DraftUnstored" && (before.draftStorage === "DraftDeleting" || after.draftRequest > before.draftRequest)) try say(account.id, "Email discarded")
+    if (savedDraft) try say(source, "Saved to Drafts")
+    if (after.draftStorage === "DraftUnstored" && (before.draftStorage === "DraftDeleting" || after.draftRequest > before.draftRequest)) try say(source, "Email discarded")
     if (draftStoreBusy(before) && after.draftStorage === "DraftStoreFailed") quiet.delete(account.id)
     if (after.draftStorage !== "DraftStoreFailed") undeleted(account.id, false)
     if ((savedDraft || deletedDraft || sentDraftGone(before, after)) && after.folder === "DraftsFolder") try relist(box)
     const restored = changes.filter((c) => c.change === "RestoreMessage").map((c) => c.record)
     if (restored.length > 0) {
-      try show(`Moved back to ${folderNames[restored[0].folder] ?? "Inbox"}`)
+      try show(source, `Moved back to ${folderNames[restored[0].folder] ?? "Inbox"}`)
       if (restored.some((r) => r.folder === after.folder)) try relist(box)
     }
-    if (changes.some((c) => c.change === "PurgeMessage")) try show("Deleted for good")
+    if (changes.some((c) => c.change === "PurgeMessage")) try show(source, "Deleted for good")
   }
 
   effect function store(account: Account, mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
@@ -441,7 +451,7 @@ export const mailing = Layer.effect(Mail, effect {
       if (current.messageRef !== m.messageRef || !mayExportAttachments(current, [...refs]) || shelf.content(id, current.messageRef)?.version !== version) throw new AttachmentChanged()
       return try fetched(shelf, mail, id, file, version)
     }, `${account.provider}:${account.address}/${m.messageRef}`, version, { from: held?.from ?? "", subject: held?.subject ?? "" })
-    if (feedback === "FilesSaved") try show(chosen.length > 1 ? `${chosen.length} photos saved to Files` : "Saved to Files")
+    if (feedback === "FilesSaved") try show(noticeSource(id, m), chosen.length > 1 ? `${chosen.length} photos saved to Files` : "Saved to Files")
     if (feedback === "WriteFailed" || feedback === "CatalogFailed") post({ unsaved: new Set([...board.unsaved, ...ids]) })
   }
 
@@ -457,7 +467,7 @@ export const mailing = Layer.effect(Mail, effect {
     capture: (id) => asBuilt(capture(id)),
     camera: library.camera,
     share: (photo) => asBuilt(share(photo)),
-    contacts: () => asBuilt(people()),
+    contacts: () => asBuilt(contactsFor(registry, connectionOf, names)),
     hush: (id) => { quiet.add(id) },
     nameOf,
     board: {

@@ -259,7 +259,16 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
-type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "submit-public-search" | "observe-search-landing" |
+function guidanceRecovery(instruction: string) {
+  return instruction === privateFormRecovery ? "private-form" :
+    instruction.startsWith("I couldn’t read this page.") ? "unobservable" :
+    instruction.startsWith("The page or task changed.") ? "changed" :
+    instruction === "I couldn't find a link to point to on this page." ? "no-link" :
+    instruction === "I could not highlight a link on this page." ? "guide-exception" :
+    /^I (couldn’t reach Grace|need you to sign in)|^Sign in to Grace/u.test(instruction) ? "guide-account" : "other";
+}
+
+type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "submit-public-search" | "observe-search-landing" | "open-public-category" | "set-website-price-order" |
   "tap-guide-ring" | "observe-link-landing" | "bind-native-landing" |
   "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
 type PendingPageCheck = {
@@ -269,7 +278,7 @@ type PendingPageCheck = {
   snapshot: "not-requested" | "requested" | "returned" | "failed";
 };
 
-it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
+it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep, publicRating }) => {
   const transport = commands.benchmarkSurface;
   const publicFailure = (failure: unknown, stage: "Browser setup" | "Browser journey" | "Benchmark grading or cleanup") => {
     if (failure instanceof Error && (failure.name === "TimeoutError" ||
@@ -373,17 +382,47 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
     const initial = await read();
     outcome.start = { url: initial.url, documentId: initial.documentId };
     expect(initial.url).toBe(new URL(startUrl).href);
+    if (publicRating) {
+      failureStage = "submit-public-search";
+      await transport({ kind: "submitPublicSearch", query: publicRating });
+      failureStage = "observe-search-landing";
+      await transport({ kind: "openPublicRatingProduct" });
+      const landed = await read();
+      expect(landed.readyState).toBe("complete");
+      expect(landed.documentId).not.toBe(initial.documentId);
+      await bindNativeLanding(landed.url, 15_000);
+      outcome.operator = "trusted Chromium input on the public Shopping search and product link";
+      outcome.destination = { url: landed.url, documentId: landed.documentId };
+    }
     await userEvent.click(page.getByRole("button", { name: "Ask Grace" }));
     await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
     await expect.element(page.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
     outcome.observationPermission = "person granted browser reading in Grace";
     await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), intent);
+    const sentAfter = workspace().assistant.conversation.messages.length;
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
+    if (publicRating) {
+      failureStage = "confirm-completion";
+      const reply = () => {
+        const { messages } = workspace().assistant.conversation;
+        const last = messages.at(-1);
+        return messages.length > sentAfter + 1 && last?.author === "GraceMessage" ? last.text : undefined;
+      };
+      await expect.poll(() => Boolean(reply()), { timeout: 50_000 }).toBe(true);
+      const answer = reply();
+      if (!answer) throw new Error("Grace's answer was no longer current");
+      await expect.element(page.getByText(answer, { exact: true }).last()).toBeVisible();
+      const after = await read();
+      expect({ url: after.url, documentId: after.documentId }).toEqual(outcome.destination);
+      outcome.answer = answer;
+      return;
+    }
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     const reviewed = workspace().review.request.steps;
     const named = reviewed.find(step => step.tag === "ReachNamedPage");
     const record = reviewed.find(step => step.tag === "ReadLatestRecord");
     const search = reviewed.find(step => step.tag === "SearchPublicSite");
+    const sort = reviewed.find(step => step.tag === "SortPublicListing");
     if (named) outcome.reviewedDestination = named.subject;
     if (requiredStep) {
       outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: step.tag === "SearchPublicSite" ? step.query : guidedDetails(step).subject }));
@@ -427,6 +466,44 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
       await expect.element(finished, { timeout: 15_000 }).toBeVisible();
       expect(workspace().plan.receipts).toHaveLength(1);
       outcome.hops = [{ url: landed.url, documentId: landed.documentId, checked: true }];
+      outcome.graceTerminal = plan.element().textContent;
+      return;
+    }
+    if (sort && requiredStep === "SortPublicListing") {
+      expect(sort.direction).toBe("PriceAscending");
+      expect(sort.origin).toBe(new URL(initial.url).origin);
+      outcome.operator = "Chromium input through the public category links and website sort toolbar";
+      failureStage = "open-public-category";
+      await transport({ kind: "openPublicCategory" });
+      const category = await read();
+      expect(category.documentId).not.toBe(initial.documentId);
+      outcome.category = { url: category.url, documentId: category.documentId };
+      const resume = page.getByRole("button", { name: "Resume Grace", exact: true });
+      const check = page.getByRole("button", { name: "Check price order", exact: true });
+      const checkedDirection = async (direction: "ascending" | "descending") => {
+        failureStage = "set-website-price-order";
+        await transport({ kind: "setWebsitePriceOrder", direction });
+        const landed = await read();
+        expect(landed.readyState).toBe("complete");
+        await bindNativeLanding(landed.url, 15_000);
+        await expect.element(resume.or(check).first(), { timeout: 15_000 }).toBeVisible();
+        if (resume.query()) await userEvent.click(resume);
+        failureStage = "check-page";
+        await userEvent.click(check);
+        return { url: landed.url, documentId: landed.documentId };
+      };
+      const descending = await checkedDirection("descending");
+      await expect.element(continuing, { timeout: 15_000 }).toBeVisible();
+      expect(finished.query()).toBeNull();
+      expect(workspace().plan.receipts).toHaveLength(0);
+      outcome.wrongDirection = { ...descending, rejectedByGrace: true };
+      const ascending = await checkedDirection("ascending");
+      outcome.destination = ascending;
+      expect(ascending.documentId).not.toBe(descending.documentId);
+      failureStage = "confirm-completion";
+      await expect.element(finished, { timeout: 15_000 }).toBeVisible();
+      expect(workspace().plan.receipts).toHaveLength(1);
+      outcome.hops = [{ ...ascending, checked: true }];
       outcome.graceTerminal = plan.element().textContent;
       return;
     }
@@ -522,12 +599,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
                   outcome.guideResult = instruction;
                   return;
                 }
-                outcome.guidanceRecovery = instruction === privateFormRecovery ? "private-form" :
-                  instruction.startsWith("I couldn’t read this page.") ? "unobservable" :
-                  instruction.startsWith("The page or task changed.") ? "changed" :
-                  instruction === "I couldn't find a link to point to on this page." ? "no-link" :
-                  instruction === "I could not highlight a link on this page." ? "guide-exception" :
-                  /^I (couldn’t reach Grace|need you to sign in)|^Sign in to Grace/u.test(instruction) ? "guide-account" : "other";
+                outcome.guidanceRecovery = guidanceRecovery(instruction);
                 throw new Error(instruction);
               }
               await userEvent.click(nextMenu);
@@ -600,7 +672,22 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
         ? selection.selection : undefined;
       const returningToRecord = record && linkGuidance.query()?.textContent?.includes("Go back one page in this list.") === true;
       failureStage = "tap-guide-ring";
-      await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
+      let refusal: string | undefined;
+      await expect.poll(async () => {
+        const unavailable = named || record ? null : guidanceFailure.query();
+        if (unavailable) {
+          refusal = unavailable.textContent ?? "";
+          return true;
+        }
+        return (await transport({ kind: "tapGuide" })).tapped;
+      }, { timeout: 45_000 }).toBe(true);
+      if (refusal !== undefined) {
+        failureStage = "follow-guidance";
+        guidanceResult = "unavailable";
+        outcome.guidanceRecovery = guidanceRecovery(refusal);
+        outcome.linkUnavailable = true;
+        throw new Error("Grace could not offer a link");
+      }
       outcome.ringTap = true;
       failureStage = "observe-link-landing";
       await expect.poll(async () => {

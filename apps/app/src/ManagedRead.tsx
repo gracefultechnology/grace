@@ -5,7 +5,7 @@ import { type ReactNode, useCallback, useState, useSyncExternalStore, useTransit
 import { useMachine } from "../gen/app__setup.react.ts";
 import type { Recurrence } from "../gen/app__calendar.ts";
 import { mayChangeManaged, mayReadManaged, maySendManagedMail, skipsMonthsWithoutItsDay } from "../gen/app__setup.ts";
-import { actionableMailBody, inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type AppointmentChange, type ReadView, type WriteReceipt } from "./managedReads.vibe";
+import { actionableMailBody, inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type AppointmentChange, type ReadView } from "./managedReads.vibe";
 import { messageLinkParts } from "./messageLinks.vibe";
 import { calendarGrid } from "./Calendar.tsx";
 import { dayOf, instant, midnight } from "./calendarWindow.vibe";
@@ -264,7 +264,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const [failed, setFailed] = useState<{ key: string; text: string; retry?: Extract<ReadCommand, {kind: "mailFolder"}> }>();
   const [pending, startTransition] = useTransition();
   const [editor, setEditor] = useState<{ key: string; event?: EventRow; seriesFor?: string }>();
-  const [writeNotice, setWriteNotice] = useState<{ key: string; text: string; receipt?: WriteReceipt }>();
+  const [writeNotice, setWriteNotice] = useState<{ key: string; text: string; offerUndo?: boolean }>();
   const subscribe = useCallback((changed: () => void) => {
     const fiber = runtime.runFork(Stream.runForEach(managedState, () => Effect.sync(changed)));
     return () => fiber.interruptUnsafe();
@@ -318,14 +318,14 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
       : action.kind === "trash" ? "Moved to Trash."
         : action.kind === "undo" ? "Message restored."
           : action.action === "delete" ? "Appointment removed." : "Appointment saved.";
-    setWriteNotice({ key: projection, text, receipt: action.kind === "trash" ? receipt : undefined });
+    setWriteNotice({ key: projection, text, offerUndo: action.kind === "trash" && receipt !== undefined });
   });
+  const undo = canTrash && notice?.offerUndo && snapshot.kind === "mail" ? snapshot.trashed : undefined;
+  const undoVersion = undo?.version;
   const showNotice = notice && <div className="flex flex-wrap items-center gap-3">
     <PageText role="status">{notice.text}</PageText>
-    {notice.receipt?.version && <Button variant="capsule" size="pill" disabled={pending} onClick={() => {
-      const receipt = notice.receipt;
-      if (receipt?.version) write({ kind: "undo", id: receipt.itemId, version: receipt.version, prior: receipt.operationId });
-    }}>Undo</Button>}
+    {undo && undoVersion && <Button variant="capsule" size="pill" disabled={pending}
+      onClick={() => write({ kind: "undo", id: undo.itemId, version: undoVersion, prior: undo.operationId })}>Undo</Button>}
     <Button variant="capsule" size="pill" disabled={pending} onClick={() => setWriteNotice(undefined)}>Dismiss</Button>
   </div>;
 
