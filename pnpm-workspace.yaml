@@ -71,4 +71,4 @@ allowBuilds:
   protobufjs: false
 
 patchedDependencies:
-  lemmascript@0.6.10: patches/lemmascript-0.6.10-8c2a339.patch
+  lemmascript@0.6.10: patches/lemmascript-0.6.10.patch
