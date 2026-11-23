@@ -1397,6 +1397,11 @@ pure def lawRemainingBalanceReplacesStatementBalance(due: Set[str], balances: Se
 pure def hasOneStatementAnswer(amounts: Set[str], dates: Set[str]): bool =
   amounts.size() == 1 and dates.size() == 1 and not(amounts.contains("")) and not(dates.contains(""))
 type StatementSection = { key: str, amount: str, due: str }
+pure val sectionsValues = Set(
+  List(),
+  List({ key: "", amount: "x", due: "x" }),
+  List({ key: "first", amount: "x", due: "x" }),
+  List({ key: "first", amount: "x", due: "x" }, { key: "second", amount: "x", due: "x" }))
 pure def provesStatementSection(complete: bool, sections: List[StatementSection], amount: str, due: str): bool =
   if (sections.length() != 1) false
   else complete and amount != "" and due != "" and sections.head().key != "" and
