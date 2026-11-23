@@ -20,6 +20,9 @@ outputs:
   spec-evaluator-restored:
     description: Whether the fixture job reused its pinned evaluator from a spec cache for the same lockfile.
     value: ${{ steps.install-quint-evaluator.outputs.spec-evaluator-restored }}
+  fixture-turbo-inventory:
+    description: Inventory of the bulk cache restored from this fixture job’s pull request.
+    value: ${{ steps.fixture-turbo-inventory.outputs.path }}
   turbo-cache-key:
     description: The key for Turborepo's local cache on pull requests and local-only branch pushes, unique to this run attempt.
     value: ${{ steps.turbo-cache.outputs.key }}
@@ -29,7 +32,7 @@ runs:
     - id: setup-pnpm
       uses: pnpm/action-setup@v6
     - name: Install Dafny
-      if: inputs.verification == 'true'
+      if: inputs.verification == 'true' && !startsWith(inputs.job, 'simulate-')
       shell: bash
       run: |
         version=4.11.0
@@ -73,16 +76,24 @@ runs:
       env:
         JOB: ${{ inputs.job }}
       run: |
+        [[ $JOB != simulate-* ]] || JOB=product
         lock='${{ hashFiles('.nvmrc', 'pnpm-lock.yaml') }}'
         named="spec-${{ runner.os }}-${{ runner.arch }}-${JOB}-"
         prefix="${named}${lock}-"
         legacy="spec-${{ runner.os }}-${{ runner.arch }}-${lock}-${JOB}-"
-        key="${prefix}${{ github.sha }}-${{ github.run_attempt }}"
+        pr_prefix=
+        if [[ $JOB == selftest-* && $GITHUB_EVENT_NAME == pull_request && $GITHUB_REF =~ ^refs/pull/([1-9][0-9]*)/merge$ ]]; then
+          pr_prefix="${named}pr-${BASH_REMATCH[1]}-${lock}-"
+          echo "fixture-pr=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+        fi
+        key="${pr_prefix:-$prefix}${{ github.sha }}-${{ github.run_attempt }}"
         [[ $key == spec-*-"$JOB"-*-${{ github.sha }}-${{ github.run_attempt }} ]] || { echo "::error::Malformed spec cache key '$key'"; exit 1; }
         {
           echo "restore<<EOF"
+          if [[ -n $pr_prefix ]]; then printf '%s\n' "$pr_prefix"; fi
           printf '%s\n' "$prefix" "$legacy" "$named"
           echo "EOF"
+          echo "pr-lock-prefix=$pr_prefix"
           echo "lock-prefix=$prefix"
           echo "legacy-lock-prefix=$legacy"
           echo "key=$key"
@@ -105,14 +116,34 @@ runs:
       shell: bash
       env:
         JOB: ${{ inputs.job }}
-      run: echo "key=turbo-${{ runner.os }}-${{ runner.arch }}-${JOB}-${{ github.sha }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
-    - if: steps.turbo-cache.outputs.key != ''
+        FIXTURE_PR: ${{ steps.spec-cache.outputs.fixture-pr }}
+      run: |
+        prefix="turbo-$RUNNER_OS-$RUNNER_ARCH-$JOB-"
+        scope=${FIXTURE_PR:+"${prefix}pr-${FIXTURE_PR}-"}
+        echo "fixture-prefix=$scope" >> "$GITHUB_OUTPUT"
+        echo "key=${scope:-$prefix}$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+    - id: restore-turbo-cache
+      if: steps.turbo-cache.outputs.key != ''
       uses: actions/cache/restore@v6
       with:
         path: .turbo/cache
         key: ${{ steps.turbo-cache.outputs.key }}
-        restore-keys: turbo-${{ runner.os }}-${{ runner.arch }}-${{ inputs.job }}-
+        restore-keys: |
+          ${{ steps.turbo-cache.outputs.fixture-prefix }}
+          turbo-${{ runner.os }}-${{ runner.arch }}-${{ inputs.job }}-
+    - id: fixture-turbo-inventory
+      if: steps.turbo-cache.outputs.fixture-prefix != '' && startsWith(steps.restore-turbo-cache.outputs.cache-matched-key, steps.turbo-cache.outputs.fixture-prefix)
+      shell: bash
+      run: |
+        inventory=$(mktemp)
+        if find .turbo/cache -regextype posix-extended \
+          \( -type f -regex '\.turbo/cache/[0-9a-f]{16}-manifest\.json' \) -prune -o \
+          \( -type d -printf '%p %y:%m\0' -o -printf '%p %y:%m:%D:%i:%s:%C@\0' \) |
+          LC_ALL=C sort -z > "$inventory"; then
+          echo "path=$inventory" >> "$GITHUB_OUTPUT"
+        fi
     - name: Install pinned Eliza backend workspaces
+      if: github.job != 'vibestack-fixture-selftests'
       run: pnpm --dir vendor/eliza --filter @elizaos/cloud... --filter @elizaos/agent... --filter @elizaos/os... install --frozen-lockfile --ignore-scripts
       shell: bash
     - id: gen-seed
@@ -182,11 +213,13 @@ runs:
         PUBLISH_GEN_SEED: ${{ inputs.verification == 'true' && steps.gen-seed.outputs.prefix != '' }}
         REMEMBER_RESTORED_EVALUATORS: >-
           ${{ startsWith(inputs.job, 'selftest-') &&
-              github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
               steps.restore-spec-cache.outcome == 'success' && steps.restore-spec-cache.outputs.cache-matched-key != '' &&
-              steps.spec-cache.outputs.lock-prefix != '' && steps.spec-cache.outputs.legacy-lock-prefix != '' &&
-              (startsWith(steps.restore-spec-cache.outputs.cache-matched-key, steps.spec-cache.outputs.lock-prefix) ||
-               startsWith(steps.restore-spec-cache.outputs.cache-matched-key, steps.spec-cache.outputs.legacy-lock-prefix)) }}
+              ((github.event_name == 'pull_request' && steps.spec-cache.outputs.pr-lock-prefix != '' &&
+                startsWith(steps.restore-spec-cache.outputs.cache-matched-key, steps.spec-cache.outputs.pr-lock-prefix)) ||
+               (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+                steps.spec-cache.outputs.lock-prefix != '' && steps.spec-cache.outputs.legacy-lock-prefix != '' &&
+                (startsWith(steps.restore-spec-cache.outputs.cache-matched-key, steps.spec-cache.outputs.lock-prefix) ||
+                 startsWith(steps.restore-spec-cache.outputs.cache-matched-key, steps.spec-cache.outputs.legacy-lock-prefix)))) }}
       run: |
         if [[ $REMEMBER_RESTORED_EVALUATORS == true ]]; then
           {
@@ -292,29 +325,14 @@ runs:
       with:
         path: ~/.quint/rust-evaluator-${{ steps.quint-evaluator.outputs.version }}
         key: ${{ steps.quint-cache.outputs.cache-primary-key }}
-    # Shard A runs Bombadil with full Chromium. The workspace also needs the
-    # headless shell for Playwright journeys. The other isolated shards use neither.
     - name: Install Chromium
-      if: inputs.verification == 'true' && inputs.job != 'selftest-b' && inputs.job != 'selftest-rest'
-      env:
-        FULL_CHROMIUM_ONLY: ${{ inputs.job == 'selftest-a' }}
+      if: inputs.verification == 'true' && inputs.job != 'selftest-b' && inputs.job != 'selftest-rest' && !startsWith(inputs.job, 'simulate-')
       run: |
-        args=(chromium)
-        [[ "$FULL_CHROMIUM_ONLY" != true ]] || args+=(--no-shell)
-        pnpm exec playwright install "${args[@]}"
-        probe() {
-          node --input-type=module <<'JS'
-        import { chromium } from "playwright";
-        async function check(options) {
-          const browser = await chromium.launch({ timeout: 10_000, ...options });
-          await browser.close();
+        node --input-type=module - "${{ inputs.job == 'selftest-a' }}" "${{ inputs.cache-verification == 'true' }}" <<'JS'
+        import { hostedCachedFixture, installChromium } from "./vibestack/selftests/install.ts";
+        const [fullOnly, cacheVerification] = process.argv.slice(2);
+        if (fullOnly !== "true" || cacheVerification !== "true" || !hostedCachedFixture()) {
+          await installChromium(fullOnly === "true");
         }
-        await check({ executablePath: chromium.executablePath() });
-        if (process.env.FULL_CHROMIUM_ONLY !== "true") await check({});
         JS
-        }
-        if ! probe; then
-          pnpm exec playwright install-deps chromium
-          probe
-        fi
       shell: bash

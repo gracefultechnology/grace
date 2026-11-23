@@ -511,7 +511,11 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     if (!ring.shown) return undefined
     const a = try registry.get()
     const box = try boxOf(ring.key)
-    if (box !== undefined) try turnTo([lead, box], savedDay(a, try sourcesOf(a), report.told))
+    if (box !== undefined) {
+      const selected = (try box.get()).selectedId === ring.id
+      if (!selected || box !== lead)
+        try turnTo(selected ? [lead] : [lead, box], savedDay(a, try sourcesOf(a), report.told))
+    }
     return `${ring.key}/${ring.id}`
   }
 
