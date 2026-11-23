@@ -29,7 +29,7 @@ const BenchmarkDefinition = Schema.Struct({
   siteStorageState: Schema.optional(Schema.NonEmptyString),
   evaluator: Schema.optional(Schema.Literal("webarena")),
   exploratory: Schema.optional(Schema.Literal(true)),
-  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord", "SearchPublicSite"])),
+  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord", "SearchPublicSite", "SortPublicListing"])),
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
@@ -67,8 +67,15 @@ function benchmarkTitleId(taskId: string): string {
   return `${prefix || "task"}-${hash}`;
 }
 
+const publicRatingTask = "386";
+const ratingProduct = (intent: string) => /^What is the rating of (.+)\. Please round to the nearest whole number$/u.exec(intent)?.[1];
+const ratingSearchQuery = (product: string) => product.split(/\s+/u).slice(0, 2).join(" ");
+if (runs.some(({ taskId, intent, evaluator, chat, exploratory, siteStorageState, fixtureChoice, requiredStep }) =>
+  taskId === publicRatingTask && (!ratingProduct(intent) || evaluator !== "webarena" || chat !== "upstream" || exploratory !== true ||
+    !siteStorageState || fixtureChoice !== undefined || requiredStep !== undefined)))
+  throw new Error("The public rating diagnostic requires the pinned Shopping case and synthetic login");
 const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
-  taskId, titleId: benchmarkTitleId(taskId), intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet),
+  taskId, titleId: benchmarkTitleId(taskId), intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet), publicRating: taskId === publicRatingTask ? ratingSearchQuery(ratingProduct(intent) ?? "") : undefined,
 }));
 if (new Set(browserBenchmarks.map(({ titleId }) => titleId)).size !== runs.length)
   throw new Error("Benchmark test title IDs must be unique");
@@ -86,6 +93,9 @@ type SiteAction =
   | { kind: "open"; url: string }
   | { kind: "read"; selector?: string }
   | { kind: "submitPublicSearch"; query: string }
+  | { kind: "openPublicCategory" }
+  | { kind: "setWebsitePriceOrder"; direction: "ascending" | "descending" }
+  | { kind: "openPublicRatingProduct" }
   | { kind: "inspectGuide" }
   | { kind: "tapGuide" }
   | { kind: "hoverGuide" }
@@ -98,7 +108,7 @@ const DecisionResult = Schema.Struct({ status: Schema.String, model: Schema.opti
 type PublicSearchSubmission =
   | { state: "submitting"; search: typeof PublicSearch.Type }
   | ({ state: "completed" } & CompletedPublicSearch);
-type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; site?: Site };
+type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; ratingProduct?: { url: string; documentId: string }; ratingListings?: { visible: number; matching: number; cables: number; labels: string[] }; noAction?: { url: string; documentId: string }; site?: Site };
 const activeRuns = new WeakMap<Page, Run>();
 const Choices = Schema.Struct({ kind: Schema.Literal("choice"), goal: Schema.NonEmptyString, candidates: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, label: Schema.NonEmptyString })) });
 const PageText = Schema.Struct({ title: Schema.String, text: Schema.String, truncated: Schema.Boolean, readyState: Schema.Literals(["loading", "interactive", "complete"]) });
@@ -143,10 +153,102 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   if (!run) throw new Error("No benchmark fixture was supplied to the Chromium transport");
   const { fixture: definition } = run;
   const publicSearch = definition.requiredStep === "SearchPublicSite";
+  const publicSort = definition.requiredStep === "SortPublicListing";
+  if (action.kind === "openPublicCategory" || action.kind === "setWebsitePriceOrder") {
+    const site = run.site;
+    if (!publicSort || !site) throw new Error("The website sort is outside its reviewed case");
+    const website = site.page;
+    await website.bringToFront();
+    if (action.kind === "openPublicCategory") {
+      if (website.url() !== definition.startUrl) throw new Error("The public category must start from the storefront");
+      const menu = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
+        definition.taskId === "352" ? [/^Health (&|and) Household$/i, /^Diet (&|and) Sports Nutrition$/i, /^Nutrition Bars (&|and) Drinks$/i] : [];
+      const [first, second, leafName] = menu;
+      if (!first || !second || !leafName) throw new Error("The fixture has no public category operator sequence");
+      const nav = website.getByRole("navigation").filter({ has: website.locator("a").filter({ hasText: first }) }).first();
+      const navControl = (name: RegExp) => nav.locator("a[href]").filter({ hasText: name }).filter({ visible: true }).first();
+      const leaf = navControl(leafName);
+      await nav.locator('ul[role="menu"]').filter({ visible: true }).first().waitFor({ timeout: 15_000 });
+      await navControl(first).hover({ timeout: 15_000 });
+      const intermediate = navControl(second);
+      await intermediate.hover({ timeout: 10_000 }).catch(async () => {
+        await intermediate.press("ArrowRight", { timeout: 5_000 });
+      });
+      if (!await leaf.isVisible()) await intermediate.press("ArrowRight", { timeout: 5_000 });
+      const href = await leaf.getAttribute("href", { timeout: 15_000 });
+      if (!href) throw new Error("The disclosed category does not have an address");
+      const category = new URL(href, website.url());
+      if (category.origin !== site.origin || category.search || category.hash)
+        throw new Error("The disclosed category is outside the same-origin public storefront");
+      const [response] = await Promise.all([
+        website.waitForResponse(item => item.url() === category.href && item.request().isNavigationRequest() &&
+          item.request().frame() === website.mainFrame(), { timeout: 30_000 }),
+        website.waitForURL(category.href, { waitUntil: "load", timeout: 30_000 }),
+        leaf.click({ timeout: 15_000 }),
+      ]);
+      if (!response.ok()) throw new Error("The category did not load after the disclosed menu link was clicked");
+    } else {
+      const main = website.getByRole("main");
+      const sorter = main.getByRole("combobox", { name: /^Sort By$/i }).filter({ visible: true }).first();
+      if (await sorter.locator("option:checked").textContent({ timeout: 15_000 }) !== "Price") {
+        await Promise.all([
+          website.waitForEvent("framenavigated", { predicate: frame => frame === website.mainFrame(), timeout: 30_000 }),
+          sorter.selectOption({ label: "Price" }, { timeout: 15_000 }),
+        ]);
+        await website.waitForLoadState("load", { timeout: 30_000 });
+      }
+      const toggle = main.locator('[title="Set Ascending Direction"],[title="Set Descending Direction"]').filter({ visible: true }).first();
+      const title = action.direction === "ascending" ? "Set Ascending Direction" : "Set Descending Direction";
+      if (await toggle.getAttribute("title", { timeout: 15_000 }) === title) {
+        await Promise.all([
+          website.waitForEvent("framenavigated", { predicate: frame => frame === website.mainFrame(), timeout: 30_000 }),
+          toggle.click({ timeout: 15_000 }),
+        ]);
+        await website.waitForLoadState("load", { timeout: 30_000 });
+      }
+      const opposite = action.direction === "ascending" ? "Set Descending Direction" : "Set Ascending Direction";
+      if (await toggle.getAttribute("title", { timeout: 15_000 }) !== opposite) throw new Error("The storefront did not expose the selected price direction");
+    }
+    return {};
+  }
+  const product = definition.taskId === publicRatingTask ? ratingProduct(definition.intent) : undefined;
+  if (action.kind === "openPublicRatingProduct") {
+    const site = run.site;
+    if (product === undefined || !site || run.publicSearch?.state !== "completed" || run.ratingProduct)
+      throw new Error("The product requires its own completed public search");
+    const { frameTree: { frame: previous } } = await site.session.send("Page.getFrameTree");
+    if (previous.loaderId !== run.publicSearch.destination.documentId)
+      throw new Error("The public search document changed before the product was opened");
+    const listings = site.page.getByRole("main").locator("a.product-item-link").filter({ visible: true });
+    const productMatch = /^(?=.*\bugreen\b)(?=.*\blightning\b)(?=.*3[.\s]+5\s*mm).+$/isu;
+    const matches = listings.filter({ hasText: productMatch });
+    const cables = matches.filter({ hasText: /\bcable\b/iu });
+    const [visible, matching, cableCount, titles] = await Promise.all([
+      listings.count(), matches.count(), cables.count(), listings.allTextContents(),
+    ]);
+    run.ratingListings = { visible, matching, cables: cableCount, labels: titles.slice(0, 25).map(title => title.trim().slice(0, 180)) };
+    const link = cableCount === 1 ? cables : matching === 1 ? matches : undefined;
+    if (!link) throw new Error("The requested public product is not uniquely identifiable");
+    const label = (await link.innerText()).trim();
+    const href = await link.getAttribute("href");
+    const address = href && URL.parse(href, previous.url);
+    if (!address || address.origin !== site.origin || address.search || address.hash || address.username || address.password)
+      throw new Error("The visible product link did not identify a public Shopping page");
+    await Promise.all([
+      site.page.waitForURL(address.href, { waitUntil: "load", timeout: 30_000 }),
+      link.click(),
+    ]);
+    await site.page.getByRole("main").getByRole("heading", { level: 1, name: label, exact: true }).waitFor({ timeout: 15_000 });
+    const { frameTree: { frame: current } } = await site.session.send("Page.getFrameTree");
+    if (current.loaderId === previous.loaderId || current.url !== address.href)
+      throw new Error("Opening the product did not commit the selected document");
+    run.ratingProduct = { url: current.url, documentId: current.loaderId };
+    return run.ratingProduct;
+  }
   if (action.kind === "submitPublicSearch") {
     const site = run.site;
-    if (!publicSearch || !site || run.publicSearch || site.page.url() !== definition.startUrl ||
-        publicSearchQuery(definition.intent) !== action.query)
+    if ((!publicSearch && product === undefined) || !site || run.publicSearch || site.page.url() !== definition.startUrl ||
+        (product === undefined ? publicSearchQuery(definition.intent) : ratingSearchQuery(product)) !== action.query)
       throw new Error("The website search is outside its reviewed case");
     await site.page.bringToFront();
     const searchName = /^[\s\p{Co}]*Search\b/iu;
@@ -243,18 +345,28 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   }
   if (action.kind === "receipt") {
     try {
-      const decisionProvider = publicSearch ? "none" : definition.fixtureChoice === undefined ? "hosted" : "fixture";
+      const decisionProvider = publicSearch || publicSort || product !== undefined ? "none" : definition.fixtureChoice === undefined ? "hosted" : "fixture";
+      const { answer, ...visibleOutcome } = action.outcome;
       const observation = {
         surface: "desktop-chromium", taskId: definition.taskId, intent: definition.intent, startUrl: definition.startUrl,
         decisionProvider, decisionRequests: run.decisions, syntheticStorageState: Boolean(run.site && definition.siteStorageState),
         decisionServiceOrigin: decisionProvider === "hosted" && process.env.GRACE_BENCHMARK_CLEF_ORIGIN
           ? new URL(process.env.GRACE_BENCHMARK_CLEF_ORIGIN).origin : undefined,
-        outcome: { ...action.outcome, chatProvider: definition.chat ?? "fixture" }, chatStatus: run.chatStatus,
+        outcome: { ...visibleOutcome, chatProvider: definition.chat ?? "fixture", ...(product !== undefined && { ratingListings: run.ratingListings }) }, chatStatus: run.chatStatus,
         decisionResults: run.decisionResults,
       };
       const guided = hasHostedNavigation(observation, run.site?.page.url());
       const grade = await fleet?.grade(definition.taskId, run.site?.page, guided);
-      const webArenaGrade = definition.evaluator === "webarena" ? await official?.grade(definition.taskId, action.outcome, {
+      let evaluatorOutcome: Record<string, unknown> = action.outcome;
+      if (product !== undefined && action.outcome.failure === undefined) {
+        const { site, ratingProduct: checkedProduct, noAction } = run;
+        const frame = site && (await site.session.send("Page.getFrameTree")).frameTree.frame;
+        if (!frame || checkedProduct?.documentId !== frame.loaderId || checkedProduct.url !== frame.url || !noAction)
+          throw new Error("The answer attempt lost its public product or its untouched control");
+        evaluatorOutcome = { ...visibleOutcome, answer, destination: checkedProduct, noAction };
+        Object.assign(observation.outcome, { destination: checkedProduct, noAction, graceResponded: typeof answer === "string" && answer.trim() !== "" });
+      }
+      const webArenaGrade = definition.evaluator === "webarena" ? await official?.grade(definition.taskId, evaluatorOutcome, {
         guided, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
       }).catch((error: unknown) => ({ failure: error instanceof WebArenaEvaluatorError ? error.message : "The official WebArena evaluation failed" })) : undefined;
       let userAssisted = false;
@@ -268,6 +380,8 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       if (webArenaGrade && action.outcome.failure === undefined) {
         if (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore === null || webArenaGrade.noActionScore !== 0)
           throw new Error("The pinned WebArena evaluator did not return a landing score and a zero no-action control");
+        if (product !== undefined && (!("wrongAnswerScore" in webArenaGrade) || webArenaGrade.wrongAnswerScore !== 0))
+          throw new Error("The pinned string grader did not reject the independent wrong rating");
         if (publicSearch && action.outcome.graceTerminal !== undefined && !userAssisted)
           throw new Error("The public search result lacks a checked user-assisted journey");
         if (definition.exploratory) {
@@ -299,13 +413,29 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       : Schema.decodeUnknownSync(SiteState)(JSON.parse(readFileSync(definition.siteStorageState, "utf8")));
     if (storage && (!storage.cookies.length || storage.cookies.some(({ domain }) => domain.replace(/^\./u, "") !== start.hostname) || storage.origins.some((stored) => stored.origin !== origin)))
       throw new Error("Benchmark storage state must belong only to the declared synthetic website");
-    const browser = await context.context.browser()?.newContext({
+    const chromium = context.context.browser();
+    if (!chromium) throw new Error("The benchmark needs a Chromium browser context");
+    const options = {
       ...fixtureContextOptions,
       ignoreHTTPSErrors: true,
       ...(storage && { storageState: { cookies: [...storage.cookies], origins: storage.origins.map(({ origin, localStorage }) => ({ origin, localStorage: [...localStorage] })) } }),
-    });
-    if (!browser) throw new Error("The benchmark needs a Chromium browser context");
+    };
+    const browser = await chromium.newContext(options);
     try {
+      if (product !== undefined) {
+        const idle = await chromium.newContext(options);
+        try {
+          await routeFixtureContext(idle, { origin, permits: request => ["GET", "HEAD"].includes(request.method()) });
+          const control = await idle.newPage();
+          const observer = await observeFromDocumentStart(control);
+          if (!(await control.goto(start.href, { waitUntil: "load" }))?.ok())
+            throw new Error("The untouched Shopping control did not load");
+          const { frameTree: { frame } } = await observer.send("Page.getFrameTree");
+          run.noAction = { url: frame.url, documentId: frame.loaderId };
+        } finally {
+          await idle.close();
+        }
+      }
       await routeFixtureContext(browser, { origin, permits: (request, url) => {
         if (!["GET", "HEAD"].includes(request.method())) return false;
         if (publicSearch) return !request.isNavigationRequest() || url.href === start.href ||
@@ -852,7 +982,7 @@ declare module "vitest" {
     site: string;
     cloud: string;
     groundProxy: string;
-    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { titleId: string; exploratory: boolean; gradeWholeCohort: boolean })[];
+    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { titleId: string; exploratory: boolean; gradeWholeCohort: boolean; publicRating?: string })[];
     billworldStatements: readonly { label: string; billerId?: string; refuses?: true }[];
     realModel: boolean;
   }

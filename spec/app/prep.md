@@ -1,6 +1,6 @@
 # Prepare a bill payment on any supported website
 
-The semantic journey is goal → verified destination and account → current bill → chosen amount/date/method → verified form → consequential review. These are facts to establish, not a fixed list of pages or clicks. A website may combine or repeat them. [Execution](./execution.md) discovers current controls and [payment](./commitment.md) owns authorization and durable outcomes. This preparation model cannot submit money. It never reads a bill's own fields: what it holds is one [kind's](./taskKinds.md) reading and the task's terms, and the [bill kind](./billKind.md) judges them.
+The semantic journey is goal → verified destination and account → current bill → chosen amount/date/method → verified form → consequential review. These are facts to establish, not a fixed list of pages or clicks. A website may combine or repeat them. [Execution](./execution.md) discovers current controls and [payment](./commitment.md) owns authorization and durable outcomes. This preparation model cannot submit money. It never reads a bill's own fields: what it holds is one [kind's](./taskKinds.md) reading and the task's terms, and the [bill kind](./billKind.md) judges them. Booking a visit is prepared by the same steps, its reading and terms judged by the [booking kind](./bookingKind.md).
 
 Sources: new prototype's sign-in, account, payment, review and outcome views; PRD JOURNEY 01–09, HELP 01–12 and U01–12. Demo values, account suffixes, website names, synthetic credentials and synthetic success are not requirements. The same contract accepts any origin for which the integration can establish the required evidence; unsupported sites stop truthfully.
 
@@ -10,11 +10,12 @@ Sources: new prototype's sign-in, account, payment, review and outcome views; PR
 
 ### A bill preparation holds evidence and choices separately
 
-The facts are a reading of one kind of task, here the [bill kind's](./billKind.md), or nothing read yet; the choice is the task's terms, here a payment, or none yet. Unknown balances and fees are represented explicitly rather than treated as zero. The provider's bill identity is independent of the calendar entry used to open it. No balance is interpreted as proof of affordability or available bank funds. Each trusted access, fact or form report carries its identity and revision together; representative report samples include accepted, stale and invalid evidence without imposing a runtime bound.
+The facts are a reading of one kind of task, here the [bill kind's](./billKind.md), or nothing read yet; the choice is the task's terms, here a payment, or none yet. Unknown balances and fees are represented explicitly rather than treated as zero. The provider's bill identity is independent of the calendar entry used to open it. No balance is interpreted as proof of affordability or available bank funds. Each trusted access, fact or form report carries its identity and revision together; representative report samples include accepted, stale and invalid evidence for a bill, accepted and invalid facts and two form revisions for a visit, and a visit's subject with a bill's facts, without imposing a runtime bound.
 
 ```quint
 import task as T from "./task"
 import billKind as BK from "./billKind"
+import bookingKind as VK from "./bookingKind"
 import taskKinds as K from "./taskKinds"
 type PrepPhase = NoTask | NeedsAccess | ReadingFacts | Choosing | Preparing | ReadyForReview | HandedOff | NothingNeeded | AlreadyUnderWay | Blocked
 type Access = SignedOut | Challenge | SignedIn | WrongAccount | AccessDenied
@@ -33,18 +34,22 @@ pure val initial: Prep = {
 }
 pure val keyValues = Set(
   K::sampleBillKey, { ...K::sampleBillKey, origin: "https://credit.example" },
-  { ...K::sampleBillKey, kind: T::AppointmentBooking }, T::emptyKey)
+  K::sampleVisitKey, T::emptyKey)
 pure val accessReportValues = {
   val begun = begin(initial, K::sampleBillKey, "source", T::Person)
   val later = Set(1, 2, 3, 4).map(n => { key: begun.key, version: begun.version + n, access: SignedIn })
   Set(SignedIn, SignedOut, Challenge, WrongAccount, AccessDenied).map(a => { key: begun.key, version: begun.version, access: a })
     .union(later).union(Set({ key: T::emptyKey, version: begun.version, access: SignedIn }))
+    .union(Set({ key: K::sampleVisitKey, version: begun.version, access: SignedIn }))
 }
 pure val factReportValues = {
   val begun = begin(initial, K::sampleBillKey, "source", T::Person)
   val signed = inspectAccess(begun, { key: begun.key, version: begun.version, access: SignedIn }, T::Host)
-  K::factsValues.map(f => { key: signed.key, facts: f, evidence: "source", version: signed.version })
-    .union(K::factsValues.map(f => { key: signed.key, facts: f, evidence: "source", version: signed.version + 1 }))
+  val billFacts = K::factsValues.filter(f => match f { | VisitRead(x) => false | _ => true })
+  val visitFacts = K::factsValues.filter(f => match f { | VisitRead(x) => true | _ => false })
+  billFacts.map(f => { key: signed.key, facts: f, evidence: "source", version: signed.version })
+    .union(billFacts.map(f => { key: signed.key, facts: f, evidence: "source", version: signed.version + 1 }))
+    .union(visitFacts.union(Set(K::sampleBillFacts)).map(f => { key: K::sampleVisitKey, facts: f, evidence: "source", version: signed.version }))
     .union(Set({ key: T::emptyKey, facts: K::NoFacts, evidence: "", version: signed.version }))
 }
 pure val formReportValues = {
@@ -58,9 +63,12 @@ pure val formReportValues = {
     .union(Set(0, 1).map(n => { ...edited, revision: chosen.version + n }))
     .union(Set({ ...form, key: { ...form.key, origin: "https://credit.example" } }, { ...form, evidence: "" }, { ...form, proposal: T::NoTerms }))
     .union(T::bookValues.map(b => { ...form, proposal: T::BookTerms({ book: b }) }))
+    .union(Set(K::sampleBookTerms, K::sampleClashTerms).map(terms =>
+      Set(0, 1).map(n => { key: K::sampleVisitKey, proposal: terms, revision: chosen.version + n, evidence: "portal" })).flatten())
 }
 pure val termsValues = Set(K::samplePayTerms, T::NoTerms,
   T::PayTerms({ pay: { amount: 3500, fee: 25, currency: "USD", day: 2, funding: "other-bank" } }))
+  .union(Set(K::sampleBookTerms, K::sampleClashTerms))
 pure val expectedVersionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val reasonValues = Set("unsupported", "expired", "")
 pure val weight_begin = 3
@@ -154,7 +162,7 @@ pure def lawDisputingFactsCommitsNothing(b: Prep, by: T::TaskActor): bool =
 
 ### Choosing an amount, date and funding method is separate from approving submission
 
-The default is one understandable proposal only when its facts, including the fee, are observed; it is never silently selected. An unknown fee does not mean free. Otherwise ask one missing choice at a time. Any supported amount, date and existing funding method may be selected, not only the prototype's two radio choices. Relative or ambiguous dates must be resolved by the person before an exact day enters this model. Fees are part of the proposal and must be reviewed against the final form because they may depend on the chosen date or funding method. A choice is valid terms for the task's kind that fit the current facts, and once chosen it keeps fitting them through the form and the review; for a bill that is a valid proposal in the bill's currency, from one of its funding methods, while online payment is allowed and nothing is scheduled or settled.
+The default is one understandable proposal only when its facts, including the fee, are observed; it is never silently selected. An unknown fee does not mean free. Otherwise ask one missing choice at a time. Any supported amount, date and existing funding method may be selected, not only the prototype's two radio choices. Relative or ambiguous dates must be resolved by the person before an exact day enters this model. Fees are part of the proposal and must be reviewed against the final form because they may depend on the chosen date or funding method. A choice is valid terms for the task's kind that fit the current facts, and once chosen it keeps fitting them through the form and the review; for a bill that is a valid proposal in the bill's currency, from one of its funding methods, while online payment is allowed and nothing is scheduled or settled. For a visit it is one of the offered times; a time that clashes with her calendar can be chosen when she says the clash is fine.
 
 ```quint
 pure def canChoose(b: Prep, terms: T::Terms, by: T::TaskActor): bool =
@@ -165,6 +173,13 @@ pure def choose(b: Prep, terms: T::Terms, by: T::TaskActor): Prep =
 pure def alwaysChoiceFitsTheFacts(b: Prep): bool =
   (b.phase == Preparing or b.phase == ReadyForReview or b.phase == HandedOff) implies
     T::validTerms(b.key.kind, b.choice) and K::termsFit(b.facts, b.choice)
+pure def sometimesAClashIsAccepted(b: Prep): bool = b.phase == Preparing and K::acceptsClash(b.choice)
+pure val eval_witness_sometimesAClashIsAccepted = (
+  ("begin", K::sampleVisitKey, "source", T::Person),
+  ("inspectAccess", { key: K::sampleVisitKey, version: 1, access: SignedIn }, T::Host),
+  ("readFacts", { key: K::sampleVisitKey, facts: K::sampleVisitFacts, evidence: "source", version: 2 }, T::Host),
+  ("confirmFacts", T::Person),
+  ("choose", K::sampleClashTerms, T::Person))
 ```
 
 ### The person's answer to the fill offer decides whether Grace may fill the task's form
@@ -188,6 +203,13 @@ pure def stepGraceFillsOnlyAfterTheirYes(before: Prep, via: str, after: Prep): b
   (after.fillBy == GraceFills and before.fillBy != GraceFills) implies via == "decideFill"
 pure def sometimesGraceFills(b: Prep): bool = graceMayFill(b, K::fillOf(b.choice))
 pure def sometimesPersonFills(b: Prep): bool = b.phase == Preparing and b.fillBy == PersonFills
+pure val eval_witness_sometimesGraceFills = (
+  ("begin", K::sampleBillKey, "source", T::Person),
+  ("inspectAccess", { key: K::sampleBillKey, version: 1, access: SignedIn }, T::Host),
+  ("readFacts", { key: K::sampleBillKey, facts: K::sampleBillFacts, evidence: "source", version: 2 }, T::Host),
+  ("confirmFacts", T::Person),
+  ("choose", K::samplePayTerms, T::Person),
+  ("decideFill", GraceFills, 4, T::Person))
 ```
 
 ## Story: Correct the website form and review consequences
@@ -196,7 +218,7 @@ pure def sometimesPersonFills(b: Prep): bool = b.phase == Preparing and b.fillBy
 
 ### The final form must match every chosen value before consequential review
 
-Populate and re-find actual semantic controls through the execution policy, then read them back. If a fee or other value differs, return to a choice or explain the mismatch; a stale or mismatched callback cannot advance. No payment is submitted by this preparation step.
+Populate and re-find actual semantic controls through the execution policy, then read them back. If a fee or other value differs, return to a choice or explain the mismatch; a stale or mismatched callback cannot advance. No payment is submitted by this preparation step. A booking reaches its review and is handed off by the same steps as a bill.
 
 ```quint
 pure def canVerifyForm(b: Prep, formReport: T::ReviewReport, by: T::TaskActor): bool =
@@ -213,6 +235,23 @@ pure def stepOnlyVerifiedReview(before: Prep, after: Prep, out: List[PrepEffect]
   out.length() > 0 implies before.phase == ReadyForReview and before.live and after.phase == HandedOff
 pure def sometimesReviewReady(b: Prep): bool = b.phase == ReadyForReview
 pure def sometimesReviewHandedOff(b: Prep): bool = b.phase == HandedOff
+pure def sometimesBookingReadyForReview(b: Prep): bool = b.key.kind == T::AppointmentBooking and b.phase == ReadyForReview
+pure def sometimesBookingHandedOff(b: Prep): bool = b.key.kind == T::AppointmentBooking and b.phase == HandedOff
+pure val eval_witness_sometimesBookingReadyForReview = (
+  ("begin", K::sampleVisitKey, "source", T::Person),
+  ("inspectAccess", { key: K::sampleVisitKey, version: 1, access: SignedIn }, T::Host),
+  ("readFacts", { key: K::sampleVisitKey, facts: K::sampleVisitFacts, evidence: "source", version: 2 }, T::Host),
+  ("confirmFacts", T::Person),
+  ("choose", K::sampleBookTerms, T::Person),
+  ("verifyForm", { key: K::sampleVisitKey, proposal: K::sampleBookTerms, revision: 4, evidence: "portal" }, T::Host))
+pure val eval_witness_sometimesBookingHandedOff = (
+  ("begin", K::sampleVisitKey, "source", T::Person),
+  ("inspectAccess", { key: K::sampleVisitKey, version: 1, access: SignedIn }, T::Host),
+  ("readFacts", { key: K::sampleVisitKey, facts: K::sampleVisitFacts, evidence: "source", version: 2 }, T::Host),
+  ("confirmFacts", T::Person),
+  ("choose", K::sampleBookTerms, T::Person),
+  ("verifyForm", { key: K::sampleVisitKey, proposal: K::sampleBookTerms, revision: 4, evidence: "portal" }, T::Host),
+  ("handOff", T::Actuator))
 ```
 
 ### A choice the person makes on the page itself becomes the choice to check

@@ -71,12 +71,12 @@ export function guidedPageState(observation: LinkObservation | undefined, url: s
   const { blockers, elements } = observation.result
   if (blockers.some((blocker) => blocker.kind === "captcha")) return "PrivateForm"
   if (blockers.some((blocker) => blocker.covers !== "partial")) return "Unavailable"
-  if (use !== "CheckPublicSearchResult" && ordinaryGuidedPage(true, true, false, elements.map((element) => pageField(element)))) return "Ordinary"
+  if (use !== "CheckPublicSearchResult" && use !== "CheckPublicSort" && ordinaryGuidedPage(true, true, false, elements.map((element) => pageField(element)))) return "Ordinary"
   if (use === "ReadGuidedContent") return "PrivateForm"
   const address = URL.parse(url)
   if (!address || address.username || address.password ||
       (use === "CheckPublicDocument" && (address.search || address.hash)) ||
-      (use === "CheckPublicSearchResult" && address.hash)) return "PrivateForm"
+      ((use === "CheckPublicSearchResult" || use === "CheckPublicSort") && address.hash)) return "PrivateForm"
   const witnessed = elements.map((element): GuidedPageField => {
     const kind = pageField(element, use)
     if (kind === "NavigationPageField") {

@@ -2359,7 +2359,10 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
   await act(() => userEvent.fill(page.getByRole("textbox", { name: "Find a file" }), "Garden notes"));
   await tap("Find");
   await expect.poll(() => reads.length).toBe(3);
-  await act(() => { reads[2].resolve({ entries: [current] }); });
+  await act(async () => {
+    reads[2].resolve({ entries: [current] });
+    await reads[2].promise;
+  });
   const result = page.getByRole("button", { name: /Garden notes/ });
   const resultIsSelected = () => Boolean(result.query()?.closest('[aria-current="true"]'));
   await expect.poll(resultIsSelected).toBe(true);
@@ -3264,24 +3267,21 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     }
     signInWidget = "accountNumber";
     identifierEvidence = idleIdentifier;
-    for (const [index, label] of ["Account number or email", "Email address or account ID"].entries()) {
-      combinedLabel = label;
+    const expectHelpGuide = async (expectedCalls: number) => {
       await tap(showLink);
-      await expect.poll(() => guideCalls).toBe(beforeIdentifierGuide + index + 1);
+      await expect.poll(() => guideCalls).toBe(expectedCalls);
       await routeTo(page.getByText("Look for “Help center” on example.org."));
       expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
         documentId: about.id, command: { guidance: { nodeId: "help" } },
       });
+    };
+    for (const [index, label] of ["Account number or email", "Email address or account ID"].entries()) {
+      combinedLabel = label;
+      await expectHelpGuide(beforeIdentifierGuide + index + 1);
     }
     signInWidget = "hidden";
     newsletterEmail = blankNewsletterEmail;
-    const beforeNewsletterGuide = guideCalls;
-    await tap(showLink);
-    await expect.poll(() => guideCalls).toBe(beforeNewsletterGuide + 1);
-    await routeTo(page.getByText("Look for “Help center” on example.org."));
-    expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
-      documentId: about.id, command: { guidance: { nodeId: "help" } },
-    });
+    await expectHelpGuide(guideCalls + 1);
 
     newsletterEmail = null;
     currentPage = { ...help, path: "/help/center" };
@@ -3637,6 +3637,96 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
     await tap(check);
     await routeTo(plan.getByText("Read checks complete"));
     expect(plan.getByText("Search results for “green tea”.").query()).not.toBeNull();
+  } finally {
+    await dispose();
+    localStorage.clear();
+  }
+}, 120_000);
+
+it('Check the price direction in the reviewed public category (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async () => {
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const target = "Rain jackets";
+  const request = "List products from Rain jackets category by ascending price";
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said: request,
+    answer: JSON.stringify({ text: "Review this plan.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "SortPublicListing", target, direction: "PriceAscending" }] }] }),
+  }]), client));
+  const home = "https://example.org/";
+  const frame = await pinnedPage("statements", home, (html) => html.replace(/<main>[\s\S]*<\/main>/u, () =>
+    `<script>(${String(pageCommand)})(null, "");</script><main><h1>Rain jackets</h1>
+      <div id="sort"><label for="order">Sort By</label><select id="order"><option selected>Name</option><option>Price</option></select>
+      <a href="#" id="direction" title="Set Descending Direction">Change sort direction</a></div>
+      <ul><li>Lightweight jacket</li><li>Winter jacket</li></ul></main>`));
+  const sorter = frame.document.querySelector<HTMLSelectElement>("#order")!;
+  const direction = frame.document.querySelector<HTMLAnchorElement>("#direction")!;
+  const heading = frame.document.querySelector("h1")!;
+  let address = home;
+  let documentId = "home";
+  let replaceDuringRead = false;
+  const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
+    result: { ...frame.snapshot(command), url: address } }), false, ({ selector }) => {
+    const read = frame.read(selector);
+    if (replaceDuringRead && typeof read["text"] === "string" && read["text"].includes("Sort By")) {
+      replaceDuringRead = false;
+      documentId += "-replaced";
+    }
+    return { ...read, url: address };
+  });
+  localStorage.clear();
+  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const complete = page.getByText("Read checks complete", { exact: true });
+  const check = button("Check price order");
+  const load = async (url: string) => {
+    await native.started("tab-1", url);
+    address = url;
+    documentId = url;
+    await native.report("tab-1", url, 100, { pageError: null, securityBlocked: false });
+  };
+  const visit = async (url: string) => {
+    await load(url);
+    await tap(button("Resume Grace"));
+  };
+  const pending = async () => {
+    await tap(check);
+    await routeTo(page.getByRole("status", { name: "Page check result" }));
+    expect(complete.query()).toBeNull();
+  };
+  try {
+    await tap(button("Internet"));
+    await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+    await load(home);
+    await tap(button("Ask Grace"));
+    await tap(button("Allow Grace to read this browser"));
+    const message = page.getByRole("textbox", { name: "Message to Grace" });
+    await routeTo(message);
+    await act(() => message.fill(request));
+    await act(() => userEvent.keyboard("{Enter}"));
+    await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(/Rain jackets.*lowest price first/u));
+    await tap(button("Collapse"));
+    await tap(button("Start read plan"));
+    await pending();
+    await visit(home + "coats?display=grid");
+    await pending();
+    sorter.selectedIndex = 1;
+    direction.title = "Set Ascending Direction";
+    await pending();
+    direction.title = "Set Descending Direction";
+    heading.textContent = "Snow jackets";
+    await pending();
+    heading.textContent = target;
+    await visit("https://other.example/coats?display=grid");
+    await pending();
+    await visit(home + "coats?display=list");
+    replaceDuringRead = true;
+    await pending();
+    expect(replaceDuringRead).toBe(false);
+    await tap(check);
+    await routeTo(complete);
+    expect(page.getByText("Rain jackets sorted by ascending price.", { exact: true }).query()).not.toBeNull();
   } finally {
     await dispose();
     localStorage.clear();
