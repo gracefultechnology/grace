@@ -36,6 +36,7 @@ concurrency:
   group: >-
     ci-${{ github.event_name == 'workflow_dispatch' && inputs.cross_app_only && format('cross-app-{0}', github.sha) ||
     github.event_name == 'pull_request' && !(github.head_ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository) && format('pr-{0}', github.event.pull_request.number) ||
+    github.event_name == 'push' && (github.run_attempt == '1' && github.ref || github.run_id) ||
     format('sha-{0}', github.event.pull_request.head.sha || github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' && !(github.head_ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository) }}
 

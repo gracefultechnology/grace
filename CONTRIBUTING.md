@@ -200,7 +200,8 @@ the same module, the check renders that module once for each name prefix and cit
 A unit offered
 what the units it imports proved is proved once when their results are
 remembered, and meanwhile, to be proved again if they fail, only while one of
-them is still being proved. A test run
+them is still being proved. The first attempt starts no further checks of failed
+assertions once a finished import removes one of its assumptions. A test run
 may run any tool, as Studio's do, so it is keyed by all of them, and with a
 typecheck, a driver's run and an exploration by VibeLang's version and bytes.
 An exploration is keyed by the code that explores and what its page reads
@@ -398,7 +399,10 @@ Each run installs Dafny from its pinned release, checked against its SHA-256,
 and restores pnpm's store and Quint's evaluator. On ordinary CI runs, tool shards
 restore their shared fixture runs and the product runner restores verification
 results from the root, workspace packages and standalone examples. The result
-cache keys include the job, commit and run attempt. Nightly verification restores
+cache keys include the job, lockfile, commit and run attempt. A job tries both
+key layouts for its own name and current lockfile, then the current layout for
+another lockfile. Each entry is named by the tools and inputs that produced it.
+Nightly verification restores
 only the pinned evaluator and runs fresh checks.
 The default branch’s product job publishes the pnpm store after the frozen install.
 All jobs restore it under Grace, Eliza and example lockfiles. This cache holds public
@@ -413,7 +417,10 @@ policy. A pull request keeps its own Turborepo results in the GitHub cache
 instead, which only that pull request reads, so its next push reuses them. Branch pushes without a remote cache token also save their local results for later runs. Newer commits replace an older run of the same pull request.
 A pull request from `develop` into `main` waits for the push of the same commit
 to `develop` and replays its published results.
-Every pushed commit can finish. Completed tasks are shared through the cache.
+A job restores only the Turborepo results a job of its name saved. Pushes to
+one branch run one at a time: the running commit finishes and the newest push
+replaces an older pending run. A push re-run uses a separate concurrency group.
+Completed tasks are shared through the cache.
 Local `pnpm` task commands read the operator's cache credential from
 `~/.config/vibestack/turbo-cache.json`, outside the repository. Credentials
 are never part of a task fingerprint.
