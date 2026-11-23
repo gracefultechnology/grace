@@ -2110,3 +2110,69 @@ lemma lawRemainingBalanceReplacesStatementBalance_ensures(due: seq<string>, bala
 {
   ProofLib.FilterMember((set_x: string) => !((set_x in due)), remaining, value);
 }
+
+lemma restoreGuided_ensures(w: Workspace, recovery: GuidedRecovery, by_: WorkspaceActor)
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysDeviceRules(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysBrowserRules(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysAssistantRules(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysExecutionRules(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysCommitmentRules(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysCommitmentRegistryIsCanonical(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysCommitmentAssociation(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysPausedCommitmentCannotSubmit(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysOneTask(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysPausedTogether(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysRecordingHasPermission(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysOperationHasVisibleTask(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysEvidenceVersionsAreNonnegative(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysWakeRules(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysActiveWakePausesWebsiteWork(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysPreferencesRules(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysCommitmentUsesCanonicalIdentity(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysCurrentBeforeAction(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> alwaysCommitmentReviewUsesCurrentContext(restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> stepInterruptionsKeepTask(w, "restoreGuided", restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> stepWakeNeverDispatchesWebsite(w, "restoreGuided", restoreGuided(w, recovery, by_), []))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> stepEffectsRequireCurrentContext(w, restoreGuided(w, recovery, by_), []))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "restoreGuided", restoreGuided(w, recovery, by_)))
+  ensures (inv(w) ==> canRestoreGuided(w, recovery, by_) ==> stepCommitmentSwitchRetainsRecords(w, "restoreGuided", restoreGuided(w, recovery, by_)))
+{
+  if inv(w) && canRestoreGuided(w, recovery, by_) {
+    var steps := recovery.checkpoint.request.steps;
+    var freshTab := app__browser_activeTab(w.browser).id;
+    var restored := restoreCollectionTabs(steps, freshTab);
+    var after := restoreGuided(w, recovery, by_);
+    assert |restored| == |steps|;
+    assert after.plan.steps == restored;
+    forall reviewed | reviewed in restored
+      ensures guidedDetails(reviewed).subject != "" && guidedDetails(reviewed).outcome != ""
+    {
+      var i :| 0 <= i < |restored| && restored[i] == reviewed;
+      var original := steps[i];
+      assert original in steps;
+      assert reviewed == (if original.ReachPublicCollection? then original.(tabId := freshTab) else original);
+      assert guidedDetails(reviewed) == guidedDetails(original);
+    }
+    assert |after.plan.receipts| < |after.plan.steps|;
+    assert alwaysOneTask(after);
+  }
+}
+
+lemma lawPublicCollectionExampleIsAdmitted_ensures(by_: WorkspaceActor)
+  ensures (lawPublicCollectionExampleIsAdmitted(by_) == true)
+{
+  if by_.Host? {
+    var w := exampleCollection;
+    var check := sampleCollectionCheck;
+    var tab := app__browser_activeTab(w.browser);
+    assert w.device.readiness.Ready? && w.device.surface.Browser? && w.device.observationAllowed;
+    assert app__assistant_isVisible(w.assistant) && w.assistant.activity.ReadyForStep?;
+    assert w.execution.phase.Idle? && w.commitmentTask == "";
+    assert check.report.step == nextOutcome(w.plan);
+    assert guidedReadContextCurrent(w, check.report, by_);
+    assert guidedObservationCurrent(w, check.report, by_);
+    assert tab.load.Loaded? && tab.secure && tab.id == check.tabId;
+    assert app__browser_tabUrl(tab) == check.url && tab.loadVersion == check.loadVersion && tab.loadVersion > w.plan.openingBrowser;
+    assert canConfirmGuidedCollection(w, check, by_);
+  }
+}
