@@ -291,13 +291,13 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   browserAttempt.closeUnsafe();
   await click("Sign in again");
   await expect.element(button("Cancel")).toBeEnabled();
-  await act(async () => {
+  await act(() => {
     phase = "acknowledgmentPending";
     notify?.(status());
   });
   await expect.element(button("Cancel")).not.toBeInTheDocument();
   await expect.element(button("Sign in again")).not.toBeInTheDocument();
-  await act(async () => {
+  await act(() => {
     phase = undefined;
     notify?.(status());
     browserAttempt.openUnsafe();

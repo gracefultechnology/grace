@@ -4,7 +4,7 @@ import { Effect, Exit, Stream } from "effect";
 import { type ReactNode, useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
 import type { Recurrence } from "../gen/app__calendar.ts";
-import { managedReadAccountId, mayChangeManaged, mayReadManaged, maySendManagedMail, skipsMonthsWithoutItsDay } from "../gen/app__setup.ts";
+import { type GraceAccount, managedReadAccountId, mayChangeManaged, mayReadManaged, maySendManagedMail, skipsMonthsWithoutItsDay } from "../gen/app__setup.ts";
 import { actionableMailBody, inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type AppointmentChange, type ReadView } from "./managedReads.vibe";
 import { messageLinkParts } from "./messageLinks.vibe";
 import { calendarGrid } from "./Calendar.tsx";
@@ -256,7 +256,11 @@ function Agenda({ calendar, today, move, open, busy, children }: {
   </section>;
 }
 
-/** Grace's hosted read view for an Inbox or the primary Google calendar. */
+function signedInMailLeaseVersion(account: GraceAccount | undefined) {
+  return account?.tag === "GraceDeviceSignedIn" && account.mailLeaseUpgrade.tag === "LeaseMailReady"
+    ? account.mailLeaseUpgrade.leaseVersion : undefined;
+}
+
 export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const runtime = useRuntime();
   const account = useMachine(runtime).state;
@@ -286,8 +290,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const person = account?.graceAccount;
   const signedIn = person?.tag === "GraceSignedIn" ? person : undefined;
   const authorized = account !== undefined && mayReadManaged(account.graceAccount, account.googleLink, view === "Email" ? "ManagedEmail" : "ManagedCalendar");
-  const phase = person?.tag === "GraceDeviceSignedIn" ? person.mailLeaseUpgrade : undefined;
-  const leaseVersion = phase?.tag === "LeaseMailReady" ? phase.leaseVersion : undefined;
+  const leaseVersion = signedInMailLeaseVersion(person);
 
   const link = account?.googleLink;
   const grant = link?.tag === "GoogleLinkConnected" ? link.grant : "";
