@@ -1,6 +1,6 @@
 // spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open a verification app from the current private tab"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "Story: Keep the page still while Grace covers it"; spec/app/websiteRequests.md, "Story: Answer what a website asks of me"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/websiteRequests.md, "Looking away from a page ends what it asked, and never accepts it"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/surface.md, "A new page waits for its first routing before it takes any touch"; spec/app/surface.md, "The page is paused while Grace's window is in the background"; spec/app/surface.md, "The page shows only on the ready browser surface while Grace is not expanded"; spec/app/websiteRequests.md, "A download is saved with a visible status or visibly not saved"; spec/app/websiteRequests.md, "Only the website I am on can ask, and my answer holds for that website and those devices until Close browser"; spec/app/workspace.md, "A page that moves by itself where the person is not looking only records where it went"; spec/app/surface.md, "The page fills the rect the interface measured for it"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/websiteRequests.md, "Allow asks Android, and a website gets a device only when Android allows it too"; spec/app/websiteRequests.md, "When the app or browser I confirmed does not open, I am told"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/websiteRequests.md, "A website's request is held only for the current page of the tab I am looking at"; spec/app/browser.md, "Back and Forward stay within the selected tab's history"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "A load that never starts or never ends becomes the failure view with Reload"; spec/app/workspace.md, "Starting and changing pages use the browser's real navigation state"; spec/app/browser.md, "Stay on a leave-page warning keeps the page she was on"
-import { type PrivateHistory, type Rect, Machine as PageLayers, canReportHistory, historyFor, canDraw, canPlace, canRecreate, canRequestRouting, canSetHostVisible, canShow, noRect, pageRuns, pageShows, within } from "../gen/app__surface.effect.vibe"
+import { type PrivateHistory, type Rect, Machine as PageLayers, canAcknowledgeRouting, canReportHistory, historyFor, canDraw, canPlace, canRecreate, canRequestRouting, canSetHostVisible, canShow, noRect, pageRuns, pageShows, within } from "../gen/app__surface.effect.vibe"
 import { type HistoryDirection, canStepPrivate } from "../gen/app__deviceKeys.effect.vibe"
 import { type Tab, loadWaitSeconds, tabUrl } from "../gen/app__browser.effect.vibe"
 import { type Event, Machine as Workspaces, Rejected, type Workspace, canChangePage, canStayOnPage, canUnexpectedPage } from "../gen/app__workspace.effect.vibe"
@@ -87,6 +87,10 @@ type Held = { from: number; to: number }
 
 type Page = { tab: Tab; held: Held; url: string; load: number | undefined; adrift: boolean; asked: { version: number; url: string }[] }
 
+type RouteTargets = [PageId, Page][]
+
+type Routing = { _tag: "Route"; targets: RouteTargets; rects: Rect[]; version?: number } | Extract<Signal, { _tag: "Heard" }>
+
 type Request = { page: PageId; key: RequestKey }
 
 data Signal {
@@ -97,6 +101,7 @@ data Signal {
   Visible { visible: boolean }
   Android { request: number; verdict: AndroidOutcome }
   Purged { clean: boolean }
+  Routed { version: number | undefined; failed: RouteTargets }
   Waited { tab: Tab }
 }
 
@@ -349,11 +354,11 @@ effect function navigatePrivate(workspace: Workspaces.Shape, native: NativePage.
   return Effect.as(native.navigate(id, url.href), true) catch () => false
 }
 
-effect function listenForPageSignals(workspace: Workspaces.Shape, native: NativePage.Shape, signals: Queue.Queue<Signal>) {
+effect function listenForPageSignals(workspace: Workspaces.Shape, native: NativePage.Shape, signals: Queue.Queue<Signal>, routes: Queue.Queue<Routing>) {
   native.claim() catch effect (cause) => try warn("claim", undefined, cause)
   const visibility = Stream.map(Stream.concat(Stream.make(undefined), Stream.fromEventListener(webView.document, "visibilitychange")), () => Signal.Visible({ visible: !webView.hidden() }))
   try fork.scoped Stream.runForEach(workspace.changes, () => Queue.offer(signals, Signal.Woken()))
-  try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(signals, Signal.Heard({ event })))
+  try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(routes, Signal.Heard({ event })))
   try fork.scoped Stream.runForEach(visibility, (signal) => Queue.offer(signals, signal))
 }
 
@@ -407,6 +412,24 @@ function browserCommands(workspace: Workspaces.Shape, layer: PageLayers.Shape, n
 
 export const pageHost = (openApp: OpenPrivateVerificationApp | undefined) => Layer.effect(PageHost, makePageHost(openApp))
 
+effect function routePages(native: NativePage.Shape, layer: PageLayers.Shape, pages: ReadonlyMap<PageId, Page>, routes: Queue.Queue<Routing>, signals: Queue.Queue<Signal>) {
+  while (true) {
+    const next = try Queue.take(routes)
+    if (next._tag === "Heard") {
+      try Queue.offer(signals, next)
+      continue
+    }
+    const { targets, rects, version } = next
+    const failed: RouteTargets = []
+    if (version === undefined || canAcknowledgeRouting(try layer.get(), version)) {
+      for (const [id, page] of targets) if (pages.get(id) === page) {
+        native.route(id, rects) catch effect (cause) => { try warn("route", id, cause); failed.push([id, page]) }
+      }
+    }
+    try Queue.offer(signals, Signal.Routed({ version, failed }))
+  }
+}
+
 effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
   const workspace = try Workspaces
   const layer = try PageLayers
@@ -418,6 +441,7 @@ effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
   const forget = (id: number) => { asked.delete(id); said.delete(id) }
   const saving = new Map<number, Request>()
   const signals = try Queue.unbounded<Signal>()
+  const routes = try Queue.unbounded<Routing>()
   const pages = new Map<PageId, Page>()
   const unmade = new Map<number, number>()
   const measurer = try watchPage(layer, () => Queue.offer(signals, Signal.Woken()))
@@ -514,13 +538,14 @@ effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
       return
     }
     unmade.delete(tab.id)
-    pages.set(id, { tab, held: { from: tab.cursor, to: tab.cursor }, url: "", load: undefined, adrift: false, asked: [{ version: tab.loadVersion, url: tabUrl(tab) }] })
+    const page: Page = { tab, held: { from: tab.cursor, to: tab.cursor }, url: "", load: undefined, adrift: false, asked: [{ version: tab.loadVersion, url: tabUrl(tab) }] }
+    pages.set(id, page)
     presented = undefined
     try place(id)
     const l = try layer.get()
     if (!canRecreate(l)) return
     if (shown) try Effect.orDie(layer.send({ type: "recreate" }))
-    else native.route(id, l.routed) catch effect (cause) => { try warn("route", id, cause); try close(tab.id) }
+    else try Queue.offer(routes, { _tag: "Route", targets: [[id, page]], rects: l.pending ? l.requested : l.routed })
   }
 
   effect function syncTabs() {
@@ -540,34 +565,28 @@ effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
   }
 
   effect function reconcile() {
-    while (true) {
-      try syncTabs()
-      try resizeTabs(workspace, try workspace.get(), measurer.stripWidth)
-      const w = try workspace.get()
-      let l = try layer.get()
-      if (canPlace(l, measurer.measured.page)) {
-        l = try Effect.orDie(layer.send({ type: "place", page: measurer.measured.page }))
-        for (const id of pages.keys()) try place(id)
-      }
-      const visible = pageShows(w.device, w.assistant)
-      if (canShow(l, w.device, w.assistant)) l = try Effect.orDie(layer.send({ type: "show", s: w.device, a: w.assistant }))
-      presented = try present(native, pages, paused, presented, visible ? w.browser.selected : undefined, pageRuns(l))
-      try syncRequests()
-      const drawable = measurer.measured.controls.filter((r) => (!l.routingReady || within([r], l.routed)) && (!l.pending || within([r], l.requested)))
-      if (canDraw(l, drawable)) {
-        l = try Effect.orDie(layer.send({ type: "draw", rects: drawable }))
-        measurer.follow(l.drawn)
-      }
-      const wanted = measurer.measured.controls
-      const settled = l.routingReady && within(l.routed, wanted) && within(wanted, l.routed)
-      if (l.pending || settled || !canRequestRouting(l, wanted)) return
-      const routing = try Effect.orDie(layer.send({ type: "requestRouting", rects: wanted }))
-      for (const [id, { tab }] of [...pages]) native.route(id, wanted) catch effect (cause) => {
-        try warn("route", id, cause)
-        try close(tab.id)
-      }
-      try Effect.orDie(layer.send({ type: "acknowledgeRouting", version: routing.version }))
+    try syncTabs()
+    try resizeTabs(workspace, try workspace.get(), measurer.stripWidth)
+    const w = try workspace.get()
+    let l = try layer.get()
+    if (canPlace(l, measurer.measured.page)) {
+      l = try Effect.orDie(layer.send({ type: "place", page: measurer.measured.page }))
+      for (const id of pages.keys()) try place(id)
     }
+    const visible = pageShows(w.device, w.assistant)
+    if (canShow(l, w.device, w.assistant)) l = try Effect.orDie(layer.send({ type: "show", s: w.device, a: w.assistant }))
+    presented = try present(native, pages, paused, presented, visible ? w.browser.selected : undefined, pageRuns(l))
+    try syncRequests()
+    const drawable = measurer.measured.controls.filter((r) => (!l.routingReady || within([r], l.routed)) && (!l.pending || within([r], l.requested)))
+    if (canDraw(l, drawable)) {
+      l = try Effect.orDie(layer.send({ type: "draw", rects: drawable }))
+      measurer.follow(l.drawn)
+    }
+    const wanted = measurer.measured.controls
+    const settled = l.routingReady && within(l.routed, wanted) && within(wanted, l.routed)
+    if (l.pending || settled || !canRequestRouting(l, wanted)) return
+    const routing = try Effect.orDie(layer.send({ type: "requestRouting", rects: wanted }))
+    try Queue.offer(routes, { _tag: "Route", targets: [...pages], rects: wanted, version: routing.version })
   }
 
   effect function raise(tab: number, event: Extract<PageEvent, { _tag: "Asked" }>) {
@@ -637,6 +656,13 @@ effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
         if (canSetHostVisible(try layer.get(), signal.visible)) try Effect.orDie(layer.send({ type: "setHostVisible", visible: signal.visible }))
         return
       }
+      case "Routed": {
+        for (const [id, page] of signal.failed) if (pages.get(id) === page) try close(page.tab.id)
+        if (signal.version !== undefined && canAcknowledgeRouting(try layer.get(), signal.version)) {
+          try Effect.orDie(layer.send({ type: "acknowledgeRouting", version: signal.version }))
+        }
+        return
+      }
       case "Purged": return try website({ type: "purgeFinished", clean: signal.clean }, "WebsiteHost")
       case "Waited": return try waited(workspace, native, pages.get(pageOf(signal.tab.id)), signal.tab)
       case "Android": {
@@ -651,7 +677,8 @@ effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
     }
   }
 
-  try listenForPageSignals(workspace, native, signals)
+  try fork.scoped routePages(native, layer, pages, routes, signals)
+  try listenForPageSignals(workspace, native, signals, routes)
   try waitForLoads(workspace, requests, signals)
   try fork.scoped effect {
     while (true) {
