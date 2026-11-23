@@ -264,7 +264,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const [failed, setFailed] = useState<{ key: string; text: string; retry?: Extract<ReadCommand, {kind: "mailFolder"}> }>();
   const [pending, startTransition] = useTransition();
   const [editor, setEditor] = useState<{ key: string; event?: EventRow; seriesFor?: string }>();
-  const [writeNotice, setWriteNotice] = useState<{ key: string; text: string; offerUndo?: boolean }>();
+  const [writeNotice, setWriteNotice] = useState<{ key: string; text: string; undoOf?: string }>();
   const subscribe = useCallback((changed: () => void) => {
     const fiber = runtime.runFork(Stream.runForEach(managedState, () => Effect.sync(changed)));
     return () => fiber.interruptUnsafe();
@@ -318,9 +318,9 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
       : action.kind === "trash" ? "Moved to Trash."
         : action.kind === "undo" ? "Message restored."
           : action.action === "delete" ? "Appointment removed." : "Appointment saved.";
-    setWriteNotice({ key: projection, text, offerUndo: action.kind === "trash" && receipt !== undefined });
+    setWriteNotice({ key: projection, text, undoOf: action.kind === "trash" ? receipt?.operationId : undefined });
   });
-  const undo = canTrash && notice?.offerUndo && snapshot.kind === "mail" ? snapshot.trashed : undefined;
+  const undo = canTrash && snapshot.kind === "mail" && notice?.undoOf !== undefined && snapshot.trashed?.operationId === notice.undoOf ? snapshot.trashed : undefined;
   const undoVersion = undo?.version;
   const showNotice = notice && <div className="flex flex-wrap items-center gap-3">
     <PageText role="status">{notice.text}</PageText>
