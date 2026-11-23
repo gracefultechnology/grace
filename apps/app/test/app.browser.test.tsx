@@ -3592,7 +3592,7 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   }
 }, 120_000);
 
-it('Check the public events collection after following its breadcrumb (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async () => {
+it('Check a public collection (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async () => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const target = "Club events";
@@ -3664,7 +3664,13 @@ it('Check the public events collection after following its breadcrumb (spec/app/
   };
   try {
     await tap(button("Internet"));
-    await visitExampleSite(native);
+    const address = page.getByRole("textbox", { name: "Address" });
+    await routeTo(address);
+    await act(() => userEvent.type(address, "example.org{Enter}"));
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+    await native.started("tab-1", home);
+    await native.report("tab-1", home, 100, { pageError: null, securityBlocked: false });
+    await expect.element(address).toHaveAccessibleDescription("Encrypted connection");
     await tap(button("Ask Grace"));
     await tap(button("Allow Grace to read this browser"));
     await start(request);
