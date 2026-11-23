@@ -262,6 +262,12 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await changed();
     await joinedTo(guest.ssid);
     await expect.element(signIn).not.toBeInTheDocument();
+
+    tablet.ssid = null;
+    await draw(false);
+    await changed();
+    await expect.element(page.getByRole("button", { name: guest.ssid, exact: true })).toBeVisible();
+    await expect.element(signIn).not.toBeInTheDocument();
     expect({ panels: tablet.panels, signIns: tablet.signIns, lastJoin: tablet.joins.at(-1) }).toEqual({
       panels: 5, signIns: 3, lastJoin: { ssid: guest.ssid, security: "open" },
     });
