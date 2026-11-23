@@ -814,6 +814,49 @@ it(`Keep the latest draft count (spec/app/email.md, "Drafts shows the provider's
   }
 }, 120_000);
 
+it('Settle the original send with Email switched off (spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere")', async () => {
+  const { person, company } = await start();
+  await replyToClinic();
+  await act(() => userEvent.fill(words(), "Use the west entrance tomorrow."));
+  const received = Latch.makeUnsafe();
+  const finish = Latch.makeUnsafe();
+  const fetchWas = window.fetch.bind(window);
+  const deferred = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : input, location.href);
+    const result = await fetchWas(input, init);
+    if (url.origin === new URL(cloud).origin && /\/inbox-v1\/operations\/[^/]+\/dispatch$/u.test(url.pathname) && result.ok) {
+      received.openUnsafe();
+      await Effect.runPromise(finish.await);
+    }
+    return result;
+  });
+  const notification = page.getByText("Sent to Main St Clinic", { exact: true });
+  const state = () => {
+    const raw = localStorage.getItem("mail/1");
+    return raw === null ? undefined : parseMail(JSON.parse(raw));
+  };
+  try {
+    await click(page.getByRole("button", { name: "Send", exact: true }));
+    await Effect.runPromise(received.await);
+    await person({ type: "setUse", id: 1, use: { mail: false, calendar: true, contacts: true } });
+    await expect.element(notification).not.toBeInTheDocument();
+    finish.openUnsafe();
+    await expect.poll(state, { timeout: 15_000 }).toMatchObject({ sendStatus: "Sent", sendResultSaved: true, account: gmail });
+    await expect.element(notification).not.toBeInTheDocument();
+    await expect.poll(async () => (await company()).boxes.flatMap((box) => box.mail.filter((message) =>
+      message.subject === "Re: Reminder: your appointment tomorrow at 10 am" && message.labels.includes("SENT")).map(() => box.address))).toEqual([gmail]);
+
+    await person({ type: "openAccount", id: 1 });
+    await person({ type: "requestRemoval", id: 1 });
+    await person({ type: "removeAccount", id: 1, waiting: 0 });
+    await expect.poll(state).toBeUndefined();
+    await expect.element(notification).not.toBeInTheDocument();
+  } finally {
+    finish.openUnsafe();
+    deferred.mockRestore();
+  }
+}, 120_000);
+
 it('Review an unsent reply (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
   const { secret, host, company, restartFromEarlierMailbox } = await start();
   await replyToClinic();
