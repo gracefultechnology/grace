@@ -154,8 +154,8 @@ pure val preparationValues = {
     .union(Set(P::pause(yes, T::Host), P::retire(handed, handed.version, T::Host)))
     .union(Set(visitChosen, P::handOff(visitVerified, T::Actuator).state))
 }
-pure val exampleLoadedWorkspace = {
-  val started = WS::changeLifecycle(WS::initial, WS::StartupSucceeded, WS::Host)
+pure def exampleLoadedWorkspace(starting: WS::Workspace): WS::Workspace = {
+  val started = WS::changeLifecycle(starting, WS::StartupSucceeded, WS::Host)
   val opened = WS::openGrace(WS::visit(started, S::Browser, WS::Person), WS::Person)
   val allowed = WS::setBrowserObservation(opened, { allowed: true,
     deviceVersion: opened.device.contextVersion, browserRevision: opened.browser.revision }, WS::Person)
@@ -169,7 +169,7 @@ pure val exampleLoadedWorkspace = {
     secure: false, endedAt: "https://utility.example" }, WS::Host)
 }
 pure val wValues = {
-  val loaded = exampleLoadedWorkspace
+  val loaded = exampleLoadedWorkspace(WS::initial)
   val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion,
     browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
     website: X::goodObservation, checkpoint: "Read the current account" }, WS::Host)
@@ -371,7 +371,7 @@ pure def lawATaskFillUsesItsOwnVerifiedForm(
 }
 
 pure def exampleFillWorkspace(target: str, valueRef: str): WS::Workspace = {
-  val loaded = exampleLoadedWorkspace
+  val loaded = exampleLoadedWorkspace(WS::initial)
   val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion, browserRevision: loaded.browser.revision,
     taskVersion: loaded.assistant.workVersion, checkpoint: "Read the form", website: { ...X::goodObservation,
       generation: loaded.execution.generation, targets: List({ id: target, consequence: X::AskFirst, inReach: true }) } }, WS::Host)
