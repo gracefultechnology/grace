@@ -31,12 +31,12 @@ export function GraceCursor({ x, y, tag, pressed = false, paused = false, flip =
     <div
       role="status"
       className={cn(
-        "pointer-events-none absolute z-6 size-0 transition-[left,top] duration-[1400ms] ease-standard motion-reduce:transition-none",
+        "pointer-events-none absolute top-0 left-0 z-6 size-0 transition-[translate] duration-[1400ms] ease-standard will-change-transform motion-reduce:transition-none",
         dragging && "transition-none",
         className,
         top && "z-7",
       )}
-      style={{ left: x, top: y, ...style }}
+      style={{ translate: `${x}px ${y}px`, ...style }}
       {...props}
     >
       {pressed && !paused && <span aria-hidden className="absolute -top-7 -left-7 size-14 rounded-full border-4 border-guide animate-ripple motion-reduce:animate-none" />}
