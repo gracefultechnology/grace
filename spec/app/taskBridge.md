@@ -154,8 +154,8 @@ pure val preparationValues = {
     .union(Set(P::pause(yes, T::Host), P::retire(handed, handed.version, T::Host)))
     .union(Set(visitChosen, P::handOff(visitVerified, T::Actuator).state))
 }
-pure def exampleLoadedWorkspace(starting: WS::Workspace): WS::Workspace = {
-  val started = WS::changeLifecycle(starting, WS::StartupSucceeded, WS::Host)
+pure val wValues = {
+  val started = WS::changeLifecycle(WS::initial, WS::StartupSucceeded, WS::Host)
   val opened = WS::openGrace(WS::visit(started, S::Browser, WS::Person), WS::Person)
   val allowed = WS::setBrowserObservation(opened, { allowed: true,
     deviceVersion: opened.device.contextVersion, browserRevision: opened.browser.revision }, WS::Person)
@@ -164,12 +164,9 @@ pure def exampleLoadedWorkspace(starting: WS::Workspace): WS::Workspace = {
   val compact = WS::interact(available, I::Resize({ expanded: false }), WS::Person)
   val begun = WS::begin(compact,
     { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, WS::Person)
-  WS::receiveLoad(begun, { id: begun.browser.selected,
+  val loaded = WS::receiveLoad(begun, { id: begun.browser.selected,
     version: B::tabById(begun.browser, begun.browser.selected).loadVersion, result: B::Loaded,
     secure: false, endedAt: "https://utility.example" }, WS::Host)
-}
-pure val wValues = {
-  val loaded = exampleLoadedWorkspace(WS::initial)
   val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion,
     browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
     website: X::goodObservation, checkpoint: "Read the current account" }, WS::Host)
@@ -371,34 +368,32 @@ pure def lawATaskFillUsesItsOwnVerifiedForm(
     }
 }
 
-pure def exampleFillWorkspace(target: str, valueRef: str): WS::Workspace = {
-  val loaded = exampleLoadedWorkspace(WS::initial)
+pure val bookedNameWriteValues: Set[WS::WorkspaceResult] =
+  Set(MA::savedWorkspace(AC::observedSample(WS::initial)))
+pure val bookingNameBindingValues: Set[BookingDetailBinding] =
+  Set({ target: "name-field", valueRef: "memory-name-revision-2", detail: "name", answerVersion: 5 })
+pure val fillWorkspaceValues: Set[WS::Workspace] = {
+  val loaded = wValues.filter(w => w.commitment.stage == CM::Empty and w.assistant.taskId == "task").getOnlyElement()
   val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion, browserRevision: loaded.browser.revision,
-    taskVersion: loaded.assistant.workVersion, checkpoint: "Read the form", website: { ...X::goodObservation,
-      generation: loaded.execution.generation, targets: List({ id: target, consequence: X::AskFirst, inReach: true }) } }, WS::Host)
-  WS::prepare(observed, AC::sampleOperationRequest(observed, target, valueRef, X::FillOrdinary), WS::Host)
+    taskVersion: loaded.assistant.workVersion, checkpoint: "Read the payment form", website: { ...X::goodObservation,
+      generation: loaded.execution.generation, targets: List({ id: "bill-amount", consequence: X::AskFirst, inReach: true }) } }, WS::Host)
+  val queued = WS::prepare(observed, AC::sampleOperationRequest(observed, "bill-amount", "chosen-payment", X::FillOrdinary), WS::Host)
+  val write = WS::dispatch(queued, AC::sampleOperationTokens(queued), WS::Actuator)
+  Set(queued, write.state, bookedNameWriteValues.getOnlyElement().state, WS::initial, AC::ordinarySample(AC::observedSample(WS::initial)).state)
 }
-pure val billFill: WS::Workspace = exampleFillWorkspace("bill-amount", "chosen-payment")
-pure val bookedNameWrite: WS::WorkspaceResult = MA::savedWorkspace(AC::observedSample(WS::initial))
-pure val bookingNameBinding: BookingDetailBinding = { target: "name-field", valueRef: "memory-name-revision-2", detail: "name", answerVersion: 5 }
-pure val bookingNameField: BookingField = BookingSavedField({ target: bookingNameBinding.target, valueRef: bookingNameBinding.valueRef,
-  detail: bookingNameBinding.detail, answerVersion: bookingNameBinding.answerVersion })
-pure val bookedNameAuthorization: M::MemoryStep = MA::authorizedFill(MA::approvedFact(M::initial))
-pure val bookingNameRead: ResolvedBookingDetail = { details: { facts: List(bookedNameAuthorization.state) },
-  resolved: { owner: K::sampleVisitKey.owner, valueRef: bookingNameBinding.valueRef, authorization: bookedNameAuthorization.out.nth(0) } }
-pure val fillWorkspaceValues: Set[WS::Workspace] =
-  Set(billFill, WS::dispatch(billFill, AC::sampleOperationTokens(billFill), WS::Actuator).state, bookedNameWrite.state,
-    WS::initial, AC::ordinarySample(AC::observedSample(WS::initial)).state)
 pure val queuedValues: Set[QueuedWebsiteCommand] = {
-  val write = WS::dispatch(billFill, AC::sampleOperationTokens(billFill), WS::Actuator)
+  val pending = fillWorkspaceValues.filter(w => w.execution.phase == X::Queued).getOnlyElement()
+  val write = WS::dispatch(pending, AC::sampleOperationTokens(pending), WS::Actuator)
   val chosen = preparationValues.filter(p => p.key == CM::exampleKey and p.phase == P::Preparing and p.fillBy == P::NotAsked).getOnlyElement()
   val yes = P::decideFill(chosen, P::GraceFills, chosen.version, T::Person)
   val queued = captureWebsiteCommand(yes, write.out.nth(0), "task", NoBookingField)
+  val booked = bookedNameWriteValues.getOnlyElement()
+  val nameBinding = BookingSavedField(bookingNameBindingValues.getOnlyElement())
   Set(queued, captureWebsiteCommand(P::initial, queued.command, "", NoBookingField),
     { ...queued, source: TaskForm({ task: "other-task", key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms), bookingField: NoBookingField }) },
     { ...queued, command: AC::ordinarySample(AC::observedSample(WS::initial)).out.nth(0) })
     .union(preparationValues.filter(p => p.key == K::sampleVisitKey and p.phase == P::Preparing).map(v =>
-      captureWebsiteCommand(P::decideFill(v, P::GraceFills, v.version, T::Person), bookedNameWrite.out.nth(0), "task", bookingNameField)))
+      captureWebsiteCommand(P::decideFill(v, P::GraceFills, v.version, T::Person), booked.out.nth(0), "task", nameBinding)))
 }
 pure val operationValues: Set[X::WebsiteEffect] = queuedValues.map(q => {
   val command = q.command
@@ -411,20 +406,25 @@ pure val readValues: Set[FormRead] = {
   val outside = queuedValues.filter(q => q.source == OutsidePreparation).getOnlyElement()
   val original = { command: outside.command, key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms),
     bookingField: NoBookingField, detailRead: NoBookingDetailRead }
-  val book = { command: bookedNameWrite.out.nth(0), key: K::sampleVisitKey, fill: K::fillOf(K::sampleBookTerms),
-    bookingField: bookingNameField, detailRead: ReadBookingDetail(bookingNameRead) }
-  val corrected = M::propose(bookedNameAuthorization.state, MA::correction, M::MemoryUser)
-  val forgotten = M::forget(bookedNameAuthorization.state, bookedNameAuthorization.state.revision, M::MemoryUser)
+  val booked = bookedNameWriteValues.getOnlyElement()
+  val binding = bookingNameBindingValues.getOnlyElement()
+  val approval = MA::authorizedFill(MA::approvedFact(M::initial))
+  val storeRead = { details: { facts: List(approval.state) },
+    resolved: { owner: K::sampleVisitKey.owner, valueRef: binding.valueRef, authorization: approval.out.nth(0) } }
+  val book = { command: booked.out.nth(0), key: K::sampleVisitKey, fill: K::fillOf(K::sampleBookTerms),
+    bookingField: BookingSavedField(binding), detailRead: ReadBookingDetail(storeRead) }
+  val corrected = M::propose(approval.state, MA::correction, M::MemoryUser)
+  val forgotten = M::forget(approval.state, approval.state.revision, M::MemoryUser)
   Set(NoTaskForm, VerifiedForm(original),
     VerifiedForm({ ...original, key: { ...CM::exampleKey, account: "other-account" } }),
     VerifiedForm({ ...original, key: { ...CM::exampleKey, ref: "other-bill" } }),
     VerifiedForm(book), VerifiedForm({ ...book, bookingField: NoBookingField }),
-    VerifiedForm({ ...book, bookingField: BookingSavedField({ ...bookingNameBinding, detail: "address" }) }),
-    VerifiedForm({ ...book, bookingField: BookingSavedField({ ...bookingNameBinding, valueRef: "replaced-name-ref" }) }),
-    VerifiedForm({ ...book, bookingField: BookingSavedField({ ...bookingNameBinding, answerVersion: 4 }) }),
+    VerifiedForm({ ...book, bookingField: BookingSavedField({ ...binding, detail: "address" }) }),
+    VerifiedForm({ ...book, bookingField: BookingSavedField({ ...binding, valueRef: "replaced-name-ref" }) }),
+    VerifiedForm({ ...book, bookingField: BookingSavedField({ ...binding, answerVersion: 4 }) }),
     VerifiedForm({ ...book, detailRead: NoBookingDetailRead }),
-    VerifiedForm({ ...book, detailRead: ReadBookingDetail({ ...bookingNameRead, details: { facts: List(corrected) } }) }),
-    VerifiedForm({ ...book, detailRead: ReadBookingDetail({ ...bookingNameRead, details: { facts: List(forgotten) } }) }),
+    VerifiedForm({ ...book, detailRead: ReadBookingDetail({ ...storeRead, details: { facts: List(corrected) } }) }),
+    VerifiedForm({ ...book, detailRead: ReadBookingDetail({ ...storeRead, details: { facts: List(forgotten) } }) }),
     VerifiedForm({ ...original, fill: K::fillOf(T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } })) }),
     VerifiedForm({ ...original, command: AC::ordinarySample(AC::observedSample(WS::initial)).out.nth(0) }))
 }
