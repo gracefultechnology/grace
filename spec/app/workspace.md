@@ -2582,6 +2582,118 @@ pure val eval_witness_sometimesOperationDispatched = (
   ("prepare", operation, Host),
   ("dispatch", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 }, Actuator)
 )
+pure val eval_witness_sometimesOperationVerified = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("prepare", operation, Host),
+  ("dispatch", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 }, Actuator),
+  ("verify", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, website: X::goodVerification, checkpoint: "Current account read", needsUser: false }, Host)
+)
+pure val eval_witness_sometimesGuidedGoalIsObserved = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("beginGuided", { owner: "owner", task: "task", goal: "Read the appointment", steps: List(sampleStep) }, Person),
+  ("confirmGuided", { ...sampleReport, deviceVersion: 5 }, Host)
+)
+pure val eval_witness_sometimesCommitmentAuthorized = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person)
+)
+pure val eval_witness_sometimesSpokenApprovalIsRecorded = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person)
+)
+pure val eval_witness_sometimesCommitmentDispatched = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person),
+  ("submitCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Actuator)
+)
+pure val eval_witness_sometimesCommitmentResultFinishesTask = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person),
+  ("submitCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Actuator),
+  ("recordCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: CM::exampleOutcome }, Host),
+  ("saveCommitment", { key: CM::exampleKey, revision: 3, succeeded: true }, Store)
+)
+pure val eval_witness_sometimesInterruptedCommitmentIsUncertain = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person),
+  ("submitCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Actuator),
+  ("changeLifecycle", SleepDevice, Host)
+)
 pure val weight_setAvailability = 4
 pure val weight_visit = 16
 pure val weight_setBrowserObservation = 100
