@@ -122,6 +122,8 @@ export type MailMessageViewProps = Omit<AppWindowProps, "title" | "icon" | "nav"
   scam?: boolean;
   /** It is in Trash: Restore and Delete forever in place of Reply, Forward and Delete. */
   inTrash?: boolean;
+  /** It is her own email in Sent: Forward and Delete, never Reply. */
+  sent?: boolean;
   /** Its photos. */
   photos?: MailPhoto[];
   /** Its files. */
@@ -180,6 +182,7 @@ export function MailMessageView({
   body,
   scam = false,
   inTrash = false,
+  sent = false,
   photos,
   files,
   onReply,
@@ -225,8 +228,8 @@ export function MailMessageView({
           </>
         ) : (
           <>
-            {action(l.reply, <Reply {...pill} />, onReply, true, held)}
-            {action(l.forward, <Forward {...pill} />, onForward, false, held)}
+            {!sent && action(l.reply, <Reply {...pill} />, onReply, true, held)}
+            {action(l.forward, <Forward {...pill} />, onForward, sent, held)}
             {action(l.delete, <mailIcons.trash {...pill} />, onDelete)}
           </>
         )

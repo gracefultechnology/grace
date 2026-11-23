@@ -232,7 +232,7 @@ function useCalendar(key: number) {
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
 
 const silence = () => () => {};
-const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set() };
+const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set(), unsendable: new Map() };
 const nothing = () => blank;
 const contactLists = new WeakMap<Mail["Service"], Map<string, Promise<readonly Contact[]>>>();
 

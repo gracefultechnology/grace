@@ -13,6 +13,7 @@ export type Note = { readonly id: number; readonly text: string }
 
 export type Board = {
   readonly note: Note | undefined; readonly undeleted: ReadonlySet<number>; readonly replies: ReadonlyMap<number, ReplyHeader>; readonly unsaved: ReadonlySet<string>
+  readonly unsendable: ReadonlyMap<number, readonly string[]>
 }
 
 export type Boards = { readonly subscribe: (listener: () => void) => () => void; readonly current: () => Board }
@@ -36,9 +37,10 @@ export type Replied = { readonly id: number; readonly ref: string }
 
 const address = /^[^@\s,;]+@[^@\s,;]+$/
 export const recipientsOf = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
+export const keptOnTablet = (names: readonly string[]) => names.length === 0 ? undefined :
+  `${names.join(" and ")} can’t go by email, so this email is kept on the tablet. Remove ${names.length === 1 ? "it" : "them"} to save it to Drafts.`
 export const recipientsValid = (c: DraftContent) => c.to !== "" && [...recipientsOf(c.to), ...c.cc, ...c.bcc].every((a) => address.test(a))
 const folderNames: Record<string, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Drafts" }
-export const answerable = (m: Mailbox) => replyable(m) && m.folder !== "DraftsFolder"
 export const headerFor = (board: Board, held: Held | undefined, id: number, m: Mailbox): ReplyHeader | undefined => {
   const header = board.replies.get(id)
   if (header !== undefined && header.ref === m.messageRef && header.generation === m.generation) return header
@@ -210,17 +212,15 @@ export const mailing = Layer.effect(Mail, effect {
   const names = new Map<string, string>()
   const listeners = new Set<() => void>()
   const counter = { next: 1 }
-  let board: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set() }
+  let board: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set(), unsendable: new Map() }
 
   const post = (next: Partial<Board>) => {
     board = { ...board, ...next }
     listeners.forEach((listener) => listener())
   }
   const nameOf = (to: string, replied?: Replied) => nameIn(names, shelf, to, replied)
-  const undeleted = (id: number, failed: boolean) => {
-    if (board.undeleted.has(id) === failed) return
-    post({ undeleted: new Set(failed ? [...board.undeleted, id] : [...board.undeleted].filter((x) => x !== id)) })
-  }
+  const undeleted = (id: number, failed: boolean) => { if (board.undeleted.has(id) !== failed) post({ undeleted: new Set(failed ? [...board.undeleted, id] : [...board.undeleted].filter((x) => x !== id)) }) }
+  const refused = (id: number, names: readonly string[]) => { if ((board.unsendable.get(id) ?? []).join("/") !== names.join("/")) post({ unsendable: new Map(board.unsendable).set(id, names) }) }
   const reachable = effect () => (try workspace.get()).device.connectivity === "Online"
   const accountOf = effect (id: number) => (try registry.get()).accounts.find((a) => a.id === id)
   const connectionOf = (account: Account) => connector.mail({ provider: account.provider, address: account.address })
@@ -266,7 +266,7 @@ export const mailing = Layer.effect(Mail, effect {
 
   effect function heard(account: Account, mail: MailConnection, box: MailMachine.Shape, before: Mailbox, after: Mailbox) {
     const opened = after.view === "Message" && (before.view !== "Message" || before.messageRef !== after.messageRef || before.generation !== after.generation)
-    if (opened && answerable(after) && headerFor(board, shelf.held(account.id, after.messageRef), account.id, after) === undefined) try fork.in(scope) prepareReply(account.id, mail, box, after)
+    if (opened && replyable(after) && headerFor(board, shelf.held(account.id, after.messageRef), account.id, after) === undefined) try fork.in(scope) prepareReply(account.id, mail, box, after)
     if (opened && after.folder === "DraftsFolder") try fork.in(scope) reopen(mail, box, after)
     const changes = settled(before, after)
     for (const { record } of changes.filter((c) => c.record.folder !== "PurgedFolder")) {
@@ -308,6 +308,7 @@ export const mailing = Layer.effect(Mail, effect {
     const answer = effect (persisted: boolean) => box.send({ type: "draftStoreResult", draftId: m.draftId, revision: m.storedRevision, request: m.draftRequest, persisted }, "MailHost") catch () => undefined
     if (m.draftStorage === "DraftSaving") {
       const stored = mail.saveDraft(currentDraft(m), try library.contents(currentDraft(m).attachments)) catch () => undefined
+      refused(account.id, stored?.unsendable ?? [])
       if (stored === undefined) return try expired(box)
       try answer(stored.persisted)
     }
