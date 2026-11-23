@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Display;
@@ -28,7 +29,10 @@ public class MainActivity extends ElizaBridgeActivity {
  private static final String HARDWARE_BACK = "window.dispatchEvent(new Event('hardware-back',{cancelable:true}))";
  private static final String LAUNCHER_HOME = "window.dispatchEvent(new Event('launcher-home'))";
 
- private final ConnectivityManager.NetworkCallback defaultNetwork = new ConnectivityManager.NetworkCallback() {
+ private final ConnectivityManager.NetworkCallback defaultNetwork = new NetworkChange();
+ private final ConnectivityManager.NetworkCallback wifiNetwork = new NetworkChange();
+
+ private final class NetworkChange extends ConnectivityManager.NetworkCallback {
   @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
    getBridge().triggerWindowJSEvent("android-network-changed");
   }
@@ -36,7 +40,7 @@ public class MainActivity extends ElizaBridgeActivity {
   @Override public void onLost(Network network) {
    getBridge().triggerWindowJSEvent("android-network-changed");
   }
- };
+ }
 
  @Override public void onCreate(Bundle state) {
   Intent launch = getIntent();
@@ -80,13 +84,24 @@ public class MainActivity extends ElizaBridgeActivity {
 
  @Override public void onStart() {
   super.onStart();
-  if (BuildConfig.IS_LAUNCHER) getSystemService(ConnectivityManager.class).registerDefaultNetworkCallback(defaultNetwork);
+  if (BuildConfig.IS_LAUNCHER) {
+   ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
+   connectivity.registerDefaultNetworkCallback(defaultNetwork);
+   connectivity.registerNetworkCallback(new NetworkRequest.Builder()
+    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    .build(), wifiNetwork);
+  }
   GraceAgentService.resume(this);
   ManagedCalendarReminders.reconcile(this);
  }
 
  @Override public void onStop() {
-  if (BuildConfig.IS_LAUNCHER) getSystemService(ConnectivityManager.class).unregisterNetworkCallback(defaultNetwork);
+  if (BuildConfig.IS_LAUNCHER) {
+   ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
+   connectivity.unregisterNetworkCallback(wifiNetwork);
+   connectivity.unregisterNetworkCallback(defaultNetwork);
+  }
   super.onStop();
  }
 

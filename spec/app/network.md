@@ -10,9 +10,9 @@ not a promise that the connection remains online forever.
 
 Grace joins what Android lets an app join: open networks and networks with
 one shared password, in her own screen, through Android's "Save this
-network?" dialog. Company-style networks, which ask for an account, old
-WEP networks and a hotel or café's sign-in page are handed to Android's own
-internet panel.
+network?" dialog. Company-style networks, which ask for an account, and old
+WEP networks are handed to Android's internet panel. If Wi-Fi needs web
+sign-in, Android's Wi-Fi settings opens the network's sign-in page.
 Seven of the eight join outcomes are the Wi-Fi bridge's seven statuses, one for
 one (`vendor/eliza/packages/os/src/bridges/definitions/wifi.ts`);
 the certificate challenge is the one outcome no bridge status sends. Network
@@ -24,8 +24,8 @@ this model.
 ## Story: Join the network I choose
 
 > As a person using Grace, I can choose a network, enter its password and
-> understand whether joining succeeded; a network Grace cannot join opens in
-> Android's own panel.
+> understand whether joining succeeded. When Wi-Fi requires web sign-in,
+> I can reach the sign-in page through Android and return to Grace.
 
 ### A selected network has one current join attempt
 
@@ -129,17 +129,18 @@ calm route to the network's administrator; there is no hard retry cap or
 guessed credential validation. Unavailable networks show failure with an
 explicit retry action, which asks for the password again because it was
 never kept. Declining Android's dialog returns to the list. An unverified
-join says the tablet is online but could not confirm which network. A
-sign-in page opens in Android's panel; Grace never fills it in or accepts
-its terms. While Android's panel is open, the result Android reports when
-Grace is shown again completes, fails or keeps waiting on the join.
+join says the tablet is online but could not confirm which network. While
+Android's internet panel is open, the result Android reports when Grace is
+shown again completes, fails or keeps waiting on the join.
 When Android reports the network is already saved but has not connected, Grace
 keeps the selection and offers to open Android’s Wi-Fi so the person can select
 it there. Opening or closing the panel and remaining on a different network
 leave this attempt pending. A fresh observation of the chosen connection can
 complete it.
-If Android later validates the selected network after an unavailable or
-unverified result, Grace clears that result and shows the connected network.
+If Android later validates the selected network after an unavailable,
+unverified or sign-in-required result, Grace completes the join and shows
+the connected network. This also happens when validation arrives while Grace
+is already visible.
 Android may name its current connection even when it has no nearby scan
 results. Grace shows that name and shows signal strength only when measured.
 To confirm the choice, Grace matches Android's current access point and its
@@ -153,7 +154,7 @@ or loss of permission cannot complete it.
 ```quint
 pure def answers(phase: JoinPhase, result: JoinResult): bool =
   phase == Joining or
-  ((phase == AndroidPanel or phase == PortalEntry) and
+  (phase == AndroidPanel and
     (result == Joined or result == Unverified or result == Unavailable or result == PortalRequired))
 pure def canReceive(n: NetworkJoin, report: JoinReport, by: NetworkActor): bool =
   by == OperatingSystem and answers(n.phase, report.result) and report.network == n.selected.id and report.version == n.version and
@@ -182,7 +183,7 @@ pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJ
 pure def canConfirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
   val discovery = n.discovery
   by == OperatingSystem and (match discovery { | NetworksFound(_) => true | NoNetworks => true | _ => false }) and
-  (n.phase == JoinFailed or n.phase == JoinUnconfirmed or n.phase == SavedNetworkPanel) and
+  (n.phase == JoinFailed or n.phase == JoinUnconfirmed or n.phase == SavedNetworkPanel or n.phase == PortalEntry) and
   networkId != "" and networkId == n.selected.id and version == n.version
 pure def confirmConnection(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): NetworkJoin =
   { ...n, phase: JoinComplete, explanation: "" }
@@ -197,6 +198,27 @@ pure def retry(n: NetworkJoin, by: NetworkActor): NetworkJoin = {
 }
 pure def sometimesSavedNetworkPanel(n: NetworkJoin): bool = n.phase == SavedNetworkPanel
 pure def sometimesJoinUnconfirmed(n: NetworkJoin): bool = n.phase == JoinUnconfirmed
+```
+
+### Android handles Wi-Fi sign-in
+
+Grace offers sign-in when Android reports that a connected Wi-Fi network
+needs it, including when the connection was made before opening Grace's
+Wi-Fi page, location access is off, or another connection is the default.
+Grace also offers it while the selected join is waiting for sign-in and
+Android has not validated a Wi-Fi connection. If Android validates a different
+Wi-Fi network and reports no portal, Grace shows that connection while the
+selected join remains pending. When Android first reports a sign-in page
+for the current attempt, Grace opens
+Android's Wi-Fi settings. There the person taps the connected network to
+open the portal and completes any sign-in or terms. Returning without
+signing in keeps that attempt pending and the same action can reopen Android
+Wi-Fi. Android's validation of the selected connection completes the join.
+Grace never reads or submits portal credentials or accepts its terms.
+
+```quint
+pure def wifiSignInOffered(n: NetworkJoin, wifiNeedsSignIn: bool, wifiValidated: bool): bool =
+  n.phase != PrivateEntry and (wifiNeedsSignIn or (n.phase == PortalEntry and not(wifiValidated)))
 ```
 
 ### Certificate consent and cancellation are explicit current choices

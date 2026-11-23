@@ -1,17 +1,18 @@
-// spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"; spec/app/network.md, "The password goes from Grace's field to Android only, and Show never shares it with Grace"
+// spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"; spec/app/network.md, "The password goes from Grace's field to Android only, and Show never shares it with Grace"; spec/app/network.md, "Android handles Wi-Fi sign-in"
 import { Alert, Button, PageHeading, PageText, WifiJoinForm, WifiNetworkList, type WifiNetwork, type WifiStatus } from "@repo/ui";
 import { Effect, ManagedRuntime } from "effect";
 import { useState, useSyncExternalStore } from "react";
 import type { Machine } from "../gen/app__network.effect.vibe";
-import { type Discovery, type Event, type ListAction, type NetworkJoin, helpOffered, listAction } from "../gen/app__network.ts";
+import { type Discovery, type Event, type ListAction, type NetworkJoin, helpOffered, listAction, wifiSignInOffered } from "../gen/app__network.ts";
 import { useMachine } from "../gen/app__network.react.ts";
 import { wifiPlugin } from "./surfacePlugin.ts";
+import { wifiSignIn } from "./preferencesPlugin.ts";
 import { useWorkspace } from "./useApp.ts";
 import { type Offer, WifiPage, ssidOf, wifiPage } from "./wifi.vibe";
 
 export type WifiRuntime = ManagedRuntime.ManagedRuntime<WifiPage | Machine, never>;
 
-const device: WifiRuntime | undefined = wifiPlugin && ManagedRuntime.make(wifiPage(wifiPlugin));
+const device: WifiRuntime | undefined = wifiPlugin && wifiSignIn && ManagedRuntime.make(wifiPage(wifiPlugin, wifiSignIn));
 
 const statuses: Readonly<Record<Discovery["tag"], WifiStatus>> = {
   Scanning: "scanning", WifiOff: "off", NetworksFound: "ready",
@@ -45,7 +46,6 @@ function notice(n: NetworkJoin, name: string) {
     : `${n.explanation} Move closer and try again. If it still won’t connect, ask whoever looks after this network.`;
   if (n.phase === "JoinUnconfirmed") return `Android hasn’t confirmed the connection to ${name}.`;
   if (n.phase === "SavedNetworkPanel") return `${name} is already saved. Choose it in Android’s Wi-Fi to connect.`;
-  if (n.phase === "PortalEntry") return `${name} has a sign-in page. Sign in there to finish joining.`;
   return undefined;
 }
 
@@ -68,7 +68,7 @@ function PrivateEntry({ n, name, person, join }: { n: NetworkJoin; name: string;
 export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime; online: boolean; onFix: () => void }) {
   const { state: n, can, send } = useMachine(runtime);
   const page = runtime.runSync(Effect.service(WifiPage));
-  const { nearby: offers, connected: identified } = useSyncExternalStore(page.offers.subscribe, page.offers.current);
+  const { nearby: offers, connected: identified, signInRequired } = useSyncExternalStore(page.offers.subscribe, page.offers.current);
   if (!n) return null;
   const person = (event: Event) => { if (can(event, "Person")) void send(event, "Person"); };
   const run = (effect: Effect.Effect<void>) => void runtime.runPromise(effect);
@@ -83,14 +83,18 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
   }) : [];
   const action = listAction(n.discovery);
   const act = { NoAction: () => {}, OpenPanel: () => run(page.openPanel()), Explain: () => person({ type: "explainLocation" }), Allow: () => run(page.allowLocation()), Rescan: () => person({ type: "rescan" }) }[action];
-  const said = notice(n, name);
+  const signIn = wifiSignInOffered(n, signInRequired, identified !== undefined);
+  const said = signIn && n.phase === "SavedNetworkPanel" ? undefined : notice(n, name);
   return (
     <>
-      <WifiNetworkList status={statuses[n.discovery.tag]} current={connected} networks={nearby}
+      <WifiNetworkList status={statuses[n.discovery.tag]} current={signIn ? undefined : connected} networks={nearby}
+        offlineLabel={signIn ? "Wi-Fi sign-in required" : undefined}
+        offlineHint={signIn ? "Tap the network marked Sign in in Android Wi-Fi." : undefined}
+        fixLabel={signIn ? "Sign in through Android Wi-Fi" : undefined}
         expanded={n.expanded} onExpandedChange={(expanded) => person({ type: "expand", expanded })}
         connecting={n.phase === "Joining" || n.phase === "AndroidPanel" || n.phase === "PortalEntry" ? n.selected.id : undefined}
         failed={n.phase === "JoinFailed" ? n.selected.id : undefined} onRetry={() => run(page.retry())}
-        onTurnOn={() => run(page.openPanel())} onFix={onFix}
+        onTurnOn={() => run(page.openPanel())} onFix={signIn ? () => run(page.openSignIn()) : onFix}
         onSelect={(picked) => {
           const offer = offersById.get(picked);
           if (offer && can({ type: "choose", network: offer.network }, "Person")) run(page.choose(offer));
@@ -98,8 +102,8 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
         noneLabel={reasons[n.discovery.tag]}
         action={action !== "NoAction" && <Button variant="prominent" size="pill" onClick={act}>{actionLabels[action]}</Button>} />
       {said && <Alert variant={n.phase === "JoinFailed" ? "caution" : "info"} className="mt-4">{said}</Alert>}
-      {(n.phase === "PortalEntry" || n.phase === "SavedNetworkPanel") && <Button variant="prominent" size="pill" className="mt-3.5" onClick={() => run(page.reopenPanel())}>{n.phase === "PortalEntry" ? "Open the sign-in page" : actionLabels.OpenPanel}</Button>}
-      {!online && n.discovery.tag !== "WifiOff" && <Alert variant="info" className="mt-4">{offlineSteps}</Alert>}
+      {!signIn && n.phase === "SavedNetworkPanel" && <Button variant="prominent" size="pill" className="mt-3.5" onClick={() => run(page.reopenPanel())}>{actionLabels.OpenPanel}</Button>}
+      {!online && !signIn && n.discovery.tag !== "WifiOff" && <Alert variant="info" className="mt-4">{offlineSteps}</Alert>}
     </>
   );
 }

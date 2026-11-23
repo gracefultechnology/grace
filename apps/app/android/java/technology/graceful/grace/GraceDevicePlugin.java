@@ -1,12 +1,17 @@
 package technology.graceful.grace;
 
+import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.media.AudioManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.BatteryManager;
 import android.os.PowerManager;
+import android.provider.Settings;
 import android.view.Window;
 import android.view.WindowManager;
 import androidx.core.content.ContextCompat;
@@ -54,6 +59,31 @@ public class GraceDevicePlugin extends Plugin {
    .put("brightness", brightness())
    .put("battery", battery())
    .put("screenOn", getContext().getSystemService(PowerManager.class).isInteractive()));
+ }
+
+ @SuppressWarnings("deprecation")
+ @PluginMethod public void getWifiSignIn(PluginCall call) {
+  ConnectivityManager connectivity = getContext().getSystemService(ConnectivityManager.class);
+  for (Network network : connectivity.getAllNetworks()) {
+   NetworkCapabilities capabilities = connectivity.getNetworkCapabilities(network);
+   if (capabilities != null && capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+     && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)) {
+    call.resolve(new JSObject().put("required", true));
+    return;
+   }
+  }
+  call.resolve(new JSObject().put("required", false));
+ }
+
+ @PluginMethod public void openWifiSignIn(PluginCall call) {
+  getBridge().executeOnMainThread(() -> {
+   try {
+    getActivity().startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
+    call.resolve();
+   } catch (ActivityNotFoundException | SecurityException unavailable) {
+    call.reject("Android’s Wi-Fi settings could not be opened", "unavailable", unavailable);
+   }
+  });
  }
 
  @PluginMethod public void setVolume(PluginCall call) {
