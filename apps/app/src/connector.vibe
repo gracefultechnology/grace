@@ -8,7 +8,7 @@ import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calen
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
-import { AttachmentContent, ContactList, DraftList, DraftRead, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, ReconnectRefusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
+import { AttachmentContent, ContactList, DraftList, DraftRead, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, OwnerSession, ReadResponse, ReconnectRefusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
 import type { WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
 import type { CloudLink } from "./conversation.vibe"
 import { google } from "./google.vibe"
@@ -24,7 +24,7 @@ export const secretPassword = (typed: string): SecretPassword => branded(Redacte
 
 export type AccountRef = { readonly provider: Provider; readonly address: string }
 export type SignInRequest = { readonly provider: Provider; readonly attempt: number; readonly renewing: string }
-export type OtherForm = { readonly attempt: number; readonly address: string; readonly password: SecretPassword }
+export type OtherForm = { readonly attempt: number; readonly name?: string; readonly address: string; readonly password: SecretPassword }
 export type ServersForm = OtherForm & { readonly incoming: string; readonly outgoing: string }
 export schema MailContent {
   readonly ref: string; readonly from: string; readonly fromAddress: string; readonly subject: string
@@ -86,6 +86,7 @@ export service Connector {
   signIn(request: SignInRequest): SheetReport!!
   connectOther(form: OtherForm): OtherReport!Unreachable
   connectServers(form: ServersForm): OtherReport!Unreachable
+  ownerName(): string!Unreachable
   readonly shown: Stream.Stream<ShownPage | undefined>
   readonly mail: (account: AccountRef) => MailConnection
   readonly calendar: (account: AccountRef) => CalendarConnection
@@ -789,8 +790,12 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       const refused: SheetReport = { attempt: request.attempt, outcome: "Refused", address: "", granted: nothing }
       return request.provider === "OtherEmail" ? refused : (visit(request) catch () => refused)
     },
-    connectOther: (form) => check(form.attempt, { address: form.address, password: Redacted.value(form.password) }),
-    connectServers: (form) => check(form.attempt, { address: form.address, password: Redacted.value(form.password), incoming: form.incoming, outgoing: form.outgoing }),
+    connectOther: (form) => check(form.attempt, { name: form.name, address: form.address, password: Redacted.value(form.password) }),
+    connectServers: (form) => check(form.attempt, { name: form.name, address: form.address, password: Redacted.value(form.password), incoming: form.incoming, outgoing: form.outgoing }),
+    ownerName: effect () => {
+      const { account } = fetched(get("/api/auth/session", {}), OwnerSession) catch effect () => { throw new Unreachable() }
+      return account?.name ?? ""
+    },
     shown: SubscriptionRef.changes(shown),
     mail,
     calendar: (account) => connectedCalendar(link, account, zones, creates, transport, grantOf)

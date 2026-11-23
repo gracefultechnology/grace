@@ -18,8 +18,8 @@ export type OtherEmailDetails = { name: string; address: string; password: strin
 const problemText = (problem: OtherEmailProblem) => {
   switch (problem.kind) {
     case "listedProvider": {
-      const company = emailProviders[problem.provider].name;
-      return `This is ${/^[aeiou]/i.test(company) ? "an" : "a"} ${company} address. Go back and choose ${company}, so you can sign in on ${company}’s own page.`;
+      const { name: company, article } = emailProviders[problem.provider];
+      return `This is ${article} ${company} address. Go back and choose ${company}, so you can sign in on ${company}’s own page.`;
     }
     case "passwordRefused":
       return "That password didn’t work. Check it and try again. Some email companies give you a special password for apps; Grace can explain.";

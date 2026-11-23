@@ -25,32 +25,35 @@ seeded demo mail in the prototype are presentation, not policy.
 
 ### Accounts start empty and each address is on the tablet once
 
-Every account has an issued number, an address, a name no other account has
-and a colour from five. The settings page shows the account it names and
+Every account has an issued number, an address, a name no other account has,
+a colour from five and the From name its email goes out under. The settings page shows the account it names and
 asks about removing only the account it shows, never while signing in.
 
 ```quint
 type AccountActor = AccountPerson | AccountConnector | AccountHost
 type Provider = Gmail | Outlook | Yahoo | ICloud | Aol | OtherEmail
 type Use = { mail: bool, calendar: bool, contacts: bool }
-type Account = { id: int, provider: Provider, address: str, name: str, colour: int, use: Use, sent: int }
+type Account = { id: int, provider: Provider, address: str, name: str, colour: int, use: Use, sent: int, fromName: str }
 type LastFrom = { recipient: str, account: int }
 type AccountPage = AccountList | AddAccount | OtherEmailPage | MailServersPage | AccountDetail
 type SignInStage = NotSigningIn | ProviderPage | CheckingOther | CheckingServers
 type Problem = NoProblem | ListedProvider | PasswordRefused | ServersRefused | SignInUnfinished | AlreadyOnTablet | EmailWaiting
-type SignIn = { stage: SignInStage, provider: Provider, renewing: int, attempt: int, domain: str }
+type Lookup = NotLookedUp | LookingUp | LookupFound | LookupMissed
+type SignIn = { stage: SignInStage, provider: Provider, renewing: int, attempt: int, domain: str, lookup: Lookup, incoming: str, outgoing: str }
 type Accounts = {
   accounts: List[Account], page: AccountPage, shown: int, signIn: SignIn, problem: Problem,
-  removing: int, nextId: int, inboxFilter: int, bannerDismissed: bool, lastFrom: List[LastFrom]
+  removing: int, discarding: int, nextId: int, inboxFilter: int, bannerDismissed: bool, lastFrom: List[LastFrom]
 }
-pure val noSignIn: SignIn = { stage: NotSigningIn, provider: Gmail, renewing: 0, attempt: 0, domain: "" }
+pure val noSignIn: SignIn = {
+  stage: NotSigningIn, provider: Gmail, renewing: 0, attempt: 0, domain: "", lookup: NotLookedUp, incoming: "", outgoing: ""
+}
 pure val noAccount: Account = {
   id: 0, provider: OtherEmail, address: "", name: "",
-  colour: 0, use: { mail: false, calendar: false, contacts: false }, sent: 0
+  colour: 0, use: { mail: false, calendar: false, contacts: false }, sent: 0, fromName: ""
 }
 pure val initial: Accounts = {
   accounts: List(), page: AccountList, shown: 0, signIn: noSignIn, problem: NoProblem,
-  removing: 0, nextId: 1, inboxFilter: 0, bannerDismissed: false, lastFrom: List()
+  removing: 0, discarding: 0, nextId: 1, inboxFilter: 0, bannerDismissed: false, lastFrom: List()
 }
 pure def accountAt(a: Accounts, id: int): Account =
   a.accounts.foldl(noAccount, (found, x) => if (x.id == id) x else found)
@@ -71,7 +74,8 @@ pure def alwaysAccountsAreWellFormed(a: Accounts): bool =
 pure def alwaysPagesNameAnAccount(a: Accounts): bool =
   (a.page == AccountDetail implies hasAccount(a, a.shown)) and
   (a.removing != 0 implies (a.page == AccountDetail and a.shown == a.removing and a.signIn.stage == NotSigningIn)) and
-  (a.problem == EmailWaiting implies a.removing != 0)
+  (a.problem == EmailWaiting implies a.removing != 0) and
+  (a.discarding != 0 implies (a.removing != 0 and a.discarding > 0))
 ```
 
 ### Only the current sign-in attempt can add or renew an account
@@ -111,17 +115,21 @@ pure def cancelSignIn(a: Accounts, by: AccountActor): Accounts =
   { ...a, problem: NoProblem, signIn: { ...closed(a.signIn), attempt: a.signIn.attempt + 1 } }
 pure def canRestartAccounts(a: Accounts, by: AccountActor): bool = by == AccountHost
 pure def restartAccounts(a: Accounts, by: AccountActor): Accounts =
-  { ...a, page: AccountList, shown: 0, removing: 0, problem: NoProblem, bannerDismissed: false, signIn: nextAttempt(a.signIn) }
+  { ...a, page: AccountList, shown: 0, removing: 0, discarding: 0, problem: NoProblem, bannerDismissed: false, signIn: nextAttempt(a.signIn) }
 pure def freshName(a: Accounts, name: str): bool = name != "" and not(a.accounts.some(x => x.name == name))
-pure def admitted(provider: Provider, a: Accounts, address: str, name: str, use: Use): Accounts =
+pure def offServers(s: SignIn): SignIn = { ...s, lookup: NotLookedUp, incoming: "", outgoing: "" }
+pure def admitted(provider: Provider, a: Accounts, address: str, name: str, use: Use, fromName: str): Accounts =
   val existing = accountWith(a, address)
-  val finished = { ...a.signIn, stage: NotSigningIn }
+  val finished = offServers({ ...a.signIn, stage: NotSigningIn })
   if (existing.id != 0 and existing.id != a.signIn.renewing) { ...a, signIn: closed(a.signIn), problem: AlreadyOnTablet }
-  else if (existing.id != 0) { ...a, signIn: { ...finished, domain: "" }, page: AccountDetail, shown: existing.id, problem: NoProblem }
+  else if (existing.id != 0) {
+    ...a, signIn: { ...finished, domain: "" }, page: AccountDetail, shown: existing.id, problem: NoProblem,
+    accounts: a.accounts.listMap(x => if (x.id == existing.id and fromName != "") { ...x, fromName: fromName } else x)
+  }
   else {
     ...a, signIn: { ...finished, renewing: 0, domain: "" }, page: AccountDetail, shown: a.nextId, nextId: a.nextId + 1, problem: NoProblem,
     accounts: a.accounts.append({ id: a.nextId, provider: provider, address: address, name: name,
-      colour: a.accounts.length() % 5, use: use, sent: 0 })
+      colour: a.accounts.length() % 5, use: use, sent: 0, fromName: fromName })
   }
 pure def admits(a: Accounts, address: str, name: str): bool =
   address != "" and (accountWith(a, address).id == 0 implies freshName(a, name))
@@ -129,7 +137,7 @@ pure def canSheetResult(a: Accounts, sheet: SheetReport, name: str, by: AccountA
   by == AccountConnector and a.signIn.stage == ProviderPage and sheet.attempt == a.signIn.attempt and
   (sheet.outcome == Allowed implies admits(a, sheet.address, name))
 pure def sheetResult(a: Accounts, sheet: SheetReport, name: str, by: AccountActor): Accounts =
-  if (sheet.outcome == Allowed) admitted(a.signIn.provider, a, sheet.address, name, sheet.granted)
+  if (sheet.outcome == Allowed) admitted(a.signIn.provider, a, sheet.address, name, sheet.granted, "")
   else { ...a, signIn: closed(a.signIn), problem: if (sheet.outcome == Refused) SignInUnfinished else NoProblem }
 pure def lawStaleSignInCannotConnect(a: Accounts, sheet: SheetReport, name: str, by: AccountActor): bool =
   sheet.attempt != a.signIn.attempt implies not(canSheetResult(a, sheet, name, by))
@@ -152,9 +160,11 @@ pure def sometimesTwoAccounts(a: Accounts): bool = a.accounts.length() >= 2
 
 On the Other email form the shell hands the part of the address after the @
 to this module. An address at Gmail, Outlook, Hotmail, Live, MSN, Yahoo,
-iCloud, me.com, mac.com or AOL is sent back with "This is a <Prov> address.
-Go back and choose <Prov>, so you can sign in on <Prov>’s own page." and
-nothing is sent to any server.
+iCloud, me.com, mac.com or AOL is sent back with "This is a Yahoo address.
+Go back and choose Yahoo, so you can sign in on Yahoo’s own page.", naming
+that company, with "an" before a company whose name starts with a vowel
+sound ("an Outlook", "an iCloud", "an AOL address"), and nothing is sent to
+any server.
 
 ```quint
 type ListedDomain = { domain: str, provider: Provider }
@@ -193,32 +203,45 @@ Mail settings for the same domain; Connect there is a new attempt. An Other
 email starts with Email and Contacts on and Calendar off. Signing in again
 to an Other email uses the same form and renews that account.
 
+The name she gives on that form is the account’s From name: her email from
+that account goes out under it, and signing in again changes it to the name
+she gives then. The form starts with the From name of the account she is
+signing in to again, otherwise with the name of her Grace account. An Other
+email is never added without a From name; a company’s account has none here,
+because the company’s own page keeps her name.
+
 ```quint
 type OtherOutcome = OtherAllowed | OtherPasswordRefused | OtherNeedsServers | OtherRefused
 type OtherReport = { attempt: int, outcome: OtherOutcome, address: str }
 pure val otherUse: Use = { mail: true, calendar: false, contacts: true }
-pure def canOtherResult(a: Accounts, check: OtherReport, name: str, by: AccountActor): bool =
+pure def canOtherResult(a: Accounts, check: OtherReport, name: str, fromName: str, by: AccountActor): bool =
   by == AccountConnector and a.signIn.stage == CheckingOther and check.attempt == a.signIn.attempt and
-  (check.outcome == OtherAllowed implies admits(a, check.address, name))
-pure def otherResult(a: Accounts, check: OtherReport, name: str, by: AccountActor): Accounts =
+  (check.outcome == OtherAllowed implies (admits(a, check.address, name) and fromName != ""))
+pure def otherResult(a: Accounts, check: OtherReport, name: str, fromName: str, by: AccountActor): Accounts =
   val finished = { ...a.signIn, stage: NotSigningIn }
-  if (check.outcome == OtherAllowed) admitted(OtherEmail, a, check.address, name, otherUse)
-  else if (check.outcome == OtherNeedsServers) { ...a, page: MailServersPage, signIn: finished, problem: NoProblem }
+  if (check.outcome == OtherAllowed) admitted(OtherEmail, a, check.address, name, otherUse, fromName)
+  else if (check.outcome == OtherNeedsServers) { ...a, page: MailServersPage, signIn: offServers(finished), problem: NoProblem }
   else { ...a, signIn: finished, problem: if (check.outcome == OtherPasswordRefused) PasswordRefused else SignInUnfinished }
 pure def canSubmitServers(a: Accounts, by: AccountActor): bool =
   by == AccountPerson and a.page == MailServersPage and a.signIn.stage == NotSigningIn
-pure def submitServers(a: Accounts, by: AccountActor): Accounts =
-  { ...a, problem: NoProblem, signIn: { ...a.signIn, stage: CheckingServers, attempt: a.signIn.attempt + 1 } }
-pure def canServersResult(a: Accounts, check: OtherReport, name: str, by: AccountActor): bool =
+pure def submitServers(a: Accounts, by: AccountActor): Accounts = {
+  ...a, problem: NoProblem,
+  signIn: { ...a.signIn, stage: CheckingServers, attempt: a.signIn.attempt + 1,
+    lookup: if (a.signIn.lookup == LookingUp) NotLookedUp else a.signIn.lookup }
+}
+pure def canServersResult(a: Accounts, check: OtherReport, name: str, fromName: str, by: AccountActor): bool =
   by == AccountConnector and a.signIn.stage == CheckingServers and check.attempt == a.signIn.attempt and
-  (check.outcome == OtherAllowed implies admits(a, check.address, name))
-pure def serversResult(a: Accounts, check: OtherReport, name: str, by: AccountActor): Accounts =
+  (check.outcome == OtherAllowed implies (admits(a, check.address, name) and fromName != ""))
+pure def serversResult(a: Accounts, check: OtherReport, name: str, fromName: str, by: AccountActor): Accounts =
   val finished = { ...a.signIn, stage: NotSigningIn }
-  if (check.outcome == OtherAllowed) admitted(OtherEmail, a, check.address, name, otherUse)
-  else if (check.outcome == OtherPasswordRefused) { ...a, page: OtherEmailPage, signIn: finished, problem: PasswordRefused }
+  if (check.outcome == OtherAllowed) admitted(OtherEmail, a, check.address, name, otherUse, fromName)
+  else if (check.outcome == OtherPasswordRefused) { ...a, page: OtherEmailPage, signIn: offServers(finished), problem: PasswordRefused }
   else { ...a, signIn: finished, problem: ServersRefused }
-pure def lawStaleCheckCannotConnect(a: Accounts, check: OtherReport, name: str, by: AccountActor): bool =
-  check.attempt != a.signIn.attempt implies not(canOtherResult(a, check, name, by) or canServersResult(a, check, name, by))
+pure def lawStaleCheckCannotConnect(a: Accounts, check: OtherReport, name: str, fromName: str, by: AccountActor): bool =
+  check.attempt != a.signIn.attempt implies
+    not(canOtherResult(a, check, name, fromName, by) or canServersResult(a, check, name, fromName, by))
+pure def alwaysOnlyOtherEmailKeepsAFromName(a: Accounts): bool =
+  a.accounts.every(x => (x.provider == OtherEmail) == (x.fromName != ""))
 pure def sometimesOtherNeedsServers(a: Accounts): bool = a.page == MailServersPage and a.signIn.domain != ""
 pure def sometimesPasswordRefused(a: Accounts): bool = a.problem == PasswordRefused
 pure def sometimesCheckingOther(a: Accounts): bool = a.signIn.stage == CheckingOther
@@ -227,13 +250,75 @@ pure def sometimesServersRefused(a: Accounts): bool = a.problem == ServersRefuse
 pure def sometimesOtherEmailConnected(a: Accounts): bool = a.accounts.some(x => x.provider == OtherEmail)
 ```
 
+### Mail settings can be looked up from her address, and fill the form for her to check
+
+On Mail settings, Look them up asks, as a new attempt, for the settings of
+the domain after the @: the email company’s own setup file first, then the
+shared list of email companies’ settings, then the internet’s address book.
+The answer is the servers those sources list. The form fills with the first
+incoming (IMAP) and the first outgoing (SMTP) server that is reached over a
+secure connection, a direct secure one before one that turns secure, and
+with nothing when either is missing; then the page says the settings
+weren’t found. Nothing is saved or sent to the email company: she checks the
+filled form and taps Connect, as with servers she typed. Looking them up
+again forgets what the last lookup found, Connect while looking ignores the
+answer, and leaving Mail settings forgets what was found.
+
+```quint
+type ServerKind = ImapServer | SmtpServer | PopServer
+type Security = SecureDirect | SecureUpgrade | Insecure
+type FoundServer = { kind: ServerKind, host: str, port: int, security: Security }
+type LookupReport = { attempt: int, found: List[FoundServer] }
+pure val noServer: FoundServer = { kind: PopServer, host: "", port: 0, security: Insecure }
+pure def secureBetter(best: FoundServer, s: FoundServer, kind: ServerKind): bool =
+  s.kind == kind and s.host != "" and s.security != Insecure and
+    (best.host == "" or (best.security != SecureDirect and s.security == SecureDirect))
+pure def bestServer(found: List[FoundServer], kind: ServerKind): FoundServer =
+  found.foldl(noServer, (best, s) => if (secureBetter(best, s, kind)) s else best)
+pure def lookupFinds(found: List[FoundServer]): bool =
+  bestServer(found, ImapServer).host != "" and bestServer(found, SmtpServer).host != ""
+pure def canLookUpServers(a: Accounts, by: AccountActor): bool =
+  by == AccountPerson and a.page == MailServersPage and a.signIn.stage == NotSigningIn and a.signIn.lookup != LookingUp
+pure def lookUpServers(a: Accounts, by: AccountActor): Accounts =
+  { ...a, problem: NoProblem, signIn: { ...offServers(a.signIn), lookup: LookingUp, attempt: a.signIn.attempt + 1 } }
+pure def canServersLookedUp(a: Accounts, report: LookupReport, by: AccountActor): bool =
+  by == AccountConnector and a.page == MailServersPage and a.signIn.lookup == LookingUp and report.attempt == a.signIn.attempt
+pure def serversLookedUp(a: Accounts, report: LookupReport, by: AccountActor): Accounts =
+  if (lookupFinds(report.found))
+    { ...a, signIn: { ...a.signIn, lookup: LookupFound,
+      incoming: bestServer(report.found, ImapServer).host, outgoing: bestServer(report.found, SmtpServer).host } }
+  else { ...a, signIn: { ...a.signIn, lookup: LookupMissed, incoming: "", outgoing: "" } }
+pure def alwaysFoundServersAreBoth(a: Accounts): bool =
+  (a.signIn.lookup == LookupFound) == (a.signIn.incoming != "" and a.signIn.outgoing != "") and
+  (a.signIn.lookup != NotLookedUp implies a.page == MailServersPage)
+pure def lawLookupFillsOnlyWithSecureServers(a: Accounts, report: LookupReport, by: AccountActor): bool =
+  (canServersLookedUp(a, report, by) and serversLookedUp(a, report, by).signIn.lookup == LookupFound) implies
+    (report.found.some(s => s.kind == ImapServer and s.security != Insecure and s.host == serversLookedUp(a, report, by).signIn.incoming) and
+      report.found.some(s => s.kind == SmtpServer and s.security != Insecure and s.host == serversLookedUp(a, report, by).signIn.outgoing))
+pure def lawLookupPrefersADirectSecureServer(found: List[FoundServer]): bool =
+  found.some(s => s.kind == ImapServer and s.host != "" and s.security == SecureDirect) implies
+    bestServer(found, ImapServer).security == SecureDirect
+pure def lawLookupSavesNothing(a: Accounts, report: LookupReport, by: AccountActor): bool =
+  canServersLookedUp(a, report, by) implies
+    (serversLookedUp(a, report, by).accounts == a.accounts and serversLookedUp(a, report, by).signIn.stage == NotSigningIn)
+pure def sometimesServersFound(a: Accounts): bool = a.signIn.lookup == LookupFound
+pure def sometimesServersNotFound(a: Accounts): bool = a.signIn.lookup == LookupMissed
+pure val reportValues: Set[LookupReport] =
+  Set(2, 3, 4, 5, 6).map(n => { attempt: n, found: List(
+    { kind: ImapServer, host: "imap.riverview.net", port: 993, security: SecureDirect },
+    { kind: SmtpServer, host: "smtp.riverview.net", port: 587, security: SecureUpgrade }) })
+    .union(Set(2, 3, 4).map(n => { attempt: n, found: List({ kind: ImapServer, host: "mail.riverview.net", port: 143, security: Insecure }) }))
+pure val foundValues: Set[List[FoundServer]] = reportValues.map(r => r.found)
+```
+
 ### Nothing she types to sign in enters the tablet’s state
 
 No password, verification code or recovery answer has a place in this state
 or in any event: the provider’s page keeps what she types there, and the
 Other email form hands the password straight to the connector. Before an
 account exists, the only text kept from the forms is the domain of an Other
-email address, and only while its forms are open. Grace never sees the provider’s page or the password field.
+email address, and only while its forms are open, and the servers a lookup
+found, only while Mail settings is open. Grace never sees the provider’s page or the password field.
 
 ```quint
 pure def alwaysTypedDomainStaysOnItsForm(a: Accounts): bool =
@@ -261,7 +346,7 @@ pure def backFrom(a: Accounts): AccountPage =
 pure def goBack(a: Accounts, by: AccountActor): Accounts =
   val back = backFrom(a)
   { ...a, page: back, shown: if (back == AccountList) 0 else a.shown, problem: NoProblem,
-    signIn: if (back == OtherEmailPage) a.signIn else { ...a.signIn, renewing: 0, domain: "" } }
+    signIn: if (back == OtherEmailPage) offServers(a.signIn) else { ...offServers(a.signIn), renewing: 0, domain: "" } }
 pure def canOpenAccount(a: Accounts, id: int, by: AccountActor): bool =
   by == AccountPerson and a.signIn.stage == NotSigningIn and a.removing == 0 and a.page == AccountList and hasAccount(a, id)
 pure def openAccount(a: Accounts, id: int, by: AccountActor): Accounts =
@@ -405,28 +490,53 @@ of that account.
 pure def canRequestRemoval(a: Accounts, id: int, by: AccountActor): bool =
   by == AccountPerson and a.signIn.stage == NotSigningIn and a.removing == 0 and
   a.page == AccountDetail and a.shown == id and hasAccount(a, id)
-pure def requestRemoval(a: Accounts, id: int, by: AccountActor): Accounts = { ...a, removing: id, problem: NoProblem }
+pure def requestRemoval(a: Accounts, id: int, by: AccountActor): Accounts = { ...a, removing: id, discarding: 0, problem: NoProblem }
 pure def canKeepAccount(a: Accounts, by: AccountActor): bool = by == AccountPerson and a.removing != 0
-pure def keepAccount(a: Accounts, by: AccountActor): Accounts = { ...a, removing: 0, problem: NoProblem }
+pure def keepAccount(a: Accounts, by: AccountActor): Accounts = { ...a, removing: 0, discarding: 0, problem: NoProblem }
 pure def canRemoveAccount(a: Accounts, id: int, waiting: int, by: AccountActor): bool =
-  by == AccountPerson and a.removing == id and id != 0 and waiting >= 0
+  by == AccountPerson and a.removing == id and id != 0 and waiting >= 0 and a.discarding == 0
+pure def removedFrom(id: int, a: Accounts): Accounts = {
+  ...a, accounts: a.accounts.select(x => x.id != id), page: AccountList, shown: 0, removing: 0, discarding: 0, problem: NoProblem,
+  inboxFilter: if (a.inboxFilter == id) 0 else a.inboxFilter,
+  lastFrom: a.lastFrom.select(f => f.account != id),
+  signIn: { ...a.signIn, renewing: if (a.signIn.renewing == id) 0 else a.signIn.renewing }
+}
 pure def removeAccount(a: Accounts, id: int, waiting: int, by: AccountActor): Accounts =
-  if (waiting > 0) { ...a, problem: EmailWaiting }
-  else {
-    ...a, accounts: a.accounts.select(x => x.id != id), page: AccountList, shown: 0, removing: 0, problem: NoProblem,
-    inboxFilter: if (a.inboxFilter == id) 0 else a.inboxFilter,
-    lastFrom: a.lastFrom.select(f => f.account != id),
-    signIn: { ...a.signIn, renewing: if (a.signIn.renewing == id) 0 else a.signIn.renewing }
-  }
+  if (waiting > 0) { ...a, problem: EmailWaiting } else removedFrom(id, a)
 pure def stepRemovalNeedsTheQuestion(before: Accounts, via: str, after: Accounts): bool =
-  before.accounts.every(x => after.accounts.some(y => y.id == x.id) or (via == "removeAccount" and before.removing == x.id))
+  before.accounts.every(x => after.accounts.some(y => y.id == x.id) or
+    ((via == "removeAccount" or via == "discardAndRemove") and before.removing == x.id))
 pure def lawWaitingEmailBlocksRemoval(a: Accounts, id: int, waiting: int, by: AccountActor): bool =
   (canRemoveAccount(a, id, waiting, by) and waiting > 0) implies
     (removeAccount(a, id, waiting, by).accounts == a.accounts and removeAccount(a, id, waiting, by).problem == EmailWaiting)
 pure def sometimesRemovalAsked(a: Accounts): bool = a.removing != 0 and a.problem == NoProblem
 pure def sometimesRemovalWaitsForEmail(a: Accounts): bool = a.removing != 0 and a.problem == EmailWaiting
 pure def sometimesRemoved(a: Accounts): bool = a.page == AccountList and a.nextId > a.accounts.length() + 1
-pure val waitingValues = Set(0, 1)
+pure val waitingValues = Set(0, 1, 2)
+```
+
+### Remove anyway discards the waiting email only after she confirms how much
+
+While email waits, the question also offers Remove anyway. It first asks
+again, saying how many waiting emails will be discarded and never sent;
+Keep it closes both questions. Her yes there discards that account’s waiting
+email, never more than she was told about, and removes the account as
+Remove does. Only her taps remove an account or discard its email: Grace has
+no way to.
+
+```quint
+pure def canRemoveAnyway(a: Accounts, id: int, waiting: int, by: AccountActor): bool =
+  by == AccountPerson and a.removing == id and id != 0 and waiting > 0 and a.discarding == 0
+pure def removeAnyway(a: Accounts, id: int, waiting: int, by: AccountActor): Accounts =
+  { ...a, discarding: waiting, problem: NoProblem }
+pure def canDiscardAndRemove(a: Accounts, id: int, waiting: int, by: AccountActor): bool =
+  by == AccountPerson and a.removing == id and id != 0 and a.discarding > 0 and waiting >= 0 and waiting <= a.discarding
+pure def discardAndRemove(a: Accounts, id: int, waiting: int, by: AccountActor): Accounts = removedFrom(id, a)
+pure def lawDiscardIsNeverMoreThanSheWasTold(a: Accounts, id: int, waiting: int, by: AccountActor): bool =
+  canDiscardAndRemove(a, id, waiting, by) implies (waiting <= a.discarding and by == AccountPerson)
+pure def stepDiscardFollowsHerConfirm(before: Accounts, via: str, after: Accounts): bool =
+  via == "discardAndRemove" implies (before.discarding > 0 and before.removing != 0 and not(hasAccount(after, before.removing)))
+pure def sometimesDiscardAsked(a: Accounts): bool = a.discarding > 0
 ```
 
 ### A new email comes from the account last used with that person, else the most used
@@ -483,4 +593,9 @@ pure val weight_serversResult = 4
 pure val weight_chooseProvider = 4
 pure val weight_requestRemoval = 3
 pure val weight_removeAccount = 3
+pure val weight_lookUpServers = 3
+pure val weight_serversLookedUp = 3
+pure val weight_removeAnyway = 2
+pure val weight_discardAndRemove = 2
+pure val fromNameValues = Set("Margaret Hill", "")
 ```

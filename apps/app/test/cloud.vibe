@@ -73,6 +73,7 @@ type Contact = { name: string; email: string }
 type Box = {
   provider: Slug
   address: string
+  fromName: string
   grantId: string
   expired: boolean
   mail: Mail[]
@@ -154,12 +155,12 @@ schema ContactQuery { query: string; grantId?: string }
 schema RemovalQuery { side?: "owner" | "agent"; grantId?: string; calendarId?: Filled }
 schema AccountsQuery { side?: string }
 schema DraftBody { grantId?: string; draftId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; attachments?: Uploaded[] }
-schema SentMail { subject: string; labels: string[]; bcc: string[]; attachments: { filename: string }[] }
+schema SentMail { subject: string; from: string; labels: string[]; bcc: string[]; attachments: { filename: string }[] }
 schema SentBox { mail: SentMail[] }
 schema Boxes { boxes: SentBox[] }
 schema SessionStart { loginHint?: string }
 schema PageChoice { address: string; choice: "allow" | "cancel" | "unfinished" }
-schema OtherConnect { address: string; password: string; incoming?: string; outgoing?: string }
+schema OtherConnect { name?: string; address: string; password: string; incoming?: string; outgoing?: string }
 schema IncomingMail { to: Mailbox; from: Filled; fromEmail: Mailbox; subject: string; body: string }
 schema Expiry { address: string }
 schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing" | "deleteDraft" | "sendResponse"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" | "reauthCreate" | "conflictCreate" }
@@ -272,6 +273,7 @@ const heard = "I would like to pay my power bill."
 const lifetimes = { credential: 30 * 24 * 60 * 60, code: 5 * 60, consent: 5 * 60, speech: 60 }
 const firstParty = /^(https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?|(capacitor|capacitor-electron|app|tauri|file|electrobun):\/\/.*)$/i
 const owner = "owner@grace.test"
+export const ownerName = "Margaret Hill"
 const scopes = ["gmail.readonly", "gmail.send", "gmail.modify", "calendar.events"]
 const googleClient = "grace-browser-fixture"
 const googleTokenLifetime = 3600
@@ -381,7 +383,7 @@ function box(provider: Slug, address: string, grantId: string, at: number, site:
   const today = Math.floor(at / day) * day
   const start = today + 17 * day + 10 * hour
   return {
-    provider, address, grantId, expired: false, contacts: people, mail: seeded(provider, address, at, site, visit),
+    provider, address, fromName: "", grantId, expired: false, contacts: people, mail: seeded(provider, address, at, site, visit),
     calendar: provider !== "google" ? [] : [appointment({
       externalId: "eye-check", calendarId: "primary", title: "Eye check with Dr. Patel", description: "", location: "Riverside Clinic",
       startAt: new Date(start).toISOString(), endAt: new Date(start + hour / 2).toISOString(), isAllDay: false, timezone: "UTC", etag: "\"1\"",
@@ -739,7 +741,7 @@ effect function store(site: string) {
       const { review, parent } = try reviewedSend(found, proposal)
       const messageId = `sent${try next()}`
       const threadId = parent?.threadId ?? messageId
-      const sent = letter(messageId, found.address, (try Clock.currentTimeMillis) + day, found.address, found.address, proposal.subject, proposal.bodyText, {
+      const sent = letter(messageId, found.address, (try Clock.currentTimeMillis) + day, found.fromName || found.address, found.address, proposal.subject, proposal.bodyText, {
         threadId, to: review.to, cc: review.cc, bcc: review.bcc, isUnread: false, labels: ["SENT"], attachments: review.attachments,
         metadata: { historyId, messageIdHeader: `<${messageId}@mail.fake.test>`, referencesHeader: parent === undefined ? null : [parent.metadata.referencesHeader, parent.metadata.messageIdHeader].filter((h) => h !== null).join(" ") }
       })
@@ -998,13 +1000,13 @@ effect function store(site: string) {
     return try HttpServerResponse.json({ ok: true })
   }
 
-  effect function connect(account: Account, provider: Slug, address: string) {
+  effect function connect(account: Account, provider: Slug, address: string, fromName = "") {
     const known = account.boxes.find((b) => b.provider === provider && b.address.toLowerCase() === address.toLowerCase())
     if (known) {
-      try changeBox(account.key, known.grantId, (b) => ({ ...b, expired: false }))
+      try changeBox(account.key, known.grantId, (b) => ({ ...b, expired: false, fromName: fromName || b.fromName }))
       return known.grantId
     }
-    const added = box(provider, address, uuid(try next()), try Clock.currentTimeMillis, site, account.credentialId)
+    const added = { ...box(provider, address, uuid(try next()), try Clock.currentTimeMillis, site, account.credentialId), fromName }
     try change(account.key, (a) => ({ ...a, boxes: [...a.boxes, added] }))
     return added.grantId
   }
@@ -1104,14 +1106,14 @@ effect function store(site: string) {
   effect function connectOther() {
     const account = try signedIn()
     if (account.outage) throw new Unavailable()
-    const { address, password, incoming, outgoing } = try HttpServerRequest.schemaBodyJson(OtherConnect)
+    const { name, address, password, incoming, outgoing } = try HttpServerRequest.schemaBodyJson(OtherConnect)
     const domain = address.split("@")[1]?.toLowerCase() ?? ""
     const servers = otherServers[domain]
     const outcome = listed.includes(domain) || servers === undefined ? "refused"
       : password !== otherPassword ? "passwordRefused"
       : servers === null || (incoming === servers.incoming && outgoing === servers.outgoing) ? "allowed"
       : incoming === undefined ? "needsServers" : "refused"
-    if (outcome === "allowed") try connect(account, "other", address)
+    if (outcome === "allowed") try connect(account, "other", address, name?.trim() ?? "")
     return try HttpServerResponse.json({ outcome, address })
   }
 
@@ -1276,6 +1278,11 @@ effect function store(site: string) {
     return HttpServerResponse.empty()
   }
 
+  effect function session() {
+    const { key } = try signedIn()
+    return try HttpServerResponse.json({ account: { id: key, email: owner, name: ownerName } })
+  }
+
   effect function inspect() {
     const { key } = try signedIn()
     const settled = Stream.filter(Stream.map(SubscriptionRef.changes(accounts), (all) => all.get(key)), (a): a is Account => a !== undefined && !streaming(a))
@@ -1310,6 +1317,7 @@ effect function store(site: string) {
     ...company("/api/v1/eliza/google/gmail", "/api/v1/eliza/google/calendar", "/api/v1/eliza/google/accounts", "google"),
     ...company("/api/v1/eliza/mail/:provider", "/api/v1/eliza/calendar/:provider", "/api/v1/eliza/mail/:provider/accounts"),
     HttpRouter.route("POST", "/api/v1/eliza/connections/other", answered(connectOther())),
+    HttpRouter.route("GET", "/api/auth/session", answered(session())),
     HttpRouter.route("POST", "/api/v1/eliza/connections/:provider/sessions", answered(startSession())),
     HttpRouter.route("GET", "/api/v1/eliza/connections/sessions/:sessionId", answered(sessionOutcome())),
     HttpRouter.route("DELETE", "/api/v1/eliza/connections/sessions/:sessionId", answered(closeSession())),
