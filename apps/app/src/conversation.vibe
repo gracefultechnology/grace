@@ -80,6 +80,7 @@ type GuidedReadSource =
   | { tag: "ManagedMail" | "ManagedAppointment"; grant: string; version: string }
   | ({ tag: "CurrentMessage" } & GuidedMail)
   | { tag: "CurrentDocument"; tab: number; loadVersion: number; documentId: string }
+  | { tag: "PublicSortDocument"; tabId: number; loadVersion: number; documentId: string; domRevision: number; url: string; origin: string; category: string; direction: "PriceAscending" | "PriceDescending" }
   | { tag: "NamedDocument"; tab: number; loadVersion: number; documentId: string; url: string; heading: string }
   | { tag: "SearchDocument"; loadVersion: number; documentId: string; url: string; origin: string; query: string; heading: string }
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string; region: string }
@@ -89,6 +90,37 @@ type GuidedMiss = Exclude<GuidedCheck, "Confirmed">
 
 function normalizedHeading(value: string | null | undefined): string {
   return value && value.length <= 200 ? value.normalize("NFC").trim().replace(/\s+/gu, " ") : ""
+}
+
+function sortCategory(value: string): string {
+  return comparableName(value).replace(/ & /gu, " and ")
+}
+
+function priceToolbar(snapshot: LinkObservation) {
+  const controls = snapshot.result.elements.filter((control) => control.inViewport && control.disabled === false &&
+    control.sensitive === null && control.form === null && control.frame === undefined && !control.inShadowRoot && control.targetSelector)
+  const sortBy = controls.filter((control) => control.tag === "select" && comparableName(control.label ?? "") === "sort by")
+  const sorter = sortBy[0]
+  if (sortBy.length !== 1 || !sorter?.targetSelector) return undefined
+  const selected = sorter.options?.filter((option) => option.selected)
+  if (selected?.length !== 1 || selected[0]?.disabled || comparableName(selected[0]?.label ?? "") !== "price") return undefined
+  const observed = controls.flatMap((control) => {
+    if (control.tag !== "button" && control.tag !== "a" && control.role !== "button") return []
+    const matches = [control.label, control.title].flatMap((text) => {
+      const label = comparableName(text ?? "")
+      if (label === "set descending direction" || label === "switch to descending") return ["PriceAscending" as const]
+      if (label === "set ascending direction" || label === "switch to ascending") return ["PriceDescending" as const]
+      return []
+    })
+    return matches.length === 0 ? [] : [{ directions: new Set(matches), selector: control.targetSelector }]
+  })
+  if (observed.length !== 1 || !observed[0]?.selector || observed[0].directions.size !== 1) return undefined
+  const [direction] = observed[0].directions
+  if (!direction) return undefined
+  const excluded = ':not(:is(header,footer,aside,nav,article,form,[role="navigation"],[aria-hidden="true"],[inert]) *)'
+  const group = ':is(div,fieldset,[role="group"])'
+  const selector = `:is(main,[role="main"]) ${group}${excluded}:has(> :is(${sorter.targetSelector})):has(> :is(${observed[0].selector}))`
+  return { selector, direction }
 }
 
 function routeOf(url: URL): string {
@@ -197,6 +229,35 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       return receipt({ tag: "SearchDocument", loadVersion: tab.loadVersion, documentId: after.documentId,
         url, origin: address.origin, query: step.query, heading: headingText }, [step.origin, step.query], "Search results for “" + step.query + "”.")
     }
+    case "SortPublicListing": {
+      const tab = activeTab(workspace.browser)
+      const url = URL.parse(tabUrl(tab))
+      if (!url || url.origin !== step.origin || url.username || url.password || url.hash || tab.id !== step.tabId ||
+          !tab.secure || tab.load !== "Loaded" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+      const id = PageId.make(`tab-${tab.id}`)
+      const before = native.observeLinks(id) catch () => undefined
+      if (!before || before.result.domRevision === undefined ||
+          (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
+      const miss = pageMiss(before, url.href, "CheckPublicSort")
+      if (miss !== undefined) return miss
+      const heading = native.readPrimaryHeading(id, true) catch () => undefined
+      if (heading?.url !== url.href || sortCategory(normalizedHeading(heading.text)) !== sortCategory(step.subject)) return undefined
+      const toolbar = priceToolbar(before)
+      if (toolbar?.direction !== step.direction) return undefined
+      const text = native.readRecordText(id, toolbar.selector) catch () => undefined
+      if (text?.url !== url.href) return undefined
+      const { direction } = toolbar
+      const after = native.observeLinks(id) catch () => undefined
+      if (!after || after.documentId !== before.documentId || after.result.domRevision !== before.result.domRevision) return "Changed"
+      const currentToolbar = priceToolbar(after)
+      if (currentToolbar?.direction !== direction || currentToolbar.selector !== toolbar.selector) return "Changed"
+      const afterMiss = pageMiss(after, url.href, "CheckPublicSort")
+      if (afterMiss !== undefined) return afterMiss
+      const order = direction === "PriceAscending" ? "ascending" : "descending"
+      return receipt({ tag: "PublicSortDocument", tabId: tab.id, loadVersion: tab.loadVersion, documentId: before.documentId,
+        domRevision: before.result.domRevision, url: url.href, origin: step.origin, category: step.subject, direction },
+      [before.documentId, step.subject, direction], step.subject + " sorted by " + order + " price.")
+    }
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
@@ -284,6 +345,10 @@ effect function decoded(said: string | undefined) {
 }
 
 function distinctReadConfirmation(source: GuidedReadSource, report: GuidedObservation, rebind: boolean): Event | undefined {
+  if (source.tag === "PublicSortDocument") {
+    const { tabId, loadVersion, documentId, url, origin, category, direction } = source
+    return { type: "confirmGuidedPublicSort", sortCheck: { report, tabId, loadVersion, documentId, url, origin, category, direction } }
+  }
   if (source.tag === "NamedDocument") {
     const { documentId, loadVersion, url, heading } = source
     return { type: "confirmGuidedNamedPage", pageCheck: { report, documentId, loadVersion, url, heading } }
@@ -502,7 +567,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const confirmed = try look()
       if (browserScope !== undefined && !(try ownsBrowserRead())) return "Refused"
       const rechecked = try guidedReceipt(confirmed, step, native, managed,
-        found.source.tag === "NamedDocument" || found.source.tag === "SearchDocument" ? found.source.documentId : undefined)
+        found.source.tag === "NamedDocument" || found.source.tag === "SearchDocument" || found.source.tag === "PublicSortDocument" ? found.source.documentId : undefined)
       if (rechecked === "PrivateForm") return (try ownsBrowserRead()) ? rechecked : "Refused"
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
       if (!sameRecord) return typeof rechecked === "string" ? rechecked : "Changed"

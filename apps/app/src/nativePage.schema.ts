@@ -102,6 +102,10 @@ export const LinkObservation = Schema.Struct({
       submits: Schema.optional(Schema.Boolean),
       focused: Schema.optional(Schema.Boolean), edited: Schema.optional(Schema.Boolean), hasInput: Schema.optional(Schema.Boolean), label: Schema.NullOr(Schema.String),
       frame: Schema.optional(Schema.Struct({ index: Schema.Int })), inShadowRoot: Schema.optional(Schema.Boolean),
+      title: Schema.optional(Schema.NullOr(Schema.String)),
+      options: Schema.optional(Schema.Array(Schema.Struct({
+        label: Schema.NullOr(Schema.String), disabled: Schema.Boolean, selected: Schema.Boolean
+      }))),
       role: Schema.optional(Schema.NullOr(Schema.String)), expanded: Schema.optional(Schema.Boolean),
       targetSelector: Schema.optional(Schema.NullOr(Schema.String)),
       href: Schema.NullOr(Schema.String), disabled: Schema.optional(Schema.Boolean),
