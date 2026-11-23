@@ -3924,7 +3924,8 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
   const pageReceipt = plan.getByText(/^Open page:/);
   const pending = (label: string) => plan.getByText(`Find and check “${label}”.`, { exact: true });
   try {
-    await routeTo(page.getByText(subject, { exact: true }));
+    await routeTo(button(/^Email/));
+    await expect.element(button(/^Email/)).toHaveAccessibleDescription(/Service desk follow-up appointment/);
     await tap(button("Internet"));
     await visitExampleSite(native);
     await tap(button("Ask Grace"));
