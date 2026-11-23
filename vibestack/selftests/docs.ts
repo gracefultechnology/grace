@@ -103,6 +103,8 @@ describe("the documents name what exists", () => {
     assert.deepEqual([shards, listed("selftest").sort(), listed("verify").filter((task) => task.includes("selftest")).sort()],
       [["selftest:tools:a", "selftest:tools:b", "selftest:tools:rest"], selftests.map((task) => `//#${task}`), selftests.map((task) => `//#${task}`)], "pnpm selftest and pnpm verify run every selftest task");
     const ci = read(".github/workflows/ci.yml");
+    const nightly = read(".github/workflows/fuzz.yml").match(/^  vibestack-nightly-check:\n((?: {4}.*\n|\n)*)/m)?.[1] ?? "";
+    assert.match(nightly, /^ +- run: pnpm all check --continue -- --nightly$/m);
     const lanes = [...ci.matchAll(/^ +(?:- )?lane: (.+)$/gm)].flatMap(([, lane]) => lane.startsWith("[") ? lane.slice(1, -1).split(", ") : [lane]);
     const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --summarize --log-order=stream$/m)?.[1].split(" ").filter((task) => !task.startsWith("--")) ?? [];
     assert.deepEqual(lanes.sort(), ["product", ...shards.map((task) => `selftest-${task.split(":")[2]}`)].sort(), "each hosted tool shard has its own runner");

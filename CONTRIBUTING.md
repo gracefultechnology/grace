@@ -270,7 +270,8 @@ The tooling package sets `--skip-gen-on-pack` in its prepare script. A
 generated models, which the tools' tarball does not contain.
 The three tool selftest jobs in `ci.yml` run only the listed `//#build` task and generate their scratch
 projects on demand. The packaged CLI test rebuilds from a clean copy of the
-workspace. Other GitHub Actions jobs use the same strict root
+workspace. The nightly check builds the tools during install and generates the
+application in its nightly task graph. Other GitHub Actions jobs use the same strict root
 `gen` task as verification, so a successful install warms the task cache. A failed generation leaves the
 remaining checks runnable and is retried by verification. Generated stories,
 browser build artifacts, compiler declarations and successful test receipts
@@ -419,7 +420,10 @@ restore their shared fixture runs and the product runner restores verification
 results from the root, workspace packages and standalone examples. The result
 cache keys include the job, lockfile, commit and run attempt. A job tries both
 key layouts for its own name and current lockfile, then the current layout for
-another lockfile. Each entry is named by the tools and inputs that produced it.
+another lockfile. A fixture job first looks for an archive from its own pull
+request and lockfile. It can keep that archive when it replays its only task
+and the restored evaluator stays intact. Each entry is named by the tools and
+inputs that produced it.
 Nightly verification restores
 only the pinned evaluator and runs fresh checks.
 The default branch’s product job publishes the pnpm store after the frozen install.
@@ -428,7 +432,7 @@ packages only because fork pull requests can read it.
 Turborepo shares task results through the private Cloudflare/R2 cache.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
-The product runner installs full Chromium and its headless shell. Tool shard A installs full Chromium for Bombadil. Shards B and rest run without a browser.
+The product runner installs full Chromium and its headless shell. Tool shard A installs full Chromium when its Bombadil journey runs. Shards B and rest run without a browser.
 Pull requests read shared results; only branch pushes receive the publishing
 credential, protected by the `turbo-cache-publish` environment's branch
 policy. A pull request keeps its own Turborepo results in the GitHub cache
