@@ -1,10 +1,10 @@
-// spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
+// spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"; spec/app/email.md, "Story: Read an email and its original attachment"
 import { Alert, BrowserDialog, BrowserDialogText, Button, CalendarEventRow, CalendarMonth, CalendarNav, CalendarWeekStrip, EmptyState, Input, MailAttachment, MailFolderNav, MailLink, MailMessageRow, PageHeading, PageText, RetryNotice, SearchField, SegmentedControl, Textarea } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
 import { type ReactNode, useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
 import type { Recurrence } from "../gen/app__calendar.ts";
-import { mayChangeManaged, mayReadManaged, maySendManagedMail, skipsMonthsWithoutItsDay } from "../gen/app__setup.ts";
+import { mayChangeManaged, mayReadManaged, maySendManagedMail, showsMailLeaseUpgrade, skipsMonthsWithoutItsDay } from "../gen/app__setup.ts";
 import { actionableMailBody, inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type AppointmentChange, type ReadView } from "./managedReads.vibe";
 import { messageLinkParts } from "./messageLinks.vibe";
 import { calendarGrid } from "./Calendar.tsx";
@@ -331,6 +331,11 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
 
   if (snapshot.kind === "waiting" && snapshot.view === view) {
     if (snapshot.reason === "native") {
+      if (account !== undefined && showsMailLeaseUpgrade(account.graceAccount)) {
+        return <EmptyState title="Sign in again to use email and calendar">
+          <Button variant="prominent" size="pill" loading={pending} onClick={() => run({ kind: "account" })}>Go to Account</Button>
+        </EmptyState>;
+      }
       return <EmptyState title={view === "Email" ? "Open email on Grace’s website" : "Open your calendar on Grace’s website"}>
         <Button variant="prominent" size="pill" loading={pending} onClick={() => run({ kind: "openHosted" })}>Open Grace</Button>
         {view === "Calendar" && <Button variant="capsule" size="pill" disabled={pending}

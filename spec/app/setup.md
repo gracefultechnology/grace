@@ -534,7 +534,9 @@ is unavailable. Cleanup does not verify an owner.
 
 ```quint
 type GracePlan = PlanUnknown | PlanInactive | PlanInactiveBlocked | PlanActive | PlanInactiveManaged | PlanInactiveManagedCheckout | PlanActiveManaged
-type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignInNeedsCleanup | GraceDeviceSignedIn | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
+type MailLeaseUpgradePhase = LeaseUpgradeNotRequired | LeaseUpgradeRequired | LeaseUpgradeSignInPending | LeaseUpgradeAcknowledgmentPending
+type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignInNeedsCleanup | GraceDeviceSignedIn({ mailLeaseUpgrade: MailLeaseUpgradePhase }) | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
+pure val signedInTablet: GraceAccount = GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeNotRequired })
 type AccountSource = TabletSession | GraceService
 type TabletSignIn = NoTabletSignIn | TabletSignInAsked | TabletSignInConfirmed({ accountId: str })
 pure def mayStartCheckout(account: GraceAccount): bool = match account {
@@ -546,7 +548,7 @@ pure def mayOpenBillingPortal(account: GraceAccount): bool = match account {
   | _ => false
 }
 pure def reportedBy(source: AccountSource, report: GraceAccount): bool = match report {
-  | GraceDeviceSignedIn => source == TabletSession
+  | GraceDeviceSignedIn(_) => source == TabletSession
   | GraceDeviceSignedOut => source == TabletSession
   | GraceDeviceSignInNeedsCleanup => source == TabletSession
   | GraceSignedIn(_) => source == GraceService
@@ -567,7 +569,7 @@ pure def mayCheckAccountAgain(account: GraceAccount): bool = match account {
 pure def lawAFailedCheckOffersToCheckAgain(accountId: str, email: str): bool =
   mayCheckAccountAgain(AccountUnavailable) and mayCheckAccountAgain(GraceSignedIn({ accountId: accountId, email: email, plan: PlanUnknown }))
 pure def managesOnTheWeb(account: GraceAccount): bool = match account {
-  | GraceDeviceSignedIn => true
+  | GraceDeviceSignedIn(_) => true
   | _ => false
 }
 pure def lawATabletManagesItsSubscriptionOnTheWeb(account: GraceAccount): bool =
@@ -626,7 +628,10 @@ pure def stepTheAccountComesOnlyFromItsOwnSource(before: Setup, via: str, after:
 pure def alwaysOnlyAWebAccountCarriesAGoogleConnection(s: Setup): bool =
   linkUnknown(s.googleLink) or webAccountId(s.graceAccount) != ""
 pure val reportValues: Set[GraceAccount] = Set(
-  CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignInNeedsCleanup, GraceDeviceSignedIn, AccountUnavailable,
+  CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignInNeedsCleanup, signedInTablet, AccountUnavailable,
+  GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeRequired }),
+  GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeSignInPending }),
+  GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeAcknowledgmentPending }),
   GraceSignedOut({ google: true, emailCode: true, smsCode: false }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactive }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveManaged }),
@@ -649,6 +654,29 @@ pure def lawAReturningCustomerMayManageAndSubscribeAgain(accountId: str, email: 
 ```
 
 
+### An enrolled tablet offers one sign-in to update mail and calendar access
+
+A tablet with an older device credential offers sign-in again in Account.
+Email and Calendar direct the owner to Account until that sign-in is done.
+The owner can cancel while the browser sign-in is pending.
+The tablet retains the same owner and offers no new attempt while it waits
+for a device acknowledgment. When the device confirms the updated sign-in,
+the prompt goes away. This step does not ask for new Google permissions.
+
+```quint
+pure def mayBeginMailLeaseUpgrade(account: GraceAccount): bool =
+  account == GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeRequired })
+pure def mayCancelMailLeaseUpgrade(account: GraceAccount): bool =
+  account == GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeSignInPending })
+pure def showsMailLeaseUpgrade(account: GraceAccount): bool = match account {
+  | GraceDeviceSignedIn(tablet) => tablet.mailLeaseUpgrade != LeaseUpgradeNotRequired
+  | _ => false
+}
+pure def lawAMailLeaseUpgradeKeepsTheTabletSignedIn(account: GraceAccount): bool =
+  showsMailLeaseUpgrade(account) implies
+    (managesOnTheWeb(account) and not(mayBeginDeviceSignIn(account)))
+```
+
 ### Google mail and calendar access requires separate consent for the Grace account
 
 Grace shows Google connection controls only in a signed-in Grace web
@@ -670,7 +698,7 @@ pure def mayOfferGoogleLink(account: GraceAccount, link: GoogleLink): bool =
     | _ => false
   }
 pure def lawLinkRequiresGraceSignIn(link: GoogleLink): bool =
-  not(mayOfferGoogleLink(GraceDeviceSignedIn, link))
+  not(mayOfferGoogleLink(signedInTablet, link))
 ```
 
 
@@ -717,7 +745,7 @@ pure def mayReadManaged(account: GraceAccount, link: GoogleLink, view: ManagedRe
 pure def managedReadMatches(accountId: str, receiptAccountId: str, wanted: str, received: str): bool =
   accountId != "" and accountId == receiptAccountId and wanted == received
 pure def lawADeviceSessionAloneDoesNotReadGoogle(link: GoogleLink, view: ManagedReadView): bool =
-  not(mayReadManaged(GraceDeviceSignedIn, link, view))
+  not(mayReadManaged(signedInTablet, link, view))
 pure def lawAManagedReadDoesNotCrossAccounts(accountId: str, receiptAccountId: str, ref: str): bool =
   accountId != receiptAccountId implies not(managedReadMatches(accountId, receiptAccountId, ref, ref))
 ```
@@ -741,7 +769,7 @@ pure def maySendManagedMail(account: GraceAccount, link: GoogleLink, accountId: 
     | _ => false
   }
 pure def lawADeviceSessionAloneDoesNotSendGoogle(link: GoogleLink, accountId: str, grant: str): bool =
-  not(maySendManagedMail(GraceDeviceSignedIn, link, accountId, grant))
+  not(maySendManagedMail(signedInTablet, link, accountId, grant))
 ```
 
 ### Trash and Calendar changes use the exact selected version
@@ -880,7 +908,7 @@ pure def grantOf(link: GoogleLink): str = match link {
   | _ => ""
 }
 pure def lawAManagedChangeNeedsItsAccountItsGrantAndItsOwnPermission(account: GraceAccount, link: GoogleLink, accountId: str, grant: str, request: ManagedChange): bool =
-  not(mayChangeManaged(GraceDeviceSignedIn, link, accountId, grant, request)) and
+  not(mayChangeManaged(signedInTablet, link, accountId, grant, request)) and
   (mayChangeManaged(account, link, accountId, grant, request) implies
     (grant != "" and webAccountId(account) == accountId and grantOf(link) == grant and match link {
       | GoogleLinkConnected(g) => if (request == ManagedTrash) (g.mail and g.trashMail) else (g.calendar and g.writeCalendar)

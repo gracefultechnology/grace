@@ -1,6 +1,6 @@
-// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"
 import {
-  type GoogleLink, type GraceAccount, type GracePlan, isTheRequestsOwnReturn, Machine as Setup, mayBeginDeviceSignIn, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, tabletSignInConfirmed
+  type GoogleLink, type GraceAccount, type GracePlan, type MailLeaseUpgradePhase, isTheRequestsOwnReturn, Machine as Setup, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, signedInTablet, tabletSignInConfirmed
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin, type AccountBridge } from "./accountPlugin.ts"
@@ -12,7 +12,13 @@ const Session = Schema.Struct({ account: Schema.NullOr(Schema.Struct({ id: Schem
 const DeviceAccountStatus = Schema.Struct({
   kind: Schema.Literals(["signedIn", "signedOut"]),
   legacySignInNeedsCleanup: Schema.optional(Schema.Literal(true)),
+  mailLeaseUpgrade: Schema.optional(Schema.Literals(["required", "signInPending", "acknowledgmentPending"])),
 })
+const upgradePhase = {
+  required: "LeaseUpgradeRequired",
+  signInPending: "LeaseUpgradeSignInPending",
+  acknowledgmentPending: "LeaseUpgradeAcknowledgmentPending",
+} as const satisfies Record<string, MailLeaseUpgradePhase>
 schema Providers { google: boolean; email: boolean; sms: boolean }
 schema Subscription { status: "inactive" | "active"; canManage: boolean; canCheckout: boolean }
 schema Destination { url: string }
@@ -65,7 +71,7 @@ const clearDevice = () => Effect.try(() => webView.window.sessionStorage.removeI
 
 export type CodeProvider = "email" | "sms"
 export type Operation =
-  | { kind: "refresh" | "signOut" | "cleanupLegacySignIn" | "checkout" | "portal" | "manageAccount" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "refresh" | "signOut" | "cleanupLegacySignIn" | "beginLeaseUpgrade" | "cancelLeaseUpgrade" | "checkout" | "portal" | "manageAccount" | "cancelDevice" | "disconnectGoogle" }
   | { kind: "authorizeDevice"; expectedAccountId: string }
   | { kind: "signIn"; method?: "browser" }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
@@ -248,11 +254,15 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     if (plugin === undefined) throw new AccountRequestFailed()
     const status: unknown = try tryPromise(() => plugin.status())
     const result = try Schema.decodeUnknownEffect(DeviceAccountStatus)(status)
+    if (result.mailLeaseUpgrade !== undefined) {
+      if (result.kind !== "signedIn" || result.legacySignInNeedsCleanup === true) throw new AccountRequestFailed()
+      return { tag: "GraceDeviceSignedIn", mailLeaseUpgrade: upgradePhase[result.mailLeaseUpgrade] }
+    }
     if (result.legacySignInNeedsCleanup === true) {
       if (result.kind !== "signedOut") throw new AccountRequestFailed()
       return { tag: "GraceDeviceSignInNeedsCleanup" }
     }
-    return result.kind === "signedIn" ? { tag: "GraceDeviceSignedIn" } : { tag: "GraceDeviceSignedOut" }
+    return result.kind === "signedIn" ? signedInTablet : { tag: "GraceDeviceSignedOut" }
   }
 
   effect function perform(operation: Operation) {
@@ -361,5 +371,18 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
       () => gate.withPermit(refresh()),
     )
   }
-  return { run: effect (operation) => (operation.kind === "cancelDevice" && !native ? tabletHandoff : gate).withPermit(perform(operation)) catch () => false }
+  effect function upgrade(kind: "beginLeaseUpgrade" | "cancelLeaseUpgrade") {
+    if (!native || plugin === undefined) return false
+    const current = try gate.withPermit(refresh())
+    const allowed = kind === "beginLeaseUpgrade" ? mayBeginMailLeaseUpgrade(current) : mayCancelMailLeaseUpgrade(current)
+    const method = plugin[kind]?.bind(plugin)
+    if (!allowed || method === undefined) return false
+    try tryPromise(method)
+    return (try gate.withPermit(refresh())).tag === "GraceDeviceSignedIn"
+  }
+
+  return { run: effect (operation) => {
+    if (operation.kind === "beginLeaseUpgrade" || operation.kind === "cancelLeaseUpgrade") return upgrade(operation.kind) catch () => false
+    return (operation.kind === "cancelDevice" && !native ? tabletHandoff : gate).withPermit(perform(operation)) catch () => false
+  } }
 })

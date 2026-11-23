@@ -198,3 +198,79 @@ it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.m
   expect(signInAttempts).toEqual([undefined, { method: "browser" }]);
   expect(cleanupAttempts).toBe(2);
 });
+
+it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access")', async () => {
+  let phase: "required" | "signInPending" | "acknowledgmentPending" | undefined = "required";
+  const status = () => ({
+    kind: "signedIn" as const,
+    voiceDisclosureScope: "existing-owner",
+    ...(phase === undefined ? {} : { mailLeaseUpgrade: phase }),
+  });
+  let notify: ((value: ReturnType<typeof status>) => void) | undefined;
+  const browserAttempt = Latch.makeUnsafe();
+  const begin = vi.fn(() => {
+    phase = "signInPending";
+    notify?.(status());
+    return Effect.runPromise(browserAttempt.await);
+  });
+  const cancel = vi.fn(() => {
+    phase = "required";
+    notify?.(status());
+    browserAttempt.openUnsafe();
+    return Promise.resolve();
+  });
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    account: {
+      status: () => Promise.resolve(status()),
+      beginSignIn: () => Promise.reject(new Error("Upgrade must use the dedicated action")),
+      beginLeaseUpgrade: begin,
+      cancelLeaseUpgrade: cancel,
+      cleanupLegacySignIn: () => Promise.reject(new Error("The current account is already verified")),
+      signOut: () => Promise.reject(new Error("Upgrade must retain the current account")),
+      manageAccount: () => Promise.resolve(),
+      addListener: (_, listener) => {
+        notify = listener;
+        return Promise.resolve({ remove: () => Promise.resolve() });
+      },
+    },
+  }));
+  const view = tabletView(runtime);
+  onTestFinished(() => {
+    browserAttempt.openUnsafe();
+    return view.dispose();
+  });
+  await view.render();
+
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const click = (name: string) => act(() => userEvent.click(button(name)));
+  await click("Settings");
+  await click("Account");
+  await expect.element(button("Sign in again")).toBeEnabled();
+  expect(begin).not.toHaveBeenCalled();
+
+  await click("Sign in again");
+  await expect.element(button("Cancel")).toBeEnabled();
+  expect(begin).toHaveBeenCalledTimes(1);
+  await click("Cancel");
+  await expect.element(button("Sign in again")).toBeEnabled();
+  await expect.element(button("Manage Grace account")).toBeEnabled();
+  expect(cancel).toHaveBeenCalledTimes(1);
+
+  browserAttempt.closeUnsafe();
+  await click("Sign in again");
+  await expect.element(button("Cancel")).toBeEnabled();
+  await act(async () => {
+    phase = "acknowledgmentPending";
+    notify?.(status());
+  });
+  await expect.element(button("Cancel")).not.toBeInTheDocument();
+  await expect.element(button("Sign in again")).not.toBeInTheDocument();
+  await act(async () => {
+    phase = undefined;
+    notify?.(status());
+    browserAttempt.openUnsafe();
+  });
+  await expect.element(button("Manage Grace account")).toBeEnabled();
+  await expect.element(button("Sign in again")).not.toBeInTheDocument();
+});

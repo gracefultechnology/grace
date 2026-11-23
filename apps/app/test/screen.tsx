@@ -5,7 +5,7 @@ import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, onTestFinished } from "vitest";
 import { page } from "vitest/browser";
 import { type Accounts, allowedUse, chooseProvider, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
-import { Machine as Setup } from "../gen/app__setup.effect.vibe";
+import { Machine as Setup, signedInTablet } from "../gen/app__setup.effect.vibe";
 import { application } from "../src/app.vibe";
 import type { CloudLink } from "../src/conversation.vibe";
 import { App } from "../src/App.tsx";
@@ -97,5 +97,5 @@ export async function mount(runtime: Runtime) {
 export async function signInToGrace(runtime: Runtime) {
   await expect.poll(async () => (await runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.get()))).graceAccount.tag).toBe("AccountUnavailable");
   await act(() => runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.send({ type: "reportGraceAccount",
-    report: { tag: "GraceDeviceSignedIn" }, link: { tag: "GoogleLinkUnknown" } }))));
+    report: signedInTablet, link: { tag: "GoogleLinkUnknown" } }))));
 }
