@@ -50,18 +50,18 @@ effect function readConnectivity(wifi: WiFiPlugin | undefined): Connectivity!! {
   const browser: Connectivity = (try webView.online) ? "Online" : "Offline"
   if (wifi === undefined) return browser
   const c = tryPromise(() => wifi.getConnectivity()) catch () => undefined
-  return c === undefined ? browser : c.captivePortal ? "CaptivePortal" : c.online ? "Online" : "Offline"
+  return c === undefined ? browser : c.captivePortal ? "CaptivePortal" : c.validated ? "Online" : "Offline"
 }
 
 /**
- * Reports the connection to the workspace when it changes. The WebView announces going online or offline,
- * and the interface coming back; a captive portal or a validation the WebView does not announce is read every half minute
- * while the interface is shown.
+ * Reports Android's current validation and listens for network changes, alongside the WebView's own connectivity signals.
  */
 const connectivity = (wifi: WiFiPlugin | undefined) => Layer.effectDiscard(effect {
   const workspace = try Workspaces
   const changes = Stream.mergeAll([
+    Stream.make(undefined),
     Stream.filter(Stream.tick("30 seconds"), () => !webView.hidden()),
+    Stream.fromEventListener(webView.window, "android-network-changed"),
     Stream.fromEventListener(webView.window, "online"),
     Stream.fromEventListener(webView.window, "offline"),
     Stream.fromEventListener(webView.document, "visibilitychange")
