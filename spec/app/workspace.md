@@ -1549,17 +1549,17 @@ can be checked or corrected again on a freshly reviewed page.
 pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrection): bool = {
   val tab = B::activeTab(w.browser)
   val witness = correction.witness
-  val outcome = nextOutcome(w.plan)
+  val pendingStep = nextOutcome(w.plan)
   mayGuideOnBrowser(w) and not(privateSurfaceActive(w)) and w.device.observationAllowed and
   (match witness {
-    | PublicLinkName => isNamedDestination(outcome) and correction.href != correction.url
-    | LocatedSortCategory(located) => match outcome {
+    | PublicLinkName => isNamedDestination(pendingStep) and correction.href != correction.url
+    | LocatedSortCategory(located) => match pendingStep {
       | SortPublicListing(sort) => sort.tabId == tab.id and tab.secure and tab.loadVersion > w.plan.openingBrowser and
           located.domRevision >= 0 and located.origin == sort.origin and located.direction == sort.direction and
           correction.href == correction.url
       | _ => false
     }
-  }) and correction.original == guidedDetails(outcome).subject and
+  }) and correction.original == guidedDetails(pendingStep).subject and
   correction.owner != "" and correction.owner == w.plan.owner and correction.task == w.assistant.taskId and
   correction.version == w.assistant.workVersion and correction.generation == w.assistant.conversation.generation and
   correction.deviceVersion == w.device.contextVersion and correction.browserRevision == w.browser.revision and
@@ -1599,9 +1599,9 @@ pure def lawNameCorrectionRetainsTheReviewedPlan(w: Workspace, correction: Guide
     after.assistant.workVersion > correction.version
 }
 pure def lawNameCorrectionKeepsTheSortScope(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool = {
-  val outcome = nextOutcome(w.plan)
+  val pendingStep = nextOutcome(w.plan)
   val after = confirmGuidedNameCorrection(w, correction, by)
-  (canConfirmGuidedNameCorrection(w, correction, by) and isPublicSort(outcome)) implies (match outcome {
+  (canConfirmGuidedNameCorrection(w, correction, by) and isPublicSort(pendingStep)) implies (match pendingStep {
     | SortPublicListing(sort) => nextOutcome(after.plan) == SortPublicListing({
         subject: correction.label, origin: sort.origin, tabId: sort.tabId, direction: sort.direction }) and
         after.plan.linkUrl == w.plan.linkUrl and after.plan.linkStep == w.plan.linkStep
