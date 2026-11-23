@@ -1022,9 +1022,11 @@ save newer edits or confuse a prior Save with a subsequent Discard. The store
 atomically fences writes by that serial and retains deletion tombstones, so a
 delayed older Save cannot resurrect a deleted draft after restart. The composer may
 close while storage is pending but another draft cannot overwrite it. Failure
-reopens the recoverable draft. Reopening Drafts reads the selected provider draft
-and restores all recipients and attachments, so a saved draft can be open in
-the composer again. Discard of an existing draft awaits durable deletion; the
+reopens the recoverable draft. Saving gives the provider each attachment's own
+bytes, a photo taken on the tablet or a file from Files included, so the saved
+draft holds them. Reopening Drafts reads the selected provider draft
+and restores all recipients and attachments as that draft's own, so a saved
+draft can be open in the composer again and sends with what it holds. Discard of an existing draft awaits durable deletion; the
 single Discard tap is the user's authorization.
 
 ```quint
@@ -1189,7 +1191,9 @@ its email goes, as in the prototype (`prototype/Grace Prototype.html:2342`):
 only once the provider's Sent is durably recorded, for an email sent at once
 or one that waited in Outbox, is its draft ID put in `sentDrafts`; sending,
 waiting in Outbox, uncertainty or failure never removes it. While the tablet is online the host
-asks the provider to delete each one, asking again after a failure, until it
+asks the provider to delete each one, asking again after a failure the next
+time it works the mailbox (the tablet coming back online, a listing, a send,
+or every half minute), until it
 is deleted or the provider says it is already gone, then forgets it
 (`forgetSentDraft`), and Drafts is counted again. An expired sign-in keeps it until she signs in again. A failed Outbox
 email reopened in the composer was never sent, so its draft is still there to

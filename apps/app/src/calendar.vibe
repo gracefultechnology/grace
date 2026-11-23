@@ -3,7 +3,7 @@ import { WebsiteTask } from "./websiteTask.vibe"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { askedDay, calendarFree, type CalendarSource, type CalRow, changeOf, confirmationOf, confirmRing, type DayToShow, deletionOf, savedDay, shownReminders, showsDay, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
-import { type Machine as CalendarMachine, enabled, entryAt, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type SeriesReceipt, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
+import { type Machine as CalendarMachine, enabled, entryAt, keepsRepetition, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type SeriesReceipt, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { planned, repetitions as repeatsOf, shifted } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
 import { GuidedRecovery } from "./guidedRecovery.vibe"
@@ -118,6 +118,7 @@ function written(v: CalendarView, c: Calendar): Calendar {
 type Removal =
   | { readonly tag: "Remove"; readonly id: string }
   | { readonly tag: "Forget" }
+  | { readonly tag: "Repetition"; readonly series: Calendar["identity"]; readonly occurrence: EntryDetails }
   | { readonly tag: "Move"; readonly entry: Calendar }
   | { readonly tag: "Unable" }
 
@@ -125,6 +126,7 @@ function removal(v: CalendarView): Removal {
   const chosen = entryAt(v, v.selectedId).committed
   const { seriesId, recurrence } = chosen
   if (v.scope === "EntireSeries" || recurrence === "Once") return { tag: "Remove", id: generated(seriesId, v.selectedId) ? rootOf(v, seriesId) : v.selectedId }
+  if (!keepsRepetition(v)) return { tag: "Repetition", series: kept(v, rootOf(v, seriesId)).identity, occurrence: chosen }
   const place = placeIn(seriesId, v.selectedId) ?? 0
   if (place !== liveFrom(v, seriesId, 0)?.place) return { tag: "Forget" }
   const next = liveFrom(v, seriesId, place + 1)
@@ -152,11 +154,13 @@ function repetitions(v: CalendarView, span: Reach): Published[] {
 type Store = {
   readonly write: (entry: Calendar, view: CalendarView, dispatch?: GuidedDispatch) => StoreReceipt!!
   readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!!
+  readonly removeRepetition: (series: Calendar["identity"], occurrence: EntryDetails) => DeletionReceipt!!
 }
 
 const device: Store = {
   write: (entry) => Effect.succeed({ revision: entry.revision, succeeded: true, published: [] }),
-  remove: (identity) => Effect.succeed({ succeeded: true, evidence: `tablet:${identity.occurrenceId}` })
+  remove: (identity) => Effect.succeed({ succeeded: true, evidence: `tablet:${identity.occurrenceId}` }),
+  removeRepetition: (series) => Effect.succeed({ succeeded: true, evidence: `tablet:${series.occurrenceId}` })
 }
 
 export type CalendarReport = { readonly told: CalendarTold } | { readonly refused: Ask }
@@ -306,6 +310,7 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
   effect function removedBy(v: CalendarView, plan: Removal) {
     if (plan.tag === "Remove") return try store.remove(kept(v, plan.id).identity, "ThisOccurrence")
     if (plan.tag === "Forget") return try device.remove(entryAt(v, v.selectedId).identity, "ThisOccurrence")
+    if (plan.tag === "Repetition") return try store.removeRepetition(plan.series, plan.occurrence)
     if (plan.tag === "Unable") return { succeeded: false, evidence: "no-later-repetition" }
     const receipt = try store.write(plan.entry, v)
     return { succeeded: receipt.succeeded, evidence: receipt.succeeded ? `moved:${plan.entry.identity.occurrenceId}` : "" }
@@ -677,7 +682,8 @@ export const calendarFeeds = Layer.effectDiscard(effect {
     const link = connector.calendar({ provider: account.provider, address: account.address })
     const store: Store = {
       write: effect (entry, view, guidedFirstDispatch) => link.write(entry, view, guidedFirstDispatch) catch () => ({ revision: entry.revision, succeeded: false, published: [] }),
-      remove: effect (identity, scope) => link.remove(identity, scope) catch () => ({ succeeded: false, evidence: "signedOut" })
+      remove: effect (identity, scope) => link.remove(identity, scope) catch () => ({ succeeded: false, evidence: "signedOut" }),
+      removeRepetition: effect (series, occurrence) => link.removeRepetition(series, occurrence) catch () => ({ succeeded: false, evidence: "signedOut" })
     }
     const grown = Stream.changesWith(Stream.mapEffect(lead.changes, () => spanOf(lead)), within)
     const signedIn = Stream.filter(Stream.drop(Stream.changes(Stream.map(registry.changes, (a) => a.signIn.stage)), 1), (stage) => stage === "NotSigningIn")
