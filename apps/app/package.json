@@ -9,8 +9,8 @@
     "typecheck": "vibelang --noEmit -p .",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
-    "android": "node scripts/android.ts",
-    "aosp": "node scripts/aosp.ts"
+    "android": "pnpm --dir ../../vendor/eliza --filter @elizaos/os build && node scripts/android.ts",
+    "aosp": "pnpm --dir ../../vendor/eliza --filter @elizaos/os build && node scripts/aosp.ts"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",
@@ -27,6 +27,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.2",
+    "@effect/platform-node": "4.1.1",
     "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
