@@ -141,6 +141,96 @@ async function observeFromDocumentStart(page: Page) {
   return session;
 }
 
+async function operatePublicSort(site: Site, definition: BenchmarkDefinition, action: Extract<SiteAction, { kind: "openPublicCategory" | "setWebsitePriceOrder" }>) {
+  const website = site.page;
+  await website.bringToFront();
+  if (action.kind === "openPublicCategory") {
+    if (website.url() !== definition.startUrl) throw new Error("The public category must start from the storefront");
+    const menu = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
+      definition.taskId === "352" ? [/^Health (&|and) Household$/i, /^Diet (&|and) Sports Nutrition$/i, /^Nutrition Bars (&|and) Drinks$/i] : [];
+    const [first, second, leafName] = menu;
+    if (!first || !second || !leafName) throw new Error("The fixture has no public category operator sequence");
+    const nav = website.getByRole("navigation").filter({ has: website.locator("a").filter({ hasText: first }) }).first();
+    const navControl = (name: RegExp) => nav.locator("a[href]").filter({ hasText: name }).filter({ visible: true }).first();
+    const leaf = navControl(leafName);
+    await nav.locator('ul[role="menu"]').filter({ visible: true }).first().waitFor({ timeout: 15_000 });
+    await navControl(first).hover({ timeout: 15_000 });
+    const intermediate = navControl(second);
+    await intermediate.hover({ timeout: 10_000 }).catch(async () => {
+      await intermediate.press("ArrowRight", { timeout: 5_000 });
+    });
+    if (!await leaf.isVisible()) await intermediate.press("ArrowRight", { timeout: 5_000 });
+    const href = await leaf.getAttribute("href", { timeout: 15_000 });
+    if (!href) throw new Error("The disclosed category does not have an address");
+    const category = new URL(href, website.url());
+    if (category.origin !== site.origin || category.search || category.hash)
+      throw new Error("The disclosed category is outside the same-origin public storefront");
+    const [response] = await Promise.all([
+      website.waitForResponse(item => item.url() === category.href && item.request().isNavigationRequest() &&
+        item.request().frame() === website.mainFrame(), { timeout: 30_000 }),
+      website.waitForURL(category.href, { waitUntil: "load", timeout: 30_000 }),
+      leaf.click({ timeout: 15_000 }),
+    ]);
+    if (!response.ok()) throw new Error("The category did not load after the disclosed menu link was clicked");
+  } else {
+    const main = website.getByRole("main");
+    const sorter = main.getByRole("combobox", { name: /^Sort By$/i }).filter({ visible: true }).first();
+    if (await sorter.locator("option:checked").textContent({ timeout: 15_000 }) !== "Price") {
+      await Promise.all([
+        website.waitForEvent("framenavigated", { predicate: frame => frame === website.mainFrame(), timeout: 30_000 }),
+        sorter.selectOption({ label: "Price" }, { timeout: 15_000 }),
+      ]);
+      await website.waitForLoadState("load", { timeout: 30_000 });
+    }
+    const toggle = main.locator('[title="Set Ascending Direction"],[title="Set Descending Direction"]').filter({ visible: true }).first();
+    const title = action.direction === "ascending" ? "Set Ascending Direction" : "Set Descending Direction";
+    if (await toggle.getAttribute("title", { timeout: 15_000 }) === title) {
+      await Promise.all([
+        website.waitForEvent("framenavigated", { predicate: frame => frame === website.mainFrame(), timeout: 30_000 }),
+        toggle.click({ timeout: 15_000 }),
+      ]);
+      await website.waitForLoadState("load", { timeout: 30_000 });
+    }
+    const opposite = action.direction === "ascending" ? "Set Descending Direction" : "Set Ascending Direction";
+    if (await toggle.getAttribute("title", { timeout: 15_000 }) !== opposite) throw new Error("The storefront did not expose the selected price direction");
+  }
+  return {};
+}
+
+async function openPublicRatingProduct(run: Run) {
+  const site = run.site;
+  if (!site || run.publicSearch?.state !== "completed" || run.ratingProduct)
+    throw new Error("The product requires its own completed public search");
+  const { frameTree: { frame: previous } } = await site.session.send("Page.getFrameTree");
+  if (previous.loaderId !== run.publicSearch.destination.documentId)
+    throw new Error("The public search document changed before the product was opened");
+  const listings = site.page.getByRole("main").locator("a.product-item-link").filter({ visible: true });
+  const productMatch = /^(?=.*\bugreen\b)(?=.*\blightning\b)(?=.*3[.\s]+5\s*mm).+$/isu;
+  const matches = listings.filter({ hasText: productMatch });
+  const cables = matches.filter({ hasText: /\bcable\b/iu });
+  const [visible, matching, cableCount, titles] = await Promise.all([
+    listings.count(), matches.count(), cables.count(), listings.allTextContents(),
+  ]);
+  run.ratingListings = { visible, matching, cables: cableCount, labels: titles.slice(0, 25).map(title => title.trim().slice(0, 180)) };
+  const link = cableCount === 1 ? cables : matching === 1 ? matches : undefined;
+  if (!link) throw new Error("The requested public product is not uniquely identifiable");
+  const label = (await link.innerText()).trim();
+  const href = await link.getAttribute("href");
+  const address = href && URL.parse(href, previous.url);
+  if (!address || address.origin !== site.origin || address.search || address.hash || address.username || address.password)
+    throw new Error("The visible product link did not identify a public Shopping page");
+  await Promise.all([
+    site.page.waitForURL(address.href, { waitUntil: "load", timeout: 30_000 }),
+    link.click(),
+  ]);
+  await site.page.getByRole("main").getByRole("heading", { level: 1, name: label, exact: true }).waitFor({ timeout: 15_000 });
+  const { frameTree: { frame: current } } = await site.session.send("Page.getFrameTree");
+  if (current.loaderId === previous.loaderId || current.url !== address.href)
+    throw new Error("Opening the product did not commit the selected document");
+  run.ratingProduct = { url: current.url, documentId: current.loaderId };
+  return run.ratingProduct;
+}
+
 async function benchmarkSurface(context: BrowserCommandContext, action: SiteAction) {
   if (action.kind === "begin") {
     const fixture = byId.get(action.taskId);
@@ -155,95 +245,13 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   const publicSearch = definition.requiredStep === "SearchPublicSite";
   const publicSort = definition.requiredStep === "SortPublicListing";
   if (action.kind === "openPublicCategory" || action.kind === "setWebsitePriceOrder") {
-    const site = run.site;
-    if (!publicSort || !site) throw new Error("The website sort is outside its reviewed case");
-    const website = site.page;
-    await website.bringToFront();
-    if (action.kind === "openPublicCategory") {
-      if (website.url() !== definition.startUrl) throw new Error("The public category must start from the storefront");
-      const menu = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
-        definition.taskId === "352" ? [/^Health (&|and) Household$/i, /^Diet (&|and) Sports Nutrition$/i, /^Nutrition Bars (&|and) Drinks$/i] : [];
-      const [first, second, leafName] = menu;
-      if (!first || !second || !leafName) throw new Error("The fixture has no public category operator sequence");
-      const nav = website.getByRole("navigation").filter({ has: website.locator("a").filter({ hasText: first }) }).first();
-      const navControl = (name: RegExp) => nav.locator("a[href]").filter({ hasText: name }).filter({ visible: true }).first();
-      const leaf = navControl(leafName);
-      await nav.locator('ul[role="menu"]').filter({ visible: true }).first().waitFor({ timeout: 15_000 });
-      await navControl(first).hover({ timeout: 15_000 });
-      const intermediate = navControl(second);
-      await intermediate.hover({ timeout: 10_000 }).catch(async () => {
-        await intermediate.press("ArrowRight", { timeout: 5_000 });
-      });
-      if (!await leaf.isVisible()) await intermediate.press("ArrowRight", { timeout: 5_000 });
-      const href = await leaf.getAttribute("href", { timeout: 15_000 });
-      if (!href) throw new Error("The disclosed category does not have an address");
-      const category = new URL(href, website.url());
-      if (category.origin !== site.origin || category.search || category.hash)
-        throw new Error("The disclosed category is outside the same-origin public storefront");
-      const [response] = await Promise.all([
-        website.waitForResponse(item => item.url() === category.href && item.request().isNavigationRequest() &&
-          item.request().frame() === website.mainFrame(), { timeout: 30_000 }),
-        website.waitForURL(category.href, { waitUntil: "load", timeout: 30_000 }),
-        leaf.click({ timeout: 15_000 }),
-      ]);
-      if (!response.ok()) throw new Error("The category did not load after the disclosed menu link was clicked");
-    } else {
-      const main = website.getByRole("main");
-      const sorter = main.getByRole("combobox", { name: /^Sort By$/i }).filter({ visible: true }).first();
-      if (await sorter.locator("option:checked").textContent({ timeout: 15_000 }) !== "Price") {
-        await Promise.all([
-          website.waitForEvent("framenavigated", { predicate: frame => frame === website.mainFrame(), timeout: 30_000 }),
-          sorter.selectOption({ label: "Price" }, { timeout: 15_000 }),
-        ]);
-        await website.waitForLoadState("load", { timeout: 30_000 });
-      }
-      const toggle = main.locator('[title="Set Ascending Direction"],[title="Set Descending Direction"]').filter({ visible: true }).first();
-      const title = action.direction === "ascending" ? "Set Ascending Direction" : "Set Descending Direction";
-      if (await toggle.getAttribute("title", { timeout: 15_000 }) === title) {
-        await Promise.all([
-          website.waitForEvent("framenavigated", { predicate: frame => frame === website.mainFrame(), timeout: 30_000 }),
-          toggle.click({ timeout: 15_000 }),
-        ]);
-        await website.waitForLoadState("load", { timeout: 30_000 });
-      }
-      const opposite = action.direction === "ascending" ? "Set Descending Direction" : "Set Ascending Direction";
-      if (await toggle.getAttribute("title", { timeout: 15_000 }) !== opposite) throw new Error("The storefront did not expose the selected price direction");
-    }
-    return {};
+    if (!publicSort || !run.site) throw new Error("The website sort is outside its reviewed case");
+    return operatePublicSort(run.site, definition, action);
   }
   const product = definition.taskId === publicRatingTask ? ratingProduct(definition.intent) : undefined;
   if (action.kind === "openPublicRatingProduct") {
-    const site = run.site;
-    if (product === undefined || !site || run.publicSearch?.state !== "completed" || run.ratingProduct)
-      throw new Error("The product requires its own completed public search");
-    const { frameTree: { frame: previous } } = await site.session.send("Page.getFrameTree");
-    if (previous.loaderId !== run.publicSearch.destination.documentId)
-      throw new Error("The public search document changed before the product was opened");
-    const listings = site.page.getByRole("main").locator("a.product-item-link").filter({ visible: true });
-    const productMatch = /^(?=.*\bugreen\b)(?=.*\blightning\b)(?=.*3[.\s]+5\s*mm).+$/isu;
-    const matches = listings.filter({ hasText: productMatch });
-    const cables = matches.filter({ hasText: /\bcable\b/iu });
-    const [visible, matching, cableCount, titles] = await Promise.all([
-      listings.count(), matches.count(), cables.count(), listings.allTextContents(),
-    ]);
-    run.ratingListings = { visible, matching, cables: cableCount, labels: titles.slice(0, 25).map(title => title.trim().slice(0, 180)) };
-    const link = cableCount === 1 ? cables : matching === 1 ? matches : undefined;
-    if (!link) throw new Error("The requested public product is not uniquely identifiable");
-    const label = (await link.innerText()).trim();
-    const href = await link.getAttribute("href");
-    const address = href && URL.parse(href, previous.url);
-    if (!address || address.origin !== site.origin || address.search || address.hash || address.username || address.password)
-      throw new Error("The visible product link did not identify a public Shopping page");
-    await Promise.all([
-      site.page.waitForURL(address.href, { waitUntil: "load", timeout: 30_000 }),
-      link.click(),
-    ]);
-    await site.page.getByRole("main").getByRole("heading", { level: 1, name: label, exact: true }).waitFor({ timeout: 15_000 });
-    const { frameTree: { frame: current } } = await site.session.send("Page.getFrameTree");
-    if (current.loaderId === previous.loaderId || current.url !== address.href)
-      throw new Error("Opening the product did not commit the selected document");
-    run.ratingProduct = { url: current.url, documentId: current.loaderId };
-    return run.ratingProduct;
+    if (product === undefined) throw new Error("The product requires its own completed public search");
+    return openPublicRatingProduct(run);
   }
   if (action.kind === "submitPublicSearch") {
     const site = run.site;

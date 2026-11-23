@@ -3558,6 +3558,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   }
 }, 240_000);
 
+async function startPublicReadPlan(native: ReturnType<typeof fakePlugin>, tap: Awaited<ReturnType<typeof cloudReadPlan>>["tap"], loadHome: () => Promise<void>) {
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  await tap(button("Internet"));
+  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
+  await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+  await loadHome();
+  await tap(button("Ask Grace"));
+  await tap(button("Allow Grace to read this browser"));
+}
+
 it('Check a public search the person performs (spec/app/workspace.md, "The person searches the reviewed site and Grace checks that exact query")', async () => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
@@ -3601,13 +3611,10 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   const unverified = page.getByRole("status", { name: "Page check result" });
   const check = button("Check search results");
   try {
-    await tap(button("Internet"));
-    await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
-    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
-    await native.started("tab-1", home);
-    await native.report("tab-1", home, 100, { pageError: null, securityBlocked: false });
-    await tap(button("Ask Grace"));
-    await tap(button("Allow Grace to read this browser"));
+    await startPublicReadPlan(native, tap, async () => {
+      await native.started("tab-1", home);
+      await native.report("tab-1", home, 100, { pageError: null, securityBlocked: false });
+    });
     await send(rewritten);
     await routeTo(page.getByText("I could not prepare that read plan."));
     expect(review.query()).toBeNull();
@@ -3862,12 +3869,7 @@ it('Check the price direction in the reviewed public category (spec/app/workspac
     expect(complete.query()).toBeNull();
   };
   try {
-    await tap(button("Internet"));
-    await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
-    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
-    await load(home);
-    await tap(button("Ask Grace"));
-    await tap(button("Allow Grace to read this browser"));
+    await startPublicReadPlan(native, tap, () => load(home));
     const message = page.getByRole("textbox", { name: "Message to Grace" });
     await routeTo(message);
     await act(() => message.fill(request));

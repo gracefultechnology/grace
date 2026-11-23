@@ -11,11 +11,10 @@ not a promise that the connection remains online forever.
 Grace joins what Android lets an app join: open networks and networks with
 one shared password, in her own screen, through Android's "Save this
 network?" dialog. Company-style networks, which ask for an account, and old
-WEP networks are handed to Android's internet panel. If Wi-Fi needs web
-sign-in, Android's Wi-Fi settings opens the network's sign-in page.
-Seven of the eight join outcomes are the Wi-Fi bridge's seven statuses, one for
-one (`vendor/eliza/packages/os/src/bridges/definitions/wifi.ts`);
-the certificate challenge is the one outcome no bridge status sends. Network
+WEP networks are handed to Android's internet panel. Android owns enterprise
+credentials and certificate trust. If Wi-Fi needs web sign-in, Android's
+Wi-Fi settings opens the network's sign-in page. Grace handles the Wi-Fi
+bridge's seven statuses (`vendor/eliza/packages/os/src/bridges/definitions/wifi.ts`). Network
 names, credentials and fixed delays in
 `prototype/Grace Prototype.html:1994–2036,2217–2227` are demo data, not
 policy. No password, account password, library-card number or PIN enters
@@ -25,7 +24,9 @@ this model.
 
 > As a person using Grace, I can choose a network, enter its password and
 > understand whether joining succeeded. When Wi-Fi requires web sign-in,
-> I can reach the sign-in page through Android and return to Grace.
+> I can reach the sign-in page through Android and return to Grace. If my
+> network needs an account or certificate, I handle that in Android. I can
+> cancel from Grace’s private password entry.
 
 ### A selected network has one current join attempt
 
@@ -45,19 +46,19 @@ reports an old WEP network, which no app can join either, as one.
 type NetworkActor = Person | OperatingSystem
 type Authentication = OpenNetwork | SharedPassword | AccountPassword
 type Network = { id: str, authentication: Authentication, remembered: bool }
-type JoinPhase = Selecting | PrivateEntry | Joining | AndroidPanel | SavedNetworkPanel | CertificateDecision | PortalEntry | JoinComplete | JoinUnconfirmed | JoinFailed
-type JoinResult = Joined | RejectedCredentials | Unavailable | Declined | Unverified | CertificateRequired | PortalRequired | SavedNetwork
-type JoinReport = { network: str, version: int, result: JoinResult, certificate: str, explanation: str }
+type JoinPhase = Selecting | PrivateEntry | Joining | AndroidPanel | SavedNetworkPanel | PortalEntry | JoinComplete | JoinUnconfirmed | JoinFailed
+type JoinResult = Joined | RejectedCredentials | Unavailable | Declined | Unverified | PortalRequired | SavedNetwork
+type JoinReport = { network: str, version: int, result: JoinResult, explanation: str }
 type Discovery = Scanning | WifiOff | LocationAccessNeeded | ExplainingLocation | LocationRefused | LocationOff | NoNetworks | NetworksFound({ networks: List[Network] })
 type NetworkJoin = {
   selected: Network, phase: JoinPhase, version: int, errors: int,
-  entryReady: bool, privateVisible: bool, certificate: str, explanation: str,
+  entryReady: bool, privateVisible: bool, explanation: str,
   expanded: bool, discovery: Discovery, locationAsked: bool
 }
 pure val noNetwork: Network = { id: "", authentication: OpenNetwork, remembered: false }
 pure val initial: NetworkJoin = {
   selected: noNetwork, phase: Selecting, version: 0, errors: 0,
-  entryReady: false, privateVisible: false, certificate: "", explanation: "", expanded: false,
+  entryReady: false, privateVisible: false, explanation: "", expanded: false,
   discovery: Scanning, locationAsked: false
 }
 pure def cleared(version: int, n: NetworkJoin): NetworkJoin = {
@@ -159,7 +160,6 @@ pure def answers(phase: JoinPhase, result: JoinResult): bool =
 pure def canReceive(n: NetworkJoin, report: JoinReport, by: NetworkActor): bool =
   by == OperatingSystem and answers(n.phase, report.result) and report.network == n.selected.id and report.version == n.version and
   (report.result == RejectedCredentials implies n.selected.authentication == SharedPassword) and
-  (report.result == CertificateRequired implies report.certificate != "") and
   (report.result == RejectedCredentials or report.result == Unavailable implies report.explanation != "")
 pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJoin = {
   val result = report.result
@@ -169,14 +169,12 @@ pure def receive(n: NetworkJoin, report: JoinReport, by: NetworkActor): NetworkJ
     | Unavailable => JoinFailed
     | Declined => Selecting
     | Unverified => JoinUnconfirmed
-    | CertificateRequired => CertificateDecision
     | PortalRequired => PortalEntry
     | SavedNetwork => SavedNetworkPanel
   }
   if (nextPhase == Selecting) cleared(n.version, n) else {
   ...n, phase: nextPhase,
   errors: if (report.result == RejectedCredentials) n.errors + 1 else n.errors,
-  certificate: if (report.result == CertificateRequired) report.certificate else "",
   explanation: report.explanation, entryReady: false, privateVisible: false
   }
 }
@@ -189,9 +187,7 @@ pure def confirmConnection(n: NetworkJoin, networkId: str, version: int, by: Net
   { ...n, phase: JoinComplete, explanation: "" }
 pure def lawOnlyCurrentObservedNetworkConfirms(n: NetworkJoin, networkId: str, version: int, by: NetworkActor): bool =
   canConfirmConnection(n, networkId, version, by) implies (version == n.version and networkId == n.selected.id and by == OperatingSystem)
-pure def helpOffered(n: NetworkJoin): bool = n.errors >= 2 or n.phase == JoinFailed or n.phase == CertificateDecision
-pure def alwaysCertificateIsScoped(n: NetworkJoin): bool =
-  (n.phase == CertificateDecision iff n.certificate != "")
+pure def helpOffered(n: NetworkJoin): bool = n.errors >= 2 or n.phase == JoinFailed
 pure def canRetry(n: NetworkJoin, by: NetworkActor): bool = by == Person and n.phase == JoinFailed
 pure def retry(n: NetworkJoin, by: NetworkActor): NetworkJoin = {
   ...n, phase: attemptPhase(n.selected), version: n.version + 1, explanation: ""
@@ -222,20 +218,17 @@ pure def wifiSignInOffered(n: NetworkJoin, wifiNeedsSignIn: bool, wifiValidated:
   n.phase != PrivateEntry and (wifiNeedsSignIn or (n.phase == PortalEntry and not(wifiValidated)))
 ```
 
-### Certificate consent and cancellation are explicit current choices
+### Android owns enterprise trust and Cancel closes private password entry
 
-The prompt displays actual OS certificate details and an independent way to
-verify them. Ask Grace explains the decision but does not approve it. Trust
-and join applies only to that current certificate and network. Cancel
-returns to the list from any step, the list as the OS last reported it.
+A new enterprise or old WEP join goes to Android’s network panel. Enter its
+account details and decide certificate trust there. Grace never receives a
+certificate or offers a trust decision. Cancel on Grace’s private password
+form clears that form and returns to the last scan. Declining Android’s
+dialog is an OS result. Once either action exits an attempt, a callback for
+that attempt cannot restore it.
 
 ```quint
-pure def canDecideCertificate(n: NetworkJoin, version: int, certificate: str, by: NetworkActor): bool =
-  by == Person and n.phase == CertificateDecision and version == n.version and certificate == n.certificate
-pure def decideCertificate(n: NetworkJoin, version: int, certificate: str, accepted: bool, by: NetworkActor): NetworkJoin =
-  if (accepted) { ...n, phase: Joining, version: n.version + 1, certificate: "" }
-  else cleared(n.version + 1, n)
-pure def canCancel(n: NetworkJoin, by: NetworkActor): bool = by == Person and n.phase != Selecting
+pure def canCancel(n: NetworkJoin, by: NetworkActor): bool = by == Person and n.phase == PrivateEntry
 pure def cancel(n: NetworkJoin, by: NetworkActor): NetworkJoin = cleared(n.version + 1, n)
 pure def canRestart(n: NetworkJoin, by: NetworkActor): bool = by == OperatingSystem
 pure def restart(n: NetworkJoin, by: NetworkActor): NetworkJoin = { ...initial, version: n.version + 1 }
@@ -243,7 +236,6 @@ pure def stepAttemptNeverMovesBack(before: NetworkJoin, after: NetworkJoin): boo
 pure def lawOldJoinCannotComplete(n: NetworkJoin, report: JoinReport, by: NetworkActor): bool =
   report.version != n.version implies not(canReceive(n, report, by))
 pure def sometimesPrivateEntry(n: NetworkJoin): bool = n.phase == PrivateEntry
-pure def sometimesCertificateDecision(n: NetworkJoin): bool = n.phase == CertificateDecision
 pure def sometimesPortalEntry(n: NetworkJoin): bool = n.phase == PortalEntry
 pure def sometimesJoinComplete(n: NetworkJoin): bool = n.phase == JoinComplete
 pure def sometimesJoinFailed(n: NetworkJoin): bool = n.phase == JoinFailed
@@ -257,10 +249,8 @@ pure val versionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val weight_reportEntry = 4
 pure val weight_join = 4
 pure val weight_receive = 4
-pure val certificateValues = Set("certificate", "other", "")
-pure val goodReport: JoinReport = { network: "network", version: 1, result: Joined, certificate: "", explanation: "" }
+pure val goodReport: JoinReport = { network: "network", version: 1, result: Joined, explanation: "" }
 pure val reportValues = Set(goodReport, { ...goodReport, version: 2 },
-  { ...goodReport, result: CertificateRequired, certificate: "certificate" },
   { ...goodReport, result: PortalRequired }, { ...goodReport, result: Unavailable, explanation: "Network unavailable" },
   { ...goodReport, result: Unverified }, { ...goodReport, result: SavedNetwork }, { ...goodReport, version: 2, result: Declined },
   { ...goodReport, result: RejectedCredentials, explanation: "Check private details" },
