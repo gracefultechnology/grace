@@ -94,7 +94,7 @@ async function start({ down = false, clockAt }: { down?: boolean; clockAt?: numb
 it('Browse (spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives")', async () => {
   // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"
   const { secret, eye, eyeDay, card, run, reachable, agree, say, toEyeWeek, switchCalendar } = await start({ down: true });
-  const eyePreview = card.getByText("Eye check with Dr. Patel").and(page.locator(":not([inert] *)"));
+  const eyePreview = card.getByRole("button", { name: /Eye check with Dr\. Patel/ });
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
 
   // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
@@ -104,7 +104,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await act(() => userEvent.click(homeCalendarLauncher()));
   await click("Close Calendar");
   await expect.element(eyePreview).toBeVisible();
-  await act(() => userEvent.click(card.getByRole("button", { name: /Eye check with Dr\. Patel/ })));
+  await act(() => userEvent.click(eyePreview));
   await expect.element(page.getByText("Riverside Clinic")).toBeVisible();
   await click("Back to Calendar");
   await click("Close Calendar");
