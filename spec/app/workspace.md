@@ -1312,7 +1312,9 @@ session. A different site, a private form or a stale observation leaves it
 paused. Binding preserves the reviewed query or category and price order and
 all prior receipts. The person checks the result separately on that same
 document or a later load in that tab. Each later
-public search or sort in the recovered plan needs its own binding.
+public search or sort in the recovered plan needs its own binding. Finishing
+a step retires its binding. A pause before the next step also retires any
+live payment approval while retaining its recorded outcome.
 Opening Grace waits for an explicit
 Resume with the current authority. An observation must use the new work
 version and current app, page and permission. The checkpoint contains no
@@ -1704,10 +1706,11 @@ pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: Workspace
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
     nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched,
-    recordSelection: NoGuidedRecordSelection }
+    recordSelection: NoGuidedRecordSelection, tabSession: if (w.plan.tabSession == ReviewedTabs) ReviewedTabs else RestoredTabs }
   val assistant = w.assistant
-  { ...w, plan: plan, assistant:
-    if (hasNext(plan)) { ...assistant, activity: if (needsRecoveredPublicTab(plan)) A::Paused else A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
+  val pauses = needsRecoveredPublicTab(plan)
+  { ...w, plan: plan, commitment: if (pauses) quietCommitment(w.commitment) else w.commitment, assistant:
+    if (hasNext(plan)) { ...assistant, activity: if (pauses) A::Paused else A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
       workVersion: assistant.workVersion + 1 }
     else A::finishTask(assistant, report.task, report.version, A::Completed, report.evidence, C::ConversationRuntime) }
 pure def canConfirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): bool =
