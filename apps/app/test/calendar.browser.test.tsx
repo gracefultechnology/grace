@@ -84,7 +84,7 @@ async function start({ down = false, clockAt }: { down?: boolean; clockAt?: numb
       await proposal({ type: "agree", given: consent(tapped, asked.spent + 1, proposalOf(asked)), now: tapped }, "Person");
     },
     toEyeWeek: async () => {
-      await act(() => userEvent.click(card.getByText("Calendar", { exact: true })));
+      await act(() => userEvent.click(card.getByRole("button", { name: /^Calendar(?:$| )/ })));
       await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
       for (let i = (mondayOf(eyeDay) - mondayOf(dayOf(Date.now()))) / 7; i > 0; i--) await click("Next week");
       await act(() => userEvent.click(page.getByRole("button", { name: tile(eyeDay) })));
@@ -106,10 +106,10 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
 
   // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
-  await expect.element(card.getByText("Nothing else today")).toBeVisible();
+  await expect.element(card.getByRole("button", { name: "Calendar Nothing else today" })).toBeVisible();
   await expect.element(card.getByText("Eye check with Dr. Patel")).not.toBeInTheDocument();
   await reachable(true);
-  await act(() => userEvent.click(card.getByText("Calendar", { exact: true })));
+  await act(() => userEvent.click(card.getByRole("button", { name: /^Calendar(?:$| )/ })));
   await click("Close Calendar");
   await expect.element(card.getByText("Eye check with Dr. Patel")).toBeVisible();
   await act(() => userEvent.click(card.getByText("Eye check with Dr. Patel")));
@@ -563,7 +563,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   };
   const reminded = (title: string, time: string) => page.getByText(new RegExp(`^Reminder: ${title} today at ${time}`));
   const expireToast = (offer: Offer) => run(TestClock.adjust(lifetimeMs(offer)));
-  await act(() => userEvent.click(card.getByText("Calendar", { exact: true })));
+  await act(() => userEvent.click(card.getByRole("button", { name: /^Calendar(?:$| )/ })));
   await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await addToday("Pill pickup", "7 am");
   await expireToast("NoOffer");
@@ -599,7 +599,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await expect.element(page.getByRole("button", { name: "See details" })).not.toBeInTheDocument();
   // spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"
   await run(TestClock.adjust("11 minutes"));
-  await act(() => userEvent.click(card.getByText("Calendar", { exact: true })));
+  await act(() => userEvent.click(card.getByRole("button", { name: /^Calendar(?:$| )/ })));
   await click("Close Calendar");
   await click("See details");
   await expect.element(page.getByText(/8 am to 9 am/)).toBeVisible();
