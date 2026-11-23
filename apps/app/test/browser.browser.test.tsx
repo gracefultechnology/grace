@@ -13,6 +13,7 @@ import { application } from "../src/app.vibe";
 import { privateFormRecovery } from "../src/nativePage.vibe";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, script, signIn } from "./cloud.vibe";
+import { matchesPublicSearch, PublicSearch, publicSearchQuery } from "./browser-receipt.ts";
 import { decisionCloud } from "./browser-decisions.fixture.vibe";
 import "../src/main.css";
 
@@ -257,7 +258,8 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
-type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "tap-guide-ring" | "observe-link-landing" | "bind-native-landing" |
+type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "submit-public-search" | "observe-search-landing" |
+  "tap-guide-ring" | "observe-link-landing" | "bind-native-landing" |
   "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
 type PendingPageCheck = {
   startedAt: number;
@@ -328,6 +330,16 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const decisions = await Effect.runPromise(decisionCloud(cloud, secret));
     await transport({ kind: "decisionRoute", cloud, deadlineMs: decisions.deadlineMs });
     const { workspace } = await launch(native.plugin, decisions.host);
+    const bindNativeLanding = async (url: string, timeout: number) => {
+      failureStage = "bind-native-landing";
+      const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
+      native.started(url);
+      native.finished(url);
+      await expect.poll(() => {
+        const tab = workspace().browser.tabs[0];
+        return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
+      }, { timeout }).toEqual({ address: url, arrived: true });
+    };
     await userEvent.click(page.getByRole("button", { name: "Internet" }));
     const address = page.getByRole("textbox", { name: "Address" });
     await userEvent.fill(address, startUrl);
@@ -346,9 +358,10 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const reviewed = workspace().review.request.steps;
     const named = reviewed.find(step => step.tag === "ReachNamedPage");
     const record = reviewed.find(step => step.tag === "ReadLatestRecord");
+    const search = reviewed.find(step => step.tag === "SearchPublicSite");
     if (named) outcome.reviewedDestination = named.subject;
     if (requiredStep) {
-      outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: guidedDetails(step).subject }));
+      outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: step.tag === "SearchPublicSite" ? step.query : guidedDetails(step).subject }));
       const matches = reviewed.some(step => step.tag === requiredStep);
       if (exploratory && !matches && reviewed.length > 0) {
         outcome.miss = "missing-reviewed-step";
@@ -363,6 +376,35 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const plan = page.getByRole("region", { name: "Task plan" });
     const finished = plan.getByText("Read checks complete", { exact: true });
     const continuing = page.getByRole("status", { name: "Page check result" });
+    if (requiredStep === "SearchPublicSite" && search) {
+      expect(search.query).toBe(publicSearchQuery(intent));
+      expect(search.origin).toBe(new URL(initial.url).origin);
+      outcome.operator = "trusted Chromium keyboard input in the website search field";
+      failureStage = "submit-public-search";
+      const submitted = Schema.decodeUnknownSync(PublicSearch)(await transport({ kind: "submitPublicSearch", query: search.query }));
+      failureStage = "observe-search-landing";
+      const landed = await read();
+      outcome.destination = { url: landed.url, documentId: landed.documentId };
+      outcome.publicSearch = submitted;
+      expect(landed.documentId).not.toBe(initial.documentId);
+      expect(landed.readyState).toBe("complete");
+      expect(matchesPublicSearch(new URL(landed.url), submitted)).toBe(true);
+      await bindNativeLanding(landed.url, 15_000);
+      failureStage = "wait-for-check-controls";
+      const resume = page.getByRole("button", { name: "Resume Grace", exact: true });
+      await expect.element(resume, { timeout: 15_000 }).toBeVisible();
+      await userEvent.click(resume);
+      outcome.resumed = true;
+      failureStage = "check-page";
+      const check = page.getByRole("button", { name: "Check search results", exact: true });
+      await userEvent.click(check);
+      failureStage = "confirm-completion";
+      await expect.element(finished, { timeout: 15_000 }).toBeVisible();
+      expect(workspace().plan.receipts).toHaveLength(1);
+      outcome.hops = [{ url: landed.url, documentId: landed.documentId, checked: true }];
+      outcome.graceTerminal = plan.element().textContent;
+      return;
+    }
     const menuGuidance = page.getByRole("status", { name: "Open submenu guidance" });
     const linkGuidance = page.getByRole("status", { name: "Link guide result" });
     const guidanceFailure = page.getByRole("status", { name: "Link unavailable" });
@@ -541,14 +583,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         forwardPath.push(landed.url);
         visited.add(landed.url);
       }
-      failureStage = "bind-native-landing";
-      const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
-      native.started(landed.url);
-      native.finished(landed.url);
-      await expect.poll(() => {
-        const tab = workspace().browser.tabs[0];
-        return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
-      }, { timeout: browserObservationTimeoutMs }).toEqual({ address: landed.url, arrived: true });
+      await bindNativeLanding(landed.url, browserObservationTimeoutMs);
       failureStage = "wait-for-check-controls";
       const resume = page.getByRole("button", { name: "Resume Grace" });
       const check = page.getByRole("button", { name: "Check page", exact: true });

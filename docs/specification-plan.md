@@ -286,18 +286,24 @@ The manual `ci` workflow accepts the optional `webarena` input. Run it with `ben
 
 Report three counts with every run: catalog tasks, attempted tasks and first-attempt official passes. Publish Grace's checked outcome, the official score, and the untouched-start score for each attempted task. Keep timeouts and partial runs in the attempted count. A user-assisted search, a hosted link decision, an operator diagnostic and an unassisted agent run each answer a different question. Preserve the evidence for the interaction that actually occurred.
 
-The pinned 812 tasks span 190 intent templates. Forty-eight tasks use more than one site. Only 66 tasks can be graded on the URL alone. The other 746 need answer text, page content or both a URL and another check. Reconstruct the inventory from the pinned catalog in CI. The default Shopping cohort includes seven tasks, four required, and the optional pending-order case adds task 300. [Pinned task catalog](https://github.com/web-arena-x/webarena/blob/dce04686a56253aefba7b18a4fa0937cf1dc987b/config_files/test.raw.json)
+The pinned 812 tasks span 190 intent templates. Forty-eight tasks use more than one site. All four required Shopping cases share intent template 211. The five public searches use template 212, and the three order statuses use template 180. Only 66 tasks can be graded on the URL alone. The other 746 need answer text, page content or both a URL and another check. Reconstruct the inventory from the pinned catalog in CI. The default Shopping cohort includes seven tasks, four required, and the optional pending-order case adds task 300. [Pinned task catalog](https://github.com/web-arena-x/webarena/blob/dce04686a56253aefba7b18a4fa0937cf1dc987b/config_files/test.raw.json)
 
 1. **Ordering and public search.** For 298, 299 and 300, cover collection pagination, a record detail that supplies a full date, status changes, tied dates and a change of signed-in account. Credit a record only after checking its detail and establishing the latest match across the account's collection. For public search, use the exact term the person requested through the website's visible search and check the result heading on a new same-site document. Run every variant of the chosen template, including disagreements with the grader.
 2. **Expand across websites.** Start one resettable seeded fixture per origin. Run Shopping Admin, GitLab, Reddit and map tasks on their own origins before combining them. Partition by site, requested capability and evaluator. For each new partition, save the first successful end-to-end interaction and a deliberately wrong landing, answer or unchanged state that the grader rejects.
-3. **Support answers and page state.** Pass the final user-visible answer and live terminal page to the pinned evaluator in an isolated process. Some tasks combine multiple predicates. A URL match cannot stand in for their conjunction. Keep grading-only reference answers, selectors and database state outside the planning input.
+3. **Support answers and page state.** Of the 335 tasks using an answer, 45 use exact matching and 172 use inclusion alone. Start with those deterministic graders. The remaining 118 use fuzzy matching, including four combined with inclusion. Pass the final user-visible answer and live terminal page to the pinned evaluator in an isolated process. Some tasks combine multiple predicates. A URL match cannot stand in for their conjunction. Keep grading-only reference answers, selectors and database state outside the planning input.
 4. **Qualify multi-site and state-changing work.** Bind each step to its account, origin and current document. Exercise switching sites and resuming an interrupted task. For writes, start a new synthetic episode, obtain the approval called for by the reviewed plan, and verify the resulting server state. Retry after a lost acknowledgement to check for duplicate effects. Score held-out templates and record both task-weighted and template-level results.
+
+The expanded Linux Shopping run on `169f4305` graded all 13 configured tasks. Grace reached five category destinations and checked five person-performed public searches. Nine tasks earned an official point, and every untouched start scored zero. For task 277 the requested search phrase and the grader’s reference differ. Tasks 298–300 stopped on the order history. The separate public-search Chromium journey exercised a changed query, a different origin and a private form. [Workflow and receipts](https://github.com/gracefultechnology/grace/actions/runs/45081928688)
+
+The next Shopping pair, 351 and 352, asks for ascending price in two different categories. Reuse reviewed category navigation, let the person use the site’s visible sort control, then verify the category and ordering on the refreshed result. Exercise the same category without sorting, descending order, and an ascending sort in the wrong category. GitLab task 258 adds a separate site with the existing URL grader. A fresh synthetic session and both a scored destination and an untouched control are needed for each site. [Official task definitions](https://github.com/web-arena-x/webarena/blob/dce04686a56253aefba7b18a4fa0937cf1dc987b/config_files/test.raw.json)
 
 #### Expanding BillWorld
 
 Choose a Fleet cohort with the CI `billworld_cohort` input. The pinned catalog's 59,477 simulated biller websites form 595 disjoint cohorts in deterministic portal-family order. The first 594 cohorts contain 100 billers each. Cohort 595 contains the last 77. Cohorts 1 and 2 retain their historical membership and order. Each run measures only its selected cohort. The aggregate derives the selected billers and their official routes from the pinned catalog before checking browser receipts. Within the same Fleet catalog, 42,641 generated tasks can also be graded for reading a bill. [Fixture instructions](../apps/app/README.md) · [Pinned BillWorld benchmark](https://github.com/gracefultechnology/billworld/tree/8320228bccf0759f375b9633592612e0e570a526/billworld/benchmark)
 
 The authenticated Fleet suite enrolls eleven billers across eleven portal templates. For each one, use a separate account episode, have Grace report the statement amount and due date, and retain the original grader's verdict alongside a wrong answer and an untouched account. Expand next to eligible untested templates and to a held-out profile within each family. Report unsupported or offline profiles explicitly. On the 17 hand-built sites, start with read-only workflows, then qualify the ten core synthetic payment tasks with their real state graders and reject no-action, wrong-amount and duplicate-payment controls. Reserve the 35 held-out authored tasks for the final first-attempt measurement.
+
+Two released task pairs exercise those capabilities on distinct websites. Inframark `task_inf8` and Greater Minnesota Gas `task_gmg6` ask for the posted balance, pending payments and remaining balance in cents. A reviewed history reader must keep all three fields separate and return a fresh account-bound observation. Inframark `task_inf9` and ONSWC `task_onswc7` ask for the current bill PDF's offered filename. A Browser-to-Files journey must observe the actual download, bind it to the requested account and bill, and check the filename reported by the portal. Reject an older statement with a plausible filename and leave the account unchanged. [Pinned authored task definitions](https://github.com/gracefultechnology/billworld/blob/8320228bccf0759f375b9633592612e0e570a526/billworld/benchmark/data/tasks.jsonl)
 
 Standard Linux GitHub-hosted runners list 14 GB of SSD storage. The manual job measures Docker's volume and releases unused preinstalled Android and .NET SDKs when the isolated hosted runner is short on space. Set the optional `GRACE_WEBARENA_RUNNER` repository variable to an existing x86-64 Linux runner label when you need a larger disk. [GitHub runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
 
@@ -437,3 +443,30 @@ need to verify the selected region and reject active forms independently of
 the account check.
 
 To finish this family, let the person grant access to the order list on the active website account. Bind each page and detail to a site-supplied account identifier and isolate the read to the record region. Discard the scan when the account or document changes unexpectedly. Traverse until the observed item count is complete. A site-declared newest-first ordering can shorten this traversal once the newest matching date and its tie boundary have been checked. Where the site supplies only ambiguous short dates, use full dates from account-bound details. Check the selected detail again before completing the task. Measure this with a latest candidate on a later page, equal dates, a changed account, and both official landings and untouched controls. A missing identity or ordering guarantee needs to remain visible in the result.
+
+#### GitLab public project navigation
+
+The original WebArena catalog declares task `258` as a single-site URL
+check with the intent “See all public projects.” It starts on the GitLab
+root and requires a seeded synthetic login. The adapter accepts that exact
+task on a dedicated loopback HTTPS origin and grades the observed
+`/explore` document with the pinned upstream evaluator. The untouched
+root is the no-action control. [Original task catalog](https://github.com/web-arena-x/webarena/blob/dce04686a56253aefba7b18a4fa0937cf1dc987b/config_files/test.raw.json)
+
+The WebArena-Verified GitLab compatibility image is
+`am1n3e/webarena-verified-gitlab@sha256:673ba94d757c5b3f4bb55751ad8b745a33bad2b987349322403cbc41035a92e0`.
+Its Linux x86-64 manifest lists 22.0 GB of compressed layers. Upstream lists approximately 31.6 GB for the optimized image and recommends at least 4 GB of RAM. The Docker filesystem on a previous standard runner had 81 GiB free after Grace setup. The GitLab job measures the space and available RAM on its own runner before pulling the image. It starts the fixture on loopback and checks the seeded account’s profile and home page. [Fixture sizing](https://servicenow.github.io/webarena-verified/v1.2.3/environments/) · [GitLab requirements](https://servicenow.github.io/webarena-verified/v1.2.3/environments/gitlab/) · [Measured Linux runner](https://github.com/gracefultechnology/grace/actions/runs/45076352266/job/137374326415)
+
+To run this case in CI, enable `benchmarks_only` and `webarena_gitlab` on the manual `ci` workflow and disable `billworld` and `webarena`. The `webarena-gitlab` artifact retains the capacity check and subsequent completed stages. A passing navigation requires a fresh checked destination, hosted guidance, an official score of one and an untouched score of zero.
+
+After signing in, return to the home document and save Chromium's storage
+state in a private directory. Declare task `258` with the fixture root as
+`startUrl`, the original catalog intent, `siteStorageState`, an output
+`receipt` path, `evaluator: "webarena"`, `chat: "upstream"`, and
+`requiredStep: "ReachNamedPage"`. Load the descriptor through
+`GRACE_BROWSER_BENCHMARK_FILE` and run the existing benchmark browser
+journey. Keep the GitLab fixture and synthetic account separate from
+Shopping. Coverage requires a fresh checked `/explore` document accepted
+by the original grader, the rejected root control, and authenticated hosted
+guidance. The adapter's offline URL checks alone do not qualify that browser
+journey.

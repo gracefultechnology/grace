@@ -12,7 +12,7 @@ import type { BrowserCommandContext } from "vitest/node";
 import { project } from "vibestack/testing/vitest";
 import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
-import { hasHostedNavigation } from "./test/browser-receipt.ts";
+import { hasHostedNavigation, hasUserAssistedSearch, matchesPublicSearch, PublicSearch, publicSearchQuery } from "./test/browser-receipt.ts";
 import { fleetFixture, fleetStatement, fleetStatementCases } from "./test/fleet.fixture.ts";
 import { webArena, webArenaPluginName, WebArenaEvaluatorError } from "./test/webarena.ts";
 
@@ -28,7 +28,7 @@ const BenchmarkDefinition = Schema.Struct({
   siteStorageState: Schema.optional(Schema.NonEmptyString),
   evaluator: Schema.optional(Schema.Literal("webarena")),
   exploratory: Schema.optional(Schema.Literal(true)),
-  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord"])),
+  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord", "SearchPublicSite"])),
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
@@ -52,6 +52,10 @@ const definitions: unknown = process.env.GRACE_BROWSER_BENCHMARK_FILE
   ? JSON.parse(readFileSync(process.env.GRACE_BROWSER_BENCHMARK_FILE, "utf8"))
   : fleet?.definitions ?? [];
 const runs = Schema.decodeUnknownSync(Schema.Array(BenchmarkDefinition), { onExcessProperty: "error" })(Array.isArray(definitions) ? definitions : [definitions]);
+if (runs.some(({ requiredStep, intent, chat, evaluator, siteStorageState, fixtureChoice, exploratory }) =>
+  requiredStep === "SearchPublicSite" && (!publicSearchQuery(intent) || chat !== "upstream" || evaluator !== "webarena" ||
+    siteStorageState === undefined || fixtureChoice !== undefined || exploratory !== true)))
+  throw new Error("Public search benchmark cases require exact terms and the synthetic Shopping account");
 const byId = new Map(runs.map((item) => [item.taskId, item]));
 if (byId.size !== runs.length || new Set(runs.map(({ receipt }) => receipt)).size !== runs.length)
   throw new Error("Benchmark task IDs and receipt paths must be unique");
@@ -68,6 +72,7 @@ type SiteAction =
   | { kind: "begin"; taskId: string }
   | { kind: "open"; url: string }
   | { kind: "read"; selector?: string }
+  | { kind: "submitPublicSearch"; query: string }
   | { kind: "inspectGuide" }
   | { kind: "tapGuide" }
   | { kind: "hoverGuide" }
@@ -77,7 +82,7 @@ type SiteAction =
 
 type Site = { page: Page; origin: string; browser: BrowserContext; session: CDPSession; world?: { loaderId: string; executionContextId: number } };
 const DecisionResult = Schema.Struct({ status: Schema.String, model: Schema.optional(Schema.String), choice: Schema.optional(Schema.NullOr(Schema.String)), confidence: Schema.optional(Schema.Finite) });
-type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; site?: Site };
+type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: typeof PublicSearch.Type; site?: Site };
 const activeRuns = new WeakMap<Page, Run>();
 const Choices = Schema.Struct({ kind: Schema.Literal("choice"), goal: Schema.NonEmptyString, candidates: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, label: Schema.NonEmptyString })) });
 const PageText = Schema.Struct({ title: Schema.String, text: Schema.String, truncated: Schema.Boolean, readyState: Schema.Literals(["loading", "interactive", "complete"]) });
@@ -121,6 +126,42 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   const run = activeRuns.get(context.page);
   if (!run) throw new Error("No benchmark fixture was supplied to the Chromium transport");
   const { fixture: definition } = run;
+  const publicSearch = definition.requiredStep === "SearchPublicSite";
+  if (action.kind === "submitPublicSearch") {
+    const site = run.site;
+    if (!publicSearch || !site || run.publicSearch || site.page.url() !== definition.startUrl ||
+        publicSearchQuery(definition.intent) !== action.query)
+      throw new Error("The website search is outside its reviewed case");
+    await site.page.bringToFront();
+    const searchName = /^[\s\p{Co}]*Search\b/iu;
+    const roleOptions = { name: searchName };
+    const textInput = site.page.locator('input:is([type="search"],[type="text"],:not([type]))');
+    const semanticSearchField = site.page.locator('input:is([type="search"],[role="searchbox"],[role="combobox"])');
+    const field = site.page.getByRole("searchbox", roleOptions).or(site.page.getByRole("combobox", roleOptions))
+      .or(site.page.getByRole("textbox", roleOptions)).or(site.page.getByLabel(searchName))
+      .or(site.page.getByPlaceholder(searchName).and(semanticSearchField)).and(textInput).filter({ visible: true });
+    if (await field.count() !== 1 || !await field.isVisible() || !await field.isEditable())
+      throw new Error("The public website has no unique editable Search field");
+    const form = await field.evaluate((input) => {
+      if (!(input instanceof HTMLInputElement) || !["search", "text"].includes(input.type) || input.value !== "" ||
+          /(?:^|\s)(?:username|one-time-code|(?:current|new)-password|cc-\S+)(?:\s|$)/iu.test(input.autocomplete)) return null;
+      const form = input.form;
+      return form?.method === "get" && ["", "_self"].includes(form.target) ? { action: form.action, field: input.name } : null;
+    });
+    const actionUrl = form && URL.parse(form.action);
+    if (!form || !actionUrl || actionUrl.origin !== site.origin || actionUrl.href === definition.startUrl ||
+        actionUrl.username || actionUrl.password || actionUrl.search || actionUrl.hash)
+      throw new Error("The public Search field is not bound to a same-origin GET form");
+    const search = Schema.decodeUnknownSync(PublicSearch)({ ...form, query: action.query });
+    run.publicSearch = search;
+    await field.pressSequentially(search.query);
+    if (await field.inputValue() !== search.query) throw new Error("The exact reviewed term was not entered");
+    await Promise.all([
+      site.page.waitForURL((url) => matchesPublicSearch(url, search), { waitUntil: "load", timeout: 30_000 }),
+      field.press("Enter"),
+    ]);
+    return search;
+  }
   if (action.kind === "decisionRoute") {
     const endpoint = new URL("/api/v1/decisions", action.cloud);
     if (!["127.0.0.1", "localhost"].includes(endpoint.hostname)) throw new Error("Fixture decision routes are local");
@@ -174,7 +215,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   }
   if (action.kind === "receipt") {
     try {
-      const decisionProvider = definition.fixtureChoice === undefined ? "hosted" : "fixture";
+      const decisionProvider = publicSearch ? "none" : definition.fixtureChoice === undefined ? "hosted" : "fixture";
       const observation = {
         surface: "desktop-chromium", taskId: definition.taskId, intent: definition.intent, startUrl: definition.startUrl,
         decisionProvider, decisionRequests: run.decisions, syntheticStorageState: Boolean(run.site && definition.siteStorageState),
@@ -188,12 +229,15 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const webArenaGrade = definition.evaluator === "webarena" ? await official?.grade(definition.taskId, action.outcome, {
         guided, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
       }).catch((error: unknown) => ({ failure: error instanceof WebArenaEvaluatorError ? error.message : "The official WebArena evaluation failed" })) : undefined;
-      const receipt = { ...observation, grade, webArena: webArenaGrade };
+      const userAssisted = publicSearch && hasUserAssistedSearch(observation, run.site?.page.url());
+      const receipt = { ...observation, grade, webArena: webArenaGrade, ...(publicSearch && { userAssisted }) };
       if (fleet) fleet.record(definition.taskId, receipt);
       else writeFileSync(definition.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
       if (webArenaGrade && action.outcome.failure === undefined) {
         if (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore === null || webArenaGrade.noActionScore !== 0)
           throw new Error("The pinned WebArena evaluator did not return a landing score and a zero no-action control");
+        if (publicSearch && action.outcome.graceTerminal !== undefined && !userAssisted)
+          throw new Error("The public search result lacks a checked user-assisted journey");
         if (definition.exploratory) {
           if ((definition.chat === "upstream" && run.chatStatus !== 200) ||
               run.decisionResults.some(({ http, result }) => http !== 200 || result?.status !== "ok"))
@@ -235,8 +279,14 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         const request = route.request();
         const url = new URL(request.url());
         if (url.origin !== origin) return route.abort();
+        if (publicSearch && (!["GET", "HEAD"].includes(request.method()) ||
+          (request.isNavigationRequest() && url.href !== start.href &&
+            (!run.publicSearch || request.method() !== "GET" || !matchesPublicSearch(url, run.publicSearch)))))
+          return route.abort();
         if (definition.evaluator === "webarena" && definition.taskId === "157" &&
           (!["GET", "HEAD"].includes(request.method()) || request.isNavigationRequest() && !url.pathname.startsWith("/admin/")))
+          return route.abort();
+        if (definition.evaluator === "webarena" && definition.taskId === "258" && !["GET", "HEAD"].includes(request.method()))
           return route.abort();
         return route.continue();
       });

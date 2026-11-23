@@ -39,6 +39,7 @@ function recordCriteria(step: Extract<GuidedStep, { tag: "ReadLatestRecord" }>):
 function stepInstruction(step: GuidedStep): string {
   if (step.tag === "ReachNamedPage") return `Find and check “${step.subject}”.`;
   if (step.tag === "ReadLatestRecord") return recordCriteria(step);
+  if (step.tag === "SearchPublicSite") return `Use ${step.origin}’s search for “${step.query}”.`;
   return guidedDetails(step).outcome;
 }
 
@@ -48,6 +49,7 @@ const checks: Record<GuidedStep["tag"], { label: string; item: string; missing: 
   ReadChangedBrowser: { label: "Check page", item: "page", missing: "Open the page you want me to read, then check again." },
   ReachNamedPage: { label: "Check page", item: "page", missing: "" },
   ReadLatestRecord: { label: "Check page", item: "page", missing: "I couldn’t verify the latest matching record on this page." },
+  SearchPublicSite: { label: "Check search results", item: "page", missing: "I couldn’t verify these search results. Use the reviewed website’s search and try again." },
   ReadStatement: { label: "Read statement", item: "page", missing: "I couldn’t find one amount due and one due date on this page." },
   ReadCalendar: { label: "Check appointment", item: "appointment", missing: "I couldn’t read an open appointment. Open the one you want me to check." },
   SaveMailAppointment: { label: "Check saved appointment", item: "appointment", missing: "I couldn’t verify the saved appointment. Open it on your calendar and try again." },
@@ -250,7 +252,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <blockquote className="text-body">{review.request.goal}</blockquote>
               <p className="text-body">I can check the items you open. These checks leave any requested changes for separate review.</p>
               <ol aria-label="Read plan" className="list-decimal pl-6">
-                {keyedSteps(review.request.steps).map(({ step, key }) => <li key={key}>{step.tag === "ReadLatestRecord" ? recordCriteria(step) : guidedDetails(step).subject}</li>)}
+                {keyedSteps(review.request.steps).map(({ step, key }) =>
+                  <li key={key}>{step.tag === "ReadLatestRecord" || step.tag === "SearchPublicSite" ? stepInstruction(step) : guidedDetails(step).subject}</li>)}
               </ol>
               {startFailure === review.revision && <p role="status">Grace couldn’t start this plan. Check your account and device storage, then try again.</p>}
               <AnswerChips><AnswerChip onClick={() => {
