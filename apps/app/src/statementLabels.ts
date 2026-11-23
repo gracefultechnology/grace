@@ -10,7 +10,7 @@ export type StatementAnswer =
 const facts: readonly StatementFact[] = ["RemainingBalance", "AmountDue", "StatementBalance", "DueDate"];
 const labels: Record<StatementFact, string> = {
   RemainingBalance: String.raw`remaining\s+(?:statement\s+balance|balance\s+due)`,
-  AmountDue: String.raw`(?:account\s+|current\s+)?balance\s+\(\s*amount\s+due\s*\)|(?:your\s+)?(?:(?:total|current|new)\s+)?amount\s+due|(?:your\s+)?(?:(?:total|current)\s+)?balance\s+due|(?:your\s+)?total\s+due|total\s+installment\s+due`,
+  AmountDue: String.raw`premium\s+due|(?:account\s+|current\s+)?balance\s+\(\s*amount\s+due\s*\)|(?:your\s+)?(?:(?:total|current|new)\s+)?amount\s+due|(?:your\s+)?(?:(?:total|current)\s+)?balance\s+due|(?:your\s+)?total\s+due|total\s+installment\s+due`,
   StatementBalance: String.raw`(?:your\s+)?(?:new|(?:last\s+)?statement)\s+balance(?:\s+due)?`,
   DueDate: String.raw`(?:next\s+)?(?:(?:payment|bill)\s+)?due\s+date|(?:payment\s+)?due\s+(?:by|on)|payment\s+due|(?:please\s+)?pay\s+by|due`,
 };
