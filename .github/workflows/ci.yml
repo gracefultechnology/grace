@@ -401,6 +401,7 @@ jobs:
       - *webarena_python
       - *webarena_evaluator
       - name: Start the pinned GitLab fixture
+        id: gitlab_start
         run: |
           umask 077
           test "$(uname -m)" = x86_64
@@ -442,17 +443,44 @@ jobs:
           CADDY
           XDG_DATA_HOME="$WEBARENA_PRIVATE/caddy-data" XDG_CONFIG_HOME="$WEBARENA_PRIVATE/caddy-config" \
             caddy start --config "$WEBARENA_PRIVATE/Caddyfile" --adapter caddyfile
-          for _ in {1..90}; do
-            test "$(docker inspect --format '{{.State.Running}}' grace-webarena-gitlab)" = true
-            if curl --insecure --fail --silent --max-time 10 "$GITLAB_ORIGIN/users/sign_in" -o "$WEBARENA_PRIVATE/sign-in.html" &&
+          site=grace-webarena-gitlab
+          started=$SECONDS
+          boot_complete=false
+          sign_in_ready=false
+          consecutive=0
+          rails=000
+          while (( SECONDS - started < 900 )); do
+            if [[ "$(docker inspect --format '{{.State.Running}}' "$site")" != true ]]; then
+              break
+            fi
+            if [[ "$boot_complete" == false ]] &&
+                docker logs "$site" 2>&1 | grep -Fx 'GitLab is ready' >/dev/null; then
+              boot_complete=true
+            fi
+            if [[ "$boot_complete" == true ]]; then
+              rails=$(docker exec "$site" sh -c 'curl -sS --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:8023/-/readiness?all=1"' 2>/dev/null || true)
+              if [[ "$rails" == 200 ]]; then
+                consecutive=$((consecutive + 1))
+              else
+                consecutive=0
+              fi
+            fi
+            if (( consecutive >= 2 )) &&
+                curl --insecure --fail --silent --max-time 10 "$GITLAB_ORIGIN/users/sign_in" -o "$WEBARENA_PRIVATE/sign-in.html" &&
                 grep -Fq 'data-testid="username-field"' "$WEBARENA_PRIVATE/sign-in.html"; then
-              jq -n '{signInReady:true}' > "$WEBARENA_RESULTS/readiness.json"
-              exit 0
+              sign_in_ready=true
+              break
             fi
             sleep 10
           done
-          echo "GitLab did not serve the synthetic sign-in form"
-          exit 1
+          jq -n --argjson boot "$boot_complete" --argjson signIn "$sign_in_ready" --arg rails "$rails" \
+            --argjson consecutive "$consecutive" --argjson elapsed "$((SECONDS - started))" \
+            '{entrypointReady:$boot, signInReady:$signIn, railsReadinessStatus:($rails|tonumber? // null),
+              consecutiveRailsReady:$consecutive, elapsedSeconds:$elapsed}' > "$WEBARENA_RESULTS/readiness.json"
+          if [[ "$sign_in_ready" != true ]]; then
+            echo "GitLab did not reach dependent-service readiness and serve the synthetic sign-in form"
+            exit 1
+          fi
       - name: Verify the pinned GitLab synthetic sign-in
         id: gitlab_sign_in
         working-directory: apps/app
@@ -475,7 +503,10 @@ jobs:
           const origin = process.env.GITLAB_ORIGIN;
           const privateDir = process.env.WEBARENA_PRIVATE;
           const selectors = { username: "username-field", password: "password-field", submit: "sign-in-button" };
-          const diagnostic = { signedIn: false, phase: "read-seeded-login", completed: [] };
+          const diagnostic = { signedIn: false, phase: "read-seeded-login", completed: [], documents: [] };
+          const siteDocument = (url) => url.origin !== origin ? "other-origin" :
+            url.pathname === "/users/sign_in" ? "sign-in" :
+            url.pathname === "/-/profile" ? "profile" : url.pathname === "/" ? "home" : "other-local";
           const started = performance.now();
           const advance = (phase) => {
             diagnostic.completed.push({ phase: diagnostic.phase, elapsedMs: Math.round(performance.now() - started) });
@@ -495,6 +526,17 @@ jobs:
               return url.origin === origin && (login || ["GET", "HEAD"].includes(request.method())) ? route.continue() : route.abort();
             });
             page = await context.newPage();
+            page.on("response", (response) => {
+              const request = response.request();
+              if (!request.isNavigationRequest() || request.resourceType() !== "document" || diagnostic.documents.length >= 16)
+                return;
+              const document = siteDocument(new URL(response.url()));
+              if (document === "other-origin") return;
+              const submission = request.method() === "POST" && document === "sign-in";
+              if (!submission && request.method() !== "GET") return;
+              diagnostic.documents.push({ document, submission, status: response.status(),
+                elapsedMs: Math.round(performance.now() - started) });
+            });
             advance("load-sign-in");
             const signIn = await page.goto(origin + "/users/sign_in", { timeout: 120000 });
             diagnostic.signInStatus = signIn?.status() ?? null;
@@ -533,10 +575,7 @@ jobs:
           } catch (error) {
             diagnostic.timedOut = error instanceof Error && error.name === "TimeoutError";
             if (page) {
-              const url = new URL(page.url());
-              diagnostic.document = url.origin !== origin ? "other-origin" :
-                url.pathname === "/users/sign_in" ? "sign-in" :
-                url.pathname === "/-/profile" ? "profile" : url.pathname === "/" ? "home" : "other-local";
+              diagnostic.document = siteDocument(new URL(page.url()));
               if (diagnostic.document === "sign-in") diagnostic.controls = await Promise.race([
                 page.evaluate((controls) => Object.fromEntries(Object.entries(controls).map(([name, id]) => {
                   const nodes = document.querySelectorAll(`[data-testid="${id}"]`);
@@ -560,14 +599,11 @@ jobs:
             }
           }
           JS
-      - name: Record local GitLab service readiness after a transient profile failure
-        if: failure() && steps.gitlab_sign_in.outcome == 'failure'
+      - name: Record local GitLab service readiness after fixture or sign-in failure
+        if: failure() && (steps.gitlab_start.outcome == 'failure' || steps.gitlab_sign_in.outcome == 'failure')
         run: |
-          auth="$WEBARENA_RESULTS/authentication.json"
-          if ! jq -e '.phase == "verify-profile" and (.profileAttempts | length == 6 and all(.[]; .expectedProfile and (.status == 502 or .status == 503 or .status == 504)))' "$auth" >/dev/null; then
-            exit 0
-          fi
           site=grace-webarena-gitlab
+          if ! docker inspect "$site" >/dev/null 2>&1; then exit 0; fi
           state=$(docker inspect --format '{{json .State}}' "$site" | jq '{running:.Running, restarting:.Restarting, oomKilled:.OOMKilled, exitCode:.ExitCode}')
           rails=$(docker exec "$site" sh -c 'curl -sS --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:8023/-/readiness?all=1"' 2>/dev/null || true)
           services=$(docker exec "$site" gitlab-ctl status 2>/dev/null |
