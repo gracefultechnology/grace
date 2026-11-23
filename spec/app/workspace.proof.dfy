@@ -2158,17 +2158,46 @@ lemma restoreGuided_ensures(w: Workspace, recovery: GuidedRecovery, by_: Workspa
   }
 }
 
+lemma OnlyBrowserTab(b: app__browser_Browser, tab: app__browser_Tab)
+  requires b.tabs == [tab] && b.selected == tab.id
+  ensures app__browser_activeTab(b) == tab
+{
+  var selected := (candidate: app__browser_Tab) => candidate.id == b.selected;
+  ProofLib.FilterNil(selected, []);
+  ProofLib.FilterAppend(selected, [], tab);
+  assert Std.Collections.Seq.Filter(selected, b.tabs) == [tab];
+}
+
 lemma lawPublicCollectionExampleIsAdmitted_ensures(by_: WorkspaceActor)
   ensures (lawPublicCollectionExampleIsAdmitted(by_) == true)
 {
   if by_.Host? {
     var w := exampleCollection;
     var check := sampleCollectionCheck;
-    var tab := app__browser_activeTab(w.browser);
+    var first := app__browser_blankTab(1, 0);
+    var loading := app__browser_navigated(first, sampleCollectionUrl, 1);
+    assert exampleCollectionLoading.tabs == [loading] && exampleCollectionLoading.selected == 1;
+    OnlyBrowserTab(exampleCollectionLoading, loading);
+    var ended := app__browser_endedAtCursor(loading, sampleCollectionUrl);
+    var tab := ended.(load := app__browser_Load.Loaded, secure := true);
+    assert w.browser.tabs == [tab] && w.browser.selected == 1;
+    OnlyBrowserTab(w.browser, tab);
+    reveal Std.Collections.Seq.FoldLeft();
+    assert loading.history == ["", sampleCollectionUrl] && loading.cursor == 1;
+    app__browser_lawALoadRecordsWhereItEnded_ensures(loading, sampleCollectionUrl);
+    assert app__browser_tabUrl(tab) == sampleCollectionUrl;
     assert w.device.readiness.Ready? && w.device.surface.Browser? && w.device.observationAllowed;
     assert app__assistant_isVisible(w.assistant) && w.assistant.activity.ReadyForStep?;
     assert w.execution.phase.Idle? && w.commitmentTask == "";
-    assert check.report.step == nextOutcome(w.plan);
+    assert !privateSurfaceActive(w);
+    assert check.report.step == nextOutcome(w.plan) == sampleCollectionStep;
+    assert guidedDetails(check.report.step).surface == app__shell_Surface.Browser;
+    assert w.plan.receipts == [];
+    assert !usedSource(w.plan, check.report.sourceKey) by {
+      forall prior | prior in w.plan.receipts
+        ensures prior.sourceKey != check.report.sourceKey
+      {}
+    }
     assert guidedReadContextCurrent(w, check.report, by_);
     assert guidedObservationCurrent(w, check.report, by_);
     assert tab.load.Loaded? && tab.secure && tab.id == check.tabId;
