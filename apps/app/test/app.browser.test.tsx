@@ -2990,6 +2990,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let addChallengeDuringRead = false;
   let challengeShown: false | "code" | "captcha" = false;
   let signInWidget: "hidden" | "idle" | "active" | "accountOnly" | "accountNumber" | "accountLookup" = "hidden";
+  let combinedLabel = "Account number or email";
+  let disabledLogin = false;
+  let ambiguousLogin = false;
   const idleIdentifier = { focused: false, edited: false, hasInput: false };
   let identifierEvidence: Partial<typeof idleIdentifier> = idleIdentifier;
   const card = { id: "card-statements", frame: await pinnedPage("statements", origin + "/topic.html?history", (html) => html
@@ -3027,13 +3030,15 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         elements: [
           ...(signInWidget === "hidden" ? [] : [
             { id: "username", tag: "input", type: "text", fieldName: "username",
-              label: combinedIdentifier ? "Account number or email" : signInWidget === "accountOnly" ? "Username" : "Private username",
+              label: combinedIdentifier ? combinedLabel : signInWidget === "accountOnly" ? "Username" : "Private username",
               sensitive: null, form: { index: 0 }, ...identifierEvidence, href: null, inViewport: true },
             signInWidget === "accountOnly" || combinedIdentifier
               ? { id: "continue", tag: "button", type: "submit",
                   label: signInWidget === "accountOnly" ? "Continue ›" : signInWidget === "accountLookup" ? "Find account" : "Login",
-                  submits: true, form: { index: 0 }, focused: false, href: null, inViewport: true }
+                  submits: true, disabled: disabledLogin, form: { index: 0 }, focused: false, href: null, inViewport: true }
               : { id: "password", tag: "input", type: "password", fieldName: "password", label: "Private password", sensitive: "password", form: { index: 0 }, focused: false, edited: signInWidget === "active", hasInput: false, href: null, inViewport: true },
+            ...(ambiguousLogin ? [{ id: "register", tag: "button", type: "submit", label: "Register", submits: true,
+              disabled: false, form: { index: 0 }, focused: false, href: null, inViewport: true }] : []),
             { id: "sign-in-link", tag: "a", label: "Private sign-in link", form: { index: 0 }, focused: false, href: "https://example.org/forgot", inViewport: true },
             { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
           ]),
@@ -3240,8 +3245,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.element(pending).toHaveAttribute("aria-current", "step");
 
     const beforeIdentifierGuide = guideCalls;
-    for (const [widget, evidence] of [
+    for (const [widget, evidence, disabled = false, ambiguous = false] of [
       ["accountLookup", idleIdentifier],
+      ["accountNumber", idleIdentifier, true],
+      ["accountNumber", idleIdentifier, false, true],
       ["accountNumber", { ...idleIdentifier, edited: true }],
       ["accountNumber", { ...idleIdentifier, focused: true }],
       ["accountNumber", { ...idleIdentifier, hasInput: true }],
@@ -3249,18 +3256,23 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     ] as const) {
       signInWidget = widget;
       identifierEvidence = evidence;
+      disabledLogin = disabled;
+      ambiguousLogin = ambiguous;
       await tap(showLink);
       await routeTo(page.getByText(/Finish the form yourself in this tab/));
       expect(guideCalls).toBe(beforeIdentifierGuide);
     }
     signInWidget = "accountNumber";
     identifierEvidence = idleIdentifier;
-    await tap(showLink);
-    await expect.poll(() => guideCalls).toBe(beforeIdentifierGuide + 1);
-    await routeTo(page.getByText("Look for “Help center” on example.org."));
-    expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
-      documentId: about.id, command: { guidance: { nodeId: "help" } },
-    });
+    for (const [index, label] of ["Account number or email", "Email address or account ID"].entries()) {
+      combinedLabel = label;
+      await tap(showLink);
+      await expect.poll(() => guideCalls).toBe(beforeIdentifierGuide + index + 1);
+      await routeTo(page.getByText("Look for “Help center” on example.org."));
+      expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
+        documentId: about.id, command: { guidance: { nodeId: "help" } },
+      });
+    }
     await tap(check);
     await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
     await expect.element(pending).toHaveAttribute("aria-current", "step");

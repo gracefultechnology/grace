@@ -48,9 +48,10 @@ function idleAccountForm(group: readonly PageElement[]): boolean {
   const identifier = account[0]
   if (fields.length !== 1 || identifier?.fieldName !== "username") return false
   const label = identifier.label?.trim() ?? ""
-  if (/^account number or email$/iu.test(label)) {
-    return group.some((element) => element.inViewport && element.submits === true && element.type === "submit" &&
-      (element.tag === "button" || element.tag === "input") && /^(?:sign in|log[ -]?in)$/iu.test(element.label?.trim() ?? ""))
+  if (/^(?:account (?:number|id|identifier) or email(?: address)?|email(?: address)? or account (?:number|id|identifier))$/iu.test(label)) {
+    const submits = group.filter((element) => element.inViewport && element.disabled === false && element.submits === true &&
+      (element.tag === "button" || element.tag === "input"))
+    return submits.length === 1 && /^(?:sign in|log[ -]?in)$/iu.test(submits[0]?.label?.trim() ?? "")
   }
   return /^(?:username(?: or email)?|email(?: address)?|phone number)$/iu.test(label) &&
     group.some((element) => /\b(?:sign[ -]?in|log[ -]?in)\b/iu.test(element.form?.name ?? "") ||
