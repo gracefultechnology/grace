@@ -170,7 +170,9 @@ const forgotten = (owner: string) => new Promise<void>((resolve, reject) => {
 });
 const writeTo = async (name: string) => {
   await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name, exact: true }));
+  const recipient = page.getByRole("button", { name, exact: true });
+  await expect.element(recipient).toBeVisible();
+  await click(recipient);
 };
 const opened = async (from: RegExp, title: string) => {
   await click(email(from));
@@ -476,7 +478,7 @@ it("See all my email in one place", async () => {
     await new Promise<void>((resolve, reject) => {
       const transaction = deviceFiles.transaction("files", "readwrite");
       transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error ?? new Error("The photo rows were not written"));
+      transaction.onabort = () => reject(new Error("Could not seed saved attachment choices", { cause: transaction.error }));
       const store = transaction.objectStore("files");
       const stored = store.getAll();
       stored.onsuccess = () => {
@@ -491,7 +493,7 @@ it("See all my email in one place", async () => {
           }
         } catch (error) {
           transaction.abort();
-          reject(error instanceof Error ? error : new Error(String(error)));
+          reject(new Error("Could not seed saved attachment choices", { cause: error }));
         }
       };
     });

@@ -13,7 +13,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type GuidedEvidenceUse, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type GraceAction } from "./agent.vibe"
 import { BrowserGuide } from "./browserGuide.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
@@ -81,6 +81,7 @@ type GuidedReadSource =
   | ({ tag: "CurrentMessage" } & GuidedMail)
   | { tag: "CurrentDocument"; tab: number; loadVersion: number; documentId: string }
   | { tag: "NamedDocument"; tab: number; loadVersion: number; documentId: string; url: string; heading: string }
+  | { tag: "SearchDocument"; loadVersion: number; documentId: string; url: string; origin: string; query: string; heading: string }
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string }
   | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
 type GuidedReadReceipt = { source: GuidedReadSource; identity: readonly string[]; text: string }
@@ -162,6 +163,31 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       return receipt({ tag: "CurrentStatement", tab: tab.id, loadVersion: tab.loadVersion, document: statement.document }, [address], statement.text)
     }
     case "ReadLatestRecord": return undefined
+    case "SearchPublicSite": {
+      const tab = activeTab(workspace.browser)
+      if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
+          tab.id !== step.tabId || tab.load !== "Loaded" || !tab.secure || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+      const url = tabUrl(tab)
+      const address = URL.parse(url)
+      if (address?.origin !== step.origin || address.username || address.password || address.hash) return undefined
+      const id = PageId.make(`tab-${tab.id}`)
+      const before = native.observeLinks(id) catch () => undefined
+      if (!before || (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
+      const miss = pageMiss(before, url, "CheckPublicSearchResult")
+      if (miss !== undefined) return miss
+      const heading = native.readPrimaryHeading(id, true) catch () => undefined
+      if (!heading) return undefined
+      if (heading.url !== url) return "Changed"
+      const headingText = heading.text.trim()
+      const named = /^(?:search )?results for(?:\s*:\s*|\s+)(?:"(.*)"|'(.*)'|“(.*)”|‘(.*)’|([^"'“‘].*))$/iu.exec(headingText)
+      if ((named?.[1] ?? named?.[2] ?? named?.[3] ?? named?.[4] ?? named?.[5]) !== step.query) return undefined
+      const after = native.observeLinks(id) catch () => undefined
+      if (!after || after.documentId !== before.documentId) return "Changed"
+      const afterMiss = pageMiss(after, url, "CheckPublicSearchResult")
+      if (afterMiss !== undefined) return afterMiss
+      return receipt({ tag: "SearchDocument", loadVersion: tab.loadVersion, documentId: after.documentId,
+        url, origin: address.origin, query: step.query, heading: headingText }, [step.origin, step.query], "Search results for “" + step.query + "”.")
+    }
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
@@ -246,6 +272,21 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
 
 effect function decoded(said: string | undefined) {
   return said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
+}
+
+function distinctReadConfirmation(source: GuidedReadSource, report: GuidedObservation, rebind: boolean): Event | undefined {
+  if (source.tag === "NamedDocument") {
+    const { documentId, loadVersion, url, heading } = source
+    return { type: "confirmGuidedNamedPage", pageCheck: { report, documentId, loadVersion, url, heading } }
+  }
+  if (source.tag === "SearchDocument") {
+    const { documentId, loadVersion, url, origin, query } = source
+    return { type: "confirmGuidedSearch", searchCheck: { report, documentId, loadVersion, url, origin, query } }
+  }
+  if (source.tag !== "CurrentMessage") return undefined
+  const { account, owner, address, ref, generation, revision, version } = source
+  const mailCheck = { report, mail: { account, owner, address, ref, generation, revision, version } }
+  return rebind ? { type: "rebindGuidedMail", mailCheck } : { type: "confirmGuidedMail", mailCheck }
 }
 
 export const conversation = (link: CloudLink | undefined) => Layer.effect(Conversation, effect {
@@ -451,7 +492,8 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       if (!rebind && usedSource(current.plan, sourceKey)) return "Used"
       const confirmed = try look()
       if (browserScope !== undefined && !(try ownsBrowserRead())) return "Refused"
-      const rechecked = try guidedReceipt(confirmed, step, native, managed, found.source.tag === "NamedDocument" ? found.source.documentId : undefined)
+      const rechecked = try guidedReceipt(confirmed, step, native, managed,
+        found.source.tag === "NamedDocument" || found.source.tag === "SearchDocument" ? found.source.documentId : undefined)
       if (rechecked === "PrivateForm") return (try ownsBrowserRead()) ? rechecked : "Refused"
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
       if (!sameRecord) return typeof rechecked === "string" ? rechecked : "Changed"
@@ -467,16 +509,9 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         sourceKey,
         evidence
       }
-      if (found.source.tag === "NamedDocument") {
-        const { documentId, loadVersion, url, heading } = found.source
-        const accepted = workspace.send({ type: "confirmGuidedNamedPage", pageCheck: { report, documentId, loadVersion, url, heading } }, "Host") catch () => undefined
-        if (accepted !== undefined) try recovery.keepProgress()
-        return accepted === undefined ? "Refused" : "Confirmed"
-      }
-      if (found.source.tag === "CurrentMessage") {
-        const { account, owner, address, ref, generation, revision, version } = found.source
-        const mailCheck = { report, mail: { account, owner, address, ref, generation, revision, version } }
-        const accepted = workspace.send(rebind ? { type: "rebindGuidedMail", mailCheck } : { type: "confirmGuidedMail", mailCheck }, "Host") catch () => undefined
+      const confirmation = distinctReadConfirmation(found.source, report, rebind)
+      if (confirmation !== undefined) {
+        const accepted = workspace.send(confirmation, "Host") catch () => undefined
         if (accepted !== undefined) try recovery.keepProgress()
         return accepted === undefined ? "Refused" : "Confirmed"
       }

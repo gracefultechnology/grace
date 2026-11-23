@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import { defaultClientConditions } from "vite";
-import { randomUUID, randomInt } from "node:crypto";
+import { createHash, randomUUID, randomInt } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -12,8 +12,9 @@ import type { BrowserCommandContext } from "vitest/node";
 import { project } from "vibestack/testing/vitest";
 import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
-import { hasHostedNavigation } from "./test/browser-receipt.ts";
-import { fleetFixture, fleetStatement, fleetStatementCases } from "./test/fleet.fixture.ts";
+import { type CompletedPublicSearch, hasHostedNavigation, hasUserAssistedSearch, matchesPublicSearch, PublicSearch, publicSearchQuery } from "./test/browser-receipt.ts";
+import { fleetFixture, fleetStatement, fleetStatementCases, fleetStatementRefusals } from "./test/fleet.fixture.ts";
+import { fixtureContextOptions, routeFixtureContext } from "./test/fixture-context.ts";
 import { webArena, webArenaPluginName, WebArenaEvaluatorError } from "./test/webarena.ts";
 
 const base = project({ root: import.meta.dirname, plugins: [tailwindcss()] });
@@ -28,26 +29,49 @@ const BenchmarkDefinition = Schema.Struct({
   siteStorageState: Schema.optional(Schema.NonEmptyString),
   evaluator: Schema.optional(Schema.Literal("webarena")),
   exploratory: Schema.optional(Schema.Literal(true)),
-  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord"])),
+  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord", "SearchPublicSite"])),
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
-if ((process.env.GRACE_BILLWORLD_SHARD !== undefined || process.env.GRACE_BILLWORLD_RESUME_DIR !== undefined) &&
+if ((process.env.GRACE_BILLWORLD_SHARD !== undefined || process.env.GRACE_BILLWORLD_RESUME_DIR !== undefined ||
+    process.env.GRACE_BILLWORLD_COHORT !== undefined) &&
     !process.env.GRACE_BILLWORLD_DIR)
-  throw new Error("Fleet shard and resume settings require GRACE_BILLWORLD_DIR");
+  throw new Error("Fleet cohort, shard and resume settings require GRACE_BILLWORLD_DIR");
 if (process.env.GRACE_BILLWORLD_DIR && process.env.GRACE_BROWSER_BENCHMARK_FILE)
   throw new Error("Run Fleet separately from browser tasks declared in an external file");
 const host: NodeJS.Process & { graceFleet?: ReturnType<typeof fleetFixture> } = process;
 const fleet = process.env.GRACE_BILLWORLD_DIR
-  ? await (host.graceFleet ??= fleetFixture(process.env.GRACE_BILLWORLD_DIR, process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld", process.env.GRACE_BILLWORLD_SHARD, process.env.GRACE_BILLWORLD_RESUME_DIR))
+  ? await (host.graceFleet ??= fleetFixture({
+      directory: process.env.GRACE_BILLWORLD_DIR,
+      results: process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld",
+      shardSetting: process.env.GRACE_BILLWORLD_SHARD,
+      resumeDirectory: process.env.GRACE_BILLWORLD_RESUME_DIR,
+      cohortSetting: process.env.GRACE_BILLWORLD_COHORT,
+    }))
   : undefined;
 const definitions: unknown = process.env.GRACE_BROWSER_BENCHMARK_FILE
   ? JSON.parse(readFileSync(process.env.GRACE_BROWSER_BENCHMARK_FILE, "utf8"))
   : fleet?.definitions ?? [];
 const runs = Schema.decodeUnknownSync(Schema.Array(BenchmarkDefinition), { onExcessProperty: "error" })(Array.isArray(definitions) ? definitions : [definitions]);
+if (runs.some(({ requiredStep, intent, chat, evaluator, siteStorageState, fixtureChoice, exploratory }) =>
+  requiredStep === "SearchPublicSite" && (!publicSearchQuery(intent) || chat !== "upstream" || evaluator !== "webarena" ||
+    siteStorageState === undefined || fixtureChoice !== undefined || exploratory !== true)))
+  throw new Error("Public search benchmark cases require exact terms and the synthetic Shopping account");
 const byId = new Map(runs.map((item) => [item.taskId, item]));
 if (byId.size !== runs.length || new Set(runs.map(({ receipt }) => receipt)).size !== runs.length)
   throw new Error("Benchmark task IDs and receipt paths must be unique");
+function benchmarkTitleId(taskId: string): string {
+  if (/^[A-Za-z0-9-]{1,32}$/.test(taskId)) return taskId;
+  const prefix = taskId.replace(/[^A-Za-z0-9-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 23);
+  const hash = createHash("sha256").update(taskId).digest("hex").slice(0, 8);
+  return `${prefix || "task"}-${hash}`;
+}
+
+const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
+  taskId, titleId: benchmarkTitleId(taskId), intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet),
+}));
+if (new Set(browserBenchmarks.map(({ titleId }) => titleId)).size !== runs.length)
+  throw new Error("Benchmark test title IDs must be unique");
 const officialCases = runs.filter(({ evaluator }) => evaluator === "webarena");
 function prepareOfficialCases() {
   if (!officialCases.length) return;
@@ -61,6 +85,8 @@ type SiteAction =
   | { kind: "begin"; taskId: string }
   | { kind: "open"; url: string }
   | { kind: "read"; selector?: string }
+  | { kind: "submitPublicSearch"; query: string }
+  | { kind: "inspectGuide" }
   | { kind: "tapGuide" }
   | { kind: "hoverGuide" }
   | { kind: "decisionRoute"; cloud: string; deadlineMs: number }
@@ -69,7 +95,10 @@ type SiteAction =
 
 type Site = { page: Page; origin: string; browser: BrowserContext; session: CDPSession; world?: { loaderId: string; executionContextId: number } };
 const DecisionResult = Schema.Struct({ status: Schema.String, model: Schema.optional(Schema.String), choice: Schema.optional(Schema.NullOr(Schema.String)), confidence: Schema.optional(Schema.Finite) });
-type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; site?: Site };
+type PublicSearchSubmission =
+  | { state: "submitting"; search: typeof PublicSearch.Type }
+  | ({ state: "completed" } & CompletedPublicSearch);
+type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; site?: Site };
 const activeRuns = new WeakMap<Page, Run>();
 const Choices = Schema.Struct({ kind: Schema.Literal("choice"), goal: Schema.NonEmptyString, candidates: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, label: Schema.NonEmptyString })) });
 const PageText = Schema.Struct({ title: Schema.String, text: Schema.String, truncated: Schema.Boolean, readyState: Schema.Literals(["loading", "interactive", "complete"]) });
@@ -113,6 +142,54 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   const run = activeRuns.get(context.page);
   if (!run) throw new Error("No benchmark fixture was supplied to the Chromium transport");
   const { fixture: definition } = run;
+  const publicSearch = definition.requiredStep === "SearchPublicSite";
+  if (action.kind === "submitPublicSearch") {
+    const site = run.site;
+    if (!publicSearch || !site || run.publicSearch || site.page.url() !== definition.startUrl ||
+        publicSearchQuery(definition.intent) !== action.query)
+      throw new Error("The website search is outside its reviewed case");
+    await site.page.bringToFront();
+    const searchName = /^[\s\p{Co}]*Search\b/iu;
+    const roleOptions = { name: searchName };
+    const textInput = site.page.locator('input:is([type="search"],[type="text"],:not([type]))');
+    const semanticSearchField = site.page.locator('input:is([type="search"],[role="searchbox"],[role="combobox"])');
+    const field = site.page.getByRole("searchbox", roleOptions).or(site.page.getByRole("combobox", roleOptions))
+      .or(site.page.getByRole("textbox", roleOptions)).or(site.page.getByLabel(searchName))
+      .or(site.page.getByPlaceholder(searchName).and(semanticSearchField)).and(textInput).filter({ visible: true });
+    if (await field.count() !== 1 || !await field.isVisible() || !await field.isEditable())
+      throw new Error("The public website has no unique editable Search field");
+    const form = await field.evaluate((input) => {
+      if (!(input instanceof HTMLInputElement) || !["search", "text"].includes(input.type) || input.value !== "" ||
+          /(?:^|\s)(?:username|one-time-code|(?:current|new)-password|cc-\S+)(?:\s|$)/iu.test(input.autocomplete)) return null;
+      const form = input.form;
+      return form?.method === "get" && ["", "_self"].includes(form.target) ? { action: form.action, field: input.name } : null;
+    });
+    const actionUrl = form && URL.parse(form.action);
+    if (!form || !actionUrl || actionUrl.origin !== site.origin || actionUrl.href === definition.startUrl ||
+        actionUrl.username || actionUrl.password || actionUrl.search || actionUrl.hash)
+      throw new Error("The public Search field is not bound to a same-origin GET form");
+    const search = Schema.decodeUnknownSync(PublicSearch)({ ...form, query: action.query });
+    const { frameTree: { frame: before } } = await site.session.send("Page.getFrameTree");
+    if (before.url !== definition.startUrl || run.publicSearch) throw new Error("The search starting document changed");
+    run.publicSearch = { state: "submitting", search };
+    await field.pressSequentially(search.query);
+    if (await field.inputValue() !== search.query) throw new Error("The exact reviewed term was not entered");
+    const [response] = await Promise.all([
+      site.page.waitForResponse((candidate) => {
+        const request = candidate.request();
+        return request.isNavigationRequest() && request.frame() === site.page.mainFrame() &&
+          request.method() === "GET" && matchesPublicSearch(new URL(candidate.url()), search);
+      }, { timeout: 30_000 }),
+      site.page.waitForURL((url) => matchesPublicSearch(url, search), { waitUntil: "load", timeout: 30_000 }),
+      field.press("Enter"),
+    ]);
+    const { frameTree: { frame: after } } = await site.session.send("Page.getFrameTree");
+    if (!response.ok() || after.url !== response.url() || after.loaderId === before.loaderId)
+      throw new Error("The public search did not load a new result document");
+    run.publicSearch = { state: "completed", search, start: { url: before.url, documentId: before.loaderId },
+      destination: { url: after.url, documentId: after.loaderId } };
+    return search;
+  }
   if (action.kind === "decisionRoute") {
     const endpoint = new URL("/api/v1/decisions", action.cloud);
     if (!["127.0.0.1", "localhost"].includes(endpoint.hostname)) throw new Error("Fixture decision routes are local");
@@ -166,7 +243,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   }
   if (action.kind === "receipt") {
     try {
-      const decisionProvider = definition.fixtureChoice === undefined ? "hosted" : "fixture";
+      const decisionProvider = publicSearch ? "none" : definition.fixtureChoice === undefined ? "hosted" : "fixture";
       const observation = {
         surface: "desktop-chromium", taskId: definition.taskId, intent: definition.intent, startUrl: definition.startUrl,
         decisionProvider, decisionRequests: run.decisions, syntheticStorageState: Boolean(run.site && definition.siteStorageState),
@@ -180,12 +257,19 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const webArenaGrade = definition.evaluator === "webarena" ? await official?.grade(definition.taskId, action.outcome, {
         guided, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
       }).catch((error: unknown) => ({ failure: error instanceof WebArenaEvaluatorError ? error.message : "The official WebArena evaluation failed" })) : undefined;
-      const receipt = { ...observation, grade, webArena: webArenaGrade };
+      let userAssisted = false;
+      if (publicSearch && run.site && run.publicSearch?.state === "completed") {
+        const { frameTree: { frame } } = await run.site.session.send("Page.getFrameTree");
+        userAssisted = hasUserAssistedSearch(observation, run.publicSearch, { url: frame.url, documentId: frame.loaderId });
+      }
+      const receipt = { ...observation, grade, webArena: webArenaGrade, ...(publicSearch && { userAssisted }) };
       if (fleet) fleet.record(definition.taskId, receipt);
       else writeFileSync(definition.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
       if (webArenaGrade && action.outcome.failure === undefined) {
         if (!("officialScore" in webArenaGrade) || webArenaGrade.officialScore === null || webArenaGrade.noActionScore !== 0)
           throw new Error("The pinned WebArena evaluator did not return a landing score and a zero no-action control");
+        if (publicSearch && action.outcome.graceTerminal !== undefined && !userAssisted)
+          throw new Error("The public search result lacks a checked user-assisted journey");
         if (definition.exploratory) {
           if ((definition.chat === "upstream" && run.chatStatus !== 200) ||
               run.decisionResults.some(({ http, result }) => http !== 200 || result?.status !== "ok"))
@@ -216,22 +300,22 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     if (storage && (!storage.cookies.length || storage.cookies.some(({ domain }) => domain.replace(/^\./u, "") !== start.hostname) || storage.origins.some((stored) => stored.origin !== origin)))
       throw new Error("Benchmark storage state must belong only to the declared synthetic website");
     const browser = await context.context.browser()?.newContext({
+      ...fixtureContextOptions,
       ignoreHTTPSErrors: true,
       ...(storage && { storageState: { cookies: [...storage.cookies], origins: storage.origins.map(({ origin, localStorage }) => ({ origin, localStorage: [...localStorage] })) } }),
     });
     if (!browser) throw new Error("The benchmark needs a Chromium browser context");
     try {
+      await routeFixtureContext(browser, { origin, permits: (request, url) => {
+        if (!["GET", "HEAD"].includes(request.method())) return false;
+        if (publicSearch) return !request.isNavigationRequest() || url.href === start.href ||
+          (run.publicSearch !== undefined && request.method() === "GET" && matchesPublicSearch(url, run.publicSearch.search));
+        if (definition.evaluator === "webarena" && definition.taskId === "157")
+          return !request.isNavigationRequest() || url.pathname.startsWith("/admin/");
+        return true;
+      } });
       const website = await browser.newPage();
       const session = await observeFromDocumentStart(website);
-      await website.route("**/*", (route) => {
-        const request = route.request();
-        const url = new URL(request.url());
-        if (url.origin !== origin) return route.abort();
-        if (definition.evaluator === "webarena" && definition.taskId === "157" &&
-          (!["GET", "HEAD"].includes(request.method()) || request.isNavigationRequest() && !url.pathname.startsWith("/admin/")))
-          return route.abort();
-        return route.continue();
-      });
       const response = await website.goto(action.url, { waitUntil: "load" });
       if (!response?.ok()) throw new Error("The benchmark site did not load");
       if (activeRuns.get(context.page) !== run || run.site) throw new Error("The benchmark instance changed while opening the site");
@@ -246,7 +330,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   return observeSite(existing, action);
 }
 
-type SiteObservation = Extract<SiteAction, { kind: "read" | "tapGuide" | "hoverGuide" | "control" }>;
+type SiteObservation = Extract<SiteAction, { kind: "read" | "inspectGuide" | "tapGuide" | "hoverGuide" | "control" }>;
 
 async function observeSite(existing: Site, action: SiteObservation) {
   const { page, origin, session } = existing;
@@ -279,8 +363,8 @@ async function observeSite(existing: Site, action: SiteObservation) {
     })()`);
     return { url, documentId: loaderId, ...Schema.decodeUnknownSync(PageText)(content) };
   }
-  if (action.kind === "tapGuide" || action.kind === "hoverGuide") {
-    await page.bringToFront();
+  if (action.kind === "inspectGuide" || action.kind === "tapGuide" || action.kind === "hoverGuide") {
+    if (action.kind !== "inspectGuide") await page.bringToFront();
     const point = Schema.decodeUnknownSync(Schema.NullOr(Schema.Struct({
       x: Schema.Finite, y: Schema.Finite, snapshotId: Schema.String, menu: Schema.Boolean, label: Schema.String,
     })))(await evaluate(`(() => {
@@ -300,9 +384,13 @@ async function observeSite(existing: Site, action: SiteObservation) {
       const label = (node.getAttribute("aria-label") || node.innerText || "").trim().slice(0, 100);
       return node.contains(document.elementFromPoint(x, y)) ? { x, y, snapshotId: guide.id, menu, label } : null;
     })()`));
-    if (!point) return { tapped: false, disclosed: false, url };
     const { frameTree: current } = await session.send("Page.getFrameTree");
-    if (current.frame.loaderId !== loaderId || current.frame.url !== url) return { tapped: false, disclosed: false, url };
+    const sameDocument = current.frame.loaderId === loaderId && current.frame.url === url;
+    if (action.kind === "inspectGuide") {
+      if (!sameDocument) throw new Error("The benchmark document changed during the guide check");
+      return { ringAvailable: point !== null };
+    }
+    if (!point || !sameDocument) return { tapped: false, disclosed: false, url };
     if (action.kind === "hoverGuide") {
       if (!point.menu) return { disclosed: false, url, reason: "The highlighted control has no declared menu", label: point.label };
       const { x, y, snapshotId } = point;
@@ -417,11 +505,13 @@ async function releasedStatement(context: BrowserCommandContext, attempt: string
     try {
       const results = process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld";
       mkdirSync(results, { recursive: true });
-      const directory = mkdtempSync(join(results, action.billerId === undefined ? "released-statement-" : "fleet-view-bill-"));
+      const refusal = fleetStatementRefusals.some(({ billerId }) => billerId === action.billerId);
+      const prefix = action.billerId === undefined ? "released-statement-" : refusal ? "fleet-statement-refusal-" : "fleet-view-bill-";
+      const directory = mkdtempSync(join(results, prefix));
       episode = action.billerId === undefined ? await startReleasedStatement(releasedDirectory, directory)
         : await fleetStatement(releasedDirectory, action.billerId, directory);
       if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
-      browser = await context.context.browser()?.newContext({ ignoreHTTPSErrors: true });
+      browser = await context.context.browser()?.newContext({ ...fixtureContextOptions, ignoreHTTPSErrors: true });
       if (!browser) throw new Error("The statement trial needs an isolated Chromium context");
       const page = await browser.newPage();
       const site = { page, origin: new URL(episode.startUrl).origin, browser, session: await observeFromDocumentStart(page) };
@@ -504,9 +594,13 @@ async function googleConsent(context: BrowserCommandContext, endpoint: string, a
   }
 }
 
-type RecordCase = "later winner" | "earlier winner" | "tied latest" | "changed scope" | "mismatched detail" | "wrong record kind" | "ambiguous collection" | "conflicting counts" | "unclear count" | "conflicting account" | "private form" | "newsletter list" | "unverified account" | "public list";
-type RecordAction = { kind: "open"; scenario: RecordCase; decisionUrl: string } | { kind: "close" } | { kind: "requests" } | SiteObservation;
-const recordSites = new WeakMap<Page, { site: Site; decisionUrl: string; chatUrl: string; requests: { count: number; leaked: boolean } }>();
+type RecordCase = "later winner" | "earlier winner" | "tied latest" | "changed scope" | "mismatched detail" | "wrong record kind" | "ambiguous collection" | "conflicting counts" | "unclear count" | "conflicting account" | "private form" | "newsletter list" | "unverified account" | "same-name account switch" | "short dates" | "public list";
+type RecordAction =
+  | { kind: "open"; scenario: RecordCase; decisionUrl: string }
+  | { kind: "close" } | { kind: "requests" } | { kind: "accountVisits" }
+  | { kind: "manualRecordLink"; label: "View order" | "My Account" }
+  | SiteObservation;
+const recordSites = new WeakMap<Page, { site: Site; decisionUrl: string; chatUrl: string; requests: { count: number; leaked: boolean }; accountVisits?: string[] }>();
 
 async function recordPage(context: BrowserCommandContext, action: RecordAction) {
   const open = recordSites.get(context.page);
@@ -515,6 +609,7 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
     const browser = await context.context.browser()?.newContext();
     if (!browser) throw new Error("The record fixture needs Chromium");
     const origin = "https://records.localhost";
+    const accountVisits: string[] | undefined = action.scenario === "same-name account switch" ? [] : undefined;
     const requests = { count: 0, leaked: false };
     const chatUrl = new URL("/api/v1/chat/completions", action.decisionUrl).href;
     try {
@@ -524,22 +619,28 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
         const url = new URL(route.request().url());
         const later = url.searchParams.get("page") === "2";
         const account = later && action.scenario === "changed scope" ? "acct-a" : "acct-A";
+        const dashboard = url.pathname === "/home";
+        if (route.request().isNavigationRequest())
+          accountVisits?.push(`${url.pathname}:${dashboard ? "A" : "B"}`);
         const index = later ? 2 : 1;
         const unbound = action.scenario === "public list" || action.scenario === "unverified account";
         const conflictingCount = action.scenario === "conflicting counts" || action.scenario === "unclear count";
-        const single = unbound || conflictingCount;
+        const single = unbound || conflictingCount || accountVisits !== undefined;
         const detail = url.pathname.startsWith("/view/");
         const label = action.scenario === "mismatched detail" ? "private-canary-wrong" : "private-canary-" + url.pathname.split("/").at(-1);
         const newer = action.scenario === "earlier winner" ? !later : later;
         const day = newer && action.scenario !== "tied latest" ? 18 : 17;
-        const date = action.scenario === "earlier winner" ? `<time datetime="2026-10-${day}">10/${day}/26</time>` : `2026-10-${day}`;
+        const date = action.scenario === "earlier winner" ? `<time datetime="2026-10-${day}">10/${day}/26</time>` :
+          action.scenario === "short dates" ? `10/${day}/26` : `2026-10-${day}`;
         const status = action.scenario === "earlier winner" ? "Canceled" : "Complete";
         const newsletter = '<form><label>Newsletter email<input type="email"></label><button type="submit">Subscribe</button></form>';
-        const homepage = '<h1>My Account</h1><nav><a id="orders" href="/list">My Orders</a></nav><section><h2>Recent orders</h2><table><tbody><tr><td><a href="/view/1">View order</a></td></tr></tbody></table></section>';
+        const homepage = '<h1>My Account</h1><nav><a id="orders" href="/list">My Orders</a></nav>' +
+          `<section><h2>Recent orders</h2><table><tbody><tr>${accountVisits ? `<td>private-canary-1</td><td>${date}</td><td>${status}</td>` : ""}<td><a href="/view/1">View order</a></td></tr></tbody></table></section>`;
         const totals = conflictingCount
           ? `<div><p>1 Item</p><section><p>${action.scenario === "unclear count" ? "Showing part of 8" : "Showing 1–1 of 8"}</p></section></div>`
           : `<p>${single ? "1 Item" : `Items ${index} to ${index} of 2 total`}</p>`;
-        const content = detail ? `<h1>${action.scenario === "wrong record kind" ? "Invoice" : "Order"} #${label}</h1>` : url.pathname === "/home" ?
+        const content = detail ? `<h1>${action.scenario === "wrong record kind" ? "Invoice" : "Order"} #${label}</h1>` +
+          (accountVisits ? `<p>${status}</p><time>${date}</time><a href="/home">My Account</a>` : "") : dashboard ?
           homepage + (action.scenario === "private form" ?
             '<form aria-label="Sign in"><label>Username<input name="username"></label><label>Password<input name="password" type="password"></label><button type="submit">Sign in</button></form>' :
             newsletter) :
@@ -550,7 +651,8 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
         const decoy = action.scenario === "ambiguous collection" ?
           '<section><p>1 Item</p><table><thead><tr><th>Order number</th><th>Order date</th><th>Status</th></tr></thead><tbody><tr><td>private-canary-decoy</td><td>2026-10-20</td><td>Complete</td></tr></tbody></table></section>' : "";
         const badge = action.scenario === "conflicting account" ? '<span aria-label="Account">#acct-B</span>' : "";
-        const banner = unbound ? "" : `<header>Account ID: ${account}${badge}</header>`;
+        const banner = accountVisits ? `<header><span>Welcome, Morgan Lee</span>${dashboard ? "<p>Account ID: private-canary-A</p>" : ""}</header>`
+          : unbound ? "" : `<header>Account ID: ${account}${badge}</header>`;
         const scope = action.scenario === "public list" ? ' aria-label="Public records"' : "";
         return route.fulfill({ contentType: "text/html; charset=utf-8", body: `<!doctype html><title>Record fixture</title>${banner}<main${scope}>${content}${decoy}</main>` });
       });
@@ -563,9 +665,9 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
         requests.leaked ||= (route.request().postData() ?? "").includes("private-canary");
         return route.continue();
       });
-      const url = origin + (action.scenario === "later winner" || action.scenario === "private form" ? "/home" : "/list");
+      const url = origin + (accountVisits || action.scenario === "later winner" || action.scenario === "private form" ? "/home" : "/list");
       await website.goto(url);
-      recordSites.set(context.page, { site: { page: website, origin, browser, session }, decisionUrl: action.decisionUrl, chatUrl, requests });
+      recordSites.set(context.page, { site: { page: website, origin, browser, session }, decisionUrl: action.decisionUrl, chatUrl, requests, accountVisits });
       await context.page.bringToFront();
       return { url };
     } catch (error) {
@@ -584,6 +686,12 @@ async function recordPage(context: BrowserCommandContext, action: RecordAction) 
     return {};
   }
   if (action.kind === "requests") return open.requests;
+  if (action.kind === "accountVisits") return { visits: open.accountVisits };
+  if (action.kind === "manualRecordLink") {
+    if (!open.accountVisits) throw new Error("This fixture has no manual account-switch journey");
+    await open.site.page.getByRole("link", { name: action.label, exact: true }).click();
+    return { tapped: true };
+  }
   return observeSite(open.site, action);
 }
 
@@ -742,8 +850,8 @@ declare module "vitest" {
     site: string;
     cloud: string;
     groundProxy: string;
-    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { exploratory: boolean; gradeWholeCohort: boolean })[];
-    billworldStatements: readonly { label: string; billerId?: string }[];
+    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { titleId: string; exploratory: boolean; gradeWholeCohort: boolean })[];
+    billworldStatements: readonly { label: string; billerId?: string; refuses?: true }[];
     realModel: boolean;
   }
 }
@@ -756,15 +864,21 @@ export default defineConfig(async (env) => {
           ...entry,
           ...(official && { plugins: [{ name: webArenaPluginName, api: official }] }),
           optimizeDeps: { ...entry.optimizeDeps, include: [...(entry.optimizeDeps?.include ?? []), "effect/crypto", "effect/References", "effect/testing", "pdf-lib"] },
-          test: { ...entry.test, ...(official && { globalSetup: ["test/webarena.ts"] }), browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, privateVerification, recordPage, releasedStatement, realModel } } },
+          test: {
+            ...entry.test,
+            ...(official && { globalSetup: ["test/webarena.ts"] }),
+            browser: {
+              ...entry.test.browser,
+              connectTimeout: 180_000,
+              commands: { benchmarkSurface, googleConsent, privateVerification, recordPage, releasedStatement, realModel },
+            },
+          },
         }
       : entry);
-  const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
-    taskId, intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet),
-  }));
   const billworldStatements = releasedDirectory === undefined ? [] : [
     { label: "released" },
     ...fleetStatementCases.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId })),
+    ...fleetStatementRefusals.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId, refuses: true as const })),
   ];
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
   return { ...config, resolve: { ...config.resolve, conditions: ["eliza-source", ...defaultClientConditions] }, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, billworldStatements, realModel: realModelCredential !== undefined }, globalSetup: ["test/setup.vibe"] } };

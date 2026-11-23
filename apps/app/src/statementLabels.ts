@@ -10,7 +10,7 @@ export type StatementAnswer =
 const facts: readonly StatementFact[] = ["RemainingBalance", "AmountDue", "StatementBalance", "DueDate"];
 const labels: Record<StatementFact, string> = {
   RemainingBalance: String.raw`remaining\s+(?:statement\s+balance|balance\s+due)`,
-  AmountDue: String.raw`(?:your\s+)?(?:(?:total|current|new)\s+)?amount\s+due|(?:your\s+)?(?:(?:total|current)\s+)?balance\s+due|(?:your\s+)?total\s+due`,
+  AmountDue: String.raw`(?:account\s+|current\s+)?balance\s+\(\s*amount\s+due\s*\)|(?:your\s+)?(?:(?:total|current|new)\s+)?amount\s+due|(?:your\s+)?(?:(?:total|current)\s+)?balance\s+due|(?:your\s+)?total\s+due`,
   StatementBalance: String.raw`(?:your\s+)?(?:new|(?:last\s+)?statement)\s+balance(?:\s+due)?`,
   DueDate: String.raw`(?:next\s+)?(?:(?:payment|bill)\s+)?due\s+date|(?:payment\s+)?due\s+(?:by|on)|payment\s+due|(?:please\s+)?pay\s+by|due`,
 };
@@ -35,23 +35,47 @@ function joinedFragments(lines: readonly string[]): string[] {
   }, []);
 }
 
-function statementLabels(text: string): Labeled[] {
+function statementLabels(text: string) {
   const lines = joinedFragments(text.split(/\r?\n|[^\S\r\n]+·[^\S\r\n]+/u).map((line) => line.trim()).filter(Boolean));
-  return lines.flatMap((line, index) => [...line.matchAll(label)].flatMap((match) => {
+  const detachedDates = new Set<string>();
+  const labels = lines.flatMap((line, index) => [...line.matchAll(label)].flatMap<Labeled>((match) => {
     const fact = facts.find((name) => match.groups?.[name] !== undefined);
     const words = fact === undefined ? undefined : match.groups?.[fact];
     if (fact === undefined || words === undefined) return [];
     const rest = line.slice(match.index + match[0].length);
-    const value = (fact === "DueDate" ? date : money).exec(rest === "" ? lines[index + 1] ?? "" : rest)?.[0];
-    return value === undefined ? [] : [{ fact, label: words.replace(/\s+/gu, " "), value: value.replace(/\s+/gu, " ") }];
+    const candidate = rest === "" ? lines[index + 1] ?? "" : rest;
+    const paymentAmount = fact === "DueDate" && /^payment\s+due$/iu.test(words) ? money.exec(candidate)?.[0] : undefined;
+    const value = paymentAmount ?? (fact === "DueDate" ? date : money).exec(candidate)?.[0];
+    if (value === undefined) return [];
+    const found: Labeled = {
+      fact: paymentAmount === undefined ? fact : "AmountDue",
+      label: words.replace(/\s+/gu, " "),
+      value: value.replace(/\s+/gu, " "),
+    };
+    const next = index + (rest === "" ? 2 : 1);
+    const detachedBy = /^by(?:\s+|$)/iu.exec(lines[next] ?? "")?.[0];
+    if (found.fact === "AmountDue" && candidate === value && detachedBy !== undefined) {
+      const detached = lines[next]?.slice(detachedBy.length) || lines[next + 1] || "";
+      const value = date.exec(detached)?.[0];
+      if (value !== undefined) detachedDates.add(value.replace(/\s+/gu, " "));
+    }
+    const by = found.fact === "AmountDue" ? /^\s+by\s+/iu.exec(candidate.slice(value.length))?.[0] : undefined;
+    const due = by === undefined ? undefined : date.exec(candidate.slice(value.length + by.length))?.[0];
+    return by === undefined || due === undefined ? [found] : [found, {
+      fact: "DueDate",
+      label: by.trim(),
+      value: due.replace(/\s+/gu, " "),
+    }];
   }));
+  return { labels, detachedDates };
 }
 
 export function statementAnswer(text: string): StatementAnswer {
-  const found = statementLabels(text);
+  const { labels: found, detachedDates } = statementLabels(text);
   const values = (fact: StatementFact) => [...new Set(found.filter((item) => item.fact === fact).map((item) => item.value))];
   const amounts = statementAmounts(values("AmountDue"), values("StatementBalance"), values("RemainingBalance"));
   const dates = values("DueDate");
+  if ([...detachedDates].some((value) => !dates.includes(value))) return { tag: "Unread", reason: "NotFound" };
   const amount = facts.flatMap((fact) => found.filter((item) => item.fact === fact && item.value === amounts[0]))[0];
   const due = found.find((item) => item.fact === "DueDate");
   if (!hasOneStatementAnswer(amounts, dates) || amount === undefined || due === undefined)
