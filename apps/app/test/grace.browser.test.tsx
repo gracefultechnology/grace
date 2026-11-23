@@ -354,9 +354,9 @@ it('Grace is told about my email accounts (spec/app/accounts.md, "Story: Connect
   expect(toldGrace()).toContain("Their email company said the password they typed was wrong.");
   expect(toldGrace()).toContain("The person tapped Ask Grace while connecting their riverview.net email");
   // spec/app/agentActions.md, "Her yes is taken only for a question waiting on her, and her No drops it"; spec/app/request.md, "Only a current request from the person's own turn may ask for an action on any surface"
-  expect(toldGrace()).toContain("confirmProposal was not done");
+  expect(toldGrace()).toContain("confirmProposal was not done: the person has not answered your question yet");
   // spec/app/proposal.md, "A correction, a No or a new conversation drops a question she has not agreed to"
-  expect(toldGrace()).toContain("cancelProposal was not done");
+  expect(toldGrace()).toContain("cancelProposal was not done: the person has not answered your question yet");
   expect(await tea()).toEqual([]);
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await tap(form("Mail settings").getByRole("button", { name: "Connect" }));

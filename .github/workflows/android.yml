@@ -76,7 +76,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/eliza/packages/agent/dist/bundle
-          key: android-agent-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.agent-source.outputs.pin }}-${{ steps.agent-source.outputs.tools }}-${{ hashFiles('apps/app/agent/policy.json', 'apps/app/scripts/android.ts', '.github/actions/setup/action.yml') }}
+          key: android-agent-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.agent-source.outputs.pin }}-${{ steps.agent-source.outputs.tools }}-${{ hashFiles('apps/app/agent/policy.json', 'apps/app/scripts/android.ts', '.github/actions/setup/action.yml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig*.json', 'patches/**', 'vibestack/*.ts', 'vibestack/gen/**', 'vibestack/std/**', 'vibestack/proof/**', 'vibestack/testing/**', 'vibestack/stories/**', 'vibestack/design/**', '!vibestack/**/node_modules/**', '!vibestack/**/.cache/**', '!vibestack/selftest.ts', '!vibestack/remote-cache.ts', '!vibestack/testing/test/**', '!vibestack/stories/test/**', '!vibestack/design/test/**') }}
       - run: pnpm --filter @repo/app android --abi ${{ matrix.abi }}
       - name: Stage Cuttlefish launcher with the pinned Chromium APK
         if: matrix.abi == 'x86_64'

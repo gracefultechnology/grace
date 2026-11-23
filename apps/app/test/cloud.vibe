@@ -4,7 +4,7 @@ import { Base64Url } from "effect/encoding"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import policy from "../agent/policy.json" with { type: "json" }
 
-type Attachment = { partId: string; attachmentId: string | null; filename: string; mimeType: string; size: number; pages?: number }
+type Attachment = { partId: string; attachmentId: string | null; filename: string; mimeType: string; size: number; pages?: number; data?: string }
 
 type Mail = {
   externalId: string
@@ -50,6 +50,7 @@ type Appointment = {
   metadata: { etag: string; iCalUID: string | null; recurringEventId: string | null; createdAt: string | null; updatedAt: string | null }
   recurrence?: readonly string[]
   reminders?: typeof Reminders.Type
+  cancelled?: readonly string[]
 }
 
 schema Turn { said: string; outcome: "streaming" | "completed" | "aborted" }
@@ -95,6 +96,7 @@ type Account = {
   calendarFault?: Outage["calendarFault"]
   calendarCreateRequests: number
   sendLookups: string[]
+  draftDeletes: string[]
   script: Scripted[]
   decision?: ScriptedDecision
   turns: (Turn & { id: number; context: string; messages: ChatMessage[] })[]
@@ -151,8 +153,7 @@ schema SearchQuery { query: string; grantId?: string; maxResults?: string }
 schema ContactQuery { query: string; grantId?: string }
 schema RemovalQuery { side?: "owner" | "agent"; grantId?: string; calendarId?: Filled }
 schema AccountsQuery { side?: string }
-schema Carried { kind: "Pdf" | "Photo"; name: string; origin: string; account: string; sourceRef: string; contentRef: string; pages: number }
-schema DraftBody { grantId?: string; draftId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; attachments?: Carried[] }
+schema DraftBody { grantId?: string; draftId?: string; to: string[]; cc?: string[]; bcc?: string[]; subject: string; bodyText: string; attachments?: Uploaded[] }
 schema SentMail { subject: string; labels: string[]; bcc: string[]; attachments: { filename: string }[] }
 schema SentBox { mail: SentMail[] }
 schema Boxes { boxes: SentBox[] }
@@ -161,7 +162,7 @@ schema PageChoice { address: string; choice: "allow" | "cancel" | "unfinished" }
 schema OtherConnect { address: string; password: string; incoming?: string; outgoing?: string }
 schema IncomingMail { to: Mailbox; from: Filled; fromEmail: Mailbox; subject: string; body: string }
 schema Expiry { address: string }
-schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" | "reauthCreate" | "conflictCreate" }
+schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing" | "deleteDraft"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" | "reauthCreate" | "conflictCreate" }
 schema ChatContext { includes: string[]; excludes: string[] }
 schema Scripted { said?: string; context?: ChatContext; responseFormat?: "json_object"; answer: string }
 schema ScriptedDecision { goalIncludes: Filled; labels: Filled[] }
@@ -396,7 +397,7 @@ function seed(n: number, grantId: string | null, at: number, site: string): Acco
   return {
     key: `fake-key-${uuid(n)}`, credentialId: uuid(n), code: `code-${n}`, expiresAt: new Date(at + lifetimes.credential * 1000).toISOString(), acknowledged: false,
     boxes: grantId === null ? [] : [box("google", owner, grantId, at, site, uuid(n))], sessions: [], outage: false, script: [...scripted],
-    turns: [], changes: [], sendLookups: [], consents: [], googleRequests: [], speech: [], calendarCreateRequests: 0
+    turns: [], changes: [], sendLookups: [], draftDeletes: [], consents: [], googleRequests: [], speech: [], calendarCreateRequests: 0
   }
 }
 
@@ -412,9 +413,12 @@ const servable: Record<string, RegExp> = { "text/plain": /\.txt$/i, "application
 const draftIdOf = (externalId: string) => `r-${externalId}`
 const bare = (address: string) => /<([^>]+)>/.exec(address)?.[1] ?? address.trim()
 const listedMessage = ({ bodyText: _, attachments, bcc: _bcc, suspicion: _suspicion, ...message }: Mail) => ({ ...message, hasAttachments: attachments.length > 0 })
-const wired = (files: readonly Carried[]): Attachment[] => files.map((f, i) => ({
-  partId: String(i + 1), attachmentId: f.contentRef, filename: f.name, mimeType: Object.keys(servable).find((type) => servable[type].test(f.name)) ?? "application/octet-stream", size: 0, ...f.kind === "Pdf" ? { pages: f.pages } : {}
+const pagesOf = (base64: string) => (atob(base64).match(/\/Type\s*\/Page(?![a-z])/g) ?? []).length
+const keptParts = (uploads: readonly typeof Uploaded.Type[], first: number): Attachment[] => uploads.map((u, i) => ({
+  partId: String(i + first), attachmentId: `upload-${i + 1}`, filename: u.name, mimeType: u.mimeType, size: sizeOf(u.dataBase64), data: u.dataBase64,
+  ...u.mimeType === "application/pdf" ? { pages: pagesOf(u.dataBase64) } : {}
 }))
+const unservable = (uploads: readonly typeof Uploaded.Type[]) => uploads.some((u) => !servable[u.mimeType]?.test(u.name) || !canonical.test(u.dataBase64))
 const folders: Record<string, string> = { inbox: "INBOX", sent: "SENT", drafts: "DRAFT", trash: "TRASH" }
 
 function matches(m: Mail, query: string) {
@@ -638,7 +642,7 @@ effect function store(site: string) {
     const wire = token === undefined ? undefined : try Schema.decodeUnknownEffect(GmailMessage)(try googleRequest("GET", `${googleGmail}/${encodeURIComponent(found.externalId)}?format=full`, token))
     const bodyText = wire === undefined ? found.bodyText : try Effect.fromResult(Base64Url.decodeString(wire.payload.body.data))
     return try HttpServerResponse.json({
-      message: listedMessage(found), bodyText: bodyText || found.snippet, bodyHtml: null, bodyHtmlStatus: "none", links: [], authenticationResults: [], attachments: found.attachments, suspicion: found.suspicion ?? null
+      message: listedMessage(found), bodyText: bodyText || found.snippet, bodyHtml: null, bodyHtmlStatus: "none", links: [], authenticationResults: [], attachments: found.attachments.map(({ data: _, ...part }) => part), suspicion: found.suspicion ?? null
     })
   }
 
@@ -650,7 +654,7 @@ effect function store(site: string) {
     const part = found.attachments.find((a) => a.partId === partId)
     if (!part) throw new Missing()
     if (!servable[part.mimeType]?.test(part.filename) || part.size > 5 * 1024 * 1024) throw new Unsupported()
-    const dataBase64 = part.mimeType === "application/pdf" ? pdf : photos[part.filename]
+    const dataBase64 = part.data ?? (part.mimeType === "application/pdf" ? pdf : photos[part.filename])
     if (dataBase64 === undefined) throw new Missing()
     return try HttpServerResponse.json({ version: 1, messageId, partId, historyId, name: part.filename, mimeType: part.mimeType, dataBase64, size: sizeOf(dataBase64), sha256: digestOf(dataBase64) })
   }
@@ -706,8 +710,8 @@ effect function store(site: string) {
     const parts = source === undefined || origin === undefined ? [] : source.partIds.map((partId) => origin.attachments.find((a) => a.partId === partId))
     if (parts.some((a) => a === undefined)) throw new StaleRevision()
     const uploads = proposal.attachments ?? []
-    if (uploads.some((u) => !servable[u.mimeType]?.test(u.name) || !canonical.test(u.dataBase64))) throw new BadUpload()
-    const uploaded = uploads.map((u, i): Attachment => ({ partId: String(i + 2), attachmentId: `upload-${i + 1}`, filename: u.name, mimeType: u.mimeType, size: sizeOf(u.dataBase64) }))
+    if (unservable(uploads)) throw new BadUpload()
+    const uploaded = keptParts(uploads, 2)
     const review = {
       kind: proposal.kind, mode: proposal.mode, from: found.address, to, cc, bcc, subject: proposal.subject, bodyText: proposal.bodyText,
       threadId: parent?.threadId ?? null, replyMessageId: proposal.replyMessageId ?? null, attachments: [...uploaded, ...parts.flatMap((a) => a === undefined ? [] : [a])]
@@ -765,7 +769,7 @@ effect function store(site: string) {
     const { key, box: found, account } = try connection(fixed, grantId, true)
     const prepared = account.changes.find((c) => c.receipt.requestId === requestId && c.grantId === grantId)
     if (!prepared) throw new NoOperation()
-    if (proposal.kind === "send" && account.mailFault !== undefined) throw new Unavailable()
+    if (proposal.kind === "send" && (account.mailFault === "dispatch" || account.mailFault === "lookupMissing")) throw new Unavailable()
     if (prepared.receipt.reviewDigest !== reviewDigest) throw new DigestChanged()
     if (prepared.receipt.state !== "prepared") return try HttpServerResponse.json({ version: 1, receipt: prepared.receipt, providerExactlyOnce: false })
     const review = proposal.kind === "send" ? (try reviewedSend(found, proposal)).review : (try reviewedChange(found, proposal)).review
@@ -782,7 +786,7 @@ effect function store(site: string) {
     const { grantId } = try HttpServerRequest.schemaSearchParams(Selected)
     const { account } = try connection(fixed, grantId, true)
     const known = account.changes.find((c) => c.receipt.requestId === requestId && c.grantId === grantId)
-    if (known?.receipt.kind === "send" && account.mailFault !== undefined)
+    if (known?.receipt.kind === "send" && (account.mailFault === "dispatch" || account.mailFault === "lookupMissing"))
       try change(account.key, (a) => ({ ...a, sendLookups: [...a.sendLookups, account.mailFault === "lookupMissing" ? "missing" : known.receipt.state] }))
     if (!known || (known.receipt.kind === "send" && account.mailFault === "lookupMissing")) throw new NoOperation()
     return try HttpServerResponse.json({ version: 1, receipt: known.receipt, providerExactlyOnce: false })
@@ -791,9 +795,10 @@ effect function store(site: string) {
   effect function saveDraft(fixed?: Slug) {
     const draft = try HttpServerRequest.schemaBodyJson(DraftBody)
     const { key, box: found } = try connection(fixed, draft.grantId)
+    if (unservable(draft.attachments ?? [])) throw new BadUpload()
     const draftId = draft.draftId ?? `draft-${try next()}`
     const saved = letter(draftId, found.address, (try Clock.currentTimeMillis) + day, found.address, found.address, draft.subject, draft.bodyText, {
-      to: draft.to, cc: draft.cc ?? [], bcc: draft.bcc ?? [], isUnread: false, labels: ["DRAFT"], attachments: wired(draft.attachments ?? []),
+      to: draft.to, cc: draft.cc ?? [], bcc: draft.bcc ?? [], isUnread: false, labels: ["DRAFT"], attachments: keptParts(draft.attachments ?? [], 1),
       metadata: { historyId: String(try next()), messageIdHeader: `<${draftId}@mail.fake.test>`, referencesHeader: null }
     })
     try changeBox(key, found.grantId, (b) => ({ ...b, mail: [...b.mail.filter((m) => m.externalId !== draftId), saved] }))
@@ -803,8 +808,13 @@ effect function store(site: string) {
   effect function deleteDraft(fixed?: Slug) {
     const { draftId } = try HttpRouter.params
     const { grantId } = try HttpServerRequest.schemaSearchParams(Selected)
-    const { key, box: found } = try connection(fixed, grantId)
+    const { key, box: found, account } = try connection(fixed, grantId)
+    if (account.mailFault === "deleteDraft") {
+      try change(key, (a) => ({ ...a, mailFault: undefined, draftDeletes: [...a.draftDeletes, "refused"] }))
+      throw new Unavailable()
+    }
     if (!found.mail.some((m) => m.externalId === draftId && m.labels.includes("DRAFT"))) throw new Missing()
+    try change(key, (a) => ({ ...a, draftDeletes: [...a.draftDeletes, "deleted"] }))
     try changeBox(key, found.grantId, (b) => ({ ...b, mail: b.mail.filter((m) => m.externalId !== draftId) }))
     return try HttpServerResponse.json({ ok: true })
   }
@@ -920,8 +930,20 @@ effect function store(site: string) {
     return try HttpServerResponse.json({ event: shown(moved, moved.timezone ?? "UTC") }, { headers: { etag } })
   }
 
+  effect function cancelRepetition(fixed: Slug | undefined, query: typeof RemovalQuery.Type, instance: string, seriesId: string, stamp: string) {
+    const { key, box: found } = try connection(fixed, query.grantId)
+    const series = found.calendar.find((e) => e.externalId === seriesId && e.calendarId === (query.calendarId?.trim() || "primary"))
+    const at = Date.parse(stamp.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"))
+    const from = series === undefined ? Number.NaN : Date.parse(series.startAt)
+    if (series?.recurrence === undefined || !(at >= from) || (at - from) % (24 * 60 * 60 * 1000) !== 0) throw new Missing()
+    try changeBox(key, found.grantId, (b) => ({ ...b, calendar: b.calendar.map((e) => e.externalId === series.externalId && e.calendarId === series.calendarId ? { ...e, cancelled: [...e.cancelled ?? [], instance] } : e) }))
+    return try HttpServerResponse.json({ ok: true })
+  }
+
   effect function removeAppointment(fixed?: Slug) {
     const query = try HttpServerRequest.schemaSearchParams(RemovalQuery)
+    const repetition = /^(.+)_(\d{8}T\d{6}Z)$/.exec((try HttpRouter.params).eventId ?? "")
+    if (repetition !== null) return try cancelRepetition(fixed, query, repetition[0], repetition[1], repetition[2])
     const { key, grantId, found } = try existing(fixed, query.grantId, query.calendarId)
     try changeBox(key, grantId, (b) => ({ ...b, calendar: b.calendar.filter((e) => e !== found) }))
     return try HttpServerResponse.json({ ok: true })
@@ -1379,7 +1401,7 @@ export effect function expire(cloud: string, key: string, address: string) {
 }
 
 export effect function outage(cloud: string, key: string, down: boolean, fault?: Outage["mailFault"] | Outage["calendarFault"]) {
-  try post(cloud, "/fake/outage", fault === "dispatch" || fault === "lookupMissing" ? { down, mailFault: fault } : { down, calendarFault: fault }, key)
+  try post(cloud, "/fake/outage", fault === "dispatch" || fault === "lookupMissing" || fault === "deleteDraft" ? { down, mailFault: fault } : { down, calendarFault: fault }, key)
 }
 
 export effect function sentMail(cloud: string, key: string) {

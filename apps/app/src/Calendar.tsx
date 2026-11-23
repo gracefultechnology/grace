@@ -4,7 +4,7 @@ import { Effect, Option } from "effect";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { Calendar as Entry, EntryDetails, Recurrence } from "../gen/app__calendar.ts";
 import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, overlaps, rowTag, shownReminders, tabletKey, upcoming } from "../gen/app__calendars.ts";
-import { type Event as CalendarEvent, type FormPicker, type ViewWindow, selectedOccurrence, shownPicker } from "../gen/app__calendarView.ts";
+import { type Event as CalendarEvent, type FormPicker, keepsRepetition, type ViewWindow, selectedOccurrence, shownPicker } from "../gen/app__calendarView.ts";
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { adding, CalendarNews, dayOf, editingPlan, horizon, hour, instant, longDate, midnight, minutesOf, navigation, type Opening, openingPlan, relative, say, shownDays, timeLabel } from "./calendar.vibe";
@@ -15,8 +15,7 @@ type Covered = { inert?: boolean; "aria-hidden"?: boolean };
 
 const repeats: Record<Recurrence, string> = { Once: "Never", Weekly: "Every week", Monthly: "Every month" };
 const repeatLines: Record<Recurrence, string> = { Once: "Doesn’t repeat", Weekly: "Repeats every week", Monthly: "Repeats every month" };
-const reminders = { No: 0, "Day before": 24 * hour, "1 hour before": hour } as const;
-type Reminder = keyof typeof reminders;
+const reminders: readonly (readonly [string, number])[] = [["Day before", 24 * hour], ["1 hour before", hour]];
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const snoozeFor = 10 * 60 * 1000;
 
@@ -27,9 +26,9 @@ const dateOf = (n: number) => new Date(midnight(n));
 
 const short = (n: number, today: number) => (n === today ? "Today" : weekdays[(dateOf(n).getDay() + 6) % 7]);
 const whoWhere = (d: EntryDetails) => (d.participant ? [d.participant, d.location.split(" · ")[0]].filter(Boolean).join(" · ") : d.location);
-const reminderOf = (d: EntryDetails): Reminder => (!d.reminderEnabled ? "No" : d.leadTime >= 24 * hour ? "Day before" : "1 hour before");
 const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? "" : "s"}`;
 const lead = (minutes: number) => minutes === 24 * 60 ? "day" : minutes % (24 * 60) === 0 ? plural(minutes / (24 * 60), "day") : minutes % 60 === 0 ? plural(minutes / 60, "hour") : plural(minutes, "minute");
+const leadLabel = (leadTime: number) => reminders.find(([, at]) => at === leadTime)?.[0] ?? (leadTime === 0 ? "When it starts" : `${lead(Math.round(leadTime / 60_000))} before`);
 const reminderLine = (d: EntryDetails) => (!d.reminderEnabled ? "No reminder" : d.leadTime === 0 ? "Reminder when it starts" : `Reminder ${lead(Math.round(d.leadTime / 60_000))} before`);
 const withKept = (offered: number[], kept: number[]) => [...new Set([...offered, ...kept])].sort((x, y) => x - y);
 const span = (d: EntryDetails) => `${timeLabel(d.startAt)} to ${timeLabel(d.endAt)}`;
@@ -258,6 +257,8 @@ function Form({ box, entry, today, browsing, uncertain }: { box: CalendarInstanc
     const at = startOn(chosenDay, minute);
     return minutesOf(at) === minute ? [{ value: String(at), label: timeLabel(at) }] : [];
   });
+  const repeatable = keepsRepetition(box.state) ? (Object.keys(repeats) as Recurrence[]) : [entry.hasSaved ? entry.committed.recurrence : "Once"];
+  const leads = withKept(reminders.map(([, at]) => at), [entry.committed, d].filter((r) => r.reminderEnabled).map((r) => r.leadTime)).reverse();
   const back = offer(box, { type: "changeOccurrence", id, command: { tag: "CancelEditing" } });
   const checkCalendar = () => void runtime.runPromise(Effect.flatMap(CalendarNews, (news) => news.openRecoveredSaveList(owner, calendarId)));
   return (
@@ -280,10 +281,10 @@ function Form({ box, entry, today, browsing, uncertain }: { box: CalendarInstanc
           choices: times,
           onPick: (at) => { toggle("TimePicker")(false); change(startingAt(Number(at))); },
         },
-        repeat: { options: Object.values(repeats), value: repeats[d.recurrence], onChange: (v) => change({ recurrence: (Object.keys(repeats) as Recurrence[]).find((r) => repeats[r] === v) ?? "Once" }) },
+        repeat: { options: repeatable.map((r) => repeats[r]), value: repeats[d.recurrence], onChange: (v) => change({ recurrence: repeatable.find((r) => repeats[r] === v) ?? "Once" }) },
         remind: {
-          options: Object.keys(reminders), value: reminderOf(d),
-          onChange: (v) => { const r = (Object.keys(reminders) as Reminder[]).find((k) => k === v) ?? "No"; change({ reminderEnabled: r !== "No", leadTime: reminders[r] }); },
+          options: ["No", ...leads.map(leadLabel)], value: d.reminderEnabled ? leadLabel(d.leadTime) : "No",
+          onChange: (v) => { const at = leads.find((l) => leadLabel(l) === v); change({ reminderEnabled: at !== undefined, leadTime: at ?? 0 }); },
         },
       }} />
   );
