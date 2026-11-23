@@ -623,7 +623,7 @@ it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday
   await tap("Expand");
   await act(() => userEvent.click(page.getByRole("button", { name: /^Wi-Fi/ })));
   await expect.element(button("Expand")).toBeVisible();
-  await tap("Wi-Fi settings");
+  await tap("Choose another network");
 
   await tap("Expand");
   await tap("Settings");

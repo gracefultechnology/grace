@@ -265,7 +265,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
             onTransitionEnd={(event) => {
               if (event.propertyName === "transform" && event.target instanceof HTMLElement && "homeCard" in event.target.dataset) delete event.currentTarget.dataset.turning;
             }}
-            className={cn("group/home absolute", full ? "top-40 left-[182px] h-[560px] w-[1042px]" : "inset-y-0 right-0 left-[138px] overflow-clip")}>
+            className={cn("group/home absolute", full ? "top-40 left-[182px] h-[560px] w-[1042px]" : "top-2 right-0 bottom-0 left-[138px] overflow-x-clip overflow-y-visible")}>
             {(["calendar", "email", "internet", "files"] as const).map(place)}
             {passwords && place("passwords")}
           </div>
