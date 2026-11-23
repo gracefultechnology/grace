@@ -30,7 +30,7 @@ import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, modelTurns, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
 import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
-import { actOnScreen, browserAccountResponse, mount, signInToGrace, tabletView } from "./screen.tsx";
+import { actOnScreen, browserAccountResponse, homeCalendarLauncher, mount, signInToGrace, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -2144,7 +2144,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     try {
       await Effect.runPromise(seriesRequested.await);
       await tap("Close Calendar");
-      await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true })));
+      await act(() => userEvent.click(homeCalendarLauncher()));
       await expect.element(page.getByRole("button", { name: "Close Calendar", exact: true })).toBeVisible();
       await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
     } finally {
@@ -3541,7 +3541,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     expect(retry.query()).toBeNull();
 
     await tap(page.getByRole("button", { name: "Home", exact: true }));
-    const appointment = page.getByRole("group", { name: "Calendar", exact: true }).getByText("Eye check with Dr. Patel");
+    const appointment = page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: /Eye check with Dr\. Patel/ });
     await tap(appointment);
     await routeTo(page.getByText("Riverside Clinic"));
     await tap(resume);
@@ -3924,7 +3924,9 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
   const pageReceipt = plan.getByText(/^Open page:/);
   const pending = (label: string) => plan.getByText(`Find and check “${label}”.`, { exact: true });
   try {
-    await routeTo(page.getByText(subject, { exact: true }));
+    const homeEmail = button(/^Email/);
+    await routeTo(homeEmail);
+    await expect.element(homeEmail).toHaveAccessibleDescription(new RegExp(subject));
     await tap(button("Internet"));
     await visitExampleSite(native);
     await tap(button("Ask Grace"));
@@ -4305,7 +4307,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Check email"));
     await expect.poll(receipts).toEqual([mailReceipt, mailReceipt]);
     await tap(button("Close Email"));
-    await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true }));
+    await tap(homeCalendarLauncher());
     await tap(button(/Managed calendar appointment/));
     await routeTo(page.getByRole("heading", { name: appointment.title, exact: true }));
 
@@ -4558,7 +4560,7 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
       expect(button("Resume Grace").query()).toBeNull();
       expect(button("Check saved appointment").query()).toBeNull();
       await tap(button("Home"));
-      await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true }));
+      await tap(homeCalendarLauncher());
       const save = page.getByRole("button", { name: "Save", exact: true });
       await routeTo(save);
       await expect.element(save).toBeDisabled();

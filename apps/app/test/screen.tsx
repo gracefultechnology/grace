@@ -66,6 +66,8 @@ export async function mountAccounts(accounts: Accounts, cloud: CloudLink, clockA
   return runtime;
 }
 
+export const homeCalendarLauncher = () => page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: /^Calendar(?:\s|$)/ });
+
 export function actOnScreen() {
   beforeAll(async () => { environment.IS_REACT_ACT_ENVIRONMENT = true; await page.viewport(1280, 800); });
   afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
