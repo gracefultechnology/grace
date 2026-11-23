@@ -306,6 +306,10 @@ public final class GraceAccount extends ElizaSignInPlugin {
     try {
      publishSession();
      super.upgradeMailLease(accountCall(call, data -> {
+      if ("ended".equals(data.optString("verdict")) && "cancelled".equals(data.optString("problem"))) {
+       call.resolve();
+       return;
+      }
       if (!"signed-in-as".equals(data.optString("verdict"))) {
        call.reject("Mail sign-in could not complete");
        return;
