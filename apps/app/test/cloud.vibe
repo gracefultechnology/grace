@@ -1385,10 +1385,6 @@ export effect function modelTurns(cloud: string, key: string) {
   return (try Schema.decodeUnknownEffect(Shown)(try response.json)).turns
 }
 
-export effect function contexts(cloud: string, key: string) {
-  return (try modelTurns(cloud, key)).map((turn) => turn.context)
-}
-
 export effect function parts(cloud: string, key: string, said: string) {
   const response = try post(cloud, "/api/v1/chat/completions", { model: policy.model, messages: [{ role: "user", content: said }], stream: true }, key)
   const lines = Stream.splitLines(Stream.decodeText(response.stream))

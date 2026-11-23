@@ -137,15 +137,13 @@
       "inputs": [
         "vendor/eliza/{package.json,pnpm-lock.yaml,pnpm-workspace.yaml}",
         "vendor/eliza/{apps,packages}/*/package.json",
-        "vendor/eliza/spec/**/*.md",
-        "vendor/eliza/vibestack/*.ts",
-        "vendor/eliza/vibestack/{gen,patches,proof,std}/**"
+        "vendor/eliza/spec/**/*.md"
       ],
       "outputs": ["vendor/eliza/packages/cloud/gen/**", "vendor/eliza/packages/os/gen/**"]
     },
     "//#gen": {
-      "env": ["!VITE_*"],
       "dependsOn": ["//#gen:eliza"],
+      "env": ["!VITE_*"],
       "inputs": [
         "spec/**",
         "apps/*/package.json",
@@ -297,6 +295,7 @@
         "vibestack-studio#test:browser"
       ],
       "inputs": [
+        ".gitignore",
         "eslint.config.js",
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
