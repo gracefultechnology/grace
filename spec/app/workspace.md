@@ -1597,7 +1597,7 @@ pure def canConfirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck
   pageCheck.heading == guidedDetails(pageCheck.report.step).subject
 pure def confirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): Workspace =
   confirmGuided(w, pageCheck.report, by)
-pure def isPublicCollection(step: GuidedStep): bool = match step {
+pure def isPublicCollection(guidedStep: GuidedStep): bool = match guidedStep {
   | ReachPublicCollection(_) => true
   | _ => false
 }
