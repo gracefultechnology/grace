@@ -158,11 +158,15 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const [first, second, leafName] = menu;
       if (!first || !second || !leafName) throw new Error("The fixture has no public category operator sequence");
       const nav = website.getByRole("navigation").filter({ has: website.locator("a").filter({ hasText: first }) }).first();
-      const navControl = (name: RegExp) => nav.getByRole("menuitem", { name }).or(nav.getByRole("link", { name }))
-        .filter({ visible: true }).first();
-      await navControl(first).hover({ timeout: 15_000 });
-      await navControl(second).hover({ timeout: 15_000 });
+      const navControl = (name: RegExp) => nav.locator("a[href]").filter({ hasText: name }).filter({ visible: true }).first();
       const leaf = navControl(leafName);
+      await nav.locator('ul[role="menu"]').filter({ visible: true }).first().waitFor({ timeout: 15_000 });
+      await navControl(first).hover({ timeout: 15_000 });
+      const intermediate = navControl(second);
+      await intermediate.hover({ timeout: 10_000 }).catch(async () => {
+        await intermediate.press("ArrowRight", { timeout: 5_000 });
+      });
+      if (!await leaf.isVisible()) await intermediate.press("ArrowRight", { timeout: 5_000 });
       const href = await leaf.getAttribute("href", { timeout: 15_000 });
       if (!href) throw new Error("The disclosed category does not have an address");
       const category = new URL(href, website.url());
