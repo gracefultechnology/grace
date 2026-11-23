@@ -3291,12 +3291,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(resume);
     expect(check.query()).toBeNull();
     await tap(resume);
-    signInWidget = "accountNumber";
-    const readsBeforeIdentifierCheck = native.calls("readPage").length;
-    await tap(check);
-    await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
-    await expect.element(pending).toHaveAttribute("aria-current", "step");
-    expect(native.calls("readPage")).toHaveLength(readsBeforeIdentifierCheck);
+    for (const widget of ["idle", "accountNumber"] as const) {
+      signInWidget = widget;
+      const beforeCheck = native.calls("controlPage").length;
+      const readsBeforeCheck = native.calls("readPage").length;
+      await tap(check);
+      await expect.poll(() => native.calls("controlPage").length).toBeGreaterThan(beforeCheck);
+      await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+      expect(native.calls("readPage")).toHaveLength(readsBeforeCheck);
+    }
     signInWidget = "hidden";
     replaceDocumentDuringRead = true;
     await tap(check);
