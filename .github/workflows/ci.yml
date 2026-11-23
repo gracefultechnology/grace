@@ -445,7 +445,7 @@ jobs:
           for _ in {1..90}; do
             test "$(docker inspect --format '{{.State.Running}}' grace-webarena-gitlab)" = true
             if curl --insecure --fail --silent --max-time 10 "$GITLAB_ORIGIN/users/sign_in" -o "$WEBARENA_PRIVATE/sign-in.html" &&
-                rg -q 'data-testid="username-field"' "$WEBARENA_PRIVATE/sign-in.html"; then
+                grep -Fq 'data-testid="username-field"' "$WEBARENA_PRIVATE/sign-in.html"; then
               jq -n '{signInReady:true}' > "$WEBARENA_RESULTS/readiness.json"
               exit 0
             fi
