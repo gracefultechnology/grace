@@ -1,16 +1,43 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"; spec/app/accounts.md, "Signing in again renews the same account"; spec/app/accounts.md, "The settings pages go back one step at a time"; spec/app/accounts.md, "Mail settings can be looked up from her address, and fill the form for her to check"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"
-import { accountAt, accountWith, freshName, lookupFinds, Machine as Accounts, stored as storedAccounts, told, type Accounts as Registry, type Event, type FoundServer, type OtherReport, type Provider, type Security, type ServerKind, type SheetReport } from "../gen/app__accounts.effect.vibe"
+import { accountAt, accountWith, freshName, initial as initialAccounts, lookupFinds, Machine as Accounts, parseState as parseAccounts, stored as storedAccounts, told, type Accounts as Registry, type Event, type FoundServer, type OtherReport, type Provider, type Security, type ServerKind, type SheetReport } from "../gen/app__accounts.effect.vibe"
 import { stored as storedProposal } from "../gen/app__proposal.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type OtherForm, type SecretPassword, type ShownPage } from "./connector.vibe"
-import { Instances } from "./instances.vibe"
+import * as KeyValueStore from "effect/persistence/KeyValueStore"
+import { compatibleStore, Instances } from "./instances.vibe"
 import { Resolved, serversIn, serversListed } from "./mailSettings.ts"
 
 const restarted = Layer.effectDiscard(effect {
   try Effect.orDie((try Accounts).send({ type: "restartAccounts" }, "AccountHost"))
 })
 
-export const accounts = Layer.mergeAll(Layer.provideMerge(restarted, storedAccounts("accounts")), storedProposal("proposal"))
+const stateKey = "accounts"
+const rawRecord = Schema.Record(Schema.String, Schema.Unknown)
+const readRecord = Schema.decodeUnknownOption(Schema.fromJsonString(rawRecord))
+const readSignIn = Schema.decodeUnknownOption(rawRecord)
+const readRows = Schema.decodeUnknownOption(Schema.Array(rawRecord))
+
+function upgradedAccounts(text: string) {
+  const raw = Option.getOrUndefined(readRecord(text))
+  if (raw === undefined || parseAccounts(raw) !== undefined) return text
+  const rows = Option.getOrUndefined(readRows(raw.accounts))
+  const signIn = Option.getOrUndefined(readSignIn(raw.signIn))
+  if (rows === undefined || signIn === undefined) return text
+  const { lookup, incoming, outgoing } = initialAccounts.signIn
+  const upgraded = parseAccounts({
+    discarding: initialAccounts.discarding,
+    ...raw,
+    signIn: { lookup, incoming, outgoing, ...signIn },
+    accounts: rows.map((row) => ({ fromName: "", ...row })),
+  })
+  return upgraded === undefined ? text : JSON.stringify(upgraded)
+}
+
+const accountStorage = Layer.unwrap(effect {
+  return Layer.provide(storedAccounts(stateKey), compatibleStore(try KeyValueStore.KeyValueStore, stateKey, (text) => Effect.succeed(upgradedAccounts(text))))
+})
+
+export const accounts = Layer.mergeAll(Layer.provideMerge(restarted, accountStorage), storedProposal("proposal"))
 
 export type OtherDetails = { readonly name: string; readonly address: string; readonly password: SecretPassword }
 export type MailServers = { readonly incoming: string; readonly outgoing: string }
@@ -184,9 +211,11 @@ export const signIns = Layer.effect(SignIns, effect {
   }
 
   effect function fetchedText(url: string) {
-    const response = try Effect.timeout(Effect.provideService(http.execute(HttpClientRequest.get(url)), HttpClient.TracerPropagationEnabled, false), lookupWait)
-    if (response.status !== 200) return ""
-    return try response.text
+    return try timeout(effect {
+      const response = try Effect.provideService(http.execute(HttpClientRequest.get(url)), HttpClient.TracerPropagationEnabled, false)
+      if (response.status !== 200) return ""
+      return try response.text
+    }, lookupWait)
   }
 
   effect function listedIn(service: string, domain: string) {

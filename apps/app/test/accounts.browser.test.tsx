@@ -1,12 +1,13 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"
 import { Effect, ManagedRuntime } from "effect";
 import { act } from "react";
-import { afterAll, beforeAll, beforeEach, expect, inject, it, onTestFinished } from "vitest";
+import { afterAll, beforeAll, beforeEach, assert, expect, inject, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import type { WiFiPlugin } from "../src/surfacePlugin.ts";
 import { client, expire, otherPassword, outage, ownerName, reply, sentMail, signIn } from "./cloud.vibe";
-import { mount, actOnScreen, captureSignedOutChat } from "./screen.tsx";
+import { actOnScreen, captureSignedOutChat, tabletView } from "./screen.tsx";
+import { parseState as parseAccounts } from "../gen/app__accounts.ts";
 import "../src/main.css";
 
 actOnScreen();
@@ -48,6 +49,8 @@ const network = { online: true };
 const wifi: Pick<WiFiPlugin, "getConnectivity"> = { getConnectivity: () => Promise.resolve({ online: network.online, validated: network.online, captivePortal: false, ssid: null }) };
 
 let secret = "";
+const connectTablet = () => tabletView(ManagedRuntime.make(application(undefined, wifi as WiFiPlugin, { url: cloud, key: secret })));
+let mounted: ReturnType<typeof connectTablet>;
 let firstListing: Promise<void> | undefined;
 const chatBodies: string[] = [];
 beforeEach(() => captureSignedOutChat(chatBodies, (url) => {
@@ -78,9 +81,12 @@ beforeEach(async () => {
   network.online = true;
   firstListing = undefined;
   secret = (await Effect.runPromise(Effect.provide(signIn(cloud), client))).secret;
-  const app = ManagedRuntime.make(application(undefined, wifi as WiFiPlugin, { url: cloud, key: secret }));
-  await mount(app);
-  onTestFinished(() => { localStorage.clear(); });
+  mounted = connectTablet();
+  await mounted.render();
+  onTestFinished(async () => {
+    await mounted.dispose();
+    localStorage.clear();
+  });
 });
 afterAll(() => {
   globalThis.fetch = fetched;
@@ -379,8 +385,26 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await act(() => userEvent.fill(message, "Thank you, I’ll be there."));
   await tap(page.getByRole("button", { name: "Send" }));
   await expect.element(page.getByRole("navigation", { name: "Folders" }).getByRole("button", { name: /^Outbox 1/ })).toBeVisible();
-  await tap(page.getByRole("button", { name: "Close Email" }));
+
+  await mounted.dispose();
+  const saved = parseAccounts(JSON.parse(localStorage.getItem("accounts") ?? "null"));
+  assert(saved);
+  const legacy = {
+    ...saved,
+    discarding: undefined,
+    signIn: { ...saved.signIn, lookup: undefined, incoming: undefined, outgoing: undefined },
+    accounts: saved.accounts.map((account) => ({ ...account, fromName: undefined })),
+  };
+  const outlookId = saved.accounts.find((account) => account.address === outlook)?.id;
+  expect(localStorage.getItem(`mail/${outlookId}`)).toContain("Thank you, I’ll be there.");
+  localStorage.setItem("accounts", JSON.stringify(legacy));
+  mounted = connectTablet();
+  await mounted.render();
   await openEmailSettings();
+  await expect.element(row(riverview)).toBeVisible();
+  const upgraded = parseAccounts(JSON.parse(localStorage.getItem("accounts") ?? "null"));
+  expect(upgraded?.accounts).toEqual(saved.accounts.map((account) => ({ ...account, fromName: "" })));
+  expect(upgraded?.signIn).toMatchObject({ lookup: "NotLookedUp", incoming: "", outgoing: "" });
   await tap(row(outlook));
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
   const question = page.getByRole("dialog", { name: "Remove Outlook from this tablet?" });

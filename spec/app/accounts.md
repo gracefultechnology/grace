@@ -208,7 +208,9 @@ that account goes out under it, and signing in again changes it to the name
 she gives then. The form starts with the From name of the account she is
 signing in to again, otherwise with the name of her Grace account. An Other
 email is never added without a From name; a company’s account has none here,
-because the company’s own page keeps her name.
+because the company’s own page keeps her name. A previously saved Other
+account without a From name stays on the tablet with its existing email and
+an unknown name until she next signs in to it.
 
 ```quint
 type OtherOutcome = OtherAllowed | OtherPasswordRefused | OtherNeedsServers | OtherRefused
@@ -241,7 +243,7 @@ pure def lawStaleCheckCannotConnect(a: Accounts, check: OtherReport, name: str, 
   check.attempt != a.signIn.attempt implies
     not(canOtherResult(a, check, name, fromName, by) or canServersResult(a, check, name, fromName, by))
 pure def alwaysOnlyOtherEmailKeepsAFromName(a: Accounts): bool =
-  a.accounts.every(x => (x.provider == OtherEmail) == (x.fromName != ""))
+  a.accounts.every(x => x.fromName != "" implies x.provider == OtherEmail)
 pure def sometimesOtherNeedsServers(a: Accounts): bool = a.page == MailServersPage and a.signIn.domain != ""
 pure def sometimesPasswordRefused(a: Accounts): bool = a.problem == PasswordRefused
 pure def sometimesCheckingOther(a: Accounts): bool = a.signIn.stage == CheckingOther
