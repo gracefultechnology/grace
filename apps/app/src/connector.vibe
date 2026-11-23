@@ -65,7 +65,7 @@ export type MailConnection = {
   readonly resolve: (contact: string) => Recipient!ConnectorFailure
   readonly contacts: () => readonly Contact[]!ConnectorFailure
   readonly change: (op: ChangeOp) => ChangeReceipt!NeedsSignIn
-  readonly saveDraft: (snapshot: DraftSnapshot) => DraftStored!NeedsSignIn
+  readonly saveDraft: (snapshot: DraftSnapshot, held: ReadonlyMap<string, Attached>) => DraftStored!NeedsSignIn
   readonly deleteDraft: (draftId: string) => boolean!NeedsSignIn
   readonly send: (operationId: string, snapshot: DraftSnapshot, held: ReadonlyMap<string, Attached>) => SendOutcome!NeedsSignIn
   readonly lookup: (operationId: string) => SendOutcome!NeedsSignIn
@@ -178,10 +178,6 @@ function manifest(account: AccountRef, ref: string, m: Message, all: readonly At
   const savedAt = receivedOf(m)
   const kept = savedAt === undefined ? [] : (all ?? []).flatMap((a) => asset(account, m, savedAt, a))
   return all === undefined || savedAt === undefined || m.externalId !== ref || kept.length !== all.length ? undefined : kept
-}
-
-function carried(file: SavedFile) {
-  return { kind: file.kind, name: file.name, origin: file.origin, account: file.account, sourceRef: file.sourceRef, contentRef: file.contentRef, pages: file.pages }
 }
 
 const addresses = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
@@ -652,10 +648,15 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       return { name: file.name, mimeType: got.mimeType, dataBase64: got.data }
     }
 
-    effect function outgoing({ content: c, replyTo, attachments }: DraftSnapshot, held: ReadonlyMap<string, Attached>) {
+    effect function uploads(attachments: readonly SavedFile[], held: ReadonlyMap<string, Attached>) {
       if (!sendableAttachments(attachments)) throw new ProviderRefused({ status: 422 })
       const files = try Effect.forEach(attachments, (file) => uploaded(file, held.get(file.id)))
       if (files.reduce((length, file) => length + file.dataBase64.length, 0) >= maxMailMimeBytes) throw new ProviderRefused({ status: 413 })
+      return files
+    }
+
+    effect function outgoing({ content: c, replyTo, attachments }: DraftSnapshot, held: ReadonlyMap<string, Attached>) {
+      const files = try uploads(attachments, held)
       const recipients = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, ...files.length > 0 ? { attachments: files } : {} }
       if (replyTo === "") return { kind: "send", mode: "compose", ...recipients }
       const { message } = try read(replyTo)
@@ -731,9 +732,13 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
           when Unreachable: { ...answered, result: "ChangeUnknown", evidence: "" };
         }
       },
-      saveDraft: effect ({ id, content: c, attachments }) => {
-        const body = { draftId: id, to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, attachments: attachments.map(carried) }
-        return Effect.map(fetched(posted("/drafts", body), DraftSaved), ({ draftId }): DraftStored => ({ draftId, persisted: draftId === id })) catch effect (e) => match (e) {
+      saveDraft: effect ({ id, content: c, attachments }, held) => {
+        const stored = effect {
+          const body = { draftId: id, to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, attachments: try uploads(attachments, held) }
+          const { draftId } = try fetched(posted("/drafts", body), DraftSaved)
+          return { draftId, persisted: draftId === id } satisfies DraftStored
+        }
+        return stored catch effect (e) => match (e) {
           when NeedsSignIn: throw e;
           default: { draftId: id, persisted: false };
         }
