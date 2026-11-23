@@ -90,7 +90,10 @@ pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the 
 Each Fleet case signs in to an isolated local simulator and reads its
 current statement through the reviewed Grace plan. The pinned Fleet grader
 checks the amount and due date, login, unchanged account settings and zero
-payments. It also rejects a no-action and a wrong-answer trial. CI uploads
+payments. Each Fleet episode must reject no action, a wrong answer, and the
+correct amount with the due date one day late. After Grace submits its answer,
+the test supervisor reads the episode’s original amount and due date to build
+the third control. Only the supervisor sees those reference values. CI uploads
 these receipts and the qualification inventory as `billworld-fleet-view-bill`.
 The inventory derives eligibility from the pinned catalog and upstream task
 generator. The required cohort includes 17 official passing reads and two
@@ -99,7 +102,7 @@ leaves an ambiguous read unconfirmed. Their receipt check requires an empty
 answer, rejection by the bound grader on the answer predicate alone, and
 both rejected controls. The inventory lists each eligible template's website
 count and the selected, attempted and officially passing billers. A pass requires the bound grader's
-accepted answer and both rejected controls. CI writes the inventory when
+accepted answer and all three rejected controls. CI writes the inventory when
 journeys fail or produce no receipts. The planner is scripted for these
 statement journeys.
 
