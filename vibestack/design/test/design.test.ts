@@ -8,7 +8,7 @@ import { expect, onTestFinished, test } from "vitest"
 import { designSystem } from "../eslint.ts"
 import { check, syncDoc, themeCss, tokensCss } from "../generate.ts"
 import { buildTokenProject, checkTokenProject } from "../project.ts"
-import { type Tokens, applyChanges, palette, parseTokens } from "../tokens.ts"
+import { type Tokens, applyChanges, contrast, palette, parseTokens } from "../tokens.ts"
 
 const here = (file: string) => resolve(import.meta.dirname, file)
 const dir = here("../../../packages/design-system")
@@ -71,6 +71,8 @@ test("a palette color, radius, size, blur, drop shadow and gradient each become 
   expect(css.match(/--brand: [^;]+;/g)).toEqual(["--brand: oklch(0.5 0.1 200);", "--brand: oklch(0.5 0.1 200);"])
   for (const line of ["--color-brand: var(--brand);", "--radius-pill: 999px;", "--text-hero: 3rem;", "--blur-frost: 20px;", "--drop-shadow-lift: 0 8px 18px rgb(0 0 0 / 0.14);", "--animate-blink: blink 1s step-end infinite;", "@keyframes blink { 50%{opacity:0} }", "@utility bg-gradient-sky {"]) expect(theme).toContain(line)
   expect(css).toContain("--gradient-sky: linear-gradient(var(--brand), var(--primary));")
+  expect(contrast("oklch(1 0 0)", "oklch(0 0 0)")).toBeCloseTo(21, 5)
+  expect(contrast(tokens.color.light.primary, tokens.color.light["primary-foreground"])).toBeGreaterThanOrEqual(4.5)
 })
 
 test("a font size may carry its line height and letter spacing; weights, line heights, letter spacing, layers and the focus ring are scales", () => {

@@ -105,7 +105,7 @@ export function parseTokens(input: unknown): Tokens {
     return isRecord(value) ? value : {}
   }
   const names = (path: string) => Object.keys(group(path))
-  // An empty group (`shadow: {}`) is fine; an empty object at a value's path (`weight.a`, `text.body.size`) or anywhere else is not.
+  // An empty object where a value belongs has no leaves, so it would pass unseen; it is a value, and not a valid one.
   const problems = found.concat(holes(input, "").filter(([path]) => path && !(tokenGroups.some((pattern) => pattern.test(path)) && !kindOf(path)))).flatMap(([path, value]) => {
     const kind = kindOf(path)
     if (!kind) return [`unknown token path: ${path}`]
@@ -142,7 +142,7 @@ const luminance = (color: string) => {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b
 }
 /** WCAG 2 contrast ratio of two oklch colors. */
-const contrast = (one: string, other: string) => {
+export const contrast = (one: string, other: string) => {
   const [dark, light] = [luminance(one), luminance(other)].sort((x, y) => x - y) as [number, number]
   return (light + 0.05) / (dark + 0.05)
 }
