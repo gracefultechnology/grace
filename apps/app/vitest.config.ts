@@ -6,7 +6,7 @@ import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Schema } from "effect";
-import type { BrowserContext, CDPSession, Page } from "playwright";
+import type { BrowserContext, CDPSession, Page, Route } from "playwright";
 import { defineConfig } from "vitest/config";
 import type { BrowserCommandContext } from "vitest/node";
 import { project } from "vibestack/testing/vitest";
@@ -14,7 +14,7 @@ import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
 import { type CompletedPublicSearch, hasHostedNavigation, hasUserAssistedSearch, matchesPublicSearch, PublicSearch, publicSearchQuery } from "./test/browser-receipt.ts";
 import { fleetFixture, fleetStatement, fleetStatementCases, fleetStatementRefusals } from "./test/fleet.fixture.ts";
-import { fixtureContextOptions, routeFixtureContext } from "./test/fixture-context.ts";
+import { type FixtureUpstreamFailure, fixtureContextOptions, readFixtureUpstream, routeFixtureContext } from "./test/fixture-context.ts";
 import { webArena, webArenaPluginName, WebArenaEvaluatorError } from "./test/webarena.ts";
 
 const base = project({ root: import.meta.dirname, plugins: [tailwindcss()] });
@@ -108,8 +108,23 @@ const DecisionResult = Schema.Struct({ status: Schema.String, model: Schema.opti
 type PublicSearchSubmission =
   | { state: "submitting"; search: typeof PublicSearch.Type }
   | ({ state: "completed" } & CompletedPublicSearch);
-type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; ratingProduct?: { url: string; documentId: string }; ratingListings?: { visible: number; matching: number; cables: number; labels: string[] }; noAction?: { url: string; documentId: string }; site?: Site };
+type Run = { fixture: BenchmarkDefinition; pendingRoutes: Set<Promise<void>>; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type; transportFailure?: FixtureUpstreamFailure }[]; chatStatus?: number; chatTransportFailures: (FixtureUpstreamFailure & { http: 503 })[]; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; ratingProduct?: { url: string; documentId: string }; ratingListings?: { visible: number; matching: number; cables: number; labels: string[] }; noAction?: { url: string; documentId: string }; site?: Site };
 const activeRuns = new WeakMap<Page, Run>();
+
+function trackBenchmarkRoute(run: Run, handler: (route: Route) => Promise<void>) {
+  return (route: Route) => {
+    const pending = handler(route);
+    const settled = () => run.pendingRoutes.delete(pending);
+    run.pendingRoutes.add(pending);
+    void pending.then(settled, settled);
+    return pending;
+  };
+}
+
+async function drainBenchmarkRoutes(run: Run) {
+  while (run.pendingRoutes.size) await Promise.allSettled(run.pendingRoutes);
+}
+
 const Choices = Schema.Struct({ kind: Schema.Literal("choice"), goal: Schema.NonEmptyString, candidates: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, label: Schema.NonEmptyString })) });
 const PageText = Schema.Struct({ title: Schema.String, text: Schema.String, truncated: Schema.Boolean, readyState: Schema.Literals(["loading", "interactive", "complete"]) });
 const SiteState = Schema.Struct({
@@ -146,20 +161,45 @@ async function operatePublicSort(site: Site, definition: BenchmarkDefinition, ac
   await website.bringToFront();
   if (action.kind === "openPublicCategory") {
     if (website.url() !== definition.startUrl) throw new Error("The public category must start from the storefront");
-    const menu = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
+    const known = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
       definition.taskId === "352" ? [/^Health (&|and) Household$/i, /^Diet (&|and) Sports Nutrition$/i, /^Nutrition Bars (&|and) Drinks$/i] : [];
-    const [first, second, leafName] = menu;
-    if (!first || !second || !leafName) throw new Error("The fixture has no public category operator sequence");
-    const nav = website.getByRole("navigation").filter({ has: website.locator("a").filter({ hasText: first }) }).first();
-    const navControl = (name: RegExp) => nav.locator("a[href]").filter({ hasText: name }).filter({ visible: true }).first();
-    const leaf = navControl(leafName);
+    const leafName = definition.taskId === "353" ? /^Competitive Swimwear$/i :
+      definition.taskId === "355" ? /^Kids(?:[\u0027’])? Bedding$/i : undefined;
+    const navName = known[0] ?? leafName;
+    if (!navName) throw new Error("The fixture has no public category operator");
+    const nav = website.getByRole("navigation").filter({
+      has: website.locator("a").filter({ hasText: navName }),
+    }).first();
     await nav.locator('ul[role="menu"]').filter({ visible: true }).first().waitFor({ timeout: 15_000 });
-    await navControl(first).hover({ timeout: 15_000 });
-    const intermediate = navControl(second);
-    await intermediate.hover({ timeout: 10_000 }).catch(async () => {
-      await intermediate.press("ArrowRight", { timeout: 5_000 });
-    });
-    if (!await leaf.isVisible()) await intermediate.press("ArrowRight", { timeout: 5_000 });
+    const disclosed = leafName ? await nav.locator("a[href]").filter({ hasText: leafName }).evaluateAll(anchors =>
+      anchors.flatMap(anchor => {
+        const labels = [];
+        for (let item = anchor.closest("li"); item; item = item.parentElement?.closest("li") ?? null) {
+          const label = item.querySelector(":scope > a")?.textContent?.trim();
+          if (!label) return [];
+          labels.unshift(label.replace(/\s+/gu, " "));
+        }
+        return [labels];
+      })) : undefined;
+    const menu = disclosed?.length === 1
+      ? (disclosed[0] ?? []).map(label => {
+          const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
+            .replace(/['"]/gu, quote => quote === "'" ? "\\u0027" : "\\u0022");
+          return new RegExp("^" + escaped + "$", "iu");
+        }) : known;
+    const names = menu.slice(0, -1);
+    const final = menu.at(-1);
+    if (!names.length || names.length > 5 || !final) throw new Error("The fixture does not have one public category menu");
+    const navControl = (name: RegExp) => nav.locator("a[href]").filter({ hasText: name }).filter({ visible: true }).first();
+    const leaf = navControl(final);
+    for (const [index, name] of names.entries()) {
+      const control = navControl(name);
+      const child = navControl(names[index + 1] ?? final);
+      await control.hover({ timeout: 10_000 }).catch(async () => {
+        await control.press("ArrowRight", { timeout: 5_000 });
+      });
+      if (!await child.isVisible()) await control.press("ArrowRight", { timeout: 5_000 });
+    }
     const href = await leaf.getAttribute("href", { timeout: 15_000 });
     if (!href) throw new Error("The disclosed category does not have an address");
     const category = new URL(href, website.url());
@@ -236,7 +276,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     const fixture = byId.get(action.taskId);
     if (!fixture || activeRuns.has(context.page)) throw new Error("The Chromium benchmark case is not available");
     if (fixture.evaluator === "webarena" && official) context.project.vitest.onCancel(official.close);
-    activeRuns.set(context.page, { fixture, decisions: 0, decisionResults: [] });
+    activeRuns.set(context.page, { fixture, pendingRoutes: new Set(), decisions: 0, decisionResults: [], chatTransportFailures: [] });
     return {};
   }
   const run = activeRuns.get(context.page);
@@ -309,19 +349,22 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const key = process.env.GRACE_BENCHMARK_CLEF_KEY;
       if (!origin || !key || new URL(origin).protocol !== "https:") throw new Error("The upstream chat endpoint requires a test credential");
       run.chatRoute = new URL("/api/v1/chat/completions", action.cloud).href;
-      await context.page.route(run.chatRoute, async (route) => {
+      await context.page.route(run.chatRoute, trackBenchmarkRoute(run, async (route) => {
         const request = route.request();
         const headers = { "access-control-allow-origin": request.headers().origin ?? "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type" };
         if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
-        const response = await fetch(new URL("/api/v1/chat/completions", origin), {
+        const response = await readFixtureUpstream(new URL("/api/v1/chat/completions", origin), {
           method: "POST", body: request.postData(), headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-          redirect: "error", signal: AbortSignal.timeout(45000),
-        }).catch(() => new Response(null, { status: 503 }));
+        }, AbortSignal.timeout(45_000));
         run.chatStatus = response.status;
-        return route.fulfill({ status: response.status, headers, contentType: response.headers.get("content-type") ?? "application/json", body: await response.text() });
-      });
+        if (response.tag === "Unavailable") {
+          run.chatTransportFailures.push({ ...response.failure, http: response.status });
+          return route.fulfill({ status: response.status, headers });
+        }
+        return route.fulfill({ status: response.status, headers, contentType: response.contentType, body: response.body });
+      }));
     }
-    await context.page.route(endpoint.href, async (route) => {
+    await context.page.route(endpoint.href, trackBenchmarkRoute(run, async (route) => {
       const request = route.request();
       const headers = {
         "access-control-allow-origin": request.headers().origin ?? "*",
@@ -340,19 +383,21 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const origin = process.env.GRACE_BENCHMARK_CLEF_ORIGIN;
       const key = process.env.GRACE_BENCHMARK_CLEF_KEY;
       if (!origin || !key || new URL(origin).protocol !== "https:") throw new Error("The hosted decision service is not configured");
-      const response = await fetch(new URL("/api/v1/decisions", origin), {
-        method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify(choice), redirect: "error", signal: AbortSignal.timeout(action.deadlineMs),
-      }).catch(() => new Response('{"status":"unavailable","reason":"provider_error"}', { status: 503 }));
-      const body = await response.text();
+      const response = await readFixtureUpstream(new URL("/api/v1/decisions", origin), {
+        method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(choice),
+      }, AbortSignal.timeout(action.deadlineMs));
+      const body = response.tag === "Response" ? response.body : '{"status":"unavailable","reason":"provider_error"}';
       const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(DecisionResult))(body);
-      run.decisionResults.push({ http: response.status, candidates: choice.candidates.length, result: decoded._tag === "Some" ? decoded.value : undefined });
+      run.decisionResults.push({ http: response.status, candidates: choice.candidates.length,
+        result: decoded._tag === "Some" ? decoded.value : undefined,
+        ...(response.tag === "Unavailable" && { transportFailure: response.failure }) });
       return route.fulfill({ headers, status: response.status, contentType: "application/json", body });
-    });
+    }));
     return {};
   }
   if (action.kind === "receipt") {
     try {
+      await drainBenchmarkRoutes(run);
       const decisionProvider = publicSearch || publicSort || product !== undefined ? "none" : definition.fixtureChoice === undefined ? "hosted" : "fixture";
       const { answer, ...visibleOutcome } = action.outcome;
       const observation = {
@@ -361,6 +406,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         decisionServiceOrigin: decisionProvider === "hosted" && process.env.GRACE_BENCHMARK_CLEF_ORIGIN
           ? new URL(process.env.GRACE_BENCHMARK_CLEF_ORIGIN).origin : undefined,
         outcome: { ...visibleOutcome, chatProvider: definition.chat ?? "fixture", ...(product !== undefined && { ratingListings: run.ratingListings }) }, chatStatus: run.chatStatus,
+        ...(run.chatTransportFailures.length > 0 && { chatTransportFailures: run.chatTransportFailures }),
         decisionResults: run.decisionResults,
       };
       const guided = hasHostedNavigation(observation, run.site?.page.url());
@@ -404,6 +450,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         }
       }
     } finally {
+      await drainBenchmarkRoutes(run);
       activeRuns.delete(context.page);
       if (run.decisionRoute) await context.page.unroute(run.decisionRoute);
       if (run.chatRoute) await context.page.unroute(run.chatRoute);

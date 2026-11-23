@@ -1949,6 +1949,9 @@ lemma GuidedReceiptPreserves(w: Workspace, report: GuidedObservation, by_: Works
   if inv(w) && guidedObservationCurrent(w, report, by_) {
     ComponentInvariants(w);
     var after := confirmGuided(w, report, by_);
+    if needsRecoveredPublicTab(after.plan) {
+      RegistryQuietCommitment(w.commitment);
+    }
     assert |after.plan.receipts| == |w.plan.receipts| + 1;
     if hasNext(after.plan) {
       assert nextOutcome(after.plan) in w.plan.steps;
