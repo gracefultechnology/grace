@@ -268,7 +268,7 @@ function guidanceRecovery(instruction: string) {
     /^I (couldn’t reach Grace|need you to sign in)|^Sign in to Grace/u.test(instruction) ? "guide-account" : "other";
 }
 
-type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "submit-public-search" | "observe-search-landing" |
+type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "submit-public-search" | "observe-search-landing" | "open-public-category" | "set-website-price-order" |
   "tap-guide-ring" | "observe-link-landing" | "bind-native-landing" |
   "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
 type PendingPageCheck = {
@@ -393,6 +393,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
     const named = reviewed.find(step => step.tag === "ReachNamedPage");
     const record = reviewed.find(step => step.tag === "ReadLatestRecord");
     const search = reviewed.find(step => step.tag === "SearchPublicSite");
+    const sort = reviewed.find(step => step.tag === "SortPublicListing");
     if (named) outcome.reviewedDestination = named.subject;
     if (requiredStep) {
       outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: step.tag === "SearchPublicSite" ? step.query : guidedDetails(step).subject }));
@@ -436,6 +437,44 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
       await expect.element(finished, { timeout: 15_000 }).toBeVisible();
       expect(workspace().plan.receipts).toHaveLength(1);
       outcome.hops = [{ url: landed.url, documentId: landed.documentId, checked: true }];
+      outcome.graceTerminal = plan.element().textContent;
+      return;
+    }
+    if (sort && requiredStep === "SortPublicListing") {
+      expect(sort.direction).toBe("PriceAscending");
+      expect(sort.origin).toBe(new URL(initial.url).origin);
+      outcome.operator = "Chromium input through the public category links and website sort toolbar";
+      failureStage = "open-public-category";
+      await transport({ kind: "openPublicCategory" });
+      const category = await read();
+      expect(category.documentId).not.toBe(initial.documentId);
+      outcome.category = { url: category.url, documentId: category.documentId };
+      const resume = page.getByRole("button", { name: "Resume Grace", exact: true });
+      const check = page.getByRole("button", { name: "Check price order", exact: true });
+      const checkedDirection = async (direction: "ascending" | "descending") => {
+        failureStage = "set-website-price-order";
+        await transport({ kind: "setWebsitePriceOrder", direction });
+        const landed = await read();
+        expect(landed.readyState).toBe("complete");
+        await bindNativeLanding(landed.url, 15_000);
+        await expect.element(resume.or(check).first(), { timeout: 15_000 }).toBeVisible();
+        if (resume.query()) await userEvent.click(resume);
+        failureStage = "check-page";
+        await userEvent.click(check);
+        return { url: landed.url, documentId: landed.documentId };
+      };
+      const descending = await checkedDirection("descending");
+      await expect.element(continuing, { timeout: 15_000 }).toBeVisible();
+      expect(finished.query()).toBeNull();
+      expect(workspace().plan.receipts).toHaveLength(0);
+      outcome.wrongDirection = { ...descending, rejectedByGrace: true };
+      const ascending = await checkedDirection("ascending");
+      outcome.destination = ascending;
+      expect(ascending.documentId).not.toBe(descending.documentId);
+      failureStage = "confirm-completion";
+      await expect.element(finished, { timeout: 15_000 }).toBeVisible();
+      expect(workspace().plan.receipts).toHaveLength(1);
+      outcome.hops = [{ ...ascending, checked: true }];
       outcome.graceTerminal = plan.element().textContent;
       return;
     }

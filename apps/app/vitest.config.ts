@@ -29,7 +29,7 @@ const BenchmarkDefinition = Schema.Struct({
   siteStorageState: Schema.optional(Schema.NonEmptyString),
   evaluator: Schema.optional(Schema.Literal("webarena")),
   exploratory: Schema.optional(Schema.Literal(true)),
-  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord", "SearchPublicSite"])),
+  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord", "SearchPublicSite", "SortPublicListing"])),
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
@@ -86,6 +86,8 @@ type SiteAction =
   | { kind: "open"; url: string }
   | { kind: "read"; selector?: string }
   | { kind: "submitPublicSearch"; query: string }
+  | { kind: "openPublicCategory" }
+  | { kind: "setWebsitePriceOrder"; direction: "ascending" | "descending" }
   | { kind: "inspectGuide" }
   | { kind: "tapGuide" }
   | { kind: "hoverGuide" }
@@ -143,6 +145,46 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   if (!run) throw new Error("No benchmark fixture was supplied to the Chromium transport");
   const { fixture: definition } = run;
   const publicSearch = definition.requiredStep === "SearchPublicSite";
+  const publicSort = definition.requiredStep === "SortPublicListing";
+  if (action.kind === "openPublicCategory" || action.kind === "setWebsitePriceOrder") {
+    const site = run.site;
+    if (!publicSort || !site) throw new Error("The website sort is outside its reviewed case");
+    const website = site.page;
+    await website.bringToFront();
+    if (action.kind === "openPublicCategory") {
+      if (website.url() !== definition.startUrl) throw new Error("The public category must start from the storefront");
+      const menu = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
+        definition.taskId === "352" ? [/^Health (&|and) Household$/i, /^Diet (&|and) Sports Nutrition$/i, /^Nutrition Bars (&|and) Drinks$/i] : [];
+      if (!menu.length) throw new Error("The fixture has no public category operator sequence");
+      for (const name of menu) {
+        const link = website.getByRole("link", { name }).filter({ visible: true }).first();
+        await link.click({ timeout: 15_000 });
+        await website.waitForLoadState("load", { timeout: 30_000 });
+      }
+    } else {
+      const main = website.getByRole("main");
+      const sorter = main.getByRole("combobox", { name: /^Sort By$/i }).filter({ visible: true }).first();
+      if (await sorter.locator("option:checked").textContent({ timeout: 15_000 }) !== "Price") {
+        await Promise.all([
+          website.waitForEvent("framenavigated", { predicate: frame => frame === website.mainFrame(), timeout: 30_000 }),
+          sorter.selectOption({ label: "Price" }, { timeout: 15_000 }),
+        ]);
+        await website.waitForLoadState("load", { timeout: 30_000 });
+      }
+      const toggle = main.locator('[title="Set Ascending Direction"],[title="Set Descending Direction"]').filter({ visible: true }).first();
+      const title = action.direction === "ascending" ? "Set Ascending Direction" : "Set Descending Direction";
+      if (await toggle.getAttribute("title", { timeout: 15_000 }) === title) {
+        await Promise.all([
+          website.waitForEvent("framenavigated", { predicate: frame => frame === website.mainFrame(), timeout: 30_000 }),
+          toggle.click({ timeout: 15_000 }),
+        ]);
+        await website.waitForLoadState("load", { timeout: 30_000 });
+      }
+      const opposite = action.direction === "ascending" ? "Set Descending Direction" : "Set Ascending Direction";
+      if (await toggle.getAttribute("title", { timeout: 15_000 }) !== opposite) throw new Error("The storefront did not expose the selected price direction");
+    }
+    return {};
+  }
   if (action.kind === "submitPublicSearch") {
     const site = run.site;
     if (!publicSearch || !site || run.publicSearch || site.page.url() !== definition.startUrl ||
@@ -243,7 +285,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   }
   if (action.kind === "receipt") {
     try {
-      const decisionProvider = publicSearch ? "none" : definition.fixtureChoice === undefined ? "hosted" : "fixture";
+      const decisionProvider = publicSearch || publicSort ? "none" : definition.fixtureChoice === undefined ? "hosted" : "fixture";
       const observation = {
         surface: "desktop-chromium", taskId: definition.taskId, intent: definition.intent, startUrl: definition.startUrl,
         decisionProvider, decisionRequests: run.decisions, syntheticStorageState: Boolean(run.site && definition.siteStorageState),
