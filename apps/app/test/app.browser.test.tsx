@@ -3788,6 +3788,18 @@ it.each([
     replaceDuringRead = true;
     await pending();
     expect(replaceDuringRead).toBe(false);
+    await view.dispose();
+    view = await cloudReadPlan(native, cloud, secret);
+    activeId = "tab-2";
+    direction.title = order === "ascending" ? "Set Ascending Direction" : "Set Descending Direction";
+    await startPublicReadPlan(native, tap, () => load(home), 2);
+    await routeTo(page.getByRole("region", { name: "Task plan" }).getByText("Paused"));
+    await tap(button("Resume Grace"));
+    await pending();
+    direction.title = order === "ascending" ? "Set Descending Direction" : "Set Ascending Direction";
+    documentId += "-different";
+    await pending();
+    await visit(home + "coats?display=grid");
     if (!matchesSiteName) {
       await pending();
       await routeTo(correction);
@@ -3803,19 +3815,6 @@ it.each([
       direction.title = "Set Descending Direction";
       await pending();
       direction.title = "Set Ascending Direction";
-    } else {
-      await view.dispose();
-      view = await cloudReadPlan(native, cloud, secret);
-      activeId = "tab-2";
-      direction.title = "Set Ascending Direction";
-      await startPublicReadPlan(native, tap, () => load(home), 2);
-      await routeTo(page.getByRole("region", { name: "Task plan" }).getByText("Paused"));
-      await tap(button("Resume Grace"));
-      await pending();
-      direction.title = "Set Descending Direction";
-      documentId += "-different";
-      await pending();
-      await visit(home + "coats?display=grid");
     }
     await tap(check);
     await routeTo(complete);
