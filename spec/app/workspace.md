@@ -2467,5 +2467,19 @@ pure def sometimesAHeldTaskGoesOnAfterHerAnswer(w: Workspace): bool =
       w.assistant.workVersion == answered.workVersion and w.execution.observation > answered.observation
     | _ => false
   }
+pure val eval_witness_sometimesAHeldTaskGoesOnAfterHerAnswer = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://www.utility.example/home" }, Host),
+  ("adjustPreferenceLevel", R::VolumeBy({ amount: 10 }), Person),
+  ("holdForWebsite", true, Host),
+  ("holdForWebsite", false, Host),
+  ("observe", { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://credit.example" } }, Host)
+)
 pure val weight_holdForWebsite = 8
 ```
