@@ -255,7 +255,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <p className="text-body">I can check the items you open. These checks leave any requested changes for separate review.</p>
               <ol aria-label="Read plan" className="list-decimal pl-6">
                 {keyedSteps(review.request.steps).map(({ step, key }) =>
-                  <li key={key}>{step.tag === "ReadLatestRecord" || step.tag === "SearchPublicSite" ? stepInstruction(step) : guidedDetails(step).subject}</li>)}
+                  <li key={key}>{step.tag === "ReachPublicCollection" || step.tag === "ReadLatestRecord" || step.tag === "SearchPublicSite" ? stepInstruction(step) : guidedDetails(step).subject}</li>)}
               </ol>
               {startFailure === review.revision && <p role="status">Grace couldn’t start this plan. Check your account and device storage, then try again.</p>}
               <AnswerChips><AnswerChip onClick={() => {
