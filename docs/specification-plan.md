@@ -478,3 +478,5 @@ Shopping. Coverage requires a fresh checked `/explore` document accepted
 by the original grader, the rejected root control, and authenticated hosted
 guidance. The adapter's offline URL checks alone do not qualify that browser
 journey.
+
+On the authenticated GitLab fixture, Grace reviewed “See all public projects” and stopped at the home document before requesting a browser decision. The original evaluator scored both Grace and the untouched control zero. Two visible inputs belonged to same-origin GET forms. One declared a search field. The other declared plain text. Both were empty and neither had focus. The browser could see 55 same-origin links but could not establish that their navigation region was separate from the private form. A future navigation path needs to establish that separation before sharing candidates. Keep a private project filter alongside public navigation as a negative control. [Official task 258 run and sanitized browser receipt](https://github.com/gracefultechnology/grace/actions/runs/45102366438)
