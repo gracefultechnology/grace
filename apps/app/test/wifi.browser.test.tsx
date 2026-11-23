@@ -3,10 +3,11 @@ import type { ConnectOptions, WiFiNetwork, WiFiPlugin } from "@elizaos/os/bridge
 import { Deferred, Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { Machine } from "../gen/app__network.effect.vibe";
 import { WifiNetworks } from "../src/Wifi.tsx";
+import type { WifiSignIn } from "../src/preferencesPlugin.ts";
 import { wifiPage } from "../src/wifi.vibe";
 import "../src/main.css";
 import { actOnScreen } from "./screen.tsx";
@@ -56,7 +57,7 @@ function android() {
       return Promise.resolve({ status: tablet.captivePortal ? "captivePortal" : "connected" });
     },
   };
-  const wifiSignIn = {
+  const wifiSignIn: WifiSignIn = {
     getWifiSignIn: async () => {
       const validated = tablet.ssid !== null && tablet.validated && !tablet.captivePortal;
       const { network } = await plugin.getConnectedNetwork();
@@ -236,9 +237,11 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await joinedTo("Internet connection");
     await expect.element(openAndroidWifi).toBeVisible();
     tablet.validated = true;
+    const legacyObservation = vi.spyOn(wifiSignIn, "getWifiSignIn").mockResolvedValue({ required: false, validated: true });
     await changed();
     await joinedTo("NETGEAR-4F2");
     await expect.element(openAndroidWifi).not.toBeInTheDocument();
+    legacyObservation.mockRestore();
     expect(tablet.joins).toHaveLength(6);
 
     tablet.saved = false;
@@ -293,6 +296,21 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await changed();
     await joinedTo("Internet connection");
     await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
+
+    const previousScan = tablet.scan;
+    const pendingAfterRefresh = async (observedNetwork: string) => {
+      tablet.scan = [guest, nearby(observedNetwork, -65, "open")];
+      await changed();
+      await expect.element(button(observedNetwork)).toBeVisible();
+      await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
+    };
+    const observation = vi.spyOn(wifiSignIn, "getWifiSignIn");
+    observation.mockRejectedValue(new Error("Android Wi-Fi status unavailable"));
+    await pendingAfterRefresh("Library Guest");
+    observation.mockResolvedValue({ required: false, validated: true, access: null });
+    await pendingAfterRefresh("Community Guest");
+    observation.mockRestore();
+    tablet.scan = previousScan;
 
     tablet.otherDefault = true;
     tablet.hideAccess = false;
