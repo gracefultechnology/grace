@@ -13,7 +13,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type GuidedEvidenceUse, type GuidedMail, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type GraceAction } from "./agent.vibe"
 import { BrowserGuide } from "./browserGuide.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
@@ -274,6 +274,21 @@ effect function decoded(said: string | undefined) {
   return said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
 }
 
+function distinctReadConfirmation(source: GuidedReadSource, report: GuidedObservation, rebind: boolean): Event | undefined {
+  if (source.tag === "NamedDocument") {
+    const { documentId, loadVersion, url, heading } = source
+    return { type: "confirmGuidedNamedPage", pageCheck: { report, documentId, loadVersion, url, heading } }
+  }
+  if (source.tag === "SearchDocument") {
+    const { documentId, loadVersion, url, origin, query } = source
+    return { type: "confirmGuidedSearch", searchCheck: { report, documentId, loadVersion, url, origin, query } }
+  }
+  if (source.tag !== "CurrentMessage") return undefined
+  const { account, owner, address, ref, generation, revision, version } = source
+  const mailCheck = { report, mail: { account, owner, address, ref, generation, revision, version } }
+  return rebind ? { type: "rebindGuidedMail", mailCheck } : { type: "confirmGuidedMail", mailCheck }
+}
+
 export const conversation = (link: CloudLink | undefined) => Layer.effect(Conversation, effect {
   const website = try WebsiteTask
   const workspace = try Workspaces
@@ -494,22 +509,9 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
         sourceKey,
         evidence
       }
-      if (found.source.tag === "NamedDocument") {
-        const { documentId, loadVersion, url, heading } = found.source
-        const accepted = workspace.send({ type: "confirmGuidedNamedPage", pageCheck: { report, documentId, loadVersion, url, heading } }, "Host") catch () => undefined
-        if (accepted !== undefined) try recovery.keepProgress()
-        return accepted === undefined ? "Refused" : "Confirmed"
-      }
-      if (found.source.tag === "SearchDocument") {
-        const { documentId, loadVersion, url, origin, query } = found.source
-        const accepted = workspace.send({ type: "confirmGuidedSearch", searchCheck: { report, documentId, loadVersion, url, origin, query } }, "Host") catch () => undefined
-        if (accepted !== undefined) try recovery.keepProgress()
-        return accepted === undefined ? "Refused" : "Confirmed"
-      }
-      if (found.source.tag === "CurrentMessage") {
-        const { account, owner, address, ref, generation, revision, version } = found.source
-        const mailCheck = { report, mail: { account, owner, address, ref, generation, revision, version } }
-        const accepted = workspace.send(rebind ? { type: "rebindGuidedMail", mailCheck } : { type: "confirmGuidedMail", mailCheck }, "Host") catch () => undefined
+      const confirmation = distinctReadConfirmation(found.source, report, rebind)
+      if (confirmation !== undefined) {
+        const accepted = workspace.send(confirmation, "Host") catch () => undefined
         if (accepted !== undefined) try recovery.keepProgress()
         return accepted === undefined ? "Refused" : "Confirmed"
       }
