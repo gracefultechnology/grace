@@ -34,7 +34,7 @@ function safeCheckpoint(checkpoint: GuidedCheckpoint) {
   const publicText = (text: string) => text.length <= 32768 && withhold({ text, passwords: [] }) === text
   if (!publicText(request.goal) || !request.steps.every((step) => {
     if (!publicText(guidedDetails(step).subject)) return false
-    if (step.tag === "SearchPublicSite" || step.tag === "ReachPublicCollection") {
+    if (step.tag === "SearchPublicSite" || step.tag === "ReachPublicCollection" || step.tag === "SortPublicListing") {
       const address = URL.parse(step.origin)
       return address?.protocol === "https:" && address.origin === step.origin
     }

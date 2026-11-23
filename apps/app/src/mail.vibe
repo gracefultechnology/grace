@@ -204,27 +204,20 @@ function nameIn(names: ReadonlyMap<string, string>, shelf: Instances.Shape, to: 
   return names.get(first.toLowerCase()) ?? (sender || first)
 }
 
-type NoticeDelivery = {
-  scope: Scope.Scope
-  ownedMailbox: (id: number) => ({ account: Account; m: Mailbox } | undefined)!!
-  current: () => Note | undefined
-  post: (next: Partial<Board>) => void
-}
-
-function mailNotice({ scope, ownedMailbox, current, post }: NoticeDelivery) {
-  let next = 1
-  return effect (source: MailNoticeSource, text: string) => {
-    const owned = try ownedMailbox(source.id)
-    if (!owned?.account.use.mail || source.owner === "" || owned.m.owner !== source.owner ||
-        owned.m.provider !== source.provider || owned.m.account !== source.account ||
-        owned.account.address !== source.account) return
-    const note = { id: next++, source, text }
-    post({ note })
-    try fork.in(scope) effect {
-      try sleep(noteFor)
-      if (current() === note) post({ note: undefined })
+effect function contactsFor(registry: Accounts.Shape, connectionOf: (account: Account) => MailConnection, names: Map<string, string>) {
+  const a = try registry.get()
+  const found: Contact[] = []
+  names.clear()
+  for (const id of contactAccounts(a)) {
+    const account = a.accounts.find((x) => x.id === id)
+    if (account === undefined) continue
+    for (const c of (connectionOf(account).contacts() catch () => [])) {
+      if (found.some((f) => f.address.toLowerCase() === c.address.toLowerCase())) continue
+      names.set(c.address.toLowerCase(), c.name)
+      found.push(c)
     }
   }
+  return found
 }
 
 export const mailing = Layer.effect(Mail, effect {
@@ -237,6 +230,7 @@ export const mailing = Layer.effect(Mail, effect {
   const quiet = new Set<number>()
   const names = new Map<string, string>()
   const listeners = new Set<() => void>()
+  const counter = { next: 1 }
   let board: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set() }
 
   const post = (next: Partial<Board>) => {
@@ -252,26 +246,22 @@ export const mailing = Layer.effect(Mail, effect {
   const accountOf = effect (id: number) => (try registry.get()).accounts.find((a) => a.id === id)
   const connectionOf = (account: Account) => connector.mail({ provider: account.provider, address: account.address })
 
-  const show = mailNotice({ scope, ownedMailbox, current: () => board.note, post })
+  effect function show(source: MailNoticeSource, text: string) {
+    const owned = try ownedMailbox(source.id)
+    if (!owned?.account.use.mail || source.owner === "" || owned.m.owner !== source.owner ||
+        owned.m.provider !== source.provider || owned.m.account !== source.account ||
+        owned.account.address !== source.account) return
+    const note = { id: counter.next, source, text }
+    counter.next += 1
+    post({ note })
+    try fork.in(scope) effect {
+      try sleep(noteFor)
+      if (board.note === note) post({ note: undefined })
+    }
+  }
 
   effect function say(source: MailNoticeSource, text: string) {
     if (!quiet.delete(source.id)) try show(source, text)
-  }
-
-  effect function people() {
-    const a = try registry.get()
-    const found: Contact[] = []
-    names.clear()
-    for (const id of contactAccounts(a)) {
-      const account = a.accounts.find((x) => x.id === id)
-      if (account === undefined) continue
-      for (const c of (connectionOf(account).contacts() catch () => [])) {
-        if (found.some((f) => f.address.toLowerCase() === c.address.toLowerCase())) continue
-        names.set(c.address.toLowerCase(), c.name)
-        found.push(c)
-      }
-    }
-    return found
   }
 
   effect function prepareReply(id: number, mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
@@ -477,7 +467,7 @@ export const mailing = Layer.effect(Mail, effect {
     capture: (id) => asBuilt(capture(id)),
     camera: library.camera,
     share: (photo) => asBuilt(share(photo)),
-    contacts: () => asBuilt(people()),
+    contacts: () => asBuilt(contactsFor(registry, connectionOf, names)),
     hush: (id) => { quiet.add(id) },
     nameOf,
     board: {

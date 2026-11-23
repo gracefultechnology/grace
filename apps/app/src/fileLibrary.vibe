@@ -40,74 +40,26 @@ export service FileLibrary {
 
 error FilesRejected
 
-type FileReadingContext = {
-  port: FileStorage.Shape["port"]
-  latest: SubscriptionRef.SubscriptionRef<FileSnapshot>
-  home: SubscriptionRef.SubscriptionRef<FileHome | undefined>
-  serial: Semaphore.Semaphore
-  admitted: () => (string | undefined)!!
-  findOwner: FileLibrary.Shape["findOwner"]
-  keep: (ready: Ready) => void!FilesRejected
-  advance: (ready: Ready, event: Event, actor: FileActor) => { ready: Ready }!FilesRejected
+effect function fileImage(port: FileStorage.Shape["port"], lease: string, id: string, page: number, small: boolean) {
+  if (!port) throw new FilesRejected()
+  const preview = try Schema.decodeUnknownEffect(Preview)(try tryPromise(() => port.preview({ lease, id, page, small })))
+  if (preview.id !== id || preview.page !== page) throw new FilesRejected()
+  return preview.image
 }
 
-function fileReading({ port, latest, home, serial, admitted, findOwner, keep, advance }: FileReadingContext) {
-  effect function image(lease: string, id: string, page: number, small: boolean) {
-    if (!port) throw new FilesRejected()
-    const preview = try Schema.decodeUnknownEffect(Preview)(try tryPromise(() => port.preview({ lease, id, page, small })))
-    if (preview.id !== id || preview.page !== page) throw new FilesRejected()
-    return preview.image
-  }
+type FileContentAccess = {
+  port: FileStorage.Shape["port"]
+  advance: (ready: Ready, event: Event, actor: FileActor) => Effect.Effect<{ ready: Ready }, FilesRejected>
+  keep: (ready: Ready) => Effect.Effect<void, FilesRejected>
+  exposeCatalog: (ready: Ready) => Effect.Effect<void, FilesRejected>
+  readAttachmentImport: () => Effect.Effect<string | undefined>
+}
 
-  effect function exposeCatalog(ready: Ready) {
-    const photos = ready.model.entries.filter((entry) => entry.kind === "Photo")
-    const document = ready.model.entries.find((entry) => entry.kind === "Pdf")
-    const thumbnails = try Effect.forEach(photos.slice(0, 40), effect (entry) => {
-      const preview = image(ready.lease, entry.id, 0, true) catch () => undefined
-      return [entry.id, preview] as const
-    }, { concurrency: 3 })
-    const thumbs = Object.fromEntries(thumbnails.flatMap(([id, preview]) => preview ? [[id, preview]] : []))
-    const projected = photos.slice(0, 3).flatMap((entry) => thumbs[entry.id] ? [{ src: thumbs[entry.id], alt: entry.name }] : [])
-    try keep({ ...ready, thumbs })
-    try SubscriptionRef.set(home, { photos: projected, document: document ? { name: document.name } : undefined })
-  }
-
-  effect function locate(finding: Ready) {
-    const { model } = finding
-    if (model.pending !== "Locating") return false
-    const query = model.query
-    try advance(finding, { type: "locate", locateReport: {
-      owner: finding.lease, generation: model.generation, query,
-      ids: model.entries.filter((entry) => entry.name.toLowerCase().includes(query.toLowerCase())).map((entry) => entry.id),
-    } }, "FileHost")
-    return true
-  }
-
-  effect function readCatalog(loading: Ready) {
-    if (!port) throw new FilesRejected()
-    const catalog = Effect.flatMap(tryPromise(() => port.list({ lease: loading.lease })), Schema.decodeUnknownEffect(Catalog)) catch () => undefined
-    const listed = catalog?.entries.slice(0, 250) ?? []
-    const entries = listed.map((entry) => savedFile(entry, loading.owner, loading.lease))
-    const origins = Object.fromEntries(listed.map(({ id, from, subject }) => [id, { from, subject }]))
-    try serial.withPermit(effect {
-      const current = try SubscriptionRef.get(latest)
-      if (current.kind !== "ready" || current.lease !== loading.lease || current.model.generation !== loading.model.generation ||
-          (try admitted()) !== loading.owner ||
-          (loading.findAuthority !== undefined && (try findOwner()) !== loading.findAuthority)) return
-      const { ready: loaded } = try advance({ ...current, origins, listedAt: Date.now() }, { type: "loadCatalog", catalogReport: {
-        owner: loading.lease, generation: loading.model.generation, entries, succeeded: catalog !== undefined, evidence: "device-library",
-      } }, "FileStore")
-      if (!loaded.model.loaded) return
-      try locate(loaded)
-      const latestLoaded = try SubscriptionRef.get(latest)
-      if (latestLoaded.kind === "ready" && latestLoaded.lease === loading.lease) try exposeCatalog(latestLoaded)
-    })
-  }
-
+function fileContents({ port, advance, keep, exposeCatalog, readAttachmentImport }: FileContentAccess) {
   effect function readSelected(ready: Ready) {
     const { model } = ready
     if (!model.selected) return false
-    const result = image(ready.lease, model.selected, model.page, false) catch () => undefined
+    const result = fileImage(port, ready.lease, model.selected, model.page, false) catch () => undefined
     const current = { ...ready, image: result, issue: !result }
     if (model.pending === "ReadingFile") {
       try advance(current, { type: "contentResult", fileReceipt: {
@@ -115,84 +67,6 @@ function fileReading({ port, latest, home, serial, admitted, findOwner, keep, ad
       } }, "FileHost")
     } else try keep(current)
     return result !== undefined
-  }
-
-  return { exposeCatalog, locate, readCatalog, readSelected }
-}
-
-export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(FileLibrary, effect {
-  const { port } = try FileStorage
-  const desk = try Workspaces
-  const setup = try Setup
-  const mail = try Effect.serviceOption(Mail)
-  const latest = try SubscriptionRef.make<FileSnapshot>({ kind: "out" })
-  const home = try SubscriptionRef.make<FileHome | undefined>(undefined)
-  const serial = try Semaphore.make(1)
-  const scope = try Scope.Scope
-
-  effect function admitted() {
-    const w = try desk.get()
-    return w.device.readiness === "Ready" && w.device.surface === "Files" ? filesAccount((try setup.get()).graceAccount) : undefined
-  }
-
-  effect function keep(ready: Ready) {
-    const current = try SubscriptionRef.get(latest)
-    if (current.kind !== "ready" || current.lease !== ready.lease || (try admitted()) !== ready.owner) throw new FilesRejected()
-    try SubscriptionRef.set(latest, ready)
-  }
-
-  effect function advance(ready: Ready, event: Event, actor: FileActor) {
-    if (!enabled(ready.model, event, actor)) throw new FilesRejected()
-    const result = step(ready.model, event, actor)
-    const next = { ...ready, model: result.state }
-    try keep(next)
-    return { ready: next, out: result.out }
-  }
-
-  const { exposeCatalog, locate, readCatalog, readSelected } = fileReading({
-    port, latest, home, serial, admitted, findOwner, keep, advance,
-  })
-
-  effect function load(ready: Ready) {
-    const loading = (try advance(ready, { type: "openFiles", owner: ready.lease }, "FileUser")).ready
-    if (loading.model.pending === "ReadingCatalog") try fork.in(scope) Effect.ignore(readCatalog(loading))
-  }
-
-  effect function findOwner() {
-    if (!port) return undefined
-    const owner = filesAccount((try setup.get()).graceAccount)
-    if (owner !== "device") return owner
-    if (!account) return undefined
-    const current = tryPromise(() => account.status()) catch () => undefined
-    return current?.kind === "signedIn" && /^[a-f0-9]{64}$/u.test(current.voiceDisclosureScope)
-      ? "device/" + current.voiceDisclosureScope : undefined
-  }
-
-  effect function readAttachmentImport() {
-    const request = Effect.flatMap(tryPromise(() => port?.attachmentImport?.() ?? Promise.resolve({})), Schema.decodeUnknownEffect(AttachmentImport)) catch () => undefined
-    return request?.id
-  }
-
-  effect function openLibrary() {
-    const owner = try admitted()
-    if (!port || !owner) return
-    try SubscriptionRef.set(latest, { kind: "opening" })
-    const opened = Effect.flatMap(tryPromise(() => port.open()), Schema.decodeUnknownEffect(Lease)) catch () => undefined
-    if (!opened) {
-      if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
-      return
-    }
-    if ((try admitted()) !== owner) {
-      tryPromise(() => port.close(opened)) catch () => undefined
-      return
-    }
-    const attachmentImport = try readAttachmentImport()
-    const ready: Ready = { kind: "ready", owner, findAuthority: try findOwner(), importer: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: initial, thumbs: {}, origins: {}, listedAt: 0, attachmentImport, busy: false, issue: false }
-    try SubscriptionRef.set(latest, ready)
-    load(ready) catch effect () => {
-      if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
-      tryPromise(() => port.close(opened)) catch () => undefined
-    }
   }
 
   effect function importOwner(ready: Ready, command: Extract<Command, { kind: "pick" }> | { kind: "capture" } | { kind: "confirmAttachment"; request: string }) {
@@ -240,6 +114,127 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
     if (succeeded) try exposeCatalog(after)
     return succeeded
   }
+
+  return { readSelected, importOwner, deletePhoto }
+}
+
+export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(FileLibrary, effect {
+  const { port } = try FileStorage
+  const desk = try Workspaces
+  const setup = try Setup
+  const mail = try Effect.serviceOption(Mail)
+  const latest = try SubscriptionRef.make<FileSnapshot>({ kind: "out" })
+  const home = try SubscriptionRef.make<FileHome | undefined>(undefined)
+  const serial = try Semaphore.make(1)
+  const scope = try Scope.Scope
+
+  effect function admitted() {
+    const w = try desk.get()
+    return w.device.readiness === "Ready" && w.device.surface === "Files" ? filesAccount((try setup.get()).graceAccount) : undefined
+  }
+
+  effect function keep(ready: Ready) {
+    const current = try SubscriptionRef.get(latest)
+    if (current.kind !== "ready" || current.lease !== ready.lease || (try admitted()) !== ready.owner) throw new FilesRejected()
+    try SubscriptionRef.set(latest, ready)
+  }
+
+  effect function advance(ready: Ready, event: Event, actor: FileActor) {
+    if (!enabled(ready.model, event, actor)) throw new FilesRejected()
+    const result = step(ready.model, event, actor)
+    const next = { ...ready, model: result.state }
+    try keep(next)
+    return { ready: next, out: result.out }
+  }
+
+  effect function exposeCatalog(ready: Ready) {
+    const photos = ready.model.entries.filter((entry) => entry.kind === "Photo")
+    const document = ready.model.entries.find((entry) => entry.kind === "Pdf")
+    const thumbnails = try Effect.forEach(photos.slice(0, 40), effect (entry) => {
+      const preview = fileImage(port, ready.lease, entry.id, 0, true) catch () => undefined
+      return [entry.id, preview] as const
+    }, { concurrency: 3 })
+    const thumbs = Object.fromEntries(thumbnails.flatMap(([id, preview]) => preview ? [[id, preview]] : []))
+    const projected = photos.slice(0, 3).flatMap((entry) => thumbs[entry.id] ? [{ src: thumbs[entry.id], alt: entry.name }] : [])
+    try keep({ ...ready, thumbs })
+    try SubscriptionRef.set(home, { photos: projected, document: document ? { name: document.name } : undefined })
+  }
+
+  effect function locate(finding: Ready) {
+    const { model } = finding
+    if (model.pending !== "Locating") return false
+    const query = model.query
+    try advance(finding, { type: "locate", locateReport: {
+      owner: finding.lease, generation: model.generation, query,
+      ids: model.entries.filter((entry) => entry.name.toLowerCase().includes(query.toLowerCase())).map((entry) => entry.id),
+    } }, "FileHost")
+    return true
+  }
+
+  effect function readCatalog(loading: Ready) {
+    if (!port) throw new FilesRejected()
+    const catalog = Effect.flatMap(tryPromise(() => port.list({ lease: loading.lease })), Schema.decodeUnknownEffect(Catalog)) catch () => undefined
+    const listed = catalog?.entries.slice(0, 250) ?? []
+    const entries = listed.map((entry) => savedFile(entry, loading.owner, loading.lease))
+    const origins = Object.fromEntries(listed.map(({ id, from, subject }) => [id, { from, subject }]))
+    try serial.withPermit(effect {
+      const current = try SubscriptionRef.get(latest)
+      if (current.kind !== "ready" || current.lease !== loading.lease || current.model.generation !== loading.model.generation ||
+          (try admitted()) !== loading.owner ||
+          (loading.findAuthority !== undefined && (try findOwner()) !== loading.findAuthority)) return
+      const { ready: loaded } = try advance({ ...current, origins, listedAt: Date.now() }, { type: "loadCatalog", catalogReport: {
+        owner: loading.lease, generation: loading.model.generation, entries, succeeded: catalog !== undefined, evidence: "device-library",
+      } }, "FileStore")
+      if (!loaded.model.loaded) return
+      try locate(loaded)
+      const latestLoaded = try SubscriptionRef.get(latest)
+      if (latestLoaded.kind === "ready" && latestLoaded.lease === loading.lease) try exposeCatalog(latestLoaded)
+    })
+  }
+
+  effect function load(ready: Ready) {
+    const loading = (try advance(ready, { type: "openFiles", owner: ready.lease }, "FileUser")).ready
+    if (loading.model.pending === "ReadingCatalog") try fork.in(scope) Effect.ignore(readCatalog(loading))
+  }
+
+  effect function findOwner() {
+    if (!port) return undefined
+    const owner = filesAccount((try setup.get()).graceAccount)
+    if (owner !== "device") return owner
+    if (!account) return undefined
+    const current = tryPromise(() => account.status()) catch () => undefined
+    return current?.kind === "signedIn" && /^[a-f0-9]{64}$/u.test(current.voiceDisclosureScope)
+      ? "device/" + current.voiceDisclosureScope : undefined
+  }
+
+  effect function readAttachmentImport() {
+    const request = Effect.flatMap(tryPromise(() => port?.attachmentImport?.() ?? Promise.resolve({})), Schema.decodeUnknownEffect(AttachmentImport)) catch () => undefined
+    return request?.id
+  }
+
+  effect function openLibrary() {
+    const owner = try admitted()
+    if (!port || !owner) return
+    try SubscriptionRef.set(latest, { kind: "opening" })
+    const opened = Effect.flatMap(tryPromise(() => port.open()), Schema.decodeUnknownEffect(Lease)) catch () => undefined
+    if (!opened) {
+      if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
+      return
+    }
+    if ((try admitted()) !== owner) {
+      tryPromise(() => port.close(opened)) catch () => undefined
+      return
+    }
+    const attachmentImport = try readAttachmentImport()
+    const ready: Ready = { kind: "ready", owner, findAuthority: try findOwner(), importer: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: initial, thumbs: {}, origins: {}, listedAt: 0, attachmentImport, busy: false, issue: false }
+    try SubscriptionRef.set(latest, ready)
+    load(ready) catch effect () => {
+      if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
+      tryPromise(() => port.close(opened)) catch () => undefined
+    }
+  }
+
+  const { readSelected, importOwner, deletePhoto } = fileContents({ port, advance, keep, exposeCatalog, readAttachmentImport })
 
   effect function sharePhoto(ready: Ready, command: Extract<Command, { kind: "sharePhoto" }>) {
     const { id, generation } = command

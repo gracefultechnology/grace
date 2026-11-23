@@ -81,6 +81,7 @@ type GuidedReadSource =
   | ({ tag: "CurrentMessage" } & GuidedMail)
   | { tag: "CurrentDocument"; tab: number; loadVersion: number; documentId: string }
   | { tag: "PublicCollectionDocument"; tabId: number; loadVersion: number; documentId: string; domRevision: number; url: string; origin: string; subject: string; entries: number }
+  | { tag: "PublicSortDocument"; tabId: number; loadVersion: number; documentId: string; domRevision: number; url: string; origin: string; category: string; direction: "PriceAscending" | "PriceDescending" }
   | { tag: "NamedDocument"; tab: number; loadVersion: number; documentId: string; url: string; heading: string }
   | { tag: "SearchDocument"; loadVersion: number; documentId: string; url: string; origin: string; query: string; heading: string }
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string }
@@ -113,19 +114,17 @@ effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, u
   if (!heading || heading.url !== url.href || !collectionHeading(subject, normalizedHeading(heading.text))) return 0
   const competing = native.readRecordText(id, `:is(${directHeading} ~ ${top}, ${wrappedHeading} ~ ${top}, ${main}:has(> ${top}) > ${region}:first-child > ${top})${excluded}`) catch () => undefined
   if (competing?.url === url.href) return 0
-  const candidates = new Map<string, string>()
+  const candidates: { address: string; selector: string; label: string }[] = []
   for (const item of snapshot.result.elements) {
-    if (item.tag !== "a" || !item.inViewport || item.disabled || item.sensitive || item.form !== null ||
+    if (item.tag !== "a" || !item.inViewport || item.disabled || item.sensitive || item.form !== null || item.frame !== undefined || item.inShadowRoot ||
         !item.label || !item.href || !item.targetSelector) continue
     const destination = URL.parse(item.href)
     if (!destination || destination.origin !== url.origin || destination.username || destination.password ||
         destination.search || destination.hash || destination.pathname === url.pathname) continue
-    if (!candidates.has(destination.href)) candidates.set(destination.href, item.targetSelector)
-    if (candidates.size >= 24) break
+    candidates.push({ address: destination.href, selector: item.targetSelector, label: comparableName(item.label) })
+    if (candidates.length >= 32) break
   }
-  if (candidates.size < 2) return 0
-  const links = `:is(${[...candidates.values()].join(",")})${excluded}`
-  const entry = `:is(li,[role="listitem"]):has(${links})`
+  if (new Set(candidates.map(({ address }) => address)).size < 2) return 0
   const list = ':is(ul,ol,[role="list"])'
   const titleBlock = `${main} > ${region}:first-child:has(> ${top}:only-child)${excluded}`
   const anchor = `:is(${headingSelector}, ${titleBlock})`
@@ -136,7 +135,8 @@ effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, u
   const afterIntro = `:is(p:first-child + ${topic}, p:first-child + ${search} + ${topic})`
   const plainTopic = `:is(${spine} + ${topic}, ${spine} + ${region} > ${afterSearch}):has(+ ${list})${excluded}`
   const introTopic = `:is(${withIntro} + ${region} > ${afterSearch}, ${spine} + ${region} > ${afterIntro}):has(+ ${list})${excluded}`
-  const direct = `:is(${anchor} + ${list}, ${anchor} + ${region} > ${list}:only-child, ${anchor} + ${search} + ${list}, ${anchor} + ${search} + ${region} > ${list}:only-child)`
+  const indexStart = `:is(${spine}, ${withIntro})`
+  const direct = `:is(${spine} + ${list}, ${indexStart} + ${region} > ${list}:only-child)`
   const observedTopic = native.readRecordText(id, plainTopic) catch () => undefined
   const observedIntroTopic = native.readRecordText(id, introTopic) catch () => undefined
   const topicText = observedTopic?.url === url.href ? normalizedHeading(observedTopic.text) : ""
@@ -146,10 +146,64 @@ effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, u
   if (introText && (!/^(?:all|browse)\s+/iu.test(introText) ||
       !collectionHeading(subject, introText.replace(/^(?:all|browse)\s+/iu, "")))) return 0
   const selected = topicText ? plainTopic : introText ? introTopic : undefined
-  const collection = selected === undefined ? `${direct}${excluded}` : `${selected} + ${list}${excluded}`
-  const first = native.readRecordText(id, `${collection} > :nth-child(1 of ${entry}) ${links}`) catch () => undefined
-  const second = native.readRecordText(id, `${collection} > :nth-child(2 of ${entry}) ${links}`) catch () => undefined
-  return first?.url === url.href && second?.url === url.href && comparableName(first.text) !== comparableName(second.text) ? 2 : 0
+  let collection = selected === undefined ? `${direct}${excluded}` : `${selected} + ${list}${excluded}`
+  if (selected === undefined) {
+    const group = `section:not([role],[aria-label],[aria-labelledby]):has(> ${topic}:first-child + ${list}:last-child)`
+    const groups = `${indexStart} + ${region}:has(> ${group}:first-child + ${group})`
+    const firstTopic = native.readRecordText(id, `${groups} > ${group}:first-child > ${topic}${excluded}`) catch () => undefined
+    const nextTopic = native.readRecordText(id, `${groups} > ${group}:first-child + ${group} > ${topic}${excluded}`) catch () => undefined
+    const labels = [firstTopic, nextTopic].map((read) => read?.url === url.href ? comparableName(normalizedHeading(read.text)) : "")
+    if (labels[0] !== labels[1] && labels.every((label) => label && !/^(?:related|recommended|more like|you may also)\b/u.test(label))) {
+      collection = `${groups} > ${group} > ${list}${excluded}`
+    }
+  }
+  const listed = (shown: typeof candidates) => {
+    const links = `:is(${shown.map(({ selector }) => selector).join(",")})${excluded}`
+    return `${collection} > :is(li,[role="listitem"]) ${links}`
+  }
+  const first = native.readRecordText(id, listed(candidates)) catch () => undefined
+  if (first?.url !== url.href) return 0
+  const firstLabel = comparableName(first.text)
+  const named = candidates.filter(({ label }) => label === firstLabel)
+  if (named.length === 0) return 0
+  const exact = native.readRecordText(id, listed(named)) catch () => undefined
+  if (exact?.url !== url.href || comparableName(exact.text) !== firstLabel) return 0
+  const represented = new Set(named.map(({ address }) => address))
+  const others = candidates.filter(({ address }) => !represented.has(address))
+  if (others.length === 0) return 0
+  const second = native.readRecordText(id, listed(others)) catch () => undefined
+  return second?.url === url.href && comparableName(second.text) !== firstLabel ? 2 : 0
+}
+
+function sortCategory(value: string): string {
+  return comparableName(value).replace(/ & /gu, " and ")
+}
+
+function priceToolbar(snapshot: LinkObservation) {
+  const controls = snapshot.result.elements.filter((control) => control.inViewport && control.disabled === false &&
+    control.sensitive === null && control.form === null && control.frame === undefined && !control.inShadowRoot && control.targetSelector)
+  const sortBy = controls.filter((control) => control.tag === "select" && comparableName(control.label ?? "") === "sort by")
+  const sorter = sortBy[0]
+  if (sortBy.length !== 1 || !sorter?.targetSelector) return undefined
+  const selected = sorter.options?.filter((option) => option.selected)
+  if (selected?.length !== 1 || selected[0]?.disabled || comparableName(selected[0]?.label ?? "") !== "price") return undefined
+  const observed = controls.flatMap((control) => {
+    if (control.tag !== "button" && control.tag !== "a" && control.role !== "button") return []
+    const matches = [control.label, control.title].flatMap((text) => {
+      const label = comparableName(text ?? "")
+      if (label === "set descending direction" || label === "switch to descending") return ["PriceAscending" as const]
+      if (label === "set ascending direction" || label === "switch to ascending") return ["PriceDescending" as const]
+      return []
+    })
+    return matches.length === 0 ? [] : [{ directions: new Set(matches), selector: control.targetSelector }]
+  })
+  if (observed.length !== 1 || !observed[0]?.selector || observed[0].directions.size !== 1) return undefined
+  const [direction] = observed[0].directions
+  if (!direction) return undefined
+  const excluded = ':not(:is(header,footer,aside,nav,article,form,[role="navigation"],[aria-hidden="true"],[inert]) *)'
+  const group = ':is(div,fieldset,[role="group"])'
+  const selector = `:is(main,[role="main"]) ${group}${excluded}:has(> :is(${sorter.targetSelector})):has(> :is(${observed[0].selector}))`
+  return { selector, direction }
 }
 
 function routeOf(url: URL): string {
@@ -252,7 +306,7 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
     case "ReachPublicCollection": {
       const tab = activeTab(workspace.browser)
       const url = URL.parse(tabUrl(tab))
-      if (!url || url.origin !== step.origin || tab.id !== step.tabId || !tab.secure ||
+      if (!url || url.origin !== step.origin || url.username || url.password || url.hash || tab.id !== step.tabId || !tab.secure ||
           tab.load !== "Loaded" || tab.loadVersion <= workspace.plan.openingBrowser || !guidedLinkObserved(workspace)) return undefined
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
@@ -275,6 +329,35 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       }
       return receipt({ tag: "PublicCollectionDocument", tabId: tab.id, loadVersion: tab.loadVersion, documentId: before.documentId,
         domRevision: before.result.domRevision, url: url.href, origin: step.origin, subject: step.subject, entries }, [before.documentId, url.href], "Found the collection for " + step.subject + ".")
+    }
+    case "SortPublicListing": {
+      const tab = activeTab(workspace.browser)
+      const url = URL.parse(tabUrl(tab))
+      if (!url || url.origin !== step.origin || url.username || url.password || url.hash || tab.id !== step.tabId ||
+          !tab.secure || tab.load !== "Loaded" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+      const id = PageId.make(`tab-${tab.id}`)
+      const before = native.observeLinks(id) catch () => undefined
+      if (!before || before.result.domRevision === undefined ||
+          (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
+      const miss = pageMiss(before, url.href, "CheckPublicSort")
+      if (miss !== undefined) return miss
+      const heading = native.readPrimaryHeading(id, true) catch () => undefined
+      if (heading?.url !== url.href || sortCategory(normalizedHeading(heading.text)) !== sortCategory(step.subject)) return undefined
+      const toolbar = priceToolbar(before)
+      if (toolbar?.direction !== step.direction) return undefined
+      const text = native.readRecordText(id, toolbar.selector) catch () => undefined
+      if (text?.url !== url.href) return undefined
+      const { direction } = toolbar
+      const after = native.observeLinks(id) catch () => undefined
+      if (!after || after.documentId !== before.documentId || after.result.domRevision !== before.result.domRevision) return "Changed"
+      const currentToolbar = priceToolbar(after)
+      if (currentToolbar?.direction !== direction || currentToolbar.selector !== toolbar.selector) return "Changed"
+      const afterMiss = pageMiss(after, url.href, "CheckPublicSort")
+      if (afterMiss !== undefined) return afterMiss
+      const order = direction === "PriceAscending" ? "ascending" : "descending"
+      return receipt({ tag: "PublicSortDocument", tabId: tab.id, loadVersion: tab.loadVersion, documentId: before.documentId,
+        domRevision: before.result.domRevision, url: url.href, origin: step.origin, category: step.subject, direction },
+      [before.documentId, step.subject, direction], step.subject + " sorted by " + order + " price.")
     }
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
@@ -366,6 +449,10 @@ function distinctReadConfirmation(source: GuidedReadSource, report: GuidedObserv
   if (source.tag === "PublicCollectionDocument") {
     const { tabId, loadVersion, documentId, url, origin, subject, entries } = source
     return { type: "confirmGuidedCollection", check: { report, tabId, loadVersion, documentId, url, origin, subject, entries } }
+  }
+  if (source.tag === "PublicSortDocument") {
+    const { tabId, loadVersion, documentId, url, origin, category, direction } = source
+    return { type: "confirmGuidedPublicSort", sortCheck: { report, tabId, loadVersion, documentId, url, origin, category, direction } }
   }
   if (source.tag === "NamedDocument") {
     const { documentId, loadVersion, url, heading } = source
@@ -585,7 +672,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const confirmed = try look()
       if (browserScope !== undefined && !(try ownsBrowserRead())) return "Refused"
       const rechecked = try guidedReceipt(confirmed, step, native, managed,
-        found.source.tag === "NamedDocument" || found.source.tag === "SearchDocument" || found.source.tag === "PublicCollectionDocument" ? found.source.documentId : undefined)
+        found.source.tag === "NamedDocument" || found.source.tag === "SearchDocument" || found.source.tag === "PublicCollectionDocument" || found.source.tag === "PublicSortDocument" ? found.source.documentId : undefined)
       if (rechecked === "PrivateForm") return (try ownsBrowserRead()) ? rechecked : "Refused"
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
       if (!sameRecord) return typeof rechecked === "string" ? rechecked : "Changed"

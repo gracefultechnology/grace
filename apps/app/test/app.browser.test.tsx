@@ -3265,23 +3265,23 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       await routeTo(page.getByText(/Finish the form yourself in this tab/));
       expect(guideCalls).toBe(beforeIdentifierGuide);
     }
-    const showHelpCenter = async (expectedGuides: number) => {
+    signInWidget = "accountNumber";
+    identifierEvidence = idleIdentifier;
+    const expectHelpGuide = async (expectedCalls: number) => {
       await tap(showLink);
-      await expect.poll(() => guideCalls).toBe(expectedGuides);
+      await expect.poll(() => guideCalls).toBe(expectedCalls);
       await routeTo(page.getByText("Look for “Help center” on example.org."));
       expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
         documentId: about.id, command: { guidance: { nodeId: "help" } },
       });
     };
-    signInWidget = "accountNumber";
-    identifierEvidence = idleIdentifier;
     for (const [index, label] of ["Account number or email", "Email address or account ID"].entries()) {
       combinedLabel = label;
-      await showHelpCenter(beforeIdentifierGuide + index + 1);
+      await expectHelpGuide(beforeIdentifierGuide + index + 1);
     }
     signInWidget = "hidden";
     newsletterEmail = blankNewsletterEmail;
-    await showHelpCenter(guideCalls + 1);
+    await expectHelpGuide(guideCalls + 1);
 
     newsletterEmail = null;
     currentPage = { ...help, path: "/help/center" };
@@ -3643,13 +3643,13 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   }
 }, 120_000);
 
-it.each(["simple index", "sectioned index", "wrapped directory"] as const)('Check a public collection ($0) (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async (layout) => {
+it.each(["simple index", "sectioned index", "wrapped directory", "grouped help"] as const)('Check a public collection ($0) (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async (layout) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-  const target = layout === "sectioned index" ? "help topics" : "Club events";
+  const target = layout === "sectioned index" || layout === "grouped help" ? "help topics" : "Club events";
   const request = 'Find the public index of "' + target + '".';
   const articleName = target;
-  const articleRequest = 'Open the page named "Club events".';
+  const articleRequest = 'Open the page named "' + articleName + '".';
   await Effect.runPromise(Effect.provide(script(cloud, secret, [
     { said: request, answer: JSON.stringify({ text: "Review this plan.", isQuestion: false, answers: [],
       actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachPublicCollection", target }] }] }) },
@@ -3665,11 +3665,13 @@ it.each(["simple index", "sectioned index", "wrapped directory"] as const)('Chec
   const heading = '<h1>' + target + '</h1>';
   const indexContent = heading + entries;
   const publicSearch = '<form role="search" method="get"><input type="search" name="q" aria-label="Search"><button type="submit">Search</button></form>';
-  const collectionContent = layout === "sectioned index"
-    ? '<div><h1>Help &amp; Support</h1></div><section>' + publicSearch + '<h2>Frequently asked questions</h2>' + entries + '</section>'
-    : layout === "wrapped directory"
-      ? '<div>' + heading + '<p>See upcoming outings and gatherings.</p><section><h2>Browse Club events</h2>' + entries + '</section></div>'
-      : indexContent;
+  const collectionContent = {
+    "simple index": indexContent,
+    "sectioned index": '<div><h1>Help &amp; Support</h1></div><section>' + publicSearch + '<h2>Frequently asked questions</h2>' + entries + '</section>',
+    "wrapped directory": '<div>' + heading + '<p>See upcoming outings and gatherings.</p><section><h2>Browse Club events</h2>' + entries + '</section></div>',
+    "grouped help": '<h1>Help &amp; Support</h1><p>Browse information for customers.</p>' + publicSearch +
+      '<div><section><h2>Payments</h2>' + entries + '</section><section><h2>Billing</h2><ul><li><a href="/events/monthly">Monthly bill</a></li></ul></section></div>',
+  }[layout];
   const opening = await fixture(home, indexContent);
   const collection = await fixture(index, collectionContent);
   const detail = await fixture(article, '<nav aria-label="Breadcrumb"><a href="/events">Club events</a></nav>' +
@@ -3740,8 +3742,6 @@ it.each(["simple index", "sectioned index", "wrapped directory"] as const)('Chec
     await tap(check);
     await routeTo(status);
     expectOpen();
-    await expect.element(status).toHaveTextContent("I couldn’t confirm this is the list you asked for. Look through the topics on this page.");
-    expect(button("Show me the link").query()).toBeNull();
 
     const privateField = collection.document.createElement("input");
     privateField.type = "password";
@@ -3755,8 +3755,8 @@ it.each(["simple index", "sectioned index", "wrapped directory"] as const)('Chec
     if (layout === "wrapped directory") {
       const main = collection.document.querySelector("main")!;
       const original = main.innerHTML;
+      const related = heading + '<p>Saturday’s hike starts at the east gate.</p><h2>Related club events</h2>' + entries;
       for (const misleading of [
-        heading + '<p>Saturday’s hike starts at the east gate.</p><h2>Related club events</h2>' + entries,
         heading + '<section><h2>Club events</h2><ul><li><a href="/events/saturday">First label</a></li><li><a href="/events/saturday">Different label</a></li></ul></section>',
         heading + '<h1>Another title</h1>' + entries,
       ]) {
@@ -3767,6 +3767,10 @@ it.each(["simple index", "sectioned index", "wrapped directory"] as const)('Chec
         await routeTo(status);
         expectOpen();
       }
+      main.innerHTML = related;
+      await tap(check);
+      await expect.element(status).toHaveTextContent("I couldn’t confirm this is the list you asked for. Look through the topics on this page.");
+      expect(button("Show me the link").query()).toBeNull();
       main.innerHTML = original;
     }
 
@@ -3785,6 +3789,96 @@ it.each(["simple index", "sectioned index", "wrapped directory"] as const)('Chec
     await tap(check);
     await routeTo(complete);
     expect(plan.getByText("Open page: " + articleName, { exact: true }).query()).not.toBeNull();
+  } finally {
+    await dispose();
+    localStorage.clear();
+  }
+}, 120_000);
+
+it('Check the price direction in the reviewed public category (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async () => {
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const target = "Rain jackets";
+  const request = "List products from Rain jackets category by ascending price";
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said: request,
+    answer: JSON.stringify({ text: "Review this plan.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "SortPublicListing", target, direction: "PriceAscending" }] }] }),
+  }]), client));
+  const home = "https://example.org/";
+  const frame = await pinnedPage("statements", home, (html) => html.replace(/<main>[\s\S]*<\/main>/u, () =>
+    `<script>(${String(pageCommand)})(null, "");</script><main><h1>Rain jackets</h1>
+      <div id="sort"><label for="order">Sort By</label><select id="order"><option selected>Name</option><option>Price</option></select>
+      <a href="#" id="direction" title="Set Descending Direction">Change sort direction</a></div>
+      <ul><li>Lightweight jacket</li><li>Winter jacket</li></ul></main>`));
+  const sorter = frame.document.querySelector<HTMLSelectElement>("#order")!;
+  const direction = frame.document.querySelector<HTMLAnchorElement>("#direction")!;
+  const heading = frame.document.querySelector("h1")!;
+  let address = home;
+  let documentId = "home";
+  let replaceDuringRead = false;
+  const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
+    result: { ...frame.snapshot(command), url: address } }), false, ({ selector }) => {
+    const read = frame.read(selector);
+    if (replaceDuringRead && typeof read["text"] === "string" && read["text"].includes("Sort By")) {
+      replaceDuringRead = false;
+      documentId += "-replaced";
+    }
+    return { ...read, url: address };
+  });
+  localStorage.clear();
+  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const complete = page.getByText("Read checks complete", { exact: true });
+  const check = button("Check price order");
+  const load = async (url: string) => {
+    await native.started("tab-1", url);
+    address = url;
+    documentId = url;
+    await native.report("tab-1", url, 100, { pageError: null, securityBlocked: false });
+  };
+  const visit = async (url: string) => {
+    await load(url);
+    await tap(button("Resume Grace"));
+  };
+  const pending = async () => {
+    await tap(check);
+    await routeTo(page.getByRole("status", { name: "Page check result" }));
+    expect(complete.query()).toBeNull();
+  };
+  try {
+    await tap(button("Internet"));
+    await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+    await load(home);
+    await tap(button("Ask Grace"));
+    await tap(button("Allow Grace to read this browser"));
+    const message = page.getByRole("textbox", { name: "Message to Grace" });
+    await routeTo(message);
+    await act(() => message.fill(request));
+    await act(() => userEvent.keyboard("{Enter}"));
+    await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(/Rain jackets.*lowest price first/u));
+    await tap(button("Collapse"));
+    await tap(button("Start read plan"));
+    await pending();
+    await visit(home + "coats?display=grid");
+    await pending();
+    sorter.selectedIndex = 1;
+    direction.title = "Set Ascending Direction";
+    await pending();
+    direction.title = "Set Descending Direction";
+    heading.textContent = "Snow jackets";
+    await pending();
+    heading.textContent = target;
+    await visit("https://other.example/coats?display=grid");
+    await pending();
+    await visit(home + "coats?display=list");
+    replaceDuringRead = true;
+    await pending();
+    expect(replaceDuringRead).toBe(false);
+    await tap(check);
+    await routeTo(complete);
+    expect(page.getByText("Rain jackets sorted by ascending price.", { exact: true }).query()).not.toBeNull();
   } finally {
     await dispose();
     localStorage.clear();

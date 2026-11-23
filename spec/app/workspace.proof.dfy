@@ -2209,3 +2209,41 @@ lemma lawPublicCollectionExampleIsAdmitted_ensures(by_: WorkspaceActor)
     assert canConfirmGuidedCollection(w, check, by_);
   }
 }
+
+lemma lawPublicSortExampleIsAdmitted_ensures(by_: WorkspaceActor)
+  ensures (lawPublicSortExampleIsAdmitted(by_) == true)
+{
+  if by_.Host? {
+    var w := examplePublicSort;
+    var check := sampleSortCheck;
+    var first := app__browser_blankTab(1, 0);
+    var loading := app__browser_navigated(first, sampleSortUrl, 1);
+    assert exampleSortLoading.tabs == [loading] && exampleSortLoading.selected == 1;
+    OnlyBrowserTab(exampleSortLoading, loading);
+    var ended := app__browser_endedAtCursor(loading, sampleSortUrl);
+    var tab := ended.(load := app__browser_Load.Loaded, secure := true);
+    assert w.browser.tabs == [tab] && w.browser.selected == 1;
+    OnlyBrowserTab(w.browser, tab);
+    reveal Std.Collections.Seq.FoldLeft();
+    assert loading.history == ["", sampleSortUrl] && loading.cursor == 1;
+    app__browser_lawALoadRecordsWhereItEnded_ensures(loading, sampleSortUrl);
+    assert app__browser_tabUrl(tab) == sampleSortUrl;
+    assert w.device.readiness.Ready? && w.device.surface.Browser? && w.device.observationAllowed;
+    assert app__assistant_isVisible(w.assistant) && w.assistant.activity.ReadyForStep?;
+    assert w.execution.phase.Idle? && w.commitmentTask == "";
+    assert !privateSurfaceActive(w);
+    assert check.report.step == nextOutcome(w.plan) == sampleSortStep;
+    assert guidedDetails(check.report.step).surface == app__shell_Surface.Browser;
+    assert w.plan.receipts == [];
+    assert !usedSource(w.plan, check.report.sourceKey) by {
+      forall prior | prior in w.plan.receipts
+        ensures prior.sourceKey != check.report.sourceKey
+      {}
+    }
+    assert guidedReadContextCurrent(w, check.report, by_);
+    assert guidedObservationCurrent(w, check.report, by_);
+    assert tab.load.Loaded? && tab.secure && tab.id == check.tabId;
+    assert app__browser_tabUrl(tab) == check.url && tab.loadVersion == check.loadVersion && tab.loadVersion > w.plan.openingBrowser;
+    assert canConfirmGuidedPublicSort(w, check, by_);
+  }
+}

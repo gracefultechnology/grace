@@ -1,4 +1,4 @@
-// spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/workspace.md, "An authenticated restart restores the reviewed plan paused at its next outcome"
+// spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/workspace.md, "An authenticated restart restores the reviewed plan paused at its next outcome"; spec/app/network.md, "Android handles Wi-Fi sign-in"
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
 export interface PreferenceRecords {
@@ -26,5 +26,13 @@ export interface PreferenceDevice {
   setVolume(input: { step: number; muted: boolean }): Promise<unknown>;
 }
 
-export const preferenceDevice = Capacitor.isPluginAvailable("GraceDevice")
-  ? registerPlugin<PreferenceDevice>("GraceDevice") : undefined;
+export interface WifiSignIn {
+  getWifiSignIn(): Promise<unknown>;
+  openWifiSignIn(): Promise<void>;
+}
+
+const device = Capacitor.isPluginAvailable("GraceDevice")
+  ? registerPlugin<PreferenceDevice & WifiSignIn>("GraceDevice") : undefined;
+
+export const preferenceDevice: PreferenceDevice | undefined = device;
+export const wifiSignIn: WifiSignIn | undefined = device;

@@ -304,6 +304,19 @@ export const agent = Layer.effect(Agent, effect {
           tab.load === "Loaded" && tab.secure && site?.protocol === "https:" && !site.username && !site.password ?
           { tag: "ReachPublicCollection", subject: words.slice(at, at + step.target.length), origin: site.origin, tabId: tab.id } : undefined
       }
+      if (step.kind === "SortPublicListing") {
+        const workspace = s.workspace
+        const tab = activeTab(workspace.browser)
+        const site = URL.parse(tabUrl(tab))
+        const priceRequest = /^(?:please\s+)?(?:list|show|sort) (?:the )?products (?:from|in) (.{1,128}?) category by (ascending|descending) price[.!]?$/iu.exec(words.trim())
+        const category = priceRequest?.[1]
+        const direction = priceRequest?.[2]?.toLowerCase() === "ascending" ? "PriceAscending" : "PriceDescending"
+        return category !== undefined && category.toLowerCase() === step.target.toLowerCase() && step.direction === direction &&
+          !/\b(?:my|our)\b/iu.test(category) && action.steps.length === 1 && workspace.device.surface === "Browser" &&
+          workspace.device.observationAllowed && tab.load === "Loaded" && tab.secure && site?.protocol === "https:" &&
+          !site.username && !site.password ?
+          { tag: "SortPublicListing", subject: category, origin: site.origin, tabId: tab.id, direction } : undefined
+      }
       if (step.kind === "SearchPublicSite") {
         const workspace = s.workspace
         const tab = activeTab(workspace.browser)

@@ -6,7 +6,10 @@ import android.graphics.Color;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.net.Uri;
+import android.net.wifi.WifiInfo;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.Display;
 import android.view.KeyEvent;
@@ -18,6 +21,8 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.annotation.RequiresApi;
+import java.util.concurrent.ConcurrentHashMap;
 import ai.eliza.plugins.agent.embedded.EmbeddedAgentPlugin;
 import ai.eliza.plugins.browsersurface.ElizaBridgeActivity;
 import ai.eliza.plugins.browsersurface.ElizaSurfaceManagerPlugin;
@@ -28,7 +33,14 @@ public class MainActivity extends ElizaBridgeActivity {
  private static final String HARDWARE_BACK = "window.dispatchEvent(new Event('hardware-back',{cancelable:true}))";
  private static final String LAUNCHER_HOME = "window.dispatchEvent(new Event('launcher-home'))";
 
- private final ConnectivityManager.NetworkCallback defaultNetwork = new ConnectivityManager.NetworkCallback() {
+ private final ConnectivityManager.NetworkCallback defaultNetwork = new NetworkChange();
+ private volatile WifiNetworkChange wifiNetwork;
+
+ private class NetworkChange extends ConnectivityManager.NetworkCallback {
+  NetworkChange() {}
+  @RequiresApi(Build.VERSION_CODES.S)
+  NetworkChange(int flags) { super(flags); }
+
   @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
    getBridge().triggerWindowJSEvent("android-network-changed");
   }
@@ -36,7 +48,32 @@ public class MainActivity extends ElizaBridgeActivity {
   @Override public void onLost(Network network) {
    getBridge().triggerWindowJSEvent("android-network-changed");
   }
- };
+ }
+
+ private final class WifiNetworkChange extends NetworkChange {
+  private final ConcurrentHashMap<Network, WifiInfo> validated = new ConcurrentHashMap<>();
+
+  WifiNetworkChange() {}
+  @RequiresApi(Build.VERSION_CODES.S)
+  WifiNetworkChange(int flags) { super(flags); }
+
+  @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+   if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+     && capabilities.getTransportInfo() instanceof WifiInfo info) validated.put(network, info);
+   else validated.remove(network);
+   super.onCapabilitiesChanged(network, capabilities);
+  }
+
+  @Override public void onLost(Network network) {
+   validated.remove(network);
+   super.onLost(network);
+  }
+ }
+
+ WifiInfo validatedWifi(Network network) {
+  WifiNetworkChange watcher = wifiNetwork;
+  return watcher == null ? null : watcher.validated.get(network);
+ }
 
  @Override public void onCreate(Bundle state) {
   Intent launch = getIntent();
@@ -80,13 +117,27 @@ public class MainActivity extends ElizaBridgeActivity {
 
  @Override public void onStart() {
   super.onStart();
-  if (BuildConfig.IS_LAUNCHER) getSystemService(ConnectivityManager.class).registerDefaultNetworkCallback(defaultNetwork);
+  if (BuildConfig.IS_LAUNCHER) {
+   ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
+   connectivity.registerDefaultNetworkCallback(defaultNetwork);
+   wifiNetwork = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    ? new WifiNetworkChange(ConnectivityManager.NetworkCallback.FLAG_INCLUDE_LOCATION_INFO) : new WifiNetworkChange();
+   connectivity.registerNetworkCallback(new NetworkRequest.Builder()
+    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    .build(), wifiNetwork);
+  }
   GraceAgentService.resume(this);
   ManagedCalendarReminders.reconcile(this);
  }
 
  @Override public void onStop() {
-  if (BuildConfig.IS_LAUNCHER) getSystemService(ConnectivityManager.class).unregisterNetworkCallback(defaultNetwork);
+  if (BuildConfig.IS_LAUNCHER) {
+   ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
+   connectivity.unregisterNetworkCallback(wifiNetwork);
+   wifiNetwork = null;
+   connectivity.unregisterNetworkCallback(defaultNetwork);
+  }
   super.onStop();
  }
 

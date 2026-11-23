@@ -12,7 +12,7 @@ export service WebsiteTask {
 const progress = {
   observe: "Step", prepare: "Step", dispatch: "Step", verify: "Step", completeOrdinary: "Step",
   publishGuidance: "Step", setGuidedLink: "Step", offerReadReview: "Step", offerGuidedNameCorrection: "Step",
-  confirmGuided: "Step", confirmGuidedNamedPage: "Step", confirmGuidedSearch: "Step", confirmGuidedCollection: "Step",
+  confirmGuided: "Step", confirmGuidedNamedPage: "Step", confirmGuidedSearch: "Step", confirmGuidedCollection: "Step", confirmGuidedPublicSort: "Step",
   stageGuidedRecord: "Step", confirmGuidedRecord: "Step",
   confirmGuidedMail: "Step", rebindGuidedMail: "Step",
   expectGuidedCalendar: "Step", reconcileGuidedSave: "Step", reviewCommitment: "Step", readBackCommitment: "Step", submitCommitment: "Step",
