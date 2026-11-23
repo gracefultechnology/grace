@@ -24,6 +24,7 @@ export interface PreferenceDevice {
   getDevice(): Promise<unknown>;
   setBrightness(input: { percent: number }): Promise<unknown>;
   setVolume(input: { step: number; muted: boolean }): Promise<unknown>;
+  addListener?(event: "volume", listener: () => void): Promise<{ remove(): Promise<void> }>;
 }
 
 export interface WifiSignIn {

@@ -829,8 +829,9 @@ reverses: the managed Google shell keeps the receipt with the mailbox it shows,
 through a change of folder or another page, until that Undo is confirmed, and
 sends an Undo only for the message, the version and the operation that receipt
 names, so without a confirmed move to Trash there is nothing to undo. The Undo
-button is drawn from that kept receipt, so the page never offers an Undo the
-shell would refuse.
+button is drawn from that kept receipt, and only while it is the receipt of the
+Trash the page just reported, so the page never offers an Undo the shell would
+refuse, nor one for another message.
 
 An appointment change is read back before it is sent: the review the person
 sees is the change itself, held by the managed Google shell, and Grace sends
