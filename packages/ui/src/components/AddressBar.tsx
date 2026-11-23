@@ -8,6 +8,7 @@ export type AddressBarProps = Omit<
 > & {
   /** The address shown: the page's, or the draft being typed. */
   value: string;
+  /** The address the loaded page reached over an encrypted connection; the lock shows only while `value` is that address. */
   secureAddress?: string;
   /** Called with the text as it is edited. */
   onValueChange?: (text: string) => void;

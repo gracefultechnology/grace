@@ -5,7 +5,7 @@ import type * as TS from "typescript";
 import ts from "typescript";
 import { generate, type Model, type Origin } from "./gen.ts";
 import { writeConformance } from "./conform.ts";
-import { simulated, witnessFile } from "./gen/harness.ts";
+import { refusalFile, simulated, witnessFile } from "./gen/harness.ts";
 import { fail } from "./gen/types.ts";
 import type { Unit } from "./prove.ts";
 import { modules, originalColumn, type Spec } from "./parse.ts";
@@ -109,7 +109,9 @@ export function generated(root: string, spec: Spec, ir: any, models: Map<string,
   const write = (name: string, text: string) => put(root, path.join(dir, name), text, staged);
   write(`${spec.name}.ts`, model.ts);
   write(`${spec.name}.run.qnt`, model.harness);
+  if (model.guardHarness) write(`${spec.name}.guard.run.qnt`, model.guardHarness);
   if (model.witness) write(witnessFile(spec.name), model.witness.harness);
+  if (model.refusal) write(refusalFile(spec.name), model.refusal.harness);
   writeFaces(root, root, dir, spec, model.ts, staged);
   if (model.opaques.length) write(`${spec.name}.sim.qnt`, simulated(spec.qnt, model.opaques));
   writeConformance(model, write);
@@ -198,17 +200,30 @@ export function typecheckAll(memory: Memory, specs: Spec[], output = memory.root
       const readIr = (text?: string) => {
         try { return text === undefined ? undefined : JSON.parse(text); } catch { return undefined; }
       };
-      const cacheValue = (value: unknown) => {
+      const encode = (value: unknown) => {
         if (!value || typeof value !== "object" || !("ok" in value) || value.ok !== true || !("files" in value) ||
-            !value.files || typeof value.files !== "object" || !("ir.json" in value.files) || typeof value.files["ir.json"] !== "string") return value;
+            !value.files || typeof value.files !== "object" || !("ir.json" in value.files) || typeof value.files["ir.json"] !== "string") return undefined;
         decoded = readIr(value.files["ir.json"]);
-        if (!Array.isArray(decoded?.modules) || !decoded.types || decoded.errors?.length) return value;
-        const { modules, types } = decoded;
-        decoded = { modules, types };
+        if (!Array.isArray(decoded?.modules) || !decoded.types || typeof decoded.types !== "object" || decoded.errors?.length) return undefined;
+        const module = decoded.modules.find((entry: unknown) => entry === null || (typeof entry === "object" && "name" in entry && entry.name === spec.name));
+        if (!Array.isArray(module?.declarations)) return undefined;
+        const types = new Map<string | number, unknown>();
+        const selected = decoded.types;
+        const nodes: unknown[] = [module];
+        while (nodes.length) {
+          const node = nodes.pop();
+          if (!node || typeof node !== "object") continue;
+          if ("id" in node && (typeof node.id === "number" || typeof node.id === "string") && Object.hasOwn(selected, node.id)) {
+            types.set(node.id, selected[node.id]);
+          }
+          for (const child of Object.values(node)) nodes.push(child);
+        }
+        decoded = { modules: [module], types: Object.fromEntries(types) };
         return { ...value, files: { ...value.files, "ir.json": JSON.stringify(decoded) } };
       };
       const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "vibestack-typecheck-"));
-      const typed = await act({ ...memory, cacheValue }, "quint", ["typecheck", "--out", "ir.json", `${spec.name}.qnt`], scratch, modules(spec, specs))
+      const actionProjection = { version: "model-module-v1", encode };
+      const typed = await act({ ...memory, actionProjection }, "quint", ["typecheck", "--out", "ir.json", `${spec.name}.qnt`], scratch, modules(spec, specs))
         .finally(() => fs.rmSync(scratch, { recursive: true, force: true }));
       const ir = decoded ?? readIr(typed.files["ir.json"]);
       if (!typed.ok || !ir || ir.errors?.length) throw typeErrors(spec, ir, typed.out, specs);

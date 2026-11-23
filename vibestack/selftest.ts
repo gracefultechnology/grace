@@ -3,6 +3,7 @@
 // small specs in vibestack/fixtures/, breaks one thing, and asserts which stage of `check` fails.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import { request as httpRequest } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
@@ -10,16 +11,18 @@ import os from "node:os";
 import path from "node:path";
 import { after, before, describe, test } from "node:test";
 import { pathToFileURL } from "node:url";
-import { stripVTControlCharacters } from "node:util";
+import { isDeepStrictEqual, stripVTControlCharacters } from "node:util";
 import { gzipSync, zstdDecompressSync } from "node:zlib";
 import { Miniflare } from "miniflare";
+import { violated } from "./action.ts";
 import { cacheCredentials, collectGarbage, isActionEntry, withFormalCache, type installedProgram as lookupTool } from "./cache.ts";
 import { LIB_FILE, isolatedCopies, parseProofFile, readVerdict, splice } from "./prove.ts";
-import { exec, run as tool } from "./run.ts";
+import { precomputeSimulations, prepareSimulationReceipts } from "./formal.ts";
+import { exec, run as tool, toolCpuSeconds } from "./run.ts";
 import { pendingSpecs, showPending, writeLedger } from "./review.ts";
 import { filesUnder, packageScripts, testInputs, testReceipt, writeWhole } from "./util.ts";
 import { profile } from "./testing/profile.ts";
-import { isolatedInstalls } from "./selftests/install.ts";
+import { hostedCachedFixture, installChromium, isolatedInstalls } from "./selftests/install.ts";
 import { PACKED, toolShards } from "./selftests/tools.ts";
 import { bigNumberInteger } from "./gen/types.ts";
 import { canonical, check as conformanceCheck, ConformanceError, departure, replay as replayTrace } from "./conformance.ts";
@@ -273,13 +276,14 @@ pure def selected(which: bool): Set[Field] = {
     const checked = await tool("vibelang", ["--noEmit", "--strict", "--target", "es2023", "gen/fields.ts"], root);
     assert.ok(checked.ok, checked.out);
     const proof = model.render("");
-    assert.match(proof, /includeSecond \? \["Second"\] : \(\[\] as Field\[\]\)/);
+    assert.ok(proof.includes('includeSecond ? ([typed0_fields("Second")] as Field[]) : ([] as Field[])'));
     const domain = await import(pathToFileURL(path.join(root, "gen", "fields.ts")).href);
     assert.deepEqual([domain.required(true), domain.required(false)], [["First", "Second"], ["First"]]);
     assert.deepEqual([domain.selected(true), domain.selected(false)], [["First", "Second"], ["Second"]]);
   });
 
   test("the explore stage finds a page that breaks a property, keeps the trace, replays it first, and drops it once fixed", { skip: !["linux-x64", "linux-arm64", "darwin-arm64"].includes(`${process.platform}-${process.arch}`) }, async () => {
+    if (process.env.TURBO_HASH && hostedCachedFixture()) await installChromium(true);
     const remember: Parameters<typeof explore>[1] = (_fingerprint, run) => run();
     const page = (script: string) => `<!doctype html><html><head><title>Page</title></head><body><button>Go</button>${script}</body></html>`;
     const server = 'import http from "node:http"; import fs from "node:fs";\nconst app = http.createServer((_, res) => { res.writeHead(200, { "content-type": "text/html" }); res.end(fs.readFileSync("index.html")); });\napp.listen(0, "127.0.0.1", () => console.log(`Local: http://localhost:${app.address().port}/`));\n';
@@ -427,6 +431,40 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
     fs.writeFileSync(path.join(root, "driver.mjs"), 'import fs from "node:fs"; import readline from "node:readline"; let n=0; for await (const line of readline.createInterface({input:process.stdin})) { const request=JSON.parse(line), {offset,limit}=JSON.parse(fs.readFileSync("driver.json","utf8")); if (!request.event) n=0; else if (n<limit) n++; console.log(JSON.stringify({state:n+offset})); }');
     fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({type:"module",scripts:{"driver:counter":`${JSON.stringify(process.execPath)} driver.mjs`}}));
     const machines = new Map([["counter", { domain, model, found }]]);
+    if (process.platform !== "win32") {
+      const driver = `let state = 0;
+export const options = { keys: ["counter"], walks: 1, steps: 1 };
+export const driver = {
+  reset() { state = 0; },
+  dispatch() { if (state === 2) return "refused"; state++; return "accepted"; },
+  observe() { return state; },
+};`;
+      const file = path.join(root, "test/drivers/counter.ts");
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.symlinkSync(nodeModules, path.join(root, "node_modules"), "dir");
+      const checkDriver = async (source: string) => {
+        fs.writeFileSync(file, source);
+        const kept: boolean[] = [];
+        const [result] = await checkTraces(root, machines, {}, async (_, run, keep) => {
+          const value = await run();
+          kept.push(keep(value));
+          return value;
+        }, new Map());
+        return { result, kept };
+      };
+      const passed = await checkDriver(driver);
+      assert.ok(passed.result[0] && passed.result[2].includes("1 walks of seed 1"), passed.result.join("\n"));
+      assert.deepEqual(passed.kept, [true]);
+      const stopped = await checkDriver(`${driver}\nprocess.on("exit", () => process.kill(process.pid, "SIGKILL"));`);
+      assert.equal(stopped.result[0], false, stopped.result.join("\n"));
+      assert.match(stopped.result[3] ?? "", /did not finish: node was killed by SIGKILL[\s\S]*"summary":"1 walks of seed 1"/);
+      assert.deepEqual(stopped.kept, [false]);
+      const disagreement = await checkDriver(driver.replace("return state;", "return state + 1;"));
+      assert.equal(disagreement.result[0], false, disagreement.result.join("\n"));
+      assert.match(disagreement.result[2], /the program departs from the spec/);
+      assert.deepEqual(disagreement.kept, [false]);
+      fs.rmSync(file);
+    }
     const departs = async () => (await checkTraces(root, machines, packageScripts(root), (_, ran) => ran(), new Map())).filter(([ok]) => !ok).map(([, , summary, detail]) => `${summary}\n${detail}`);
     assert.deepEqual(await departs(), []);
     // A driver that starts elsewhere, or takes the event the spec refuses in the last state of a trace, departs.
@@ -539,6 +577,17 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
     assert.match(error?.detail ?? "", /message: "error: Invariant violated"[\s\S]*Division by zero/, runtime.text);
   });
 
+  test("a guardless event that breaks a rule and that other transitions call is named as a helper taken for an event", async () => {
+    const helper = await run(oneRule("index", "The counter stays zero", [
+      "pure val initial: int = 0",
+      "pure def bump(n: int): int = n + 1",
+      "pure def canIncrement(n: int): bool = false",
+      "pure def increment(n: int): int = bump(n)",
+      "pure def alwaysZero(n: int): bool = n == 0",
+    ].join("\n")));
+    assert.match(helper.said("always", /a reachable state breaks/)?.detail ?? "", /bump\s+-> state = 1[^]*; it has no guard\n\s+increment calls it, so it may be a helper taken for an event/, helper.text);
+  });
+
   test("a rule set that holds in simulation but is not inductive is caught by the proof, and the deleted rule awaits review", async () => {
     const { failed, said, text } = await run(copyOfProject("spec/index.md", notInductive));
     assert.deepEqual(failed, ["proof", "review"], text);
@@ -603,6 +652,87 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
     assert.ok(updated.failed.includes("model"), updated.text);
   });
 
+  test("selected simulations warm the ordinary check in another project and reject failed inputs", async () => {
+    const cache = path.join(scratch({}), "formal-cache");
+    const seedParent = scratch({});
+    const sources = {
+      "spec/base.md": ruleSpec("pure val limit = 2"),
+      "spec/limit.md": ruleSpec('import base as B from "./base"\npure val top = B::limit'),
+      "spec/counter.md": ruleSpec('import limit as L from "./limit"\npure val initial: int = 0\npure def canInc(n: int): bool = n < L::top\npure def inc(n: int): int = n + 1\npure def alwaysBounded(n: int): bool = n <= L::top\npure def sometimesFull(n: int): bool = n == L::top'),
+      "spec/other.md": ruleSpec("pure val initial: int = 0\npure def bump(n: int): int = n + 1\npure def alwaysNonnegative(n: int): bool = n >= 0"),
+    };
+    const selected = ["other", "counter", "other"];
+    const simulations = (project: string, names = selected) => withFormalCache(cache, () => precomputeSimulations(project, readSpecs(project), names));
+    const prepare = (project: string, names = selected) => withFormalCache(cache, () => prepareSimulationReceipts(project, readSpecs(project), names, seedParent));
+    const invalid = ruleSpec("pure val bad = unknownValue");
+    const first = scratch({ ...sources, "spec/untouched.md": invalid });
+    const { results: cold, seedDirectory: coldSeed } = await prepare(first);
+    assert.deepEqual([...new Set(cold.map((row) => row.where))], ["spec/other.md", "spec/counter.md"]);
+    assert.ok(cold.every((row) => row.ok) && cold.some((row) => row.stage === "sometimes"), JSON.stringify(cold));
+    assert.ok(cold.some((row) => row.stage === "replay" && row.where === "spec/counter.md"), JSON.stringify(cold));
+    assert.ok(fs.readdirSync(path.join(first, "gen/traces")).some((dir) => dir.startsWith("counter.")));
+    assert.ok(!fs.existsSync(path.join(first, "gen/counter.ts")), "partial precomputation does not publish generated modules");
+    const receipts = fs.readdirSync(cache);
+    assert.ok(receipts.length > 0 && receipts.every(isActionEntry));
+    assert.ok(coldSeed);
+    const names = fs.readdirSync(coldSeed);
+    assert.equal(names.filter(isActionEntry).length, 4);
+    assert.equal(names.filter((name) => name.startsWith("simulate-")).length, 2);
+    assert.equal(names.length, 6);
+    fs.rmSync(first, { recursive: true, force: true });
+
+    const same = scratch(sources);
+    const warm = await withFormalCache(cache, () => run(same));
+    assert.deepEqual(warm.results.filter(({ stage }) => ["always", "sometimes", "replay"].includes(stage)),
+      [...cold].sort((a, b) => a.where!.localeCompare(b.where!)));
+    assert.ok(!fs.existsSync(path.join(same, "gen/traces")), "ordinary check reused every simulation action");
+    assert.ok(receipts.every((file) => fs.existsSync(path.join(cache, file))));
+
+    const changed = scratch({ ...sources, "spec/base.md": sources["spec/base.md"].replace("= 2", "= -1") });
+    const rejected = await prepare(changed, ["counter"]);
+    assert.ok(rejected.results.some((row) => row.stage === "always" && !row.ok && row.detail.includes("initial")), JSON.stringify(rejected));
+    assert.equal(rejected.seedDirectory, undefined);
+    assert.equal(fs.readdirSync(seedParent).length, 1);
+
+    const typecheck = names.find(isActionEntry);
+    assert.ok(typecheck);
+    const legacy = typecheck.replace(/\.zst$/, ".gz");
+    assert.notEqual(legacy, typecheck);
+    fs.writeFileSync(path.join(cache, legacy), gzipSync(zstdDecompressSync(fs.readFileSync(path.join(cache, typecheck)))));
+    fs.rmSync(path.join(cache, typecheck));
+    const warmProducer = scratch(sources);
+    fs.cpSync(coldSeed, path.join(warmProducer, ".spec-cache"), { recursive: true });
+    const prepared = await prepare(warmProducer);
+    assert.deepEqual(prepared.results, cold);
+    const seed = prepared.seedDirectory;
+    assert.ok(seed && seed !== coldSeed);
+    assert.deepEqual(fs.readdirSync(seed).sort(), [...names.filter((name) => name !== typecheck), legacy].sort());
+    assert.deepEqual(fs.readFileSync(path.join(seed, legacy)), fs.readFileSync(path.join(cache, legacy)));
+
+    const compact = scratch(sources);
+    fs.cpSync(seed, path.join(compact, ".spec-cache"), { recursive: true });
+    assert.deepEqual((await run(compact)).results, warm.results);
+    assert.ok(!fs.existsSync(path.join(compact, "gen/traces")), "the ordinary check reused the compact seed");
+
+    const fallback = scratch(sources);
+    const restored = path.join(fallback, ".spec-cache");
+    fs.cpSync(seed, restored, { recursive: true });
+    const damaged = names.find((name) => name.startsWith("simulate-"));
+    assert.ok(damaged);
+    fs.writeFileSync(path.join(restored, damaged), "truncated receipt");
+    assert.deepEqual((await run(fallback)).results, warm.results);
+    assert.ok(fs.existsSync(path.join(fallback, "gen/traces")), "the ordinary check recomputed a damaged result");
+
+    const malformed = scratch({ ...sources, "spec/untouched.md": invalid,
+      "spec/other.md": sources["spec/other.md"].replace("n + 1", "n + 2") });
+    await assert.rejects(simulations(malformed, ["other", "untouched"]), /spec\/untouched.md[^]*unknownValue/);
+    const traces = path.join(malformed, "gen/traces");
+    assert.ok(fs.readdirSync(traces).some((dir) => dir.startsWith("other.inv.probe")), "the already started simulation reached the probe before rejection");
+    assert.ok(!fs.existsSync(path.join(malformed, ".spec-cache/lock")));
+    assert.ok((await simulations(malformed, ["other"])).every((row) => row.ok));
+    await assert.rejects(simulations(same, ["missing"]), /no spec has the module name "missing"/);
+  });
+
   test("a guard that never refuses its event is reported without failing", async () => {
     // Every reachable lamp has counted its flips, so this guard restates a rule and restricts nothing.
     const { failed, text, said } = await run(fixtures(["lamp"], (f) => {
@@ -644,6 +774,7 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
       ["a type named like a generated one", "type Event = { n: int }\npure val initial: Event = { n: 0 }", /cannot be used as a name/],
       ["a definition named like a JavaScript global", "pure val initial: int = 0\npure def Number(n: int): int = n", /cannot be used as a name/],
       ["a parameter named like Dafny's standard library", "pure val initial: int = 0\npure def f(Std: int): int = Std", /`Std` cannot be used as a name/],
+      ["a parameter named like a word Dafny reserves and LemmaScript does not rename", "pure val initial: int = 0\npure def f(assigned: int): int = assigned", /`assigned` cannot be used as a name/],
       ["a set of two computed members", "pure val initial: int = 0\npure def pair(a: int, b: int): int = Set(a, b).size()", /could hold the same value twice/],
       ["a variant field called tag", "type P = A({ tag: int }) | B\npure val initial: int = 0\npure def tick(n: int): int = n", /cannot be called `tag`/],
       ["a match binder used as a whole value", "type N = { n: int }\ntype P = A(N) | B\npure val initial: int = 0\npure def g(r: N): int = r.n\npure def f(p: P): int = match p { | A(x) => g(x) | _ => 0 }\npure def tick(n: int): int = n", /is what a match arm carries/],
@@ -786,6 +917,40 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
     assert.ok(!failed.includes("sometimes"), text);
   });
 
+  test("an explicitly reached probe goal keeps the independent search that exposes a broken rule", async () => {
+    const root = oneRule("counter", "The counter stays under 22", `pure val initial: int = 0
+pure val choiceValues = Set(${Array.from({ length: 64 }, (_, i) => i).join(", ")})
+pure def advance(n: int, choice: int): int = if (n == -1 or (n == 0 and choice == 0)) -1 else n + 1
+pure def alwaysBelowTwentyTwo(n: int): bool = n < 22
+pure def sometimesExit(n: int): bool = n == -1`);
+    const result = await run(root);
+    const broken = result.said("always", /a reachable state breaks/);
+    assert.ok(broken && !broken.ok, result.text);
+    assert.match(broken.detail, /-> state = 22\b/);
+    assert.match(broken.detail, /never_sometimesExit .*--max-steps 40/);
+    assert.ok(!result.said("sometimes", /is reachable/), result.text);
+    assert.ok(result.said("skipped", /^types, proof,/), result.text);
+    const probe = fs.globSync("gen/traces/counter.inv.probe/**/*.itf.json", { cwd: root });
+    assert.ok(probe.some((file) => JSON.parse(read(file, root)).states.some((s: Record<string, unknown>) =>
+      s["mbt::actionTaken"] === "eval_sometimesExit" && isDeepStrictEqual(s.outcome, { tag: "Out_sometimesExit", value: true }))));
+  });
+
+  test("a deeper reachable goal does not preempt a shallow safety counterexample", async () => {
+    const root = oneRule("rare", "Find a rare choice after counting", `pure val initial: int = 0
+pure val pValues = 0.to(127)
+pure val qValues = 0.to(127)
+pure def up(n: int, p: int, q: int): int = if (n == 0 and p == 109 and q == 71) -2 else if (n == 38 and p < 16 and q < 6) -1 else n + 1
+pure def alwaysSafe(n: int): bool = n >= -1
+pure def sometimesMarked(n: int): bool = n == -1`);
+    const result = await run(root);
+    const broken = result.said("always", /a reachable state breaks/);
+    assert.ok(broken && !broken.ok, result.text);
+    assert.match(broken.detail, /-> state = -2\b/);
+    assert.match(broken.detail, /never_sometimesMarked .*--max-samples 200000 --max-steps 20\b/);
+    assert.ok(!result.said("sometimes", /is reachable/), result.text);
+    assert.ok(result.said("skipped", /^types, proof,/), result.text);
+  });
+
   test("a deep witness is found in the short sweep before the full search", async () => {
     const quint = "pure val initial: int = 0\npure def up(n: int): int = n + 1\npure def sometimesLate(n: int): bool = n == 38";
     const root = oneRule("t", "Counting", quint);
@@ -795,6 +960,51 @@ pure def stepHasOneEffect(before: State, after: State, out: List[int]): bool = o
     assert.equal(result.broken, true, result.again);
     assert.match(result.again, /--max-samples 32 --max-steps 40\b/);
     assert.equal(result.traces[0]?.at(-1)?.state, 38);
+
+    const rare = oneRule("rare", "Find a rare choice after counting", [
+      "pure val initial: int = 0",
+      "pure def up(n: int): int = n + 1",
+      "pure val tokenValues = 1.to(300)",
+      "pure def canMark(n: int, token: int): bool = n == 38 and token == 1",
+      "pure def mark(n: int, token: int): int = -1",
+      "pure def sometimesMarked(n: int): bool = n == -1",
+    ].join("\n"));
+    const rareModel = await gen(rare, readSpecs(rare)[0]);
+    const found = await search({ memory: { root: rare, fresh: true, used: new Set() }, model: rareModel, files: harnessFiles(readSpecs(rare)[0], readSpecs(rare), rareModel) }, "never_sometimesMarked", "step", [20, 40], 4096);
+    assert.equal(found.broken, true, found.again);
+    assert.match(found.again, /--max-samples 2048 --max-steps 40\b/);
+    assert.equal(found.traces[0]?.at(-1)?.state, -1);
+
+    const lateGuard = oneRule("gate", "Allow completion after counting", [
+      "pure val initial: int = 0",
+      "pure def up(n: int): int = n + 1",
+      "pure def canFinish(n: int): bool = n >= 38",
+      "pure def finish(n: int): int = 0",
+    ].join("\n"));
+    const guardModel = await gen(lateGuard, readSpecs(lateGuard)[0]);
+    const allowed = await search({ memory: { root: lateGuard, fresh: true, used: new Set() }, model: guardModel, files: { ...harnessFiles(readSpecs(lateGuard)[0], readSpecs(lateGuard), guardModel), "gate.guard.run.qnt": { text: guardModel.guardHarness, key: guardModel.guardHarness } }, main: "gate.guard.run.qnt" }, "never_allows_canFinish", "eval_canFinish__1", [20, 40], 180);
+    assert.match(allowed.again, /--step eval_canFinish__1 .* --max-samples 32 --max-steps 40\b/);
+    assert.equal(allowed.broken, true);
+    const trace = allowed.traces[0];
+    assert.deepEqual(trace?.at(-1)?.evaluated, { name: "canFinish", picks: {}, result: true });
+    replay(await import(path.join(lateGuard, "gen/gate.ts")), trace, guardModel);
+    assert.match(allowed.again, /gen\/gate\.guard\.run\.qnt/);
+  });
+
+  test("shallow and deep goals each supply a journey and receive their independent search", async () => {
+    const root = oneRule("route", "Take one step and then continue", `pure val initial: int = 0
+pure def advance(n: int): int = n + 1
+pure def sometimesStarted(n: int): bool = n > 0
+pure def sometimesLate(n: int): bool = n == 38`);
+    const spec = readSpecs(root)[0];
+    const model = await gen(root, spec);
+    const domain = await import(pathToFileURL(path.join(root, "gen", "route.ts")).href);
+    const { said, tested } = await simulation({ root, fresh: true, used: new Set() }, spec, [spec], model, domain, 1);
+    assert.ok(said.every((r) => r.ok), JSON.stringify(said));
+    assert.deepEqual(tested?.journeys.map(({ events }) => events.length), [1, 38]);
+    const actions = fs.readdirSync(path.join(root, "gen", "traces"));
+    assert.ok(actions.some((name) => name.startsWith("route.never_sometimesLate.")));
+    assert.ok(actions.some((name) => name.startsWith("route.never_sometimesStarted.")));
   });
 
   test("simulation and probes preserve guarded transitions and outputs when only the state enables an event", async () => {
@@ -833,19 +1043,24 @@ pure val witnessSender = 4
 pure val witness_fixture = 5
 pure val witness_sometimesDone = 6
 pure def witnessStep_sometimesDone(n: int): int = n`;
-    const simulateExample = async (source: string, example: string) => {
-      const root = oneRule("journey", "Publish then finish", `${source}\npure val eval_witness_sometimesDone = ${example}`);
+    const example = (source: string, guide: string) => `${source}\npure val eval_witness_sometimesDone = ${guide}`;
+    const fixture = (source: string, guide: string) => oneRule("journey", "Publish then finish", example(source, guide));
+    const runExample = async (root: string) => {
       const spec = readSpecs(root)[0];
       const model = await gen(root, spec);
       const domain = await import(pathToFileURL(path.join(root, "gen", "journey.ts")).href);
       assert.deepEqual([domain.witnessIndex, domain.witnessSender, domain.witness_fixture, domain.witness_sometimesDone, domain.witnessStep_sometimesDone(7)], [3, 4, 5, 6, 7]);
       return simulation({ root, fresh: false, used: new Set() }, spec, [spec], model, domain, 1);
     };
-    const [reached, denied, unsafe, mistyped] = await Promise.all([
-      simulateExample(modelSource, '(("publish", 41), "finish")'),
+    const original = fixture(modelSource, '(("publish", 41), "finish")');
+    const ordinary = fixture(`${modelSource}\npure val amountValues = Set(43)`, '(("publish", 41), "finish")');
+    const simulateExample = (source: string, guide: string) => runExample(fixture(source, guide));
+    const [reached, denied, unsafe, mistyped, ordinaryFailure] = await Promise.all([
+      runExample(original),
       simulateExample(modelSource.replace("n == 42", "n == 1"), '("publish", -1)'),
       simulateExample(modelSource, '(("publish", 43), "finish")'),
       simulateExample(modelSource, '("publish", "unknown")'),
+      runExample(ordinary),
     ]);
     assert.ok(reached.said.some((r) => r.ok && r.summary === "sometimesDone is reachable"), JSON.stringify(reached.said));
     assert.ok(reached.said.some((r) => r.ok && r.stage === "replay"), JSON.stringify(reached.said));
@@ -853,6 +1068,60 @@ pure def witnessStep_sometimesDone(n: int): int = n`;
     assert.ok(denied.said.some((r) => r.ok && r.summary === "sometimesDone is reachable"), JSON.stringify(denied.said));
     assert.ok(unsafe.said.some((r) => !r.ok && r.stage === "always" && r.detail.includes('publish{"amount":43}')), JSON.stringify(unsafe.said));
     assert.ok(mistyped.said.some((r) => !r.ok && /Couldn't unify (?:int and str|str and int)/.test(r.detail)), JSON.stringify(mistyped.said));
+    fs.writeFileSync(path.join(original, "spec/journey.md"), ruleSpec(example(modelSource, '(("publish", 42), "finish")'), "Publish then finish"));
+    const edited = await runExample(original);
+    assert.deepEqual(edited.tested?.journeys[0]?.events, [{ type: "publish", amount: 42 }]);
+    const reproduction = "gen/traces/journey.ordinary/journey.run.qnt";
+    const again = ordinaryFailure.said.find((row) => !row.ok && row.detail.includes(`quint run ${reproduction}`));
+    assert.ok(again, JSON.stringify(ordinaryFailure.said));
+    const recovered = await runExample(ordinary);
+    assert.deepEqual(recovered.said, ordinaryFailure.said);
+    const [command] = again.detail.split("\n").filter((line) => line.includes(`quint run ${reproduction}`));
+    const rerun = await tool("quint", command.slice(command.indexOf("quint run ") + "quint ".length).split(" "), ordinary);
+    assert.ok(violated(rerun), rerun.out);
+
+    const refusalSource = `type Clock = { elapsed: int }
+pure val initial: Clock = { elapsed: 0 }
+pure def canTick(c: Clock, amount: int): bool = amount >= 0
+pure def tick(c: Clock, amount: int): Clock = { elapsed: c.elapsed + amount }
+pure def alwaysNonnegative(c: Clock): bool = c.elapsed >= 0
+pure val amountValues = Set(0, 1)`;
+    const clock = (guide = "") => oneRule("clock", "A tick never goes backward", refusalSource + guide);
+    const refusing = clock("\npure val eval_refuse_canTick = { amount: -1 }");
+    const allowed = clock("\npure val eval_refuse_canTick = { amount: 0 }");
+    const checkClock = async (root: string) => {
+      const spec = readSpecs(root)[0];
+      const model = await gen(root, spec);
+      const domain = await import(pathToFileURL(path.join(root, "gen", "clock.ts")).href);
+      const check = await simulation({ root, fresh: false, used: new Set() }, spec, [spec], model, domain, 1);
+      return { model, check };
+    };
+    const [before, after, miss] = await Promise.all([checkClock(clock()), checkClock(refusing), checkClock(allowed)]);
+    assert.ok(before.check.said.some((r) => r.summary.includes("never seen to refuse") && r.summary.includes("canTick")));
+    assert.ok(after.check.said.some((r) => r.ok && r.summary.endsWith("and refuse it in another")));
+    assert.ok(after.check.said.some((r) => r.ok && r.stage === "replay"));
+    assert.deepEqual(miss.check, before.check);
+    assert.deepEqual(after.check.tested, before.check.tested);
+    assert.deepEqual(
+      [after.model.ts, after.model.harness, after.model.guardHarness],
+      [before.model.ts, before.model.harness, before.model.guardHarness],
+    );
+    const candidateRun = "gen/traces/clock.never_refuses_canTick.eval_canTick__2/0.itf.json";
+    const randomProbe = "gen/traces/clock.never_refuses_canTick.probe/0.itf.json";
+    const last = JSON.parse(read(candidateRun, refusing)).states.at(-1);
+    assert.deepEqual(last.outcome, { tag: "Out_canTick", value: false });
+    assert.deepEqual(last["mbt::nondetPicks"].amount.value, { "#bigint": "-1" });
+    assert.ok(fs.existsSync(path.join(allowed, candidateRun)));
+    assert.ok(fs.existsSync(path.join(allowed, randomProbe)));
+    assert.ok(!fs.existsSync(path.join(refusing, randomProbe)));
+    for (const [guide, error] of [
+      ["eval_refuse_canMissing = { amount: -1 }", /name a transition guard/],
+      ["eval_refuse_canTick = { elapsed: -1 }", /needs the argument amount/],
+      ['eval_refuse_canTick = { amount: "no" }', /does not have the type expected/],
+    ] as const) {
+      const root = clock(`\npure val ${guide}`);
+      await assert.rejects(gen(root, readSpecs(root)[0]), error);
+    }
   });
 
   test("hand-written code that changes what it is checked against is refused or flagged", async () => {
@@ -1106,7 +1375,8 @@ export effect function filled(sku: string, qty: number) {
   return [cart.count, add(initial, sku, qty).count, total([qty])] as const
 }
 ` });
-    assert.deepEqual(await genAll(root), ["_conformance.ts", "package.json", ...names.flatMap((n) => [`${n}.qnt`, `${n}.run.qnt`, `${n}.ts`, `${n}.effect.vibe`, ...(n === "lib" ? [] : [`${n}.conformance.ts`])])].sort());
+    const probed = ["mailer", "shop", "vault"];
+    assert.deepEqual(await genAll(root), ["_conformance.ts", "package.json", ...names.flatMap((n) => [`${n}.qnt`, `${n}.run.qnt`, `${n}.ts`, `${n}.effect.vibe`, ...(n === "lib" ? [] : [`${n}.conformance.ts`]), ...(probed.includes(n) ? [`${n}.guard.run.qnt`] : [])])].sort());
     // gen/package.json names no package, so the compiler has no key to derive for a service: the adapter states its own (EK0903).
     assert.deepEqual(JSON.parse(read("gen/package.json", root)), { type: "module" });
     assert.match(read("gen/vault.effect.vibe", root), new RegExp(`^export service Machine \\{\\n  static readonly key = ${JSON.stringify(`${path.basename(root)}/spec/vault.md#Machine`).replace(/[./]/g, "\\$&")}$`, "m"));
@@ -1213,6 +1483,25 @@ export effect function probe() {
     assert.ok(said("proof", /^sys\.ts: all \d+ obligations proved/), text);
   });
 
+  test("an imported constant keeps the types declared under its own nested aliases in proofs", async () => {
+    const product = 'import staging as St from "./staging"\npure val launcherName: str = St::noCall.descriptor.name\n'
+      + 'pure def lawNamesLauncher(name: str): bool = (name != "empty") implies launcherName != name';
+    const root = scratch({
+      "spec/runtime.md": ruleSpec("type Abi = Arm64 | X86_64", "Runtime", "Runtime"),
+      "spec/staging.md": ruleSpec('import runtime as R from "./runtime"\ntype NativeRequest = NoNative | NativeFor({ abi: R::Abi })\n'
+        + 'type Launcher = { native: NativeRequest, name: str }\ntype Call = { descriptor: Launcher }\n'
+        + 'pure val noCall: Call = { descriptor: { native: NativeFor({ abi: R::Arm64 }), name: "empty" } }', "Staging", "Staging"),
+      "spec/product.md": ruleSpec(product, "Product", "Product"),
+      "spec/host.md": ruleSpec("type Abi = Linux | Mac", "Host", "Host"),
+      "spec/productWithHost.md": ruleSpec('import host as R from "./host"\n' + product
+        + "\npure val hostAbi: R::Abi = R::Linux", "Product with host", "Product with host"),
+    });
+    const { failed, said, text } = await run(root);
+    assert.deepEqual(failed, ["review"], text);
+    assert.ok(said("proof", /^product\.ts: all \d+ obligations proved/), text);
+    assert.ok(said("proof", /^productWithHost\.ts: all \d+ obligations proved/), text);
+  });
+
   test("local enums and records keep their Quint types in generated code and proof", async () => {
     const root = oneRule("choice", "Choose", "type Choice = Left | Right\ntype Pick = { side: Choice, n: int }\npure def read(p: Pick): int = if (p.side == Left) p.n else 0\npure def record(n: int, b: bool): int =\n  val p = { side: if (b) Left else Right, n: n }\n  read(p)\npure def updated(p: Pick): int =\n  val changed = p.with(\"side\", Left)\n  read(changed)\npure def choices(b: bool): List[Choice] = if (b) List(Left) else List(Right)\npure def use(c: Choice): int = if (c == Left) 1 else 2\npure def chosen(b: bool): int =\n  val c = if (b) Left else Right\n  use(c)\npure def lawChosen(b: bool): bool = chosen(b) == (if (b) 1 else 2)");
     const { failed, text } = await run(root);
@@ -1261,6 +1550,7 @@ export effect function probe() {
     assert.ok(plain.said("proof", /not proved/), plain.text);
     // `every` reaches Dafny as a quantifier over the members, as `some` does, not as Std.Collections.Seq.All (print.ts, LIST_HELPERS).
     assert.match(fs.readFileSync(path.join(plainRoot, "gen/proof/shop/shop.dfy"), "utf8"), /\n  !\(\(exists l :: l in c\.lines && !\(\(exists t :: t in l\.tags && \(exists m :: m in c\.lines/);
+    assert.match(read("gen/proof/shop/shop.scaffold.dfy", plainRoot), /^lemma (\w+)_ensures\((\w+): Cart(?:, (\w+): \w+)*\)\n(?:  ensures .*\n)+\{\n  if inv\(\2\)(?: && \w+\(.*\))? \{\n    var after := \1\(\2.*\);\n  \}\n\}$/m, plain.text);
     // Once the unproved obligations are recorded, only the review is left.
     // Hand-written code proved against the shop says that it rests on what is simulated only there.
     assert.match(recording.said("proof", /^spec\/lock\.json: [1-9]\d* added, 0 removed\n/)?.detail ?? "", /^    \+ shop\.ts: /m, recording.text);
@@ -1321,10 +1611,11 @@ function eachCheckB() {
     assert.ok(said("sometimes", /\bsave in .* never happened/), text);
   });
 
-  test("tables keyed by integers and variants, getOr, nthOr, removeAt, structural == and a mapped append are compiled, simulated, replayed and proved", async () => {
-    const root = fixtures(["hall"]);
+  test("tables keyed by integers and variants, getOr, nthOr, removeAt, structural == and a mapped append are simulated, replayed, proved and typed, and a variant literal is typed for the prover wherever it stands", async () => {
+    const root = fixtures(["hall"], (f) => { f["src/hall.ts"] = "export const hall = 1;\n"; });
     const { failed, said, text } = await run(root);
     assert.deepEqual(failed, ["review"], text);
+    assert.ok(said("types", /./)?.ok, text);
     assert.ok(said("proof", /^hall\.ts: all \d+ obligations proved/), text);
     const compiled = await tool("tsc", ["--ignoreConfig", "--noEmit", "--target", "es2023", "--module", "nodenext", "--strict", "--skipLibCheck", path.join(root, "gen/hall.ts")], project);
     assert.ok(compiled.ok, compiled.out);
@@ -1654,7 +1945,7 @@ function eachCheckB() {
     assert.ok(tooLate.said("always", /within its bound \(`within_leadsToAhead = 21`\)/), tooLate.text);
   });
 
-  test("nested set samples stay bounded, an inner lambda may shadow a match binder, and forall and subseteq keep their meaning as quantifiers", async () => {
+  test("nested set samples stay bounded, an inner lambda may shadow a match binder, forall and subseteq keep their meaning as quantifiers, and a variant names its own module's type before one an import brings", async () => {
     // A set's `forall` and `subseteq` are printed negated (print.ts, SET_OPS): the laws are sampled, compared with Quint and proved.
     const quantifiers = "\npure def positive(x: int): bool = x > 0\npure def lawQuantifiers(xs: Set[int]): bool = xs.subseteq(xs) and (xs.forall(positive) or xs.exists(x => x <= 0)) and not(xs.exists(x => x > 0) and xs.forall(x => x <= 0))";
     const root = oneRule("nested", "Nested values", "type P = A({ xs: List[int] }) | B\npure def sum(p: P): int = match p { | A(x) => x.xs.foldl(0, (n, x) => n + x) | _ => 0 }\npure def lawSum(k: int): bool = sum(A({ xs: List(1, 2) })) == 3\npure def lawCount(xs: List[Set[int]]): bool = xs.length() >= 0\npure def zeros(n: int): Set[int] = Set(n * 0)\npure def lawZeros(n: int): bool = zeros(n).contains(0)" + quantifiers);
@@ -1681,6 +1972,14 @@ pure def lawOwn(own: int): bool = shadowOwn(own) == own`));
     assert.deepEqual(checked.failed, ["review"], checked.text);
     const domain = await import(path.join(scoped, "gen/use.ts"));
     assert.deepEqual([domain.echo(7), domain.echoLocal(8), domain.sum([2, 3]), domain.shadowOwn(9), domain.paramShadow(1), domain.nestedShadow(1)], [7, 8, 5, 9, 7, 8]);
+    const deep = scratch({
+      "spec/codes.md": ruleSpec("type Code = Spent | Fine\npure val code: Code = Spent"),
+      "spec/lib.md": ruleSpec('import codes.* from "./codes"\npure val value = 1'),
+      "spec/use.md": ruleSpec('import lib.* from "./lib"\ntype Failure = Limited({ at: int }) | Spent\npure val spent: Failure = Spent\npure def lawSpent(n: int): bool = spent != Limited({ at: n })'),
+    });
+    const owned = await run(deep);
+    assert.deepEqual(owned.failed, ["review"], owned.text);
+    assert.deepEqual((await import(path.join(deep, "gen/use.ts"))).spent, { tag: "Spent" });
   });
 }
 
@@ -2653,7 +2952,7 @@ function eachCheck() {
       'const keptAfter = await kept();',
       'const choose = () => steady(async () => [(await solver()).version, await proof()]);',
       'const bundled = "libexec/z3/bin/z3-4.12.1"; fs.mkdirSync("libexec/z3/bin", { recursive: true });',
-      'const install = (v) => fs.writeFileSync(bundled, ["#!/bin/sh", "echo Z3 version " + v, ""].join(String.fromCharCode(10)), { mode: 0o755 });',
+      'const install = (v) => { fs.writeFileSync(bundled + ".next", ["#!/bin/sh", "echo Z3 version " + v, ""].join(String.fromCharCode(10)), { mode: 0o755 }); fs.renameSync(bundled + ".next", bundled); };',
       'const fallback = await choose(); install("4.12.0"); const preferred = await choose(); install("4.12.2"); const replaced = await choose(); fs.unlinkSync(bundled);',
       'console.log(JSON.stringify({ within, after, kept: [rewritten, keptAfter], selected: [fallback, preferred, replaced, await choose()] }));',
     ].join("\n")], root, { ...process.env, XDG_CACHE_HOME: path.join(root, "cache"), PATH: `${audit}${path.delimiter}${process.env.PATH ?? ""}` });
@@ -2849,7 +3148,7 @@ function eachCheck() {
     const root = oneRule("packaged", "A packaged value", "pure val answer = 42");
     const staging = scratch(Object.fromEntries(PACKED.map((file) => [file, read(file)])));
     // Studio's page is built from the workspace packages it shares with every interface.
-    for (const directory of ["vibestack", "packages", "spec"])
+    for (const directory of ["vibestack", "packages", "spec"].filter((d) => fs.existsSync(path.join(project, d))))
       copySources(path.join(project, directory), path.join(staging, directory));
     copySources(path.join(project, ".agents/skills"), path.join(staging, ".agents/skills"));
     const lock = path.join(staging, "vibestack/studio/.spec-cache/lock");
@@ -2857,7 +3156,7 @@ function eachCheck() {
     fs.writeFileSync(lock, `${process.pid}\n`);
     fs.mkdirSync(path.join(staging, "node_modules"));
     fs.writeFileSync(path.join(staging, "node_modules/should-not-copy"), "dependencies belong to the scratch install\n");
-    const copy = scratch({});
+    const copy = scratch({ ".gitignore": read(".gitignore") });
     copySources(staging, copy);
     const fixture = "vibestack/stories/test/fixtures/gen/index.ts";
     assert.deepEqual(fs.readFileSync(path.join(copy, fixture)), fs.readFileSync(path.join(project, fixture)));
@@ -2877,8 +3176,22 @@ function eachCheck() {
     const dependencies = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm",
       ["install", "--offline", "--frozen-lockfile", "--ignore-scripts"], copy, installEnv);
     assert.equal(dependencies.status, 0, dependencies.stdout + dependencies.stderr);
+    const page = path.join(copy, "vibestack/studio/dist/page");
+    const pageFiles = (directory: string) => fs.readdirSync(directory, { recursive: true, encoding: "utf8" })
+      .filter((file) => fs.statSync(path.join(directory, file)).isFile()).sort()
+      .map((file) => ({ file: file.split(path.sep).join("/"), bytes: fs.readFileSync(path.join(directory, file)) }));
+    const studio = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["all", "vibestack-studio#build"], copy, { ...process.env, TURBO_CACHE: "local:rw" });
+    assert.equal(studio.status, 0, studio.stdout + studio.stderr);
+    const currentPage = pageFiles(page);
+    const stale = ["assets/stale-bundle.js", "assets/stale-style.css", "removed-public.txt"];
+    for (const file of stale) {
+      fs.mkdirSync(path.dirname(path.join(page, file)), { recursive: true });
+      fs.writeFileSync(path.join(page, file), "obsolete build output\n");
+    }
     const built = await exec(process.platform === "win32" ? "pnpm.cmd" : "pnpm", ["run", "build"], copy, { ...process.env, TURBO_CACHE: "local:rw" });
     assert.equal(built.status, 0, built.stdout + built.stderr);
+    assert.match(stripVTControlCharacters(built.stdout), /^(?:vibestack-studio:build: |::group::vibestack-studio:build\r?\n)cache hit\b/m);
+    assert.deepEqual(stale.filter((file) => fs.existsSync(path.join(page, file))), stale);
     const script = path.join(copy, "dist/spec.js");
     fs.chmodSync(script, 0o755);
     const generated = await exec(process.platform === "win32" ? process.execPath : script,
@@ -2895,6 +3208,7 @@ function eachCheck() {
     fs.mkdirSync(installed, { recursive: true });
     const unpacked = await exec("tar", ["-xzf", archive, "--strip-components", "1", "-C", installed], copy);
     assert.equal(unpacked.status, 0, unpacked.stdout + unpacked.stderr);
+    assert.deepEqual(pageFiles(path.join(installed, "dist/studio/dist/page")), currentPage);
     assert.deepEqual(fs.readdirSync(installed, { recursive: true, encoding: "utf8" }).filter((file) => file.split(path.sep).includes("examples")), [], "an application's toolchain carries no example to check");
     fs.mkdirSync(path.join(installed, "node_modules"));
     for (const entry of fs.readdirSync(nodeModules).filter((name) => name !== ".bin"))
@@ -3309,35 +3623,49 @@ function eachCheck() {
 }
 
 function theCommandLine() {
-  test("a concurrent verifier install retries once without duplicating the check JSON stream", { skip: process.platform === "win32" }, async () => {
+  test("concurrent verifier installs during simulation and tests retry without duplicating the check JSON stream", { skip: process.platform === "win32" }, async () => {
     for (const changedModel of [false, true]) {
-      const root = toolchain(oneRule("value", "A value", "pure val answer = 42"), "quint", "lsc");
+      const root = toolchain(changedModel ? oneRule("value", "A value", "pure val answer = 42") : fixtures(["door"]), "quint", "lsc");
       const shim = path.join(root, "node_modules/.bin/quint");
       fs.unlinkSync(shim);
       fs.copyFileSync(path.join(nodeModules, ".bin/quint"), shim);
+      if (!changedModel) {
+        const { packageManager } = JSON.parse(read("package.json"));
+        fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ type: "module", packageManager, scripts: { test: "node install-during-tests.mjs" } }));
+        fs.writeFileSync(path.join(root, "install-during-tests.mjs"), `
+          import fs from "node:fs";
+          fs.mkdirSync(".cache", { recursive: true });
+          if (!fs.existsSync(".cache/test-runs")) fs.linkSync("node_modules/.bin/quint", ".cache/second-install-quint");
+          fs.appendFileSync(".cache/test-runs", "ran\\n");
+        `);
+      }
       const retry = await exec(process.execPath, ["--input-type=module", "--eval", `
         import assert from "node:assert/strict";
         import fs from "node:fs";
         import path from "node:path";
         import { main } from "./vibestack/pipeline.ts";
         const attempts = new Set();
+        let linked = false;
+        const link = () => {
+          fs.linkSync("node_modules/.bin/quint", "second-install-quint");
+          linked = true;
+        };
         const { mkdirSync } = fs;
         fs.mkdirSync = (dir, ...args) => {
           if (typeof dir === "string" && path.basename(dir).startsWith("run-")) attempts.add(dir);
+          if (!linked && typeof dir === "string" && dir.split(path.sep).includes("door.inv.step")) link();
           return mkdirSync(dir, ...args);
         };
         const { log } = console;
-        let linked = false;
         console.log = (line) => {
-          if (JSON.parse(line).stage === "model" && !linked) {
-            linked = true;
-            fs.linkSync("node_modules/.bin/quint", "second-install-quint");
-            if (${changedModel}) fs.renameSync("spec/value.md", "spec/renamed.md");
+          if (${changedModel} && JSON.parse(line).stage === "model" && !linked) {
+            link();
+            fs.renameSync("spec/value.md", "spec/renamed.md");
           }
           log(line);
         };
         await main(["check", "--json"]);
-        assert.equal(attempts.size, ${changedModel ? 3 : 2});
+        assert.equal(attempts.size, 3);
       `], root);
       assert.equal(retry.status, 1, retry.stdout + retry.stderr);
       const rows = retry.stdout.trimEnd().split("\n").map((line) => JSON.parse(line));
@@ -3347,6 +3675,8 @@ function theCommandLine() {
       } else {
         assert.equal(retry.stderr, "");
         assert.deepEqual(rows.slice(0, -1), rows.at(-1).results);
+        for (const stage of ["always", "tests"]) assert.deepEqual(rows.filter((r) => r.stage === stage).map((r) => r.ok), [true]);
+        assert.equal(read(".cache/test-runs", root), "ran\nran\n");
         assert.ok(rows.at(-1).results.some((r: Result) => r.stage === "proof" && r.ok), retry.stdout);
       }
       assert.equal(rows.filter((row) => row.stage === "model").length, 1);
@@ -3425,7 +3755,12 @@ function theCommandLine() {
     fs.writeFileSync(path.join(root, "packages/app/package.json"), JSON.stringify({ name: "app" }));
     fs.symlinkSync(nodeModules, path.join(root, "node_modules"), "dir");
     fs.symlinkSync(path.dirname(script), path.join(root, "vibestack"), "dir");
-    const prepare = (hosted: boolean, job = "verify", ...tasks: string[]) => exec(process.execPath, [script, "gen", "--install", ...tasks], root, { ...process.env, GITHUB_ACTIONS: String(hosted), GITHUB_JOB: job, TURBO_CACHE: "local:rw", TURBO_TOKEN: "" });
+    const install = (env: NodeJS.ProcessEnv, ...tasks: string[]) => exec(process.execPath, [script, "gen", "--install", ...tasks], root, { ...process.env, TURBO_CACHE: "local:rw", TURBO_TOKEN: "", ...env });
+    const prepare = (hosted: boolean, job = "verify", ...tasks: string[]) => install({ GITHUB_ACTIONS: String(hosted), GITHUB_JOB: job }, ...tasks);
+    const nightly = {
+      GITHUB_ACTIONS: "true", GITHUB_JOB: "vibestack-nightly-check", GITHUB_REPOSITORY: "owner/project", GITHUB_WORKSPACE: root,
+      GITHUB_WORKFLOW_REF: "owner/project/.github/workflows/fuzz.yml@refs/heads/main", npm_command: "install", npm_lifecycle_event: "prepare",
+    };
     for (const hosted of [false, true]) {
       const invalid = await prepare(hosted);
       assert.equal(invalid.status, 0, invalid.stderr);
@@ -3439,17 +3774,43 @@ function theCommandLine() {
     assert.equal(fixtures.status, 0, fixtures.stderr);
     assert.ok(fs.existsSync(path.join(root, "tools-built")));
     assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
+    const simulations = {
+      ...nightly, GITHUB_JOB: "vibestack-precompute-simulations",
+      GITHUB_WORKFLOW_REF: "owner/project/.github/workflows/ci.yml@refs/heads/main",
+    };
+    fs.rmSync(path.join(root, "tools-built"));
+    const precomputed = await install(simulations, ...prerequisites);
+    assert.equal(precomputed.status, 0, precomputed.stderr);
+    assert.ok(!fs.existsSync(path.join(root, "tools-built")));
+    assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
+    for (const outside of [
+      { GITHUB_JOB: "simulate" }, { GITHUB_ACTIONS: "false" }, { GITHUB_WORKSPACE: path.dirname(root) },
+      { GITHUB_WORKFLOW_REF: "owner/project/.github/workflows/other.yml@refs/heads/main" },
+      { npm_lifecycle_event: "" }, { npm_command: "pack" },
+    ]) {
+      const required = await install({ ...simulations, ...outside }, ...prerequisites);
+      assert.notEqual(required.status, 0, `an install outside the precompute context runs its prerequisites: ${JSON.stringify(outside)}`);
+      assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
+    }
     for (const hosted of [false, true]) {
       const missing = await prepare(hosted, "verify", ...prerequisites);
       assert.notEqual(missing.status, 0, "a failed prerequisite fails ordinary installs");
       assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
     }
+    const missing = await install(nightly, ...prerequisites);
+    assert.notEqual(missing.status, 0, "a failed prerequisite also fails nightly installs");
+    fs.writeFileSync(path.join(root, "owner-source"), "nightly owner");
+    const deferred = await install(nightly, ...prerequisites);
+    assert.equal(deferred.status, 0, deferred.stderr);
+    assert.equal(fs.readFileSync(path.join(root, "owner-generated"), "utf8"), "nightly owner");
+    assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
+    const nested = await install({ ...nightly, GITHUB_WORKSPACE: path.dirname(root) });
+    assert.equal(nested.status, 0, nested.stderr);
+    assert.equal((await import(path.join(root, "gen/value.ts") + "?nested")).answer, 43);
+    fs.rmSync(path.join(root, "gen/value.ts"));
     fs.writeFileSync(path.join(root, "owner-source"), "external owner");
     const packable = ["--skip-gen-on-pack", ...prerequisites];
-    const packed = await exec(process.execPath, [script, "gen", "--install", ...packable], root, {
-      ...process.env, GITHUB_ACTIONS: "true", GITHUB_JOB: "verify",
-      npm_command: "pack", npm_lifecycle_event: "prepare", TURBO_CACHE: "local:rw", TURBO_TOKEN: "",
-    });
+    const packed = await install({ GITHUB_ACTIONS: "true", GITHUB_JOB: "verify", npm_command: "pack", npm_lifecycle_event: "prepare" }, ...packable);
     assert.equal(packed.status, 0, packed.stderr);
     assert.equal(fs.readFileSync(path.join(root, "owner-generated"), "utf8"), "external owner");
     assert.ok(!fs.existsSync(path.join(root, "gen/value.ts")));
@@ -3474,9 +3835,9 @@ function theCommandLine() {
   });
 
   test("an obligation not proved names its rules and leaves a lemma to start from; its acceptance outlives a change of prose and not one of Quint", async () => {
-    const [root, shop] = [fixtures(["highest"], (f) => { delete f["spec/highest.proof.dfy"]; }), fixtures(["lib", "shop"])];
+    const root = fixtures(["highest"], (f) => { delete f["spec/highest.proof.dfy"]; });
     const rule = "Running maximum / The highest of a list is at least where it starts";
-    const [{ results }, machine] = await Promise.all([check(root), run(shop)]);
+    const { results } = await check(root);
     const unproved = results.find((r) => r.stage === "proof" && !r.ok);
     assert.deepEqual(unproved?.rules, [{ file: "spec/highest.md", key: rule }], results.map(show).join("\n"));
     assert.match(unproved!.detail, /gen\/proof\/highest\/highest\.scaffold\.dfy/);
@@ -3484,8 +3845,6 @@ function theCommandLine() {
     const scaffold = read("gen/proof/highest/highest.scaffold.dfy", root);
     assert.equal(scaffold, "lemma lawTheHighestIsAtLeastTheStart_ensures(xs: seq<int>, start: int)\n  ensures (lawTheHighestIsAtLeastTheStart(xs, start) == true)\n{\n}\n");
     assert.deepEqual(parseProofFile(scaffold, "spec/highest.proof.dfy").map((l) => l.name), ["lawTheHighestIsAtLeastTheStart_ensures"]);
-    // A transition's opens on what its obligations assume, with the state after it.
-    assert.match(read("gen/proof/shop/shop.scaffold.dfy", shop), /^lemma (\w+)_ensures\((\w+): Cart(?:, (\w+): \w+)*\)\n(?:  ensures .*\n)+\{\n  if inv\(\2\)(?: && \w+\(.*\))? \{\n    var after := \1\(\2.*\);\n  \}\n\}$/m, machine.text);
     // A simulated rule's result names it too.
     fs.writeFileSync(path.join(root, "spec/highest.md"), read("spec/highest.md", root).replace(">= start", "> start"));
     assert.deepEqual((await check(root)).results.find((r) => r.stage === "always" && !r.ok)?.rules, [{ file: "spec/highest.md", key: rule }]);
@@ -3708,9 +4067,199 @@ assert.deepEqual(outcome, ["Rejected", 1, 2]);`], root);
     }
   });
 
+  test("a verifier retains the CPU used by a helper it has already waited for", { skip: process.platform !== "linux" && process.platform !== "darwin" }, async () => {
+    const root = scratch({
+      "helper.mjs": 'const start = process.cpuUsage();\nfor (;;) { const cpu = process.cpuUsage(start); if (cpu.user + cpu.system >= 300_000) break; }\n',
+      "inherited.mjs": `import fs from "node:fs";
+import { setTimeout as wait } from "node:timers/promises";
+while (!fs.existsSync("work")) await wait(20);
+await import("./helper.mjs");
+fs.writeFileSync("writer-work", "complete");
+setInterval(() => {}, 60_000);`,
+      "handoff.mjs": `import fs from "node:fs";
+import { spawn } from "node:child_process";
+const writer = spawn(process.execPath, ["inherited.mjs"], { stdio: ["ignore", process.stdout, process.stderr] });
+writer.once("spawn", () => { fs.writeFileSync("writer.pid", String(writer.pid)); process.exit(0); });`,
+      "accounting-run.ts": read("vibestack/run.ts"),
+      "accounting-hold.mjs": 'process.send("ready");\nsetInterval(() => {}, 60_000);\n',
+      "ps": `#!${process.execPath}
+import fs from "node:fs";
+import { spawn } from "node:child_process";
+const child = spawn(process.execPath, ["accounting-hold.mjs"], { cwd: import.meta.dirname, stdio: ["ignore", process.stdout, process.stderr, "ipc"] });
+child.once("spawn", () => fs.writeFileSync(process.env.ACCOUNTING_MARKER, JSON.stringify([process.pid, child.pid])));
+child.once("message", () => {
+  fs.writeFileSync(process.env.ACCOUNTING_MARKER + ".ready", "");
+  if (process.env.ACCOUNTING_PARENT === "exited") process.exit(0);
+});
+`,
+      "accounting-abort.mjs": `import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
+import { toolCpuSeconds } from "./accounting-run.ts";
+const turn = () => new Promise(resolve => setImmediate(resolve));
+const running = pid => {
+  const row = spawnSync("/bin/ps", ["-p", String(pid), "-o", "stat="], { encoding: "utf8" });
+  return row.status === 0 && row.stdout.trim() !== "" && !row.stdout.trim().startsWith("Z");
+};
+const until = async ready => {
+  const deadline = performance.now() + 30_000;
+  while (!ready()) { assert.ok(performance.now() < deadline, "accounting helper did not reach its process boundary"); await turn(); }
+};
+fs.chmodSync("ps", 0o755);
+process.env.PATH = import.meta.dirname + path.delimiter + process.env.PATH;
+for (const mode of ["alive", "exited"]) {
+  process.env.ACCOUNTING_PARENT = mode;
+  const marker = path.join(import.meta.dirname, "accounting-" + mode);
+  process.env.ACCOUNTING_MARKER = marker;
+  const verifier = spawn(process.execPath, ["-e", "setInterval(() => {}, 60_000)"], { stdio: "ignore" });
+  const closed = once(verifier, "close");
+  const controller = new AbortController();
+  let settled = false, helpers = [];
+  const sampling = toolCpuSeconds([verifier], controller.signal).then(value => { settled = true; return value; });
+  try {
+    await until(() => fs.existsSync(marker + ".ready"));
+    helpers = JSON.parse(fs.readFileSync(marker, "utf8"));
+    if (mode === "exited") await until(() => !running(helpers[0]));
+    else assert.ok(running(helpers[0]), "the accounting parent is still alive");
+    assert.ok(running(helpers[1]), "the accounting descendant holds the inherited output");
+    controller.abort();
+    await turn();
+    assert.ok(settled, mode + ": abort releases accounting without waiting for inherited output to close");
+    await until(() => helpers.every(pid => !running(pid)));
+  } finally {
+    controller.abort();
+    if (!helpers.length && fs.existsSync(marker)) helpers = JSON.parse(fs.readFileSync(marker, "utf8"));
+    for (const pid of [...helpers, verifier.pid]) { try { process.kill(pid, "SIGKILL"); } catch (error) { if (error.code !== "ESRCH") throw error; } }
+    await Promise.all([closed, sampling]);
+    await until(() => helpers.every(pid => !running(pid)));
+  }
+}
+`,
+      "verifier.mjs": 'import { spawnSync } from "node:child_process";\nprocess.on("message", () => { const child = spawnSync(process.execPath, ["helper.mjs"]); process.send(child.status); });\nprocess.send("ready");\n',
+    });
+    const verifier = spawn(process.execPath, ["verifier.mjs"], { cwd: root, stdio: ["ignore", "ignore", "inherit", "ipc"] });
+    const closed = once(verifier, "close");
+    try {
+      await once(verifier, "message");
+      const [before] = await toolCpuSeconds([verifier]);
+      const reaped = once(verifier, "message");
+      verifier.send("work");
+      assert.equal((await reaped)[0], 0);
+      const [after] = await toolCpuSeconds([verifier]);
+      assert.ok(before?.complete && after?.complete && after.seconds - before.seconds >= 0.28, `CPU seconds before ${before?.seconds}, after ${after?.seconds}`);
+    } finally {
+      verifier.kill();
+      await closed;
+    }
+    const leader = spawn(process.execPath, ["handoff.mjs"], { cwd: root, detached: true, stdio: ["ignore", "pipe", "inherit"] });
+    const outputClosed = once(leader, "close");
+    await once(leader, "exit");
+    const writer = Number(read("writer.pid", root));
+    try {
+      const [before] = await toolCpuSeconds([leader]);
+      fs.writeFileSync(path.join(root, "work"), "");
+      await until(() => fs.existsSync(path.join(root, "writer-work")));
+      const [after] = await toolCpuSeconds([leader]);
+      assert.ok(before && !before.complete && after && !after.complete);
+      assert.ok(after.seconds - before.seconds >= 0.28, "the surviving writer continued to use CPU");
+    } finally {
+      process.kill(writer, "SIGKILL");
+      await outputClosed;
+    }
+    const aborted = await exec(process.execPath, ["accounting-abort.mjs"], root);
+    assert.equal(aborted.status, 0, aborted.stderr);
+  });
+
   test("a check that is interrupted, or that exits, ends each tool it started and what the tool started, in its process group or out of it, as it ends a tool that writes too much", { skip: process.platform === "win32" }, async () => {
     const root = scratch({
+      "short-watchdog.ts": read("vibestack/run.ts")
+        .replace(/^const WATCH = .*;$/m, "const WATCH = 100;")
+        .replace(/^const SLOTS = .*;$/m, "const SLOTS = 2;"),
+      "inherited-output.mjs": `import { spawn } from "node:child_process";
+const mode = process.argv[2];
+const helper = spawn(process.execPath, ["hold-output.mjs", mode, String(process.pid)], {
+  stdio: ["ignore", process.stdout, process.stderr], detached: mode === "detached",
+});
+helper.once("spawn", () => process.exit(0));
+`,
+      "hold-output.mjs": `import fs from "node:fs";
+const [mode, parent] = process.argv.slice(2);
+const marker = "helper-" + mode;
+fs.writeFileSync(marker + ".tmp", JSON.stringify([Number(parent), process.pid]));
+fs.renameSync(marker + ".tmp", marker);
+setTimeout(() => fs.writeFileSync("finished-" + mode, "done"), 60_000);
+`,
+      "watchdog-check.mjs": `import assert from "node:assert/strict";
+import fs from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
+import { exec } from "./short-watchdog.ts";
+const modes = ["same-group", "detached"];
+const helper = (mode) => fs.existsSync("helper-" + mode) ? JSON.parse(fs.readFileSync("helper-" + mode, "utf8")) : undefined;
+const running = (pid) => {
+  try { process.kill(pid, 0); return true; } catch (error) { if (error.code !== "ESRCH") throw error; return false; }
+};
+const ready = () => modes.every(mode => { const pids = helper(mode); return pids && !running(pids[0]) && running(pids[1]); });
+const originalNow = Date.now;
+const finished = Promise.all(modes.map(mode => exec(process.execPath, ["inherited-output.mjs", mode], import.meta.dirname)));
+try {
+  const deadline = performance.now() + 30_000;
+  while (!ready() && performance.now() < deadline) await delay(50);
+  assert.ok(ready(), "both writers started and their parents were reaped");
+  const clockStart = performance.now();
+  Date.now = () => originalNow() + 61 * 60_000 + Math.floor((performance.now() - clockStart) * 10_000);
+  const results = await Promise.race([finished, delay(20_000, undefined, { ref: false })]);
+  assert.ok(results, "the watchdog released both inherited pipes");
+  for (const [index, mode] of modes.entries()) {
+    assert.ok(results[index].stopped, mode + ": the watchdog ended the command");
+    assert.ok(!fs.existsSync("finished-" + mode), mode + ": the command returned while its inherited pipe was still held");
+  }
+} finally {
+  Date.now = originalNow;
+  for (const mode of modes) {
+    const pids = helper(mode);
+    if (!pids || fs.existsSync("finished-" + mode)) continue;
+    try { process.kill(pids[1], "SIGKILL"); } catch (error) { if (error.code !== "ESRCH") throw error; }
+  }
+}
+`,
       "tool.mjs": 'import { spawn } from "node:child_process";\nimport fs from "node:fs";\nconst started = [false, true].map((detached) => spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore", detached }).pid);\nfs.writeFileSync(process.argv[2], `${process.pid} ${started.join(" ")} `);\nsetInterval(() => {}, 1000);\nconst flood = () => { while (process.stdout.write("x".repeat(1 << 20))); process.stdout.once("drain", flood); };\nif (process.argv[3]) flood();\n',
+      "cancel-check.mjs": `import assert from "node:assert/strict";
+import fs from "node:fs";
+import { setTimeout as delay } from "node:timers/promises";
+import { exec } from "./short-watchdog.ts";
+const proof = new AbortController();
+const run = (args, signal) => exec(process.execPath, args, import.meta.dirname, undefined, undefined, signal);
+const alive = (pid) => { try { return process.kill(pid, 0); } catch (error) { if (error.code !== "ESRCH") throw error; return false; } };
+const until = async (ready) => {
+  const deadline = performance.now() + 15_000;
+  while (!ready() && performance.now() < deadline) await delay(25);
+  assert.ok(ready());
+};
+const completed = await run(["-e", "process.stdout.write('completed')"], proof.signal);
+const active = run(["tool.mjs", "proof"], proof.signal);
+const other = run(["-e", "const fs = require('node:fs'); fs.writeFileSync('other-ready', ''); setInterval(() => { if (fs.existsSync('other-release')) process.exit(0); }, 20)"]);
+const queued = run(["-e", "require('node:fs').writeFileSync('queued-proof', '')"], proof.signal);
+const following = run(["-e", "process.stdout.write('following')"]);
+try {
+  await until(() => fs.existsSync("other-ready") && fs.existsSync("proof") && fs.readFileSync("proof", "utf8").endsWith(" "));
+  const pids = fs.readFileSync("proof", "utf8").trim().split(" ").map(Number);
+  assert.ok(pids.every(alive));
+  proof.abort();
+  const [runningResult, queuedResult] = await Promise.all([active, queued]);
+  assert.ok(runningResult.stopped && queuedResult.stopped);
+  await until(() => pids.every((pid) => !alive(pid)));
+  assert.ok(!fs.existsSync("queued-proof"));
+  assert.equal(completed.stdout, "completed");
+  assert.equal(completed.stopped, undefined);
+  assert.equal((await following).stdout, "following");
+} finally {
+  proof.abort();
+  fs.writeFileSync("other-release", "");
+}
+assert.equal((await other).status, 0);
+`,
       "check.mjs": `import { exec } from ${JSON.stringify(path.join(project, "vibestack/run.ts"))};\nvoid exec(process.execPath, ["tool.mjs", process.argv[2]], import.meta.dirname);\nprocess.stdin.once("data", () => process.exit(3));\n`,
     });
     const running = (pid: number) => { try { return process.kill(pid, 0); } catch { return false; } };
@@ -3718,6 +4267,10 @@ assert.deepEqual(outcome, ["Rejected", 1, 2]);`], root);
     assert.match(flooded.stopped ?? "", /^node wrote more than \d+ MB of output and was stopped$/);
     const flooding = read("flood", root).trim().split(" ").map(Number);
     await until(() => !flooding.some(running), () => `a tool stopped for its output left ${flooding.filter(running).join(" and ")} running`);
+    const inherited = await exec(process.execPath, ["watchdog-check.mjs"], root);
+    assert.equal(inherited.status, 0, inherited.stdout + inherited.stderr);
+    const canceled = await exec(process.execPath, ["cancel-check.mjs"], root);
+    assert.equal(canceled.status, 0, canceled.stdout + canceled.stderr);
     for (const how of ["SIGTERM", "SIGINT", "SIGHUP", "exit"] as const) {
       const checking = spawn(process.execPath, ["check.mjs", how], { cwd: root, stdio: ["pipe", "ignore", "inherit"] });
       const ended = new Promise((resolve) => checking.once("close", (code, signal) => resolve(signal ?? code)));
@@ -4082,8 +4635,10 @@ test("the lint refuses, in a project's own code, a comment that is neither a cit
     `/* ${specFile}, "Story: Manage my saved passwords privately" */`,
     "//@ ghost",
     "/** @model spec/app/index.md */",
+    "/** @throws {never} */",
     "// a note",
     "/** What it is. */",
+    "/** What it does. @throws {Error} */",
     "//@ pure-ish",
     "useEffect(() => {}, []);",
     "window.setTimeout(() => {}, 1);",
@@ -4092,7 +4647,24 @@ test("the lint refuses, in a project's own code, a comment that is neither a cit
     "const later = React.useLayoutEffect;",
     `globalThis["queueMicrotask"](later);`,
     "// eslint-disable-next-line no-undef -- a global the page defines",
-  ]), ["5 code/comments", "6 code/comments", "7 code/comments", "8 code/effects", "9 code/effects", "10 code/effects", "11 no-console", "12 code/effects", "13 code/effects"]);
+  ]), ["6 code/comments", "7 code/comments", "8 code/comments", "9 code/comments", "10 code/effects", "11 code/effects", "12 code/effects", "13 no-console", "14 code/effects", "15 code/effects"]);
+  assert.deepEqual(await found("apps/app/src/probe.vibe", [
+    "module bridge {",
+    "  /**",
+    "   * @throws {Error | TypeError}",
+    "   */",
+    "  export function read() { throw new Error() }",
+    "  /** @throws {This is ordinary prose} */",
+    "  export function readProse() {}",
+    "  /** @throws {never",
+    "   * Ordinary prose on another line} */",
+    "  export function readMultilineProse() {}",
+    "  /** @throws {} */",
+    "  export function readEmpty() {}",
+    "  /** @throws { } */",
+    "  export function readWhitespace() {}",
+    "}",
+  ]), ["6 code/comments", "8 code/comments", "11 code/comments", "13 code/comments"]);
   const hiding = [["useEffect(() => {}, []); // eslint-disable-line"], ["/* eslint-disable */", "// a note"], ["/* eslint-disable code/comments, code/effects -- it must */", "setTimeout(() => {}, 1);"], ["/* eslint code/comments: off, no-console: off */", `console.log("seen");`], ["// eslint-disable-next-line no-console -- it must", `console.log("seen");`]];
   assert.deepEqual(await Promise.all(hiding.map((lines) => found("apps/app/src/probe.vibe", lines))), hiding.map(() => ["1 inline config"]));
   assert.deepEqual(await found("packages/ui/src/components/probe.vibe", ["/** What a component takes, which the stories generator reads. */", "export function Probe() {", "  /** inside it */", "  return 1;", "}", "// a note"]), ["3 code/comments", "6 code/comments"]);

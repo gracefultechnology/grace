@@ -95,6 +95,7 @@ describe.concurrent("generated tests", () => {
     const skipped = [
       { file: "src/math.contract.ts", export: "undeclared", reason: expect.stringContaining("declares no property") },
       { file: "src/user.schema.ts", export: "Opaque", reason: expect.stringContaining("no value can be generated") },
+      { file: "src/user.schema.ts", export: "Refused", reason: expect.stringMatching(/^no value can be generated for it: its filters refused all \d+ values tried$/) },
     ];
     const loaded = await loadConfigFromFile({ command: "serve", mode: "test" }, path.join(dir, "vitest.config.ts"));
     expect(loaded?.path).toBe(path.join(dir, "vitest.config.ts"));
@@ -205,6 +206,7 @@ export const identity = contract({ input: Schema.Int, run: (value: number) => va
 
   it("runs the fixed normal and nightly sample counts despite obsolete environment overrides", async () => {
     const dir = fixture("profiles"), tests = path.join(dir, "test");
+    fs.rmSync(path.join(dir, "src"), { recursive: true });
     fs.mkdirSync(tests);
     const library = path.relative(tests, path.join(import.meta.dirname, "../index.ts")).split(path.sep).join("/");
     fs.writeFileSync(path.join(tests, "profile.test.ts"), `import { expect, it } from "@effect/vitest";
@@ -218,9 +220,9 @@ it.effect("uses the selected profile", () => Effect.gen(function* () {
 }));
 `);
     for (const mode of ["normal", "nightly"] as const) {
-      const result = await vitest(dir, { FUZZ_RUNS: "0", FUZZ_SEED: "not a seed" }, undefined, mode, ["--testNamePattern", "uses the selected profile"]);
+      const result = await vitest(dir, { FUZZ_RUNS: "0", FUZZ_SEED: "not a seed" }, undefined, mode);
       expect(result.status, result.said).toBe(0);
-      expect(result.said).toMatch(/Tests {2}1 passed \| 14 skipped \(15\)/);
+      expect(result.said).toMatch(/Tests {2}1 passed \(1\)/);
     }
   });
 

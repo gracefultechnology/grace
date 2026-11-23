@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { gunzipSync, zstdCompressSync, zstdDecompressSync } from "node:zlib";
 import { sha, tokenize, writeWhole } from "./util.ts";
-import { evaluatorIdentity, packageLocation, packageRoots } from "./installed.ts";
+import { evaluatorIdentity, InstallationChanged, packageLocation, packageRoots } from "./installed.ts";
 import { NEEDS_DAFNY, findBin, exec, onPath, stamp } from "./run.ts";
 
 /** Load an operator's publishing credential only for the exact cache endpoint it belongs to. */
@@ -142,10 +142,6 @@ const PUBLISH_INTERVAL_MS = 1_000;
 
 function includePrograms(check: Check) {
   for (const program of check.programs.values()) if (program?.id) check.verify.add(program);
-}
-
-export class InstallationChanged extends Error {
-  constructor() { super("a tool installation changed during this check; run the check again"); }
 }
 
 function publishChecked(complete = false) {
@@ -784,7 +780,15 @@ async function toolchainId(root: string, stage: Stage): Promise<string | undefin
 }
 
 /** The remembered results of one check: whether it may read them, and every entry it read or wrote. */
-export interface Memory { root: string; fresh: boolean; used: Set<string>; cacheValue?: (value: unknown) => unknown }
+export interface Memory {
+  root: string;
+  fresh: boolean;
+  used: Set<string>;
+  actionSignal?: AbortSignal;
+  actionProjection?: { version: string; encode: (value: unknown) => unknown };
+  /** Actual receipt bytes, including writes pending installation certification. */
+  captureReceipt?: (receipt: { name: string; bytes: Uint8Array }) => void;
+}
 /** An entry of `.spec-cache`: JSON, compressed, since a run of the simulator says megabytes. */
 interface Entry { name: string; file: string; reusable: boolean; evaluator?: string }
 const formats = [["zst", zstdDecompressSync], ["gz", gunzipSync]] as const;
@@ -816,11 +820,26 @@ function use(memory: Memory, name: string) {
   sharedCache(name)?.used.add(name);
   try { const now = new Date(); fs.utimesSync(cacheFile(memory.root, name), now, now); } catch { /* still a hit */ }
 }
+function projectedEntry(memory: Memory, at: Entry): Entry | undefined {
+  if (!memory.actionProjection || !isActionEntry(at.name)) return undefined;
+  const raw = at.name.slice(0, -primaryExtension.length);
+  const name = `action-${sha("projection", raw, memory.actionProjection.version).slice(0, 24)}.json${primaryExtension}`;
+  return { ...at, name, file: cacheFile(memory.root, name) };
+}
 /** What an entry holds, or undefined. An entry that cannot be read, cut short by a kill or a full disk, is deleted and is a miss. */
-export function recall<T>(memory: Memory, { name, file, reusable }: Entry): T | undefined {
-  memory.used.add(name);
+export function recall<T>(memory: Memory, raw: Entry): T | undefined {
+  const projected = projectedEntry(memory, raw);
+  if (!projected) memory.used.add(raw.name);
   const check = checking.getStore();
-  if (memory.fresh || !reusable || check?.changed || check?.closed) return undefined;
+  if (memory.fresh || !raw.reusable || check?.changed || check?.closed) return undefined;
+  const compact = projected && readReceipt<T>(memory, projected);
+  if (compact !== undefined) return compact;
+  memory.used.add(raw.name);
+  return readReceipt<T>(memory, raw);
+}
+
+function readReceipt<T>(memory: Memory, { name, file }: Entry): T | undefined {
+  const check = checking.getStore();
   const fileBase = file.slice(0, -primaryExtension.length);
   const nameBase = name.slice(0, -primaryExtension.length);
   for (const [extension, decompress] of formats) {
@@ -831,35 +850,44 @@ export function recall<T>(memory: Memory, { name, file, reusable }: Entry): T | 
     } catch {
       continue;
     }
+    let value: T;
     try {
-      const value = JSON.parse(decompress(bytes).toString("utf8")) as T;
-      use(memory, `${nameBase}.${extension}`);
-      return value;
+      value = JSON.parse(decompress(bytes).toString("utf8")) as T;
     } catch {
       fs.rmSync(stored, { force: true });
+      continue;
     }
+    const actual = `${nameBase}.${extension}`;
+    use(memory, actual);
+    memory.captureReceipt?.({ name: actual, bytes });
+    return value;
   }
   return undefined;
 }
 /** Remember `value` under an entry, unless this process cannot say which tools computed it: then the next check computes it again. */
-export function store(memory: Memory, { name, file, evaluator, reusable }: Entry, value: unknown, action?: { program: Program; began: number }) {
-  memory.used.add(name);
+export function store(memory: Memory, raw: Entry, value: unknown, action?: { program: Program; began: number }) {
+  const { evaluator, reusable } = raw;
+  const projected = projectedEntry(memory, raw);
+  if (!projected) memory.used.add(raw.name);
   const check = checking.getStore();
   if (unsure || check?.changed || check?.closed || !reusable) return;
   if (evaluator !== undefined && !stableInstallation(evaluatorIdentity(memory.root) === evaluator)) return;
   if (action && !check && !action.program.unchanged()) return;
-  const bytes = zstdCompressSync(JSON.stringify(memory.cacheValue ? memory.cacheValue(value) : value));
+  const compact = projected && memory.actionProjection?.encode(value);
+  const { name, file } = projected && compact !== undefined ? projected : raw;
+  const bytes = zstdCompressSync(JSON.stringify(compact === undefined ? value : compact));
+  memory.used.add(name);
   sharedCache(name)?.used.add(name);
   if (action) check?.verify.add(action.program);
   else if (check) includePrograms(check);
-  if (!check?.verify.size) {
-    writeWhole(file, bytes);
-    return;
+  if (!check?.verify.size) writeWhole(file, bytes);
+  else {
+    check.bytes += bytes.length - (check.pending.get(file)?.length ?? 0);
+    check.pending.set(file, bytes);
+    if (!action || check.pending.size >= MAX_PENDING_ENTRIES || check.bytes >= MAX_PENDING_BYTES
+      || performance.now() - Math.min(check.lastPublished, action.began) >= PUBLISH_INTERVAL_MS) publishChecked();
   }
-  check.bytes += bytes.length - (check.pending.get(file)?.length ?? 0);
-  check.pending.set(file, bytes);
-  if (!action || check.pending.size >= MAX_PENDING_ENTRIES || check.bytes >= MAX_PENDING_BYTES
-    || performance.now() - Math.min(check.lastPublished, action.began) >= PUBLISH_INTERVAL_MS) publishChecked();
+  memory.captureReceipt?.({ name, bytes });
 }
 
 /**

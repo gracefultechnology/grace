@@ -21,7 +21,7 @@ const EXAMPLES = "vibestack/examples";
 describe("the documents name what exists", () => {
   const DOCS = ["AGENTS.md", "SPEC.md", "README.md", "CONTRIBUTING.md", ...filesUnder(project, ".agents/skills").filter((file) => file.endsWith(".md"))];
   const manifest = (dir: string): Record<string, Record<string, string> | undefined> => JSON.parse(read(path.join(dir, "package.json")));
-  const within = (dir: string) => fs.readdirSync(path.join(project, dir), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => `${dir}/${e.name}`);
+  const within = (dir: string) => fs.existsSync(path.join(project, dir)) ? fs.readdirSync(path.join(project, dir), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => `${dir}/${e.name}`) : [];
 
   const trackedEntries = async () => {
     const listed = await exec("git", ["ls-files", "--stage", "-z"], project);
@@ -34,8 +34,9 @@ describe("the documents name what exists", () => {
   };
 
   test("every repository path, pnpm script and link in the documents and skills leads somewhere", () => {
+    const workspace = ["packages", "apps"].flatMap(within).filter((dir) => fs.existsSync(path.join(project, dir, "package.json")));
     // What pnpm itself provides, and what a document proposes rather than names.
-    const scripts = new Set(["install", "exec", "add", "pack", ...["", "vibestack/studio", ...["packages", "apps", "vibestack/examples"].flatMap(within)].flatMap((dir) => Object.keys(manifest(dir).scripts ?? {}))]);
+    const scripts = new Set(["install", "exec", "add", "pack", ...["", "vibestack/studio", ...workspace, ...within("vibestack/examples")].flatMap((dir) => Object.keys(manifest(dir).scripts ?? {}))]);
     const proposed = ["apps/billing", "packages/billing", "vibestack/README.md", "vibestack/LICENSE"];
     // A heading as GitHub links to it.
     const anchors = (file: string) => read(file).split("\n").flatMap((line) => /^#{1,6} /.test(line) ? [line.replace(/^#+ /, "").toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, "").trim().replace(/\s/g, "-")] : []);
@@ -69,13 +70,13 @@ describe("the documents name what exists", () => {
     assert.deepEqual(within("vibestack/examples").flatMap((dir) => pins(dir).filter(([name, version]) => root[name] !== version).map(([name, version]) => `${dir}: ${name} ${version}, the tools ${root[name]}`)), []);
   });
 
-  test("each selftest task is cached by what its tests read: the documents by every file they can name, the examples by theirs and the tools, the rest by all but the other examples; no workspace task by the selftest; every test runs in exactly one task, a new one in the rest", async () => {
+  test("each selftest task is cached by what its tests read: the documents by every file they can name, the examples by theirs and the tools, the rest by all but the other examples; no workspace task by the selftest; every test runs in exactly one task, a new one in the rest, and each task of verify in exactly one job of CI", async () => {
     const turbo = bin("turbo", project);
     const { scripts }: { scripts: Record<string, string> } = JSON.parse(read("package.json"));
     const listed = (script: string) => scripts[script].split(" ").slice(3);
     const selftests = Object.keys(scripts).filter((script) => script.startsWith("selftest:")).sort();
     const shards = selftests.filter((script) => script.startsWith("selftest:tools:"));
-    const dry = await exec(turbo, ["run", ...listed("selftest"), "--dry=json"], project, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
+    const dry = await exec(turbo, ["run", ...listed("selftest"), "--dry=json", "--cache=local:w"], project, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
     assert.equal(dry.status, 0, dry.stderr);
     const plan: { globalCacheInputs: { files: Record<string, string> }; tasks: { taskId: string; inputs: Record<string, string> }[] } = JSON.parse(dry.stdout);
     const global = Object.keys(plan.globalCacheInputs.files);
@@ -91,7 +92,7 @@ describe("the documents name what exists", () => {
       docs: missed(docs, () => true),
       examples: missed(examples, (file) => ![toolSource, docsSource, toolMetadata].includes(file) && /^vibestack\/(examples\/|(?!studio\/|fixtures\/|(testing|stories|design)\/test\/))/.test(file)),
       tools: tools.flatMap((hashed) => missed(hashed, (file) => toolInput(file) && (hashed === packed || file !== "README.md"))),
-      packed: missed(packed, workspace),
+      packed: missed(packed, (file) => file === ".gitignore" || workspace(file)),
       readmeInFixtures: [shardA, shardB].some((hashed) => hashed.has("README.md")),
       workspaceInFixtures: [shardA, shardB].flatMap((hashed) => [...hashed].filter(workspace)),
       examplesInTools: tools.flatMap((hashed) => [...hashed]).filter((file) => /^vibestack\/examples\/(?!order\/)/.test(file)),
@@ -102,19 +103,24 @@ describe("the documents name what exists", () => {
     assert.deepEqual([shards, listed("selftest").sort(), listed("verify").filter((task) => task.includes("selftest")).sort()],
       [["selftest:tools:a", "selftest:tools:b", "selftest:tools:rest"], selftests.map((task) => `//#${task}`), selftests.map((task) => `//#${task}`)], "pnpm selftest and pnpm verify run every selftest task");
     const ci = read(".github/workflows/ci.yml");
-    const lanes = [...ci.matchAll(/^ +lane: \[(.+)\]$/gm)].flatMap(([, lane]) => lane.split(", "));
-    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --concurrency=100% --summarize$/m)?.[1].split(" ") ?? [];
+    const lanes = [...ci.matchAll(/^ +(?:- )?lane: (.+)$/gm)].flatMap(([, lane]) => lane.startsWith("[") ? lane.slice(1, -1).split(", ") : [lane]);
+    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --summarize(?: --log-order=stream)?$/m)?.[1].split(" ").filter((task) => !task.startsWith("--")) ?? [];
     assert.deepEqual(lanes.sort(), ["product", ...shards.map((task) => `selftest-${task.split(":")[2]}`)].sort(), "each hosted tool shard has its own runner");
     assert.deepEqual([...product, ...shards.map((task) => `//#${task}`)].sort(), listed("verify").sort(), "the hosted jobs run each task of pnpm verify once");
     const each = "the tools each check catches its own kind of mistake";
     const inShards = Object.fromEntries(Object.entries(toolShards).map(([id, shard]) => [`${each} ${shard}`, `selftest:tools:${id}`]));
-    const titles = (file: string) => [...read(file).matchAll(/^(?:if \(import\.meta\.main\) )?(?:describe|test)\("([^"]+)"/gm)].map(([, title]) => title);
-    const toolTitles = [...titles(toolSource), ...Object.keys(inShards), "a new test", "the tools a new suite",
+    const toolText = read(toolSource);
+    const registered = toolText.split(/^function /m)
+      .filter((block) => /^eachCheck[AB]?\(\)/.test(block))
+      .flatMap((block) => [...block.matchAll(/^  test\("([^"]+)"/gm)].map(([, title]) => title));
+    assert.deepEqual(registered.filter((title, index) => registered.indexOf(title) !== index), [], "each check fixture is registered once");
+    const titles = (source: string) => [...source.matchAll(/^(?:if \(import\.meta\.main\) )?(?:describe|test)\("([^"]+)"/gm)].map(([, title]) => title);
+    const toolTitles = [...titles(toolText), ...Object.keys(inShards), "a new test", "the tools a new suite",
       "the tools the command line and what a failed proof leaves to start from a new test", `${each} a new test`];
     const docsTitle = "the documents name what exists";
     const examplesTitle = "the standalone examples";
-    assert.deepEqual(titles(docsSource), [docsTitle]);
-    assert.deepEqual(titles(examplesSource), [examplesTitle]);
+    assert.deepEqual(titles(read(docsSource)), [docsTitle]);
+    assert.deepEqual(titles(read(examplesSource)), [examplesTitle]);
     assert.ok(toolTitles.every((title) => title !== docsTitle && title !== examplesTitle));
     const selectors = selftests.map((task) => {
       const parsed = scripts[task].match(/^node --test --test-(name|skip)-pattern="([^"]+)" (\S+)$/);
@@ -128,8 +134,14 @@ describe("the documents name what exists", () => {
     assert.deepEqual(ranBy(examplesSource, examplesTitle), ["selftest:examples"]);
     assert.deepEqual(toolTitles.map((title) => [title, ranBy(toolSource, title)]),
       toolTitles.map((title) => [title, [inShards[title] ?? "selftest:tools:rest"]]));
-    assert.match(ci, /pnpm all "\/\/#selftest:tools:.*?--only --continue=dependencies-successful --summarize/, "a dedicated runner executes only its shard after setup");
+    const fixtureTasks = [...ci.matchAll(/^ +- lane: (selftest-\w+)\r?\n +tasks: "([^"\r\n]+)"$/gm)].map(([, lane, task]) => [lane, task]);
+    assert.deepEqual(fixtureTasks.sort(), shards.map((task) => [`selftest-${task.split(":")[2]}`, `//#${task}`]).sort(), "each fixture runner owns its exact task");
+    assert.match(ci, /TASK: \$\{\{ matrix\.tasks \}\}/, "the fixture command reads its matrix task");
+    assert.match(ci, /pnpm all "\$TASK" --only --continue=dependencies-successful --summarize/, "a dedicated runner executes only its shard after setup");
     assert.match(scripts.prepare, /^node vibestack\/spec\.ts gen --install --skip-gen-on-pack \/\/#build(?: |$)/);
+    const fuzz = read(".github/workflows/fuzz.yml");
+    const nightly = fuzz.match(/^  vibestack-nightly-check:\n((?: {4}.*\n|\n)*)/m)?.[1] ?? "";
+    assert.match(nightly, /^ +- run: pnpm all check --continue -- --nightly$/m);
     const [first, ...others] = shards.map((task) => JSON.parse(read("turbo.json")).tasks[`//#${task}`].dependsOn);
     assert.deepEqual(others, others.map(() => first), "the shards wait for the same integration prerequisites");
   });
@@ -164,7 +176,7 @@ describe("the documents name what exists", () => {
     assert.equal(child.status, 0, child.stderr);
     assert.ok(child.stdout.includes(evaluatorHome), child.stdout);
     const plan = async () => {
-      const dry = await exec(turbo, ["run", "build", "typecheck", "test", "test:browser", "@grace/cloud#dev", "vibestack-studio#dev", "//#lint:js", "//#lint:css", "//#analyze", "//#selftest:tools:a", "//#selftest:tools:b", "//#selftest:tools:rest", "//#selftest:docs", "//#selftest:examples", "--dry=json"], root, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
+      const dry = await exec(turbo, ["run", "build", "typecheck", "test", "test:browser", "@grace/cloud#dev", "vibestack-studio#dev", "//#lint:js", "//#lint:css", "//#analyze", "//#selftest:tools:a", "//#selftest:tools:b", "//#selftest:tools:rest", "//#selftest:docs", "//#selftest:examples", "--dry=json", "--cache=local:w"], root, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
       assert.equal(dry.status, 0, dry.stderr);
       const tasks: { taskId: string; hash: string; command: string; dependencies: string[]; inputs: Record<string, string> }[] = JSON.parse(dry.stdout).tasks;
       return new Map(tasks.map((task) => [task.taskId, task]));

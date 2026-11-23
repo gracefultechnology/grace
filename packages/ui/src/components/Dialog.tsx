@@ -30,25 +30,27 @@ export const DialogClose = DialogPrimitive.Close;
 export function DialogContent({ closeLabel, className, children, ...props }: DialogContentProps) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 bg-scrim/32" />
-      <DialogPrimitive.Content
-        aria-describedby={undefined}
-        className={cn("fixed top-1/2 left-1/2 box-border flex w-[calc(100%-2rem)] max-w-[624px] -translate-1/2 flex-col gap-2 rounded-screen bg-card p-8 text-foreground shadow-dialog outline-none", className)}
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          (event.currentTarget as HTMLElement).focus();
-        }}
-        {...props}
-      >
-        {children}
-        {closeLabel && (
-          <DialogPrimitive.Close asChild>
-            <Button variant="plain" size="compact-icon" aria-label={closeLabel} className="absolute top-5 right-5">
-              <X aria-hidden size={24} strokeWidth={1.75} />
-            </Button>
-          </DialogPrimitive.Close>
-        )}
-      </DialogPrimitive.Content>
+      <div className="isolate">
+        <DialogPrimitive.Overlay className="fixed inset-0 bg-scrim/32" />
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          className={cn("fixed top-1/2 left-1/2 z-10 box-border flex w-[calc(100%-2rem)] max-w-[624px] -translate-1/2 flex-col gap-2 rounded-screen bg-card p-8 text-foreground shadow-dialog outline-none", className)}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            (event.currentTarget as HTMLElement).focus();
+          }}
+          {...props}
+        >
+          {children}
+          {closeLabel && (
+            <DialogPrimitive.Close asChild>
+              <Button variant="plain" size="compact-icon" aria-label={closeLabel} className="absolute top-5 right-5">
+                <X aria-hidden size={24} strokeWidth={1.75} />
+              </Button>
+            </DialogPrimitive.Close>
+          )}
+        </DialogPrimitive.Content>
+      </div>
     </DialogPrimitive.Portal>
   );
 }

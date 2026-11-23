@@ -16,6 +16,7 @@
     "!vibestack/**/{node_modules,.cache}/**",
     "!vibestack/selftest.ts",
     "!vibestack/remote-cache.ts",
+    "!vibestack/proof/lib.dfy",
     "!vibestack/{testing,stories,design}/test/**",
     ".cache/toolchain.json"
   ],
@@ -137,15 +138,13 @@
       "inputs": [
         "vendor/eliza/{package.json,pnpm-lock.yaml,pnpm-workspace.yaml}",
         "vendor/eliza/{apps,packages}/*/package.json",
-        "vendor/eliza/spec/**/*.md",
-        "vendor/eliza/vibestack/*.ts",
-        "vendor/eliza/vibestack/{gen,patches,proof,std}/**"
+        "vendor/eliza/spec/**/*.md"
       ],
       "outputs": ["vendor/eliza/packages/cloud/gen/**", "vendor/eliza/packages/os/gen/**"]
     },
     "//#gen": {
-      "env": ["!VITE_*"],
       "dependsOn": ["//#gen:eliza"],
+      "env": ["!VITE_*"],
       "inputs": [
         "spec/**",
         "apps/*/package.json",
@@ -297,6 +296,7 @@
         "vibestack-studio#test:browser"
       ],
       "inputs": [
+        ".gitignore",
         "eslint.config.js",
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
@@ -474,6 +474,7 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/vibestack/fixtures/**",
+        "$TURBO_ROOT$/vibestack/proof/lib.dfy",
         "!$TURBO_ROOT$/vibestack/fixtures/**/.DS_Store"
       ],
       "outputs": [
