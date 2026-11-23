@@ -40,18 +40,35 @@ export service FileLibrary {
 
 error FilesRejected
 
-type FileReadingContext = {
-  port: FileStorage.Shape["port"]
-  latest: SubscriptionRef.SubscriptionRef<FileSnapshot>
-  home: SubscriptionRef.SubscriptionRef<FileHome | undefined>
-  serial: Semaphore.Semaphore
-  admitted: () => (string | undefined)!!
-  findOwner: FileLibrary.Shape["findOwner"]
-  keep: (ready: Ready) => void!FilesRejected
-  advance: (ready: Ready, event: Event, actor: FileActor) => { ready: Ready }!FilesRejected
-}
+export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(FileLibrary, effect {
+  const { port } = try FileStorage
+  const desk = try Workspaces
+  const setup = try Setup
+  const mail = try Effect.serviceOption(Mail)
+  const latest = try SubscriptionRef.make<FileSnapshot>({ kind: "out" })
+  const home = try SubscriptionRef.make<FileHome | undefined>(undefined)
+  const serial = try Semaphore.make(1)
+  const scope = try Scope.Scope
 
-function fileReading({ port, latest, home, serial, admitted, findOwner, keep, advance }: FileReadingContext) {
+  effect function admitted() {
+    const w = try desk.get()
+    return w.device.readiness === "Ready" && w.device.surface === "Files" ? filesAccount((try setup.get()).graceAccount) : undefined
+  }
+
+  effect function keep(ready: Ready) {
+    const current = try SubscriptionRef.get(latest)
+    if (current.kind !== "ready" || current.lease !== ready.lease || (try admitted()) !== ready.owner) throw new FilesRejected()
+    try SubscriptionRef.set(latest, ready)
+  }
+
+  effect function advance(ready: Ready, event: Event, actor: FileActor) {
+    if (!enabled(ready.model, event, actor)) throw new FilesRejected()
+    const result = step(ready.model, event, actor)
+    const next = { ...ready, model: result.state }
+    try keep(next)
+    return { ready: next, out: result.out }
+  }
+
   effect function image(lease: string, id: string, page: number, small: boolean) {
     if (!port) throw new FilesRejected()
     const preview = try Schema.decodeUnknownEffect(Preview)(try tryPromise(() => port.preview({ lease, id, page, small })))
@@ -104,55 +121,6 @@ function fileReading({ port, latest, home, serial, admitted, findOwner, keep, ad
     })
   }
 
-  effect function readSelected(ready: Ready) {
-    const { model } = ready
-    if (!model.selected) return false
-    const result = image(ready.lease, model.selected, model.page, false) catch () => undefined
-    const current = { ...ready, image: result, issue: !result }
-    if (model.pending === "ReadingFile") {
-      try advance(current, { type: "contentResult", fileReceipt: {
-        owner: ready.lease, generation: model.generation, id: model.selected, succeeded: result !== undefined, evidence: "device-preview",
-      } }, "FileHost")
-    } else try keep(current)
-    return result !== undefined
-  }
-
-  return { exposeCatalog, locate, readCatalog, readSelected }
-}
-
-export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(FileLibrary, effect {
-  const { port } = try FileStorage
-  const desk = try Workspaces
-  const setup = try Setup
-  const mail = try Effect.serviceOption(Mail)
-  const latest = try SubscriptionRef.make<FileSnapshot>({ kind: "out" })
-  const home = try SubscriptionRef.make<FileHome | undefined>(undefined)
-  const serial = try Semaphore.make(1)
-  const scope = try Scope.Scope
-
-  effect function admitted() {
-    const w = try desk.get()
-    return w.device.readiness === "Ready" && w.device.surface === "Files" ? filesAccount((try setup.get()).graceAccount) : undefined
-  }
-
-  effect function keep(ready: Ready) {
-    const current = try SubscriptionRef.get(latest)
-    if (current.kind !== "ready" || current.lease !== ready.lease || (try admitted()) !== ready.owner) throw new FilesRejected()
-    try SubscriptionRef.set(latest, ready)
-  }
-
-  effect function advance(ready: Ready, event: Event, actor: FileActor) {
-    if (!enabled(ready.model, event, actor)) throw new FilesRejected()
-    const result = step(ready.model, event, actor)
-    const next = { ...ready, model: result.state }
-    try keep(next)
-    return { ready: next, out: result.out }
-  }
-
-  const { exposeCatalog, locate, readCatalog, readSelected } = fileReading({
-    port, latest, home, serial, admitted, findOwner, keep, advance,
-  })
-
   effect function load(ready: Ready) {
     const loading = (try advance(ready, { type: "openFiles", owner: ready.lease }, "FileUser")).ready
     if (loading.model.pending === "ReadingCatalog") try fork.in(scope) Effect.ignore(readCatalog(loading))
@@ -193,6 +161,19 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
       tryPromise(() => port.close(opened)) catch () => undefined
     }
+  }
+
+  effect function readSelected(ready: Ready) {
+    const { model } = ready
+    if (!model.selected) return false
+    const result = image(ready.lease, model.selected, model.page, false) catch () => undefined
+    const current = { ...ready, image: result, issue: !result }
+    if (model.pending === "ReadingFile") {
+      try advance(current, { type: "contentResult", fileReceipt: {
+        owner: ready.lease, generation: model.generation, id: model.selected, succeeded: result !== undefined, evidence: "device-preview",
+      } }, "FileHost")
+    } else try keep(current)
+    return result !== undefined
   }
 
   effect function importOwner(ready: Ready, command: Extract<Command, { kind: "pick" }> | { kind: "capture" } | { kind: "confirmAttachment"; request: string }) {
