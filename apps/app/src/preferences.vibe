@@ -80,22 +80,22 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
   ))
   const requests = Stream.merge(Stream.merge(chosen, Stream.map(Stream.tick("1 minute"), () => undefined)), reports)
   let confirmed: DeviceChoice | undefined
-  const holdsSession = ({ volume, muted }: DeviceChoice) => confirmed !== undefined && confirmed.volume === volume && confirmed.muted === muted
   const follow = effect () => {
-    if (!holdsSession((try workspace.get()).preferences.session)) return
+    const { device, preferences: { session, revision } } = try workspace.get()
+    if (device.readiness !== "Ready" || confirmed === undefined || confirmed.volume !== session.volume || confirmed.muted !== session.muted) return
     const { volume } = try deviceSettings(port)
     const { step, min, max, muted } = volume
-    const { device, preferences: { session } } = try workspace.get()
-    if (confirmed === undefined || device.readiness !== "Ready" || !holdsSession(session) || max <= min || step < min || step > max) return
-    if (!muted && !session.muted && step === stepFor(session.volume, volume)) return
+    if (min < 0 || max <= min || step < min || step > max ||
+        (muted === session.muted && (muted || step === stepFor(session.volume, volume)))) return
     const settings = muted ? muteChoice(session, true) : volumeChoice(session, Math.round((step - min) / (max - min) * 100))
     if (settings.volume === session.volume && settings.muted === session.muted) return
+    try workspace.send({ type: "changePreferences", settings }, "Person", (current) =>
+      current.device.contextVersion === device.contextVersion && current.preferences.revision === revision)
     confirmed = { ...confirmed, volume: settings.volume, muted: settings.muted }
-    try workspace.send({ type: "changePreferences", settings }, "Person")
   }
   try fork.scoped Stream.runForEach(requests, effect (requested) => {
     if (requested !== undefined && "reported" in requested) {
-      follow() catch () => undefined
+      follow() catch () => (follow() catch () => undefined)
       return
     }
     const { device, preferences: { session: choice } } = try workspace.get()

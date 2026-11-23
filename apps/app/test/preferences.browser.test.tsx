@@ -66,8 +66,26 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
   const stored: { revision: number; value: string | null } = { revision: 0, value: null };
   let acceptsWrites = false;
   let refused = 0;
+  const audio = { step: 9, min: 0, max: 15, muted: false };
+  let brightness = 100;
+  const device = () => ({ volume: { ...audio }, brightness: { percent: brightness } });
+  let reportVolume: (() => void) | undefined;
+  let nextRead: Promise<ReturnType<typeof device>> | undefined;
   const start = () => ManagedRuntime.make(application(undefined, undefined, {
     native: true,
+    display: {
+      getDevice: () => {
+        const pending = nextRead;
+        nextRead = undefined;
+        return pending ?? Promise.resolve(device());
+      },
+      setBrightness: ({ percent }) => { brightness = percent; return Promise.resolve(); },
+      setVolume: (choice) => { Object.assign(audio, choice); return Promise.resolve(); },
+      addListener: (_, listener) => {
+        reportVolume = listener;
+        return Promise.resolve({ remove: () => { reportVolume = undefined; return Promise.resolve(); } });
+      },
+    },
     preferences: {
       read: () => Promise.resolve({ ...stored }),
       write: ({ revision, value }) => {
@@ -98,4 +116,26 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
   await act(() => Promise.resolve().then(() => { tap(louder); tap(louder); }));
   await expect.element(page.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuenow", "20");
   await expect.poll((): unknown => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 20 });
+  await expect.poll(() => audio.step).toBe(3);
+  await expect.poll(() => reportVolume).toBeTypeOf("function");
+  audio.step = 6;
+  const stale = device();
+  let release: (() => void) | undefined;
+  nextRead = new Promise((resolve) => { release = () => resolve(stale); });
+  reportVolume?.();
+  await expect.poll(() => nextRead).toBeUndefined();
+  await act(() => userEvent.click(page.getByRole("button", { name: "Louder", exact: true })));
+  release?.();
+  await expect.poll(() => audio.step).toBe(5);
+  await expect.poll((): unknown => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 30 });
+  audio.step = 9;
+  act(() => { reportVolume?.(); });
+  await expect.element(page.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuenow", "60");
+  await expect.poll((): unknown => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 60 });
+  nextRead = Promise.resolve({ ...device(), volume: { ...audio, step: 10 } });
+  audio.step = 11;
+  act(() => { reportVolume?.(); reportVolume?.(); });
+  await expect.element(page.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuenow", "73");
+  await expect.poll((): unknown => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 73 });
+  expect(audio.step).toBe(11);
 });
