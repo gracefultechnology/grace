@@ -1164,14 +1164,18 @@ jobs:
           mkdir -p .turbo/cache
           rm -f ".turbo/cache/$HASH-manifest.json"
           mv "$archive" "$meta" .turbo/cache/
-      - name: Verify local Gmail delivery and account isolation
+      - name: Generate the models for the offline Google journeys
+        id: cross-app-models
         if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm gen
+      - name: Verify local Gmail delivery and account isolation
+        if: ${{ !cancelled() && steps.cross-app-models.outcome == 'success' }}
         run: pnpm --filter @repo/app test --project node test/app.test.vibe -t "Google denies missing consent"
       - name: Verify the pinned Worker against synthetic Gmail history
         if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm --dir vendor/eliza --filter @elizaos/cloud exec vitest run test/cloud.test.vibe -t "watch for new mail"
       - name: Exercise Google consent and guided tasks across apps with local fixtures
-        if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.cross-app-models.outcome == 'success' }}
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
           -t "Gmail signup to Calendar|Follow one reviewed plan across apps|An authenticated restart restores the reviewed plan paused at its next outcome|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
