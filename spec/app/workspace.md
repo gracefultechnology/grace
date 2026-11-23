@@ -683,6 +683,16 @@ pure def lawGuidanceControlsKeepExecution(w: Workspace, input: I::Interaction, b
       interact(w, input, by).assistant.conversation == w.assistant.conversation)
 pure def sometimesGuidanceShown(w: Workspace): bool = guidanceVisible(w)
 pure def sometimesGuidanceDismissed(w: Workspace): bool = guidanceIsCurrent(w) and not(w.assistant.guidance.shown)
+pure val eval_witness_sometimesGuidanceDismissed = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("visit", S::Browser, Person),
+  ("openGrace", Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 0 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("publishGuidance", { target: "control", revision: 0, workVersion: 1, conversationVersion: 2,
+    deviceVersion: 7, browserRevision: 1, verified: true }, A::Tap, "Read the account", Host),
+  ("interact", I::DismissGuidance({ revision: 1 }), Person))
 pure val guidanceRevisionValues = Set(0, 1, 2)
 pure val guidanceTitleValues = Set("", "Tap Send")
 pure val guidanceReportValues = Set(
