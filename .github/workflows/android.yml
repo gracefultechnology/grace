@@ -61,9 +61,17 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper/dists
-          key: gradle-${{ runner.os }}-${{ runner.arch }}-jdk21-${{ hashFiles('apps/app/node_modules/@capacitor/android/package.json', 'apps/app/node_modules/@capacitor/android/capacitor/build.gradle', 'apps/app/android/host.json', 'vendor/eliza/packages/os/android/host-templates/**', 'vendor/eliza/packages/os/android/*/build.gradle') }}
+          key: gradle-${{ runner.os }}-${{ runner.arch }}-jdk21-${{ hashFiles('apps/app/node_modules/@capacitor/android/package.json', 'apps/app/node_modules/@capacitor/android/capacitor/build.gradle', 'apps/app/android/host.json', 'vendor/eliza/packages/os/android/host-templates/**', 'vendor/eliza/packages/os/android/*/build.gradle') }}-outputs
           restore-keys: gradle-${{ runner.os }}-${{ runner.arch }}-jdk21-
-      - uses: android-actions/setup-android@v3
+      - id: android-sdk
+        run: |
+          [[ -r $ANDROID_HOME/platforms/android-36/android.jar && -x $ANDROID_HOME/platform-tools/adb ]] || exit 0
+          for tool in aapt aapt2 apksigner d8 dexdump zipalign; do
+            [[ -x $ANDROID_HOME/build-tools/36.0.0/$tool ]] || exit 0
+          done
+          echo "installed=true" >> "$GITHUB_OUTPUT"
+      - if: steps.android-sdk.outputs.installed != 'true'
+        uses: android-actions/setup-android@v3
         with:
           packages: platform-tools platforms;android-36 build-tools;36.0.0
       # gen/ and @repo/ui's generated/ are git-ignored; the build imports both.
@@ -78,6 +86,8 @@ jobs:
           path: vendor/eliza/packages/agent/dist/bundle
           key: android-agent-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.agent-source.outputs.pin }}-${{ steps.agent-source.outputs.tools }}-${{ hashFiles('apps/app/agent/policy.json', 'apps/app/scripts/android.ts', '.github/actions/setup/action.yml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig*.json', 'patches/**', 'vibestack/*.ts', 'vibestack/gen/**', 'vibestack/std/**', 'vibestack/proof/**', 'vibestack/testing/**', 'vibestack/stories/**', 'vibestack/design/**', '!vibestack/**/node_modules/**', '!vibestack/**/.cache/**', '!vibestack/selftest.ts', '!vibestack/remote-cache.ts', '!vibestack/testing/test/**', '!vibestack/stories/test/**', '!vibestack/design/test/**') }}
       - run: pnpm --filter @repo/app android --abi ${{ matrix.abi }}
+        env:
+          GRADLE_OPTS: -Dorg.gradle.caching=true
       - name: Stage Cuttlefish launcher with the pinned Chromium APK
         if: matrix.abi == 'x86_64'
         run: |
