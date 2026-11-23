@@ -368,24 +368,16 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await click(longDate(eyeDay));
   expect((await run(selectedGmailCalendar)).entries.find((e) => e.identity.occurrenceId === eye)?.draft.startAt).toBe(eyeAt);
   await click("Back to Calendar");
-  await edit("Eye check at Riverside", "Every week");
-  await expect.element(page.getByText("Repeats every week")).toBeVisible();
-  await expect.poll(titles, atCloud).toEqual(["Eye check at Riverside"]);
+  // spec/app/calendarView.md, "An email account's calendar is asked to keep only what its company keeps"
+  await click("Edit");
+  await expect.element(page.getByRole("radio", { name: "Every week" })).not.toBeInTheDocument();
   await click("Back to Calendar");
-  await click("Next week");
-  await act(() => userEvent.click(row("Eye check at Riverside", "Gmail").first()));
-  await click("Delete");
-  await click("Delete only this one");
-  await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "") })).toBeVisible();
-  expect(await held(secret)).toEqual([{ title: "Eye check at Riverside", startAt: eyeAt }]);
-  await click("Next week");
-  await act(() => userEvent.click(row("Eye check at Riverside", "Gmail").first()));
   await edit("Eye check at Riverside", "Never");
   await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
   await expect.poll(() => held(secret), atCloud).toEqual([{ title: "Eye check at Riverside", startAt: eyeAt }]);
   await click("Back to Calendar");
+  await click("Next week");
   await expect.element(row("Eye check at Riverside")).not.toBeInTheDocument();
-  await click("Previous week");
   await click("Previous week");
   await act(() => userEvent.click(row("Eye check at Riverside", "Gmail")));
   await click("Delete");
@@ -395,59 +387,58 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
 }, journey);
 
 it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
-  const { secret, eyeDay, toEyeWeek, run, agree } = await start();
-  // spec/app/calendarView.md, "The deletion question binds its selected occurrence and explicit scope"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"
-  await toEyeWeek();
-  const gmailView = await run(selectedGmailCalendar);
-  const walkAt = midnight(eyeDay) + 10 * hour;
-  const walk = {
-    identity: { owner: gmailView.owner, calendarId: gmailView.calendarId, occurrenceId: "walk", sourceRef: "", sourceAccount: 0, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" },
-    details: {
-      title: "Walk with Joan", location: "", participant: "", notes: "", startAt: walkAt, endAt: walkAt + hour, timezone: gmailView.timezone, allDay: false,
-      seriesId: "walk", recurrence: "Weekly" as const, reminderEnabled: false, leadTime: 0, important: false,
-    },
-  };
-  const walks = async () => (await held(secret)).filter((e) => e.title === "Walk with Joan");
-  await agree({ tag: "AddAsk", target: 1, review: { entry: walk, calendarGeneration: gmailView.generation, displayTimezone: gmailView.timezone } });
-  await expect.poll(walks, atCloud).toEqual([{ title: "Walk with Joan", startAt: walkAt }]);
-  await expect.element(dated(eyeDay)).toBeVisible();
-  await click("Delete");
-  await click("Delete only this one");
-  await expect.element(page.getByText("Deleted Walk with Joan"), atCloud).toBeVisible();
-  await expect.poll(walks, atCloud).toEqual([{ title: "Walk with Joan", startAt: midnight(eyeDay + 7) + 10 * hour }]);
-  await click("Next week");
-  await act(() => userEvent.click(row("Walk with Joan", "Gmail").first()));
-  await expect.element(dated(eyeDay + 7)).toBeVisible();
-  await click("Delete");
-  await click("Delete every one");
-  await expect.element(row("Walk with Joan")).not.toBeInTheDocument();
-  await expect.poll(walks, atCloud).toEqual([]);
-
+  const { secret, eyeDay, toEyeWeek, run } = await start();
   // spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"
-  await click("Close Calendar");
+  const gmailView = await run(selectedGmailCalendar);
   const physioAt = midnight(eyeDay) + 14 * hour;
-  const physio = await fetch(new URL("/api/v1/eliza/google/calendar/events", cloud), {
+  const created = await fetch(new URL("/api/v1/eliza/google/calendar/events", cloud), {
     method: "POST", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
     body: JSON.stringify({
       title: "Physio", location: "Riverside Clinic", startAt: new Date(physioAt).toISOString(), endAt: new Date(physioAt + hour).toISOString(), timeZone: gmailView.timezone,
-      recurrence: ["RRULE:FREQ=WEEKLY"], reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 60 }] },
+      recurrence: ["RRULE:FREQ=WEEKLY"], reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 30 }] },
     }),
   });
-  expect(physio.status).toBe(201);
+  expect(created.status).toBe(201);
+  const { event: physio } = await created.json() as { event: { externalId: string } };
+  const physios = async () => (await company(secret)).filter((e) => e.externalId === physio.externalId) as { title: string; cancelled?: string[] }[];
   await toEyeWeek();
   await act(() => userEvent.click(row("Physio", "Gmail").first()));
   await expect.element(page.getByText("Repeats every week")).toBeVisible();
-  await expect.element(page.getByText("Reminder 1 hour before")).toBeVisible();
+  await expect.element(page.getByText("Reminder 30 minutes before")).toBeVisible();
+
+  // spec/app/calendarView.md, "An email account's calendar is asked to keep only what its company keeps"
+  await click("Edit");
+  await expect.element(page.getByRole("radio", { name: "Never" })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("radio", { name: "30 minutes before" })).toHaveAttribute("aria-checked", "true");
+  await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), "Physio with Sam"));
+  await click("Save");
+  await expect.element(page.getByText("Reminder 30 minutes before")).toBeVisible();
+  await expect.element(page.getByText("Repeats every week")).toBeVisible();
+  await expect.poll(async () => (await physios()).map((e) => e.title), atCloud).toEqual(["Physio with Sam"]);
   await click("Back to Calendar");
+
+  // spec/app/calendarView.md, "The deletion question binds its selected occurrence and explicit scope"
   await click("Next week");
-  await act(() => userEvent.click(row("Physio", "Gmail").first()));
+  await act(() => userEvent.click(row("Physio with Sam", "Gmail").first()));
+  await expect.element(page.getByText(`${new Date(midnight(eyeDay + 7)).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · 2 pm to 3 pm`)).toBeVisible();
+  await click("Delete");
+  await click("Delete only this one");
+  await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "") })).toBeVisible();
+  const nextWeek = new Date(physioAt + 7 * day).toISOString().replace(/[-:]|\.\d+/g, "");
+  await expect.poll(async () => (await physios()).map((e) => e.cancelled), atCloud).toEqual([[`${physio.externalId}_${nextWeek}`]]);
+  await click("Previous week");
+  await expect.element(row("Physio with Sam", "Gmail").first()).toBeVisible();
+  await click("Next week");
+  await click("Next week");
+  await act(() => userEvent.click(row("Physio with Sam", "Gmail").first()));
   await expect.element(page.getByText("Repeats every week")).toBeVisible();
   await click("Delete");
   await click("Delete every one");
-  await expect.element(row("Physio")).not.toBeInTheDocument();
-  await expect.poll(async () => (await held(secret)).filter((e) => e.title === "Physio"), atCloud).toEqual([]);
+  await expect.element(row("Physio with Sam")).not.toBeInTheDocument();
+  await expect.poll(physios, atCloud).toEqual([]);
   await click("Previous week");
-  await expect.element(row("Physio")).not.toBeInTheDocument();
+  await click("Previous week");
+  await expect.element(row("Physio with Sam")).not.toBeInTheDocument();
 }, journey);
 
 it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event"; spec/app/notices.md, "Story: See what needs me on Home")', async () => {

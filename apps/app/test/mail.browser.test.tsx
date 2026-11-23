@@ -10,6 +10,7 @@ import { tabUrl } from "../gen/app__browser.ts";
 import { approveSave, create, initial as emptyOccurrence, noDetails, noIdentity, save } from "../gen/app__calendar.ts";
 import { bindCalendar, initial as emptyCalendar, publishOccurrence, type CalendarView } from "../gen/app__calendarView.ts";
 import { parseState as parseMail } from "../gen/app__email.ts";
+import { Machine as Setup } from "../gen/app__setup.effect.vibe";
 import { type Event as WorkspaceEvent, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { Email } from "../src/Email.tsx";
 import { RuntimeContext } from "../src/useApp.ts";
@@ -30,6 +31,7 @@ const outlook = "margaret@outlook.com";
 
 const Kept = Schema.Struct({
   sendLookups: Schema.Array(Schema.String),
+  draftDeletes: Schema.Array(Schema.String),
   googleRequests: Schema.Array(Schema.String),
   boxes: Schema.Array(Schema.Struct({
     address: Schema.String,
@@ -119,6 +121,12 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
       const { device, browser } = yield* (yield* Workspaces).get();
       if (!read || link.status !== "LinkHeld") throw new Error("No email link is waiting for confirmation");
       return () => runtime.runPromise(chooseMailLink({ account, ref, generation, version: read.version, link: link.link, deviceVersion: device.contextVersion, browserRevision: browser.revision }, "confirm"));
+    })),
+    waitingTargets: () => runtime.runPromise(Effect.gen(function*() {
+      const shelf = yield* Instances;
+      const targets: string[] = [];
+      for (const account of [1, 2]) targets.push(...(yield* (yield* shelf.mail(account)).get()).outbox.map((q) => `mail:${account}:${q.operationId}`));
+      return targets;
     })),
     appointments: (key: number) => runtime.runPromise(Effect.gen(function*() {
       const shelf = yield* Instances;
@@ -494,7 +502,9 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("menuitem", { name: "Choose from Photos" }));
   const photoPicker = page.getByRole("dialog", { name: "Choose from Photos" });
   for (const name of ["PIANO.PNG", "Phone photo.heic"]) {
-    await click(photoPicker.getByRole("button", { name, exact: true }));
+    const photo = photoPicker.getByRole("button", { name, exact: true });
+    await expect.element(photo).toBeVisible();
+    await click(photo);
     await expect.element(photoPicker.getByRole("status")).toBeVisible();
     await expect.element(page.getByRole("button", { name: `Remove ${name}`, exact: true })).not.toBeInTheDocument();
   }
@@ -507,6 +517,13 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("button", { name: /^Email/ }));
   await click(row("Drafts"));
   await expect.element(email(/A photo/)).toBeVisible();
+  // spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/email.md, "Sending a saved draft takes it out of Drafts"
+  await click(email(/A photo/));
+  await expect.element(subject()).toHaveValue("A photo");
+  await expect.element(page.getByRole("button", { name: "Remove Piano.png" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "A photo").map((m) => [m.labels, m.attachments.map((a) => a.filename)])), { timeout: 10000 })
+    .toEqual([[["SENT"], ["Piano.png", "Bow.png"]]]);
 
   // spec/app/email.md, "The composer remembers who she is choosing for, Cc and Bcc, and where she attaches from"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"
   await click(row("Inbox"));
@@ -525,7 +542,7 @@ it("See all my email in one place", async () => {
 }, 300_000);
 
 it("Write or reply and confirm before sending", async () => {
-  const { secret, host, person, company } = await start();
+  const { secret, host, person, company, waitingTargets } = await start();
   const sent = async (title: string) => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === title && m.labels.includes("SENT")).map((m) => ({ ...m, from: b.address })));
   const sentWith = async (title: string) => (await sent(title)).map((m) => m.from);
   // spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"
@@ -637,8 +654,15 @@ it("Write or reply and confirm before sending", async () => {
   await click(row("Drafts"));
   await click(email(/^To Susan.*Tea on Friday/));
   await expect.element(subject()).toHaveValue("Tea on Friday");
+  const earlierDeletes = (await company()).draftDeletes.length;
+  const deletes = async () => (await company()).draftDeletes.slice(earlierDeletes);
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, false, "deleteDraft"), client));
   await click(page.getByRole("button", { name: "Send" }));
   await expect.element(page.getByText("Sent to Susan")).toBeVisible();
+  await expect.poll(async () => (await deletes())[0]).toBe("refused");
+  await host("Offline");
+  await host("Online");
+  await expect.poll(deletes).toEqual(["refused", "deleted"]);
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Tea on Friday").map((m) => m.labels.includes("DRAFT")))).toEqual([false]);
   await expect.element(email(/^To Susan.*Tea on Friday/)).not.toBeInTheDocument();
   await expect.element(row("Drafts 1")).not.toBeInTheDocument();
@@ -659,6 +683,13 @@ it("Write or reply and confirm before sending", async () => {
   const waiting = email(/Ruth.*Re: Lunch on Sunday\?/);
   await expect.element(waiting).toBeVisible();
   await expect.element(page.getByText("Just now")).toBeVisible();
+  // spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"
+  await click(page.getByRole("button", { name: "Close Email" }));
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await expect.element(row("All inboxes")).toHaveAttribute("aria-current", "page");
+  await expect.element(waiting).not.toBeInTheDocument();
+  await click(row("Outbox 1"));
+  await expect.element(waiting).toBeVisible();
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
   const delivered = expect.element(page.getByText("Your email to Ruth was sent"), { timeout: 60_000 }).toBeVisible();
   await host("Online");
@@ -684,6 +715,18 @@ it("Write or reply and confirm before sending", async () => {
   await host("Online");
   await click(row("Outbox 1"));
   const refused = email(/Recital photos/);
+  await expect.element(refused).toBeVisible();
+  // spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"
+  const [queued] = await waitingTargets();
+  await click(page.getByRole("button", { name: "Ask Grace", exact: true }));
+  await click(page.getByRole("button", { name: "Collapse", exact: true }));
+  const tip = "Your email about the recital";
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{ said: "Which one is waiting?", answer: JSON.stringify({ text: "This one is waiting.", isQuestion: false, answers: [], actions: [{ kind: "guide", target: queued, emphasis: "instruction", title: tip }] }) }]), client));
+  await act(() => page.getByRole("textbox", { name: "Message to Grace" }).fill("Which one is waiting?"));
+  await act(() => userEvent.keyboard("{Enter}"));
+  await expect.element(page.getByRole("group", { name: tip }).getByRole("button", { name: /Recital photos/ })).toBeVisible();
+  await click(page.getByRole("button", { name: "Close this tip" }));
+  await click(page.getByRole("button", { name: "Close Grace", exact: true }));
   await expect.poll(async () => {
     if (refused.query()) await click(refused);
     return subject().query() !== null;
@@ -895,3 +938,47 @@ it("Delete a message and recover it safely", async () => {
   await expect.element(prize).not.toBeInTheDocument();
   await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.externalId === "instruction"))).toEqual([]);
 });
+
+it('Take a photo for an email on the tablet (spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity")', async () => {
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const jpeg = btoa("\xff\xd8\xff\xe0a garden photo from the tablet");
+  const lease = crypto.randomUUID();
+  const taken = { id: crypto.randomUUID(), kind: "photo", name: "Garden.jpg", savedAt: Date.now(), pages: 0 };
+  let entries: (typeof taken)[] = [];
+  localStorage.clear();
+  localStorage.setItem("accounts", JSON.stringify(connected(initial, "Gmail", gmail, "Gmail")));
+  onTestFinished(() => localStorage.clear());
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true, url: cloud, key: secret,
+    files: {
+      open: () => Promise.resolve({ lease }),
+      close: () => Promise.resolve(),
+      list: () => Promise.resolve({ entries }),
+      preview: ({ id, page: shown }) => Promise.resolve({ id, page: shown, image: `data:image/jpeg;base64,${jpeg}` }),
+      content: ({ id }) => Promise.resolve({ id, mimeType: "image/jpeg", data: jpeg }),
+      capture: () => Promise.resolve(taken),
+      commit: ({ id }) => { entries = [taken]; return Promise.resolve({ id }); },
+      saveAttachments: () => Promise.reject(new Error("No mail attachment is saved in this journey")),
+      remove: () => Promise.reject(new Error("No photo is removed in this journey")),
+    },
+  }));
+  const view = tabletView(runtime);
+  onTestFinished(() => view.dispose());
+  await view.render();
+  await expect.poll(async () => (await runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.get()))).graceAccount.tag).toBe("AccountUnavailable");
+  await act(() => runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.send({ type: "reportGraceService",
+    report: { tag: "GraceSignedIn", accountId: "tablet-owner", email: gmail, plan: "PlanUnknown" }, link: { tag: "GoogleLinkUnknown" } }))));
+  await click(page.getByRole("button", { name: /^Email/ }));
+  await writeTo("Susan");
+  await act(() => userEvent.fill(subject(), "The garden"));
+  await click(page.getByRole("button", { name: "Attach" }));
+  await click(page.getByRole("menuitem", { name: "Take a photo" }));
+  await expect.element(page.getByRole("button", { name: "Remove Garden.jpg" })).toBeVisible();
+  await click(page.getByRole("button", { name: "Send" }));
+  const Sent = Schema.Struct({ boxes: Schema.Array(Schema.Struct({ mail: Schema.Array(Schema.Struct({
+    subject: Schema.String, labels: Schema.Array(Schema.String), attachments: Schema.Array(Schema.Struct({ filename: Schema.String, data: Schema.optional(Schema.String) })),
+  })) })) });
+  const provider = async () => Schema.decodeUnknownSync(Sent)(await (await fetch(new URL("/fake/account", cloud), { headers: { authorization: `Bearer ${secret}` } })).json());
+  await expect.poll(async () => (await provider()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "The garden" && m.labels.includes("SENT")).map((m) => m.attachments)))
+    .toEqual([[{ filename: "Garden.jpg", data: jpeg }]]);
+}, 300_000);

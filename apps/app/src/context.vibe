@@ -7,7 +7,7 @@ import { entryAt } from "../gen/app__calendarView.effect.vibe"
 import { sentHistory, type Conversation } from "../gen/app__conversation.effect.vibe"
 import { messageRecord, photoAssets, photoPosition, showsScamWarning, type Mailbox } from "../gen/app__email.effect.vibe"
 import type { Folder, MessageRecord } from "../gen/app__emailItem.effect.vibe"
-import { folderRows, fromChoices, mailContext, type MailChoices, Machine as MailChoiceMachine, type MailTold, needsSignIn, openSource, outboxCount, showsMail, showsOutbox, type MailSource } from "../gen/app__mailboxes.effect.vibe"
+import { folderRows, fromChoices, mailContext, type MailChoices, Machine as MailChoiceMachine, type MailTold, needsSignIn, openSource, outboxCount, outboxRows, showsMail, showsOutbox, type MailSource } from "../gen/app__mailboxes.effect.vibe"
 import { type Ask, Machine as Proposal, type Pending } from "../gen/app__proposal.effect.vibe"
 import type { SettingsPage, Surface } from "../gen/app__shell.effect.vibe"
 import { Machine as Workspaces, privateSurfaceActive, type Workspace } from "../gen/app__workspace.effect.vibe"
@@ -78,6 +78,7 @@ const outcomes: Record<Outcome, string> = {
   OwnerRefused: "was not done: the screen does not allow it as it is now",
   AlreadyInCalendar: "was not done: it is already in their calendar, or you already asked them",
   NothingAsked: "was not done: you are not waiting on their answer to a question",
+  NotTheirAnswer: "was not done: the person has not answered your question yet, and asking you for help is not their answer, so it still waits for them",
   NotOnScreen: "was not done: that is not on the screen"
 }
 
@@ -247,7 +248,16 @@ function emailScreen(s: Scene): Part {
   const query = shown[0]?.mailbox.query ?? ""
   const only = registry.accounts.find((a) => a.id === registry.inboxFilter)
   const rows = folderRows(registry, mail, folder).filter((r) => !confidentialMail(s.content(r.account, r.record.identity.ref)))
-  if (showsOutbox(registry, mail, s.choices)) return { lines: [`Email is open on Outbox: ${counted(outboxCount(registry, mail), "email")} waiting to go when the tablet is back online.`], targets: [] }
+  if (showsOutbox(registry, mail, s.choices)) {
+    const waiting = outboxRows(registry, mail).map((r) => ({ target: mailTarget(r.account, r.queued.operationId), content: r.queued.snapshot.content }))
+    return {
+      lines: [
+        `Email is open on Outbox: ${counted(waiting.length, "email")} waiting to go when the tablet is back online.`,
+        `Rows you can point at: ${waiting.map((w) => `${w.target} = an email to ${cleaned(w.content.to)}, ${said(cleaned(w.content.subject))}`).join("; ")}.`
+      ],
+      targets: waiting.map((w) => w.target)
+    }
+  }
   return {
     lines: [
       `Email is open on ${folders[folder]}${only === undefined ? "" : ` for ${only.name} only`}${query === "" ? "" : `, searching for ${quoted(query)}`}.`,

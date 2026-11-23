@@ -1,9 +1,9 @@
-// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/email.md, "Sending a saved draft takes it out of Drafts"
+// spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/email.md, "Sending a saved draft takes it out of Drafts"; spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"
 import { Machine as Accounts, type Account } from "../gen/app__accounts.effect.vibe"
 import { canEditDraft, canQueueSend, canSendDraft, currentDraft, draftStoreBusy, emptyContent, enabled, type Event as MailEvent, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.vibe"
-import { contactAccounts, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
+import { contactAccounts, Machine as MailChoices, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, sendableAttachment, sendableAttachments, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
 import { Library } from "./files.vibe"
@@ -104,6 +104,11 @@ effect function removeSent(mail: MailConnection, box: MailMachine.Shape, m: Mail
     if (answered === undefined) return try expired(box)
     if (answered) box.send({ type: "forgetSentDraft", draftId }, "MailHost") catch () => undefined
   }
+}
+
+function forgetOutboxOnLeaving(workspace: Workspaces.Shape, choices: MailChoices.Shape) {
+  const emailOpen = Stream.zipWithPrevious(Stream.changes(Stream.map(workspace.changes, (w) => w.device.surface === "Email")))
+  return Stream.runForEach(Stream.filter(emailOpen, ([was, open]) => Option.getOrElse(was, () => false) && !open), () => choices.send({ type: "leaveEmail" }))
 }
 
 effect function noteSent(registry: Accounts.Shape, id: number, to: string) {
@@ -302,7 +307,7 @@ export const mailing = Layer.effect(Mail, effect {
   effect function store(account: Account, mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
     const answer = effect (persisted: boolean) => box.send({ type: "draftStoreResult", draftId: m.draftId, revision: m.storedRevision, request: m.draftRequest, persisted }, "MailHost") catch () => undefined
     if (m.draftStorage === "DraftSaving") {
-      const stored = mail.saveDraft(currentDraft(m)) catch () => undefined
+      const stored = mail.saveDraft(currentDraft(m), try library.contents(currentDraft(m).attachments)) catch () => undefined
       if (stored === undefined) return try expired(box)
       try answer(stored.persisted)
     }
@@ -343,6 +348,7 @@ export const mailing = Layer.effect(Mail, effect {
     return try fork.in(scope) Stream.runDrain(Stream.merge(work, draftCounts(mail, box)))
   }
 
+  try fork.in(scope) forgetOutboxOnLeaving(workspace, try MailChoices)
   const selections = Stream.map(registry.changes, ({ accounts }) => accounts)
   try fork.in(scope) followAccounts(selections, effect (account) => try watch(account, try shelf.mail(account.id)))
 
