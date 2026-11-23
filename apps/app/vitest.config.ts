@@ -164,6 +164,7 @@ async function operatePublicSort(site: Site, definition: BenchmarkDefinition, ac
     const known = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
       definition.taskId === "352" ? [/^Health (&|and) Household$/i, /^Diet (&|and) Sports Nutrition$/i, /^Nutrition Bars (&|and) Drinks$/i] : [];
     const leafName = definition.taskId === "353" ? /^Competitive Swimwear$/i :
+      definition.taskId === "354" ? /^Living Room Furniture$/i :
       definition.taskId === "355" ? /^Kids(?:[\u0027’])? Bedding$/i : undefined;
     const navName = known[0] ?? leafName;
     if (!navName) throw new Error("The fixture has no public category operator");

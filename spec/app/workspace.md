@@ -62,9 +62,10 @@ type GuidedCalendarApproval = {
   title: str, starts: int, ends: int, timezone: str, location: str, notes: str, detailsDigest: str
 }
 type GuidedReceipt = { sourceKey: str, evidence: str }
+type GuidedNameWitness = PublicLinkName | LocatedSortCategory({ domRevision: int, origin: str, direction: PriceDirection })
 type GuidedNameCorrection = {
   owner: str, task: str, version: int, generation: int, deviceVersion: int, browserRevision: int,
-  stepIndex: int, loadVersion: int, documentId: str, url: str, href: str, original: str, label: str
+  stepIndex: int, loadVersion: int, documentId: str, url: str, href: str, original: str, label: str, witness: GuidedNameWitness
 }
 type GuidedNameCorrectionState = NoGuidedNameCorrection | PendingGuidedNameCorrection({ value: GuidedNameCorrection })
 type GuidedNameOverride = { stepIndex: int, label: str }
@@ -168,17 +169,19 @@ pure def nextOutcome(plan: GuidedPlan): GuidedStep = {
   val index = plan.receipts.length()
   val plannedOutcome = plan.steps.nthOr(index, noGuidedStep)
   val session = plan.tabSession
-  if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match plannedOutcome {
-    | ReachNamedPage(_) => ReachNamedPage({ subject: plan.nameOverride.label })
-    | _ => plannedOutcome
-  } else match session {
-      | RestoredPublicTab(binding) => if (binding.stepIndex == index) match plannedOutcome {
-        | SearchPublicSite(target) => SearchPublicSite({ query: target.query, origin: target.origin, tabId: binding.tabId })
-        | SortPublicListing(target) => SortPublicListing({ subject: target.subject, origin: target.origin, direction: target.direction, tabId: binding.tabId })
-        | _ => plannedOutcome
-      } else plannedOutcome
+  val boundOutcome = match session {
+    | RestoredPublicTab(binding) => if (binding.stepIndex == index) match plannedOutcome {
+      | SearchPublicSite(target) => SearchPublicSite({ query: target.query, origin: target.origin, tabId: binding.tabId })
+      | SortPublicListing(target) => SortPublicListing({ subject: target.subject, origin: target.origin, direction: target.direction, tabId: binding.tabId })
       | _ => plannedOutcome
+    } else plannedOutcome
+    | _ => plannedOutcome
   }
+  if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match boundOutcome {
+    | ReachNamedPage(_) => ReachNamedPage({ subject: plan.nameOverride.label })
+    | SortPublicListing(sort) => SortPublicListing({ subject: plan.nameOverride.label, origin: sort.origin, tabId: sort.tabId, direction: sort.direction })
+    | _ => boundOutcome
+  } else boundOutcome
 }
 type Workspace = {
   device: S::Shell, browser: B::Browser, assistant: A::Assistant,
@@ -1336,7 +1339,7 @@ fresh observation of the original mail receipt and its own separate approval.
 pure def guidedCheckpoint(w: Workspace): GuidedCheckpoint = {
   request: { owner: w.plan.owner, task: w.assistant.taskId, goal: w.plan.originalAsk, steps: w.plan.steps },
   receipts: w.plan.receipts, workVersion: w.assistant.workVersion,
-  correction: if (w.plan.nameOverride.stepIndex == w.plan.receipts.length() and w.plan.nameOverride.label != "" and w.plan.linkUrl != "")
+  correction: if (isNamedDestination(nextOutcome(w.plan)) and w.plan.nameOverride.stepIndex == w.plan.receipts.length() and w.plan.nameOverride.label != "" and w.plan.linkUrl != "")
     GuidedCheckpointCorrectionBound({ label: w.plan.nameOverride.label, url: w.plan.linkUrl }) else NoGuidedCheckpointCorrection,
   save: if (w.plan.calendarApproval.proposal >= 0 and isAppointmentSave(nextOutcome(w.plan)))
     GuidedSaveReconcile({ occurrence: w.plan.savedOccurrence, owner: w.plan.calendarApproval.owner,
@@ -1471,7 +1474,7 @@ highlight does not record a read or navigate the page. Visiting a
 different destination does not finish the pointed step. A highlighted link
 whose page sends her on while it loads, such as from "Sign in" to the
 website's sign-in address, is followed where that load ends: the step's
-destination moves with the load that started at it. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. Grace asks its Cloud decision service under the signed-in Grace account. For a statement read it asks the service to prefer a page that shows the bill, statement or account activity, and to avoid a link that only starts a payment. The service receives the reviewed goal and bounded visible labels with temporary candidate identifiers. A signed-out session cannot ask for a choice. A choice can guide only while that account, task and document are current. The highlight uses an observation of that document taken after the choice, and one more if the page moved in between, so a clock the page counts by itself does not stop it. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
+destination moves with the load that started at it. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. Grace asks its Cloud decision service under the signed-in Grace account. For a statement read it asks the service to prefer a different page showing a current bill or an account summary, and to avoid statement history, account switching and starting a payment. A guidance link never proves the new page has the requested values. The service receives the reviewed goal and bounded visible labels with temporary candidate identifiers. A signed-out session cannot ask for a choice. A choice can guide only while that account, task and document are current. The highlight uses an observation of that document taken after the choice, and one more if the page moved in between, so a clock the page counts by itself does not stop it. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
 
 When the person permits observation and a secure site is loaded, the chat planner can see that the current tab already has a website open and the public hostname. The browser keeps the full address and document contents local when reporting that context.
 
@@ -1532,9 +1535,10 @@ pure def isLinkGuidanceStep(guidedStep: GuidedStep): bool = match guidedStep {
   | _ => false
 }
 pure def mayGuideReadLink(w: Workspace): bool =
-  hasNext(w.plan) and isLinkGuidanceStep(nextOutcome(w.plan)) and
-  w.device.readiness == S::Ready and w.device.surface == S::Browser and mayAssist(w) and
-  w.assistant.presentation == A::Compact and B::activeTab(w.browser).load == B::Loaded and
+  isLinkGuidanceStep(nextOutcome(w.plan)) and w.assistant.presentation == A::Compact and mayAssist(w) and mayReadGuidedBrowser(w)
+pure def mayReadGuidedBrowser(w: Workspace): bool =
+  hasNext(w.plan) and S::mayObserveBrowser(w.device) and A::isVisible(w.assistant) and
+  B::activeTab(w.browser).load == B::Loaded and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
   w.assistant.replacementId == "" and w.assistant.conversation.turn == C::Ready and not(w.assistant.conversation.question) and
   w.execution.phase == X::Idle and w.commitmentTask == ""
@@ -1599,23 +1603,44 @@ pure val linkValues = Set({ task: "read", version: 1, generation: 2, deviceVersi
 pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 ```
 
-### Only the person can revise the next named page to an observed public link label
+### Only the person can revise the next public page or category to its observed label
 
 While a named page is the next check, Grace can offer the visible label of a different public link in the current loaded document. The browser adapter witnesses one pointable same-site anchor outside every form. It checks the same document, address, link and label again when the person approves. A private page or a changed account, task, step, permission, browser or conversation makes the offer unavailable. The person can ignore it and keep asking for the original name. Approval replaces only the exact name to check for this step and binds the approved link. A later hint can use that approved link. Binding a different link needs another approval. The original request, plan owner, remaining steps and all receipts stay in place. Approval does not navigate, record a receipt or authorize a write. Grace checks that the active tab has reached the approved address before requesting an observation of the destination. It then verifies the exact approved heading.
 
 When the person opens a navigation menu, Grace can point to a visible child of that menu and guide the person through further nested menus. Each choice stays in the observed branch of the current document. When the open branch has no matching link, the person can ask Grace to try another menu on the same document. If the destination uses a different label, Grace shows its parent menus and asks the person to approve that particular link. The final check requires the approved address and the visible primary heading.
 
+On a reviewed public price sort, Grace can offer the exact visible category
+name of the securely loaded page from the reviewed tab after observing its
+price toolbar in the reviewed direction. The offer is available in the same
+view as the price check, including when Grace reopens expanded. She checks the same document,
+document revision, category and toolbar again when the person accepts. The
+chosen label replaces only the category in that step. It keeps the reviewed
+tab, origin and direction. Checking again still requires the full sort
+observation and does not reuse this offer as the result. This correction
+belongs to the current browser session. After restart, the original category
+can be checked or corrected again on a freshly reviewed page.
+
 ```quint
 pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrection): bool = {
   val tab = B::activeTab(w.browser)
-  mayGuideReadLink(w) and not(privateSurfaceActive(w)) and w.device.observationAllowed and
-  isNamedDestination(nextOutcome(w.plan)) and correction.original == guidedDetails(nextOutcome(w.plan)).subject and
+  val witness = correction.witness
+  val pendingStep = nextOutcome(w.plan)
+  mayReadGuidedBrowser(w) and not(privateSurfaceActive(w)) and
+  (match witness {
+    | PublicLinkName => mayGuideReadLink(w) and isNamedDestination(pendingStep) and correction.href != correction.url
+    | LocatedSortCategory(located) => match pendingStep {
+      | SortPublicListing(sort) => sort.tabId == tab.id and tab.secure and not(needsRecoveredPublicTab(w.plan)) and
+          publicResultLoad(w.plan, tab.loadVersion, correction.documentId) and located.domRevision >= 0 and located.origin == sort.origin and located.direction == sort.direction and
+          correction.href == correction.url
+      | _ => false
+    }
+  }) and correction.original == guidedDetails(pendingStep).subject and
   correction.owner != "" and correction.owner == w.plan.owner and correction.task == w.assistant.taskId and
   correction.version == w.assistant.workVersion and correction.generation == w.assistant.conversation.generation and
   correction.deviceVersion == w.device.contextVersion and correction.browserRevision == w.browser.revision and
   correction.stepIndex == w.plan.receipts.length() and correction.loadVersion == tab.loadVersion and
   correction.documentId != "" and correction.url != "" and correction.url == B::tabUrl(tab) and
-  correction.href != "" and correction.href != correction.url and correction.label != "" and
+  correction.href != "" and correction.label != "" and
   correction.label != correction.original
 }
 pure def currentGuidedNameCorrection(w: Workspace): GuidedNameCorrectionState = {
@@ -1632,11 +1657,12 @@ pure def offerGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrectio
   ...w, plan: { ...w.plan, nameCorrection: PendingGuidedNameCorrection({ value: correction }) }
 }
 pure def canConfirmGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
-  by == Person and currentGuidedNameCorrection(w) == PendingGuidedNameCorrection({ value: correction })
+  by == Person and not(heldByWebsite(w)) and currentGuidedNameCorrection(w) == PendingGuidedNameCorrection({ value: correction })
 pure def confirmGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): Workspace = {
   ...w, plan: { ...w.plan, nameCorrection: NoGuidedNameCorrection,
     nameOverride: { stepIndex: correction.stepIndex, label: correction.label },
-    linkStep: correction.stepIndex, linkUrl: correction.href },
+    linkStep: if (correction.witness == PublicLinkName) correction.stepIndex else w.plan.linkStep,
+    linkUrl: if (correction.witness == PublicLinkName) correction.href else w.plan.linkUrl },
   assistant: { ...w.assistant, workVersion: w.assistant.workVersion + 1 }
 }
 pure def lawNameCorrectionRetainsTheReviewedPlan(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool = {
@@ -1644,8 +1670,18 @@ pure def lawNameCorrectionRetainsTheReviewedPlan(w: Workspace, correction: Guide
   canConfirmGuidedNameCorrection(w, correction, by) implies
     after.plan.owner == w.plan.owner and after.plan.originalAsk == w.plan.originalAsk and
     after.plan.steps == w.plan.steps and after.plan.receipts == w.plan.receipts and
-    after.browser == w.browser and nextOutcome(after.plan) == ReachNamedPage({ subject: correction.label }) and
+    after.browser == w.browser and guidedDetails(nextOutcome(after.plan)).subject == correction.label and
     after.assistant.workVersion > correction.version
+}
+pure def lawNameCorrectionKeepsTheSortScope(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool = {
+  val pendingStep = nextOutcome(w.plan)
+  val after = confirmGuidedNameCorrection(w, correction, by)
+  (canConfirmGuidedNameCorrection(w, correction, by) and isPublicSort(pendingStep)) implies (match pendingStep {
+    | SortPublicListing(sort) => nextOutcome(after.plan) == SortPublicListing({
+        subject: correction.label, origin: sort.origin, tabId: sort.tabId, direction: sort.direction }) and
+        after.plan.linkUrl == w.plan.linkUrl and after.plan.linkStep == w.plan.linkStep
+    | _ => false
+  })
 }
 pure def lawANameCorrectionNeedsItsCurrentPersonOffer(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
   (by != Person or not(guidedNameCorrectionCurrent(w, correction))) implies not(canConfirmGuidedNameCorrection(w, correction, by))
@@ -1655,7 +1691,7 @@ pure def lawGuidanceKeepsTheApprovedLink(w: Workspace, link: GuidedLink, by: Wor
 pure val correctionValues = Set(3, 4).map(generation =>
   { owner: "tablet", task: "read", version: 1, generation: generation, deviceVersion: 7, browserRevision: 3,
     stepIndex: 0, loadVersion: 1, documentId: "browser-document", url: "https://utility.example",
-    href: "https://utility.example/help", original: "Support", label: "Help" })
+    href: "https://utility.example/help", original: "Support", label: "Help", witness: PublicLinkName })
 ```
 
 ### Only a current observation of the next outcome advances the plan
@@ -1800,6 +1836,27 @@ pure val sortCheckValues = Set(sampleSortCheck, { ...sampleSortCheck, category: 
   { ...sampleSortCheck, direction: PriceDescending }, { ...sampleSortCheck, tabId: 2 })
 pure def lawPublicSortExampleIsAdmitted(by: WorkspaceActor): bool =
   by == Host implies canConfirmGuidedPublicSort(examplePublicSort, sampleSortCheck, by)
+pure val exampleSortNameDevice = S::setReasoningAvailability(S::setConnectivity(exampleSortDevice, S::Online), true)
+pure val exampleSortName: GuidedNameCorrection = {
+  owner: "owner", task: "task", version: exampleSortAssistant.workVersion, generation: exampleSortAssistant.conversation.generation,
+  deviceVersion: exampleSortNameDevice.contextVersion, browserRevision: exampleSortBrowser.revision, stepIndex: 0,
+  loadVersion: B::activeTab(exampleSortBrowser).loadVersion, documentId: "sorted-document", url: sampleSortUrl, href: sampleSortUrl,
+  original: "Winter coats", label: "Winter jackets",
+  witness: LocatedSortCategory({ domRevision: 1, origin: "https://utility.example", direction: PriceAscending })
+}
+pure def lawSortNameCorrectionExampleIsCurrent(by: WorkspaceActor): bool = {
+  val ready: Workspace = { ...examplePublicSort, device: exampleSortNameDevice }
+  val offered = offerGuidedNameCorrection(ready, exampleSortName, Host)
+  by == Person implies canOfferGuidedNameCorrection(ready, exampleSortName, Host) and
+    canConfirmGuidedNameCorrection(offered, exampleSortName, by) and
+    not(canConfirmGuidedNameCorrection(offered, exampleSortName, Host)) and
+    not(canConfirmGuidedNameCorrection(holdForWebsite(offered, true, Host), exampleSortName, by)) and
+    not(canConfirmGuidedNameCorrection(offered, { ...exampleSortName, owner: "another-owner" }, by)) and
+    not(canOfferGuidedNameCorrection(ready, { ...exampleSortName, witness: LocatedSortCategory({
+      domRevision: 1, origin: "https://other.example", direction: PriceAscending }) }, Host)) and
+    not(canOfferGuidedNameCorrection(ready, { ...exampleSortName, witness: LocatedSortCategory({
+      domRevision: 1, origin: "https://utility.example", direction: PriceDescending }) }, Host))
+}
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
 ```
@@ -2525,6 +2582,118 @@ pure val eval_witness_sometimesOperationDispatched = (
   ("prepare", operation, Host),
   ("dispatch", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 }, Actuator)
 )
+pure val eval_witness_sometimesOperationVerified = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("prepare", operation, Host),
+  ("dispatch", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 }, Actuator),
+  ("verify", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, website: X::goodVerification, checkpoint: "Current account read", needsUser: false }, Host)
+)
+pure val eval_witness_sometimesGuidedGoalIsObserved = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("beginGuided", { owner: "owner", task: "task", goal: "Read the appointment", steps: List(sampleStep) }, Person),
+  ("confirmGuided", { ...sampleReport, deviceVersion: 5 }, Host)
+)
+pure val eval_witness_sometimesCommitmentAuthorized = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person)
+)
+pure val eval_witness_sometimesSpokenApprovalIsRecorded = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person)
+)
+pure val eval_witness_sometimesCommitmentDispatched = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person),
+  ("submitCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Actuator)
+)
+pure val eval_witness_sometimesCommitmentResultFinishesTask = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person),
+  ("submitCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Actuator),
+  ("recordCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: CM::exampleOutcome }, Host),
+  ("saveCommitment", { key: CM::exampleKey, revision: 3, succeeded: true }, Store)
+)
+pure val eval_witness_sometimesInterruptedCommitmentIsUncertain = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person),
+  ("submitCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Actuator),
+  ("changeLifecycle", SleepDevice, Host)
+)
 pure val weight_setAvailability = 4
 pure val weight_visit = 16
 pure val weight_setBrowserObservation = 100
@@ -2635,7 +2804,8 @@ pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspac
     websiteHold: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
 }
 pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
-  "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection", "resumePublicTab",
+  "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection",
+  "confirmGuidedNameCorrection", "resumePublicTab",
   "confirmGuided", "confirmGuidedNamedPage", "confirmGuidedSearch", "confirmGuidedPublicSort",
   "stageGuidedRecord", "confirmGuidedRecord", "confirmGuidedMail",
   "rebindGuidedMail", "expectGuidedCalendar", "observeGuidedCalendar", "reconcileGuidedSave",
