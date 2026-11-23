@@ -404,6 +404,36 @@ effect function mayApplyProposal(p: Pending, target: number, w: Workspace) {
     live.plan.calendarApproval.proposal === approval.proposal && guidedSavePending(live)
 }
 
+effect function turnTo(workspace: Workspaces.Shape, box: CalendarMachine.Shape, shown: DayToShow, by: "ViewUser" | "ViewStore", isCurrent?: (v: CalendarView) => boolean) {
+  if (!shown.show || (try workspace.get()).device.surface !== "Calendar") return undefined
+  const start = startDay(shown.startAt)
+  const report = navigation((try box.get()).window, "SelectDay", start.day)
+  if (!showsDay(report, start, shown)) return undefined
+  return box.send({ type: "navigate", report }, by, isCurrent) catch () => undefined
+}
+
+effect function alignSavedDay({ workspace, lead, box, shown, sources, ring, by }: {
+  workspace: Workspaces.Shape; lead: CalendarMachine.Shape; box: CalendarMachine.Shape; shown: DayToShow;
+  sources: readonly CalendarSource[]; ring: { key: number; id: string }; by: "ViewUser" | "ViewStore";
+}) {
+  const source = sources.find((calendar) => calendar.key === ring.key)?.view
+  const tabletView = sources.find((calendar) => calendar.key === tablet)?.view
+  if (shown.show && source !== undefined && tabletView !== undefined) {
+    const receiptIsCurrent = (current: CalendarView, selectedId: string) => {
+      const entry = entryAt(current, ring.id)
+      return current.generation === source.generation && current.selectedId === selectedId &&
+        entry.phase === "Saved" && entry.committed.startAt === shown.startAt &&
+        Effect.runSync(workspace.get()).device.surface === "Calendar"
+    }
+    const moved = try turnTo(workspace, box, shown, by, (current) => receiptIsCurrent(current, ring.id))
+    if (moved !== undefined && lead !== box) try turnTo(workspace, lead, shown, by, (current) =>
+      receiptIsCurrent(Effect.runSync(box.get()), moved.selectedId) &&
+        current.generation === tabletView.generation && current.selectedId === tabletView.selectedId &&
+        current.window.mode === tabletView.window.mode && current.window.anchorDay === tabletView.window.anchorDay &&
+        current.window.selectedDay === tabletView.window.selectedDay)
+  }
+}
+
 export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect {
   const digest = try Digest.Digest
   const connector = try Effect.serviceOption(Connector)
@@ -443,14 +473,6 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
       if (box !== undefined) sources.push({ key, view: try box.get() })
     }
     return sources
-  }
-
-  effect function turnTo(box: CalendarMachine.Shape, shown: DayToShow, by: "ViewUser" | "ViewStore", isCurrent?: (v: CalendarView) => boolean) {
-    if (!shown.show || (try workspace.get()).device.surface !== "Calendar") return undefined
-    const start = startDay(shown.startAt)
-    const report = navigation((try box.get()).window, "SelectDay", start.day)
-    if (!showsDay(report, start, shown)) return undefined
-    return box.send({ type: "navigate", report }, by, isCurrent) catch () => undefined
   }
 
   const visibility = Stream.changes(Stream.map(workspace.changes, (w) => w.device.surface === "Calendar"))
@@ -514,23 +536,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     if (box === undefined) return `${ring.key}/${ring.id}`
     const sources = try sourcesOf(a)
     const shown = savedDay(a, sources, report.told)
-    const source = sources.find((calendar) => calendar.key === ring.key)?.view
-    const tabletView = sources.find((calendar) => calendar.key === tablet)?.view
-    const by = report.keepDetail ? "ViewStore" : "ViewUser"
-    if (shown.show && source !== undefined && tabletView !== undefined) {
-      const receiptIsCurrent = (current: CalendarView, selectedId: string) => {
-        const entry = entryAt(current, ring.id)
-        return current.generation === source.generation && current.selectedId === selectedId &&
-          entry.phase === "Saved" && entry.committed.startAt === shown.startAt &&
-          Effect.runSync(workspace.get()).device.surface === "Calendar"
-      }
-      const moved = try turnTo(box, shown, by, (current) => receiptIsCurrent(current, ring.id))
-      if (moved !== undefined && lead !== box) try turnTo(lead, shown, by, (current) =>
-        receiptIsCurrent(Effect.runSync(box.get()), moved.selectedId) &&
-          current.generation === tabletView.generation && current.selectedId === tabletView.selectedId &&
-          current.window.mode === tabletView.window.mode && current.window.anchorDay === tabletView.window.anchorDay &&
-          current.window.selectedDay === tabletView.window.selectedDay)
-    }
+    try alignSavedDay({ workspace, lead, box, shown, sources, ring, by: report.keepDetail ? "ViewStore" : "ViewUser" })
     return `${ring.key}/${ring.id}`
   }
 
@@ -569,7 +575,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     const a = try registry.get()
     const sources = try sourcesOf(a)
     const shown = askedDay(a, sources, try Ref.get(earlier), p)
-    try turnTo(lead, shown, "ViewUser")
+    try turnTo(workspace, lead, shown, "ViewUser")
     if (shown.show || p.ask.tag !== "AddAsk" || !(try lead.get()).opened || calendarFree(sources)) try Ref.set(earlier, p)
   }))
   try fork.scoped followAccounts(Stream.map(registry.changes, ({ accounts }) => accounts), effect (account) => try fork.scoped Stream.runForEach((try shelf.calendar(account.id)).changes, () => Effect.andThen(noticeReminders, turnToAsk)))
