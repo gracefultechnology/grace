@@ -97,7 +97,6 @@ type GuidedObservation = {
 }
 type GuidedRecordCheck = { report: GuidedObservation, key: str, tabId: int, documentId: str, loadVersion: int }
 type GuidedSortCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, tabId: int, category: str, direction: PriceDirection }
-type GuidedCollectionCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, tabId: int, subject: str, entries: int }
 type GuidedNamedPageCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, heading: str }
 type GuidedSearchCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, query: str }
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
