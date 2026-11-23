@@ -299,22 +299,20 @@ pure def namesBookingField(command: WS::WorkspaceEffect, target: str, valueRef: 
 pure def bookingDetailKindMatches(kind: M::FactKind, detail: str): bool =
   (kind == M::Name and detail == "name") or (kind == M::Phone and detail == "phone") or (kind == M::Address and detail == "address")
 pure def bookingFieldMatches(
-  w: WS::Workspace, form: VerifiedTaskForm, answerVersion: int, by: WS::WorkspaceActor
+  w: WS::Workspace, command: WS::WorkspaceEffect, requestedFill: K::Fill, bookingField: BookingField,
+  detailRead: BookingDetailRead, answerVersion: int, by: WS::WorkspaceActor
 ): bool = {
-  val requestedFill = form.fill
-  val bookingField = form.bookingField
-  val detailRead = form.detailRead
   match requestedFill {
     | BookFill(booking) => match bookingField {
       | NoBookingField => false
       | BookingTimeField(time) => time.slot == booking.bookForm.slot and time.answerVersion == answerVersion and
-          detailRead == NoBookingDetailRead and namesBookingField(form.command, time.target, time.valueRef)
+          detailRead == NoBookingDetailRead and namesBookingField(command, time.target, time.valueRef)
       | BookingSavedField(binding) => binding.answerVersion == answerVersion and booking.bookForm.details.includes(binding.detail) and
-          namesBookingField(form.command, binding.target, binding.valueRef) and match detailRead {
+          namesBookingField(command, binding.target, binding.valueRef) and match detailRead {
             | NoBookingDetailRead => false
             | ReadBookingDetail(read) =>
                 bookingDetailKindMatches(SD::detailAt(read.details, MA::receiptKey(read.resolved.authorization)).kind, binding.detail) and
-                MA::currentSavedDetailEffect(w, form.command, read.details, read.resolved, by)
+                MA::currentSavedDetailEffect(w, command, read.details, read.resolved, by)
           }
     }
     | _ => bookingField == NoBookingField and detailRead == NoBookingDetailRead
@@ -334,7 +332,7 @@ pure def fillPermitted(
               taskForm.key == preparation.key and taskForm.task == fillWorkspace.assistant.taskId and
               taskForm.key.owner == fillWorkspace.execution.owner and taskForm.key.origin == fillWorkspace.execution.origin and
               taskForm.key.account == fillWorkspace.execution.matchedAccount and verified.fill == taskForm.fill and
-              verified.bookingField == taskForm.bookingField and bookingFieldMatches(fillWorkspace, verified, queued.prepVersion, by) and
+              verified.bookingField == taskForm.bookingField and bookingFieldMatches(fillWorkspace, verified.command, verified.fill, verified.bookingField, verified.detailRead, queued.prepVersion, by) and
               P::graceMayFill(preparation, verified.fill)
         }
       }))
@@ -368,7 +366,7 @@ pure def lawATaskFillUsesItsOwnVerifiedForm(
         | VerifiedForm(verified) => taskForm.key == preparation.key and taskForm.task == fillWorkspace.assistant.taskId and
             taskForm.key.account == fillWorkspace.execution.matchedAccount and verified.command == queued.command and
             verified.key == taskForm.key and verified.fill == taskForm.fill and verified.bookingField == taskForm.bookingField and
-            bookingFieldMatches(fillWorkspace, verified, queued.prepVersion, WS::Actuator) and P::graceMayFill(preparation, taskForm.fill)
+            bookingFieldMatches(fillWorkspace, verified.command, verified.fill, verified.bookingField, verified.detailRead, queued.prepVersion, WS::Actuator) and P::graceMayFill(preparation, taskForm.fill)
       }
     }
 }
