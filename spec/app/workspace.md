@@ -62,7 +62,7 @@ type GuidedCalendarApproval = {
   title: str, starts: int, ends: int, timezone: str, location: str, notes: str, detailsDigest: str
 }
 type GuidedReceipt = { sourceKey: str, evidence: str }
-type GuidedNameWitness = PublicLinkName | LocatedSortCategory({ domRevision: int })
+type GuidedNameWitness = PublicLinkName | LocatedSortCategory({ domRevision: int, origin: str, direction: PriceDirection })
 type GuidedNameCorrection = {
   owner: str, task: str, version: int, generation: int, deviceVersion: int, browserRevision: int,
   stepIndex: int, loadVersion: int, documentId: str, url: str, href: str, original: str, label: str, witness: GuidedNameWitness
@@ -1555,7 +1555,8 @@ pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrect
     | PublicLinkName => isNamedDestination(outcome) and correction.href != correction.url
     | LocatedSortCategory(located) => match outcome {
       | SortPublicListing(sort) => sort.tabId == tab.id and tab.secure and tab.loadVersion > w.plan.openingBrowser and
-          located.domRevision >= 0 and correction.href == correction.url
+          located.domRevision >= 0 and located.origin == sort.origin and located.direction == sort.direction and
+          correction.href == correction.url
       | _ => false
     }
   }) and correction.original == guidedDetails(outcome).subject and
@@ -1759,6 +1760,26 @@ pure val sortCheckValues = Set(sampleSortCheck, { ...sampleSortCheck, category: 
   { ...sampleSortCheck, direction: PriceDescending }, { ...sampleSortCheck, tabId: 2 })
 pure def lawPublicSortExampleIsAdmitted(by: WorkspaceActor): bool =
   by == Host implies canConfirmGuidedPublicSort(examplePublicSort, sampleSortCheck, by)
+pure val exampleSortNameDevice = S::setReasoningAvailability(S::setConnectivity(exampleSortDevice, S::Online), true)
+pure val exampleSortName: GuidedNameCorrection = {
+  owner: "owner", task: "task", version: exampleSortAssistant.workVersion, generation: exampleSortAssistant.conversation.generation,
+  deviceVersion: exampleSortNameDevice.contextVersion, browserRevision: exampleSortBrowser.revision, stepIndex: 0,
+  loadVersion: B::activeTab(exampleSortBrowser).loadVersion, documentId: "sorted-document", url: sampleSortUrl, href: sampleSortUrl,
+  original: "Winter coats", label: "Winter jackets",
+  witness: LocatedSortCategory({ domRevision: 1, origin: "https://utility.example", direction: PriceAscending })
+}
+pure def lawSortNameCorrectionExampleIsCurrent(by: WorkspaceActor): bool = {
+  val ready: Workspace = { ...examplePublicSort, device: exampleSortNameDevice }
+  val offered = offerGuidedNameCorrection(ready, exampleSortName, Host)
+  by == Person implies canOfferGuidedNameCorrection(ready, exampleSortName, Host) and
+    canConfirmGuidedNameCorrection(offered, exampleSortName, by) and
+    not(canConfirmGuidedNameCorrection(offered, exampleSortName, Host)) and
+    not(canConfirmGuidedNameCorrection(offered, { ...exampleSortName, owner: "another-owner" }, by)) and
+    not(canOfferGuidedNameCorrection(ready, { ...exampleSortName, witness: LocatedSortCategory({
+      domRevision: 1, origin: "https://other.example", direction: PriceAscending }) }, Host)) and
+    not(canOfferGuidedNameCorrection(ready, { ...exampleSortName, witness: LocatedSortCategory({
+      domRevision: 1, origin: "https://utility.example", direction: PriceDescending }) }, Host))
+}
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
 ```

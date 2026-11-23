@@ -355,7 +355,7 @@ function observedSortName(w: Scene["workspace"], step: GuidedStep, source: Guide
     owner: w.plan.owner, task: w.assistant.taskId, version: w.assistant.workVersion, generation: w.assistant.conversation.generation,
     deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision, stepIndex: w.plan.receipts.length,
     loadVersion: source.loadVersion, documentId: source.documentId, url: source.url, href: source.url,
-    original: step.subject, label: source.category, witness: { tag: "LocatedSortCategory", domRevision: source.domRevision }
+    original: step.subject, label: source.category, witness: { tag: "LocatedSortCategory", domRevision: source.domRevision, origin: source.origin, direction: source.direction }
   }
 }
 
