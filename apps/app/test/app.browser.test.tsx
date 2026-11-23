@@ -3454,6 +3454,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await visit(counting);
     const figures = [...counting.frame.document.querySelectorAll("p")].find((line) => line.textContent?.startsWith("Statement balance"))!;
     figures.textContent = "Statement balance: $612.40. Remaining statement balance: $40.00. Payment due date: 12/05/2026.";
+    figures.textContent = "Premium due: $41.00. " + figures.textContent;
+    await tap(readStatement);
+    await expect.poll(() => result.query()?.textContent).toBe("I found more than one amount due or due date on this page.");
+    figures.textContent = figures.textContent.replace("Premium due: $41.00. ", "");
     reads = counting.frame.snapshots();
     betweenReads = { after: "statement", change: () => { left.textContent = "4:39"; } };
     await tap(readStatement);
