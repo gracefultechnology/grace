@@ -245,7 +245,6 @@
         ".agents/**",
         "AGENTS.md",
         "SPEC.md",
-        "README.md",
         "LICENSE",
         "package.json",
         "pnpm-lock.yaml",
@@ -277,7 +276,6 @@
         ".agents/**",
         "AGENTS.md",
         "SPEC.md",
-        "README.md",
         "LICENSE",
         "package.json",
         "pnpm-lock.yaml",
@@ -498,6 +496,12 @@
     "@repo/ui#build": {
       "dependsOn": [
         "^build"
+      ],
+      "inputs": [
+        "package.json",
+        "src/**",
+        "styles.css",
+        "tsconfig.json"
       ],
       "outputs": []
     },
