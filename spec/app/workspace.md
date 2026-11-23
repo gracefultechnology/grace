@@ -1412,13 +1412,14 @@ For a requested statement read, the host reads the current visible document loca
 A request for an index or collection keeps that outcome in the reviewed plan.
 A different page or an article cannot count as the collection. The host
 checks the current permitted document in the reviewed tab and website for
-visible main-content entries with distinct destinations. The list is attached
-to the requested heading or placed in adjacent, distinctly titled topic
-sections below that heading. A breadcrumb, site navigation, links beside an
-article and ambiguous content leave the step open. The person can follow
-another link and check again. A page titled Customer information can answer
-a help-topic request when its main heading leads to a public search and then
-to a standalone topic list.
+visible main-content entries with distinct destinations. The entries are
+in a list attached to the requested heading, in adjacent distinctly
+titled topic sections, or in a standalone group of topic links after the
+heading and its public search. A breadcrumb, site navigation, links
+beside an article, a filtered search and ambiguous content leave the step
+open. The person can follow another link and check again. A page titled
+Customer information can answer a help-topic request when its main
+heading leads to a public search and then to a standalone topic list.
 
 ```quint
 pure def statementAmounts(due: Set[str], balances: Set[str], remaining: Set[str]): Set[str] =

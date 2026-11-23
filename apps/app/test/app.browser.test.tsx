@@ -3643,7 +3643,7 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   }
 }, 120_000);
 
-it.each(["simple index", "sectioned index", "wrapped directory", "grouped help", "customer information"] as const)('Check a public collection ($0) (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async (layout) => {
+it.each(["simple index", "sectioned index", "wrapped directory", "grouped help", "customer information", "search and list", "topic cards"] as const)('Check a public collection ($0) (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async (layout) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const target = layout === "simple index" || layout === "wrapped directory" ? "Club events" : "help topics";
@@ -3672,6 +3672,8 @@ it.each(["simple index", "sectioned index", "wrapped directory", "grouped help",
     "grouped help": '<h1>Help &amp; Support</h1><p>Browse information for customers.</p>' + publicSearch +
       '<div><section><h2>Payments</h2>' + entries + '</section><section><h2>Billing</h2><ul><li><a href="/events/monthly">Monthly bill</a></li></ul></section></div>',
     "customer information": '<h1>Customer information</h1><p>Find practical help with payments or contacting us.</p>' + publicSearch + '<section>' + entries + '</section>',
+    "search and list": '<h1>Help Center</h1><section>' + publicSearch + entries + '</section>',
+    "topic cards": '<section><h1>Help &amp; FAQs</h1>' + publicSearch + '</section><div><a href="/events/saturday">Saturday hike</a><a href="/events/sunday">Sunday picnic</a></div>',
   }[layout];
   const opening = await fixture(home, indexContent);
   const collection = await fixture(index, collectionContent);
