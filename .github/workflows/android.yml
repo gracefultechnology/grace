@@ -66,7 +66,7 @@ jobs:
       - id: android-sdk
         run: |
           [[ -r $ANDROID_HOME/platforms/android-36/android.jar && -x $ANDROID_HOME/platform-tools/adb ]] || exit 0
-          for tool in aapt2 apksigner d8 zipalign; do
+          for tool in aapt aapt2 apksigner d8 dexdump zipalign; do
             [[ -x $ANDROID_HOME/build-tools/36.0.0/$tool ]] || exit 0
           done
           echo "installed=true" >> "$GITHUB_OUTPUT"
