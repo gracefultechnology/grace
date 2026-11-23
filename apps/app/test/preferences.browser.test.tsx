@@ -125,7 +125,7 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
   const stale = device();
   nextRead = Effect.runPromise(delayed.await).then(() => stale);
   reportVolume?.();
-  await expect.poll(() => nextRead).toBeUndefined();
+  await expect.poll(() => nextRead === undefined).toBe(true);
   await act(() => userEvent.click(page.getByRole("button", { name: "Louder", exact: true })));
   delayed.openUnsafe();
   await expect.poll(() => audio.step).toBe(5);
@@ -137,7 +137,7 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
   const raised = device();
   nextRead = Effect.runPromise(concurrent.await).then(() => raised);
   reportVolume?.();
-  await expect.poll(() => nextRead).toBeUndefined();
+  await expect.poll(() => nextRead === undefined).toBe(true);
   await act(() => userEvent.click(page.getByRole("button", { name: "Dimmer", exact: true })));
   concurrent.openUnsafe();
   await expect.poll(() => brightness).toBe(90);
