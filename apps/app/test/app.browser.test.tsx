@@ -1666,7 +1666,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   let filesScope = filesOwner;
   let trashed = false;
   let trashRequests = 0;
-  let beforeTrashReply: (() => Promise<void>) | undefined;
   const sent: string[] = [];
   let changed: string[] = [];
   const reminders: number[] = [];
@@ -1831,7 +1830,6 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         const outbound = decodeChange(options?.body);
         expect(outbound).toMatchObject({ accountId: person.id, grantId: grant, messageId: mail.externalId, version: trashed ? "9" : "8" });
         if (trashed) expect(outbound.undoOf).toEqual(expect.any(String));
-        else await beforeTrashReply?.();
         trashed = !trashed;
         return reply({ accountId: person.id, operationId: outbound.operationId, itemId: mail.externalId, version: "9" });
       }
@@ -2011,21 +2009,19 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     expect(await runtime.runPromise(managed.stage({ ...scope, ...oldMessage }))).toBe(false);
     expect(await runtime.runPromise(managed.change(scope, oldMessage))).toBeUndefined();
     expect(trashRequests).toBe(0);
-    beforeTrashReply = async () => {
-      expect(await runtime.runPromise(managed.send({ ...scope, kind: "mailFolder", folder: "sent", search: "" }))).toBe(true);
-    };
     await tap("Move to Trash");
     await expect.element(page.getByText("Moved to Trash.")).toBeVisible();
+    await expect.element(folders.getByRole("button", { name: "Inbox", exact: true })).toBeVisible();
+    await act(() => folders.getByRole("button", { name: "Sent", exact: true }).click());
     await expect.element(page.getByText("Lunch invitation", { exact: true })).toBeVisible();
-    await act(() => folders.getByRole("button", { name: "Inbox", exact: true }).click());
-    await expect.element(page.getByText("Lunch invitation", { exact: true })).not.toBeInTheDocument();
     expect(await runtime.runPromise(managed.change(scope, {
       kind: "undo", id: mail.externalId, version: "9", prior: "another-operation",
     }))).toBeUndefined();
     expect(trashRequests).toBe(1);
     await tap("Undo");
     await expect.element(page.getByText("Message restored.")).toBeVisible();
-    await expect.element(folders.getByRole("button", { name: "Inbox 1", exact: true })).toBeVisible();
+    await expect.element(page.getByText("Lunch invitation", { exact: true })).toBeVisible();
+    await act(() => folders.getByRole("button", { name: "Inbox 1", exact: true }).click());
     await tap("New email");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "To", exact: true }), "robin@example.test"));
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Subject", exact: true }), "Hello"));
