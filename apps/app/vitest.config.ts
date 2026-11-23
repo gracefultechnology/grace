@@ -155,12 +155,26 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       if (website.url() !== definition.startUrl) throw new Error("The public category must start from the storefront");
       const menu = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
         definition.taskId === "352" ? [/^Health (&|and) Household$/i, /^Diet (&|and) Sports Nutrition$/i, /^Nutrition Bars (&|and) Drinks$/i] : [];
-      if (!menu.length) throw new Error("The fixture has no public category operator sequence");
-      for (const name of menu) {
-        const link = website.getByRole("link", { name }).filter({ visible: true }).first();
-        await link.click({ timeout: 15_000 });
-        await website.waitForLoadState("load", { timeout: 30_000 });
-      }
+      const [first, second, leafName] = menu;
+      if (!first || !second || !leafName) throw new Error("The fixture has no public category operator sequence");
+      const nav = website.getByRole("navigation").filter({ has: website.locator("a").filter({ hasText: first }) }).first();
+      const navControl = (name: RegExp) => nav.getByRole("menuitem", { name }).or(nav.getByRole("link", { name }))
+        .filter({ visible: true }).first();
+      await navControl(first).hover({ timeout: 15_000 });
+      await navControl(second).hover({ timeout: 15_000 });
+      const leaf = navControl(leafName);
+      const href = await leaf.getAttribute("href", { timeout: 15_000 });
+      if (!href) throw new Error("The disclosed category does not have an address");
+      const category = new URL(href, website.url());
+      if (category.origin !== site.origin || category.search || category.hash)
+        throw new Error("The disclosed category is outside the same-origin public storefront");
+      const [response] = await Promise.all([
+        website.waitForResponse(item => item.url() === category.href && item.request().isNavigationRequest() &&
+          item.request().frame() === website.mainFrame(), { timeout: 30_000 }),
+        website.waitForURL(category.href, { waitUntil: "load", timeout: 30_000 }),
+        leaf.click({ timeout: 15_000 }),
+      ]);
+      if (!response.ok()) throw new Error("The category did not load after the disclosed menu link was clicked");
     } else {
       const main = website.getByRole("main");
       const sorter = main.getByRole("combobox", { name: /^Sort By$/i }).filter({ visible: true }).first();
