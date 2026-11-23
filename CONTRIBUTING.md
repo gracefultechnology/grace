@@ -99,8 +99,8 @@ line ends with. `pnpm selftest` builds scratch projects from this project's spec
 one thing at a time and asserts which stage catches each. It runs as five cached tasks, each keyed by what its tests
 read: `selftest:docs` the documents against every file they can name, `selftest:examples` each standalone example
 against its own files and the tools. `selftest:tools:a` and `selftest:tools:b` build scratch projects from the order
-example and fixtures. `selftest:tools:rest` also rebuilds the packaged CLI from the workspace, so changes under
-`apps/`, `packages/` and `spec/` invalidate its isolated CI run. The first two each run one shard of the kinds of mistake, the
+example and fixtures. `selftest:tools:rest` also rebuilds the packaged CLI from the workspace, so app manifest changes and changes under
+`packages/` or `spec/` invalidate its isolated CI run. The first two each run one shard of the kinds of mistake, the
 `describe` named `in shard a` or `in shard b` in `vibestack/selftest.ts`. The third runs the remaining tool tests there.
 Changes to either docs or standalone example test code keep the tool shards cached. Keep the longest tests spread over the three.
 Changes to the root README rerun the docs and packaged tool checks.
@@ -258,7 +258,10 @@ other spec cache entries. The check computes its own keys and recomputes a
 missing or unreadable result.
 
 Turborepo caches `gen`, `build`, `typecheck`, tests, selftest and lint according
-to `turbo.json`. The task entry point fingerprints Node, VibeLang, Dafny, Z3
+to `turbo.json`. When a legacy generation config excludes proof paths, the
+task entry point includes the spec ownership layout and any Markdown under
+those proof-named directories in the generation key. Dependent task keys
+follow these changes. The task entry point fingerprints Node, VibeLang, Dafny, Z3
 and their runtime files before Turbo hashes its inputs. A build can run
 without the verifier. Its task key records missing verification tools,
 and a proof still requires them. What it reads of an

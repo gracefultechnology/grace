@@ -162,14 +162,33 @@ pure def lawDisputingFactsCommitsNothing(b: Prep, by: T::TaskActor): bool =
 
 ### Choosing an amount, date and funding method is separate from approving submission
 
-The default is one understandable proposal only when its facts, including the fee, are observed; it is never silently selected. An unknown fee does not mean free. Otherwise ask one missing choice at a time. Any supported amount, date and existing funding method may be selected, not only the prototype's two radio choices. Relative or ambiguous dates must be resolved by the person before an exact day enters this model. Fees are part of the proposal and must be reviewed against the final form because they may depend on the chosen date or funding method. A choice is valid terms for the task's kind that fit the current facts, and once chosen it keeps fitting them through the form and the review; for a bill that is a valid proposal in the bill's currency, from one of its funding methods, while online payment is allowed and nothing is scheduled or settled. For a visit it is one of the offered times; a time that clashes with her calendar can be chosen when she says the clash is fine.
+The default is one understandable proposal only when its facts, including the fee, are observed; it is never silently selected. An unknown fee does not mean free. Otherwise ask one missing choice at a time. Any supported amount, date and existing funding method may be selected, not only the prototype's two radio choices. Relative or ambiguous dates must be resolved by the person before an exact day enters this model. Fees are part of the proposal and must be reviewed against the final form because they may depend on the chosen date or funding method. A choice is valid terms for the task's kind that fit the current facts, and once chosen it keeps fitting them through the form and the review; for a bill that is a valid proposal in the bill's currency, from one of its funding methods, while online payment is allowed and nothing is scheduled or settled. For a visit it is one of the offered times. Grace asks separately about a calendar clash. A yes chooses that time only if it came from the person for the current visit, preparation version, exact offered slot and calendar read that showed the clash. A regular choice or an edit at the provider supplies no clash approval. Replacing a choice resets the fill answer.
 
 ```quint
-pure def canChoose(b: Prep, terms: T::Terms, by: T::TaskActor): bool =
+type ClashConsent = { key: T::Subject, version: int, slot: T::Slot, diaryRef: str }
+pure def choiceCanFit(b: Prep, terms: T::Terms): bool =
   (b.phase == Choosing or b.phase == Preparing or b.phase == ReadyForReview) and b.live and b.factsConfirmed and
-  T::validTerms(b.key.kind, terms) and K::termsFit(b.facts, terms) and by == T::Person
+  T::validTerms(b.key.kind, terms) and K::termsFit(b.facts, terms)
+pure def canChoose(b: Prep, terms: T::Terms, by: T::TaskActor): bool =
+  by == T::Person and choiceCanFit(b, terms) and not(K::acceptsClash(terms))
 pure def choose(b: Prep, terms: T::Terms, by: T::TaskActor): Prep =
   { ...b, choice: terms, phase: Preparing, fillBy: NotAsked, version: b.version + 1 }
+pure def canChooseClash(b: Prep, terms: T::Terms, clashConsent: ClashConsent, by: T::TaskActor): bool =
+  by == T::Person and clashConsent.key == b.key and clashConsent.version == b.version and
+  choiceCanFit(b, terms) and K::matchesClash(b.facts, terms, clashConsent.slot, clashConsent.diaryRef)
+pure def chooseClash(b: Prep, terms: T::Terms, clashConsent: ClashConsent, by: T::TaskActor): Prep =
+  choose(b, terms, by)
+pure def lawAClashNeedsTheCurrentPersonsAnswer(b: Prep, terms: T::Terms, clashConsent: ClashConsent, by: T::TaskActor): bool =
+  canChooseClash(b, terms, clashConsent, by) implies
+    (by == T::Person and clashConsent.key == b.key and clashConsent.version == b.version and
+      K::matchesClash(b.facts, terms, clashConsent.slot, clashConsent.diaryRef))
+pure def lawOrdinaryChoiceCannotAcceptAClash(b: Prep, terms: T::Terms, by: T::TaskActor): bool =
+  K::acceptsClash(terms) implies not(canChoose(b, terms, by))
+pure val sampleClashConsent: ClashConsent =
+  { key: K::sampleVisitKey, version: 3, slot: VK::sampleClashSlot, diaryRef: VK::sampleVisit.diaryRef }
+pure val clashConsentValues = Set(sampleClashConsent, { ...sampleClashConsent, version: 2 },
+  { ...sampleClashConsent, key: K::sampleBillKey }, { ...sampleClashConsent, slot: VK::sampleOpenSlot },
+  { ...sampleClashConsent, diaryRef: "another-calendar-read" })
 pure def alwaysChoiceFitsTheFacts(b: Prep): bool =
   (b.phase == Preparing or b.phase == ReadyForReview or b.phase == HandedOff) implies
     T::validTerms(b.key.kind, b.choice) and K::termsFit(b.facts, b.choice)
@@ -179,7 +198,7 @@ pure val eval_witness_sometimesAClashIsAccepted = (
   ("inspectAccess", { key: K::sampleVisitKey, version: 1, access: SignedIn }, T::Host),
   ("readFacts", { key: K::sampleVisitKey, facts: K::sampleVisitFacts, evidence: "source", version: 2 }, T::Host),
   ("confirmFacts", T::Person),
-  ("choose", K::sampleClashTerms, T::Person))
+  ("chooseClash", K::sampleClashTerms, sampleClashConsent, T::Person))
 ```
 
 ### The person's answer to the fill offer decides whether Grace may fill the task's form
@@ -256,12 +275,12 @@ pure val eval_witness_sometimesBookingHandedOff = (
 
 ### A choice the person makes on the page itself becomes the choice to check
 
-The person may pick an amount or type a date on the website instead of saying it (prototype/Grace Prototype.html:1038, 1683). The trusted host reports what the form now holds for this bill and the current preparation version, and whether the change came from the person's own taps or typing on the page, as the prototype tells her own input apart from Grace's (prototype/Grace Prototype.html:1038, 1683). Only a change the host attributes to the person can become the choice: Grace's own fill, a value the website prefilled or selected by default, and a value the website changed by itself never replace the choice the person made. Terms from the person's own change that differ from the current choice become the choice when they are valid for the task's kind and fit the current facts: for a bill, a valid proposal in the bill's currency, with one of its funding methods, while online payment is allowed and nothing is scheduled or settled. The preparation goes back to preparing the form under a new version, whether or not the earlier form had been verified, so the review never goes ahead with the old choice: only a form that matches the new choice can be verified for review. Any other difference leaves the form unverifiable until it matches the choice or the preparation is blocked. Because the person filled the values herself, Grace does not offer to fill them again.
+The person may pick an amount or type a date on the website instead of saying it (prototype/Grace Prototype.html:1038, 1683). The trusted host reports what the form now holds for this bill and the current preparation version, and whether the change came from the person's own taps or typing on the page, as the prototype tells her own input apart from Grace's (prototype/Grace Prototype.html:1038, 1683). Only a change the host attributes to the person can become the choice: Grace's own fill, a value the website prefilled or selected by default, and a value the website changed by itself never replace the choice the person made. Terms from the person's own change that differ from the current choice become the choice when they are valid for the task's kind and fit the current facts: for a bill, a valid proposal in the bill's currency, with one of its funding methods, while online payment is allowed and nothing is scheduled or settled. The preparation goes back to preparing the form under a new version, whether or not the earlier form had been verified, so the review never goes ahead with the old choice: only a form that matches the new choice can be verified for review. Any other difference leaves the form unverifiable until it matches the choice or the preparation is blocked. Because the person filled the values herself, Grace does not offer to fill them again. A provider edit cannot accept a calendar clash. Grace takes that answer separately for the currently reviewed visit and time.
 
 ```quint
 pure def canAdoptFormChoice(b: Prep, formReport: T::ReviewReport, personEdited: bool, by: T::TaskActor): bool =
   (b.phase == Preparing or b.phase == ReadyForReview) and b.live and personEdited and formReport.key == b.key and
-  formReport.proposal != b.choice and T::validTerms(b.key.kind, formReport.proposal) and K::termsFit(b.facts, formReport.proposal) and
+  formReport.proposal != b.choice and not(K::acceptsClash(formReport.proposal)) and T::validTerms(b.key.kind, formReport.proposal) and K::termsFit(b.facts, formReport.proposal) and
   formReport.evidence != "" and formReport.revision == b.version and by == T::Host
 pure def adoptFormChoice(b: Prep, formReport: T::ReviewReport, personEdited: bool, by: T::TaskActor): Prep =
   { ...b, choice: formReport.proposal, phase: Preparing, fillBy: PersonFills, version: b.version + 1 }
@@ -273,6 +292,8 @@ pure def lawPageChoiceIsCheckedAgain(b: Prep, formReport: T::ReviewReport, perso
     adoptFormChoice(b, formReport, personEdited, by).version > b.version
 pure def lawOnlyThePersonsEditReplacesTheChoice(b: Prep, formReport: T::ReviewReport, by: T::TaskActor): bool =
   not(canAdoptFormChoice(b, formReport, false, by))
+pure def lawPageEditCannotAcceptAClash(b: Prep, formReport: T::ReviewReport, personEdited: bool, by: T::TaskActor): bool =
+  K::acceptsClash(formReport.proposal) implies not(canAdoptFormChoice(b, formReport, personEdited, by))
 ```
 
 ### Pausing or changed context discards a prepared form but keeps the selected bill
