@@ -381,6 +381,21 @@ effect function observedPublicTab(state: Scene["workspace"], native: NativePage.
     tabId: tab.id, loadVersion: tab.loadVersion, documentId: snapshot.documentId, url, origin: address.origin }
 }
 
+effect function browserReadAccount(setup: Setup.Shape) {
+  const { graceAccount } = try setup.get()
+  if (graceAccount.tag === "GraceDeviceSignedIn") {
+    const lease = nativeBrowserGuideLease() catch () => undefined
+    return lease !== undefined && (try setup.get()).graceAccount.tag === graceAccount.tag ? JSON.stringify([graceAccount.tag, lease]) : undefined
+  }
+  if (graceAccount.tag === "GraceSignedIn") {
+    const scope = browserSessionScope() catch () => undefined
+    const active = (try setup.get()).graceAccount
+    return scope !== undefined && active.tag === "GraceSignedIn" && active.accountId === graceAccount.accountId &&
+      scope.accountId === active.accountId ? JSON.stringify([active.tag, scope.session]) : undefined
+  }
+  return graceAccount.tag
+}
+
 export const conversation = (link: CloudLink | undefined) => Layer.effect(Conversation, effect {
   const website = try WebsiteTask
   const workspace = try Workspaces
@@ -400,21 +415,6 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const digest = try Digest.Digest
   const setup = try Setup
   const recovery = try GuidedRecovery
-
-  effect function browserReadAccount() {
-    const { graceAccount } = try setup.get()
-    if (graceAccount.tag === "GraceDeviceSignedIn") {
-      const lease = nativeBrowserGuideLease() catch () => undefined
-      return lease !== undefined && (try setup.get()).graceAccount.tag === graceAccount.tag ? JSON.stringify([graceAccount.tag, lease]) : undefined
-    }
-    if (graceAccount.tag === "GraceSignedIn") {
-      const scope = browserSessionScope() catch () => undefined
-      const active = (try setup.get()).graceAccount
-      return scope !== undefined && active.tag === "GraceSignedIn" && active.accountId === graceAccount.accountId &&
-        scope.accountId === active.accountId ? JSON.stringify([active.tag, scope.session]) : undefined
-    }
-    return graceAccount.tag
-  }
 
   effect function tell(words: string) {
     if (words !== "" && link !== undefined) try Ref.update(told, (all) => [...all, words])
@@ -534,11 +534,11 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       if (!hasNext(state.plan) || !(try recovery.canAccess(state))) return false
       if (!needsRecoveredPublicTab(state.plan)) return (workspace.send({ type: "resume" }, "Person") catch () => undefined) !== undefined
       if (!(try website.clear)) return false
-      const account = try browserReadAccount()
+      const account = try browserReadAccount(setup)
       if (account === undefined) return false
       const tabRecovery = try observedPublicTab(state, native)
       if (tabRecovery === undefined || !(try recovery.canAccess(state)) ||
-          (try browserReadAccount()) !== account || !(try website.clear)) return false
+          (try browserReadAccount(setup)) !== account || !(try website.clear)) return false
       return (workspace.send({ type: "resumePublicTab", tabRecovery }, "Person") catch () => undefined) !== undefined
     },
     checkGuidedRead: effect () => {
@@ -555,7 +555,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
           (current.assistant.activity !== "ReadyForStep" && current.assistant.activity !== "Rechecking")) return "Refused"
       const read = step.tag
       const browserScope = surface === "Browser" ? browserReadScope(current) : undefined
-      const account = browserScope === undefined ? undefined : try browserReadAccount()
+      const account = browserScope === undefined ? undefined : try browserReadAccount(setup)
       if (browserScope !== undefined && account === undefined) return "Refused"
       const context = replyControlContext(current)
       effect function currentBrowserWorkspace() {
@@ -568,7 +568,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
           browserReadScope(w) === browserScope
       }
       effect function ownsBrowserRead() {
-        return (try browserReadAccount()) === account && (try currentBrowserWorkspace())
+        return (try browserReadAccount(setup)) === account && (try currentBrowserWorkspace())
       }
       if (browserScope !== undefined && !(try currentBrowserWorkspace())) return "Refused"
       if (read === "ReadLatestRecord") return try guide.checkLatestRecord()
