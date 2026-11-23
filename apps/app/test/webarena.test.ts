@@ -7,7 +7,42 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
 import { hasUserAssistedSearch, matchesPublicSearch, publicSearchQuery } from "./browser-receipt.ts";
+import { readFixtureUpstream } from "./fixture-context.ts";
 import { startWebArenaWorker } from "./webarena.ts";
+
+it('Report a stalled upstream body without losing the next browser attempt (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
+  const server = createServer((request, response) => {
+    if (request.url === "/headers") return;
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    if (request.url === "/body") {
+      response.write("event: started\n");
+      response.flushHeaders();
+      return;
+    }
+    response.end("event: complete\n");
+  });
+  try {
+    await new Promise<void>((ready, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", ready);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("The upstream fixture did not bind a loopback port");
+    const send = (path: string) =>
+      readFixtureUpstream(new URL(path, `http://127.0.0.1:${address.port}`), { method: "POST" }, AbortSignal.timeout(2000));
+    expect(await send("/complete")).toEqual({ tag: "Response", status: 200, contentType: "text/event-stream", body: "event: complete\n" });
+    await expect(Promise.all([send("/headers"), send("/body")])).resolves.toEqual([
+      { tag: "Unavailable", status: 503, failure: { phase: "headers", reason: "deadline" } },
+      { tag: "Unavailable", status: 503, failure: { phase: "body", reason: "deadline", upstreamStatus: 200 } },
+    ]);
+    expect(await send("/complete")).toEqual({ tag: "Response", status: 200, contentType: "text/event-stream", body: "event: complete\n" });
+  } finally {
+    await new Promise<void>((done) => {
+      server.close(() => done());
+      server.closeAllConnections();
+    });
+  }
+});
 
 const fakeEvaluator = `
 import json

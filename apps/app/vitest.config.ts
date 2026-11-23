@@ -14,7 +14,7 @@ import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
 import { type CompletedPublicSearch, hasHostedNavigation, hasUserAssistedSearch, matchesPublicSearch, PublicSearch, publicSearchQuery } from "./test/browser-receipt.ts";
 import { fleetFixture, fleetStatement, fleetStatementCases, fleetStatementRefusals } from "./test/fleet.fixture.ts";
-import { fixtureContextOptions, routeFixtureContext } from "./test/fixture-context.ts";
+import { type FixtureUpstreamFailure, fixtureContextOptions, readFixtureUpstream, routeFixtureContext } from "./test/fixture-context.ts";
 import { webArena, webArenaPluginName, WebArenaEvaluatorError } from "./test/webarena.ts";
 
 const base = project({ root: import.meta.dirname, plugins: [tailwindcss()] });
@@ -108,7 +108,7 @@ const DecisionResult = Schema.Struct({ status: Schema.String, model: Schema.opti
 type PublicSearchSubmission =
   | { state: "submitting"; search: typeof PublicSearch.Type }
   | ({ state: "completed" } & CompletedPublicSearch);
-type Run = { fixture: BenchmarkDefinition; pendingRoutes: Set<Promise<void>>; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; ratingProduct?: { url: string; documentId: string }; ratingListings?: { visible: number; matching: number; cables: number; labels: string[] }; noAction?: { url: string; documentId: string }; site?: Site };
+type Run = { fixture: BenchmarkDefinition; pendingRoutes: Set<Promise<void>>; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type; transportFailure?: FixtureUpstreamFailure }[]; chatStatus?: number; chatTransportFailures: (FixtureUpstreamFailure & { http: 503 })[]; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; ratingProduct?: { url: string; documentId: string }; ratingListings?: { visible: number; matching: number; cables: number; labels: string[] }; noAction?: { url: string; documentId: string }; site?: Site };
 const activeRuns = new WeakMap<Page, Run>();
 
 function trackBenchmarkRoute(run: Run, handler: (route: Route) => Promise<void>) {
@@ -276,7 +276,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     const fixture = byId.get(action.taskId);
     if (!fixture || activeRuns.has(context.page)) throw new Error("The Chromium benchmark case is not available");
     if (fixture.evaluator === "webarena" && official) context.project.vitest.onCancel(official.close);
-    activeRuns.set(context.page, { fixture, pendingRoutes: new Set(), decisions: 0, decisionResults: [] });
+    activeRuns.set(context.page, { fixture, pendingRoutes: new Set(), decisions: 0, decisionResults: [], chatTransportFailures: [] });
     return {};
   }
   const run = activeRuns.get(context.page);
@@ -353,12 +353,15 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         const request = route.request();
         const headers = { "access-control-allow-origin": request.headers().origin ?? "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type" };
         if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
-        const response = await fetch(new URL("/api/v1/chat/completions", origin), {
+        const response = await readFixtureUpstream(new URL("/api/v1/chat/completions", origin), {
           method: "POST", body: request.postData(), headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-          redirect: "error", signal: AbortSignal.timeout(45000),
-        }).catch(() => new Response(null, { status: 503 }));
+        }, AbortSignal.timeout(45_000));
         run.chatStatus = response.status;
-        return route.fulfill({ status: response.status, headers, contentType: response.headers.get("content-type") ?? "application/json", body: await response.text() });
+        if (response.tag === "Unavailable") {
+          run.chatTransportFailures.push({ ...response.failure, http: response.status });
+          return route.fulfill({ status: response.status, headers });
+        }
+        return route.fulfill({ status: response.status, headers, contentType: response.contentType, body: response.body });
       }));
     }
     await context.page.route(endpoint.href, trackBenchmarkRoute(run, async (route) => {
@@ -380,13 +383,14 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const origin = process.env.GRACE_BENCHMARK_CLEF_ORIGIN;
       const key = process.env.GRACE_BENCHMARK_CLEF_KEY;
       if (!origin || !key || new URL(origin).protocol !== "https:") throw new Error("The hosted decision service is not configured");
-      const response = await fetch(new URL("/api/v1/decisions", origin), {
-        method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify(choice), redirect: "error", signal: AbortSignal.timeout(action.deadlineMs),
-      }).catch(() => new Response('{"status":"unavailable","reason":"provider_error"}', { status: 503 }));
-      const body = await response.text();
+      const response = await readFixtureUpstream(new URL("/api/v1/decisions", origin), {
+        method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(choice),
+      }, AbortSignal.timeout(action.deadlineMs));
+      const body = response.tag === "Response" ? response.body : '{"status":"unavailable","reason":"provider_error"}';
       const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(DecisionResult))(body);
-      run.decisionResults.push({ http: response.status, candidates: choice.candidates.length, result: decoded._tag === "Some" ? decoded.value : undefined });
+      run.decisionResults.push({ http: response.status, candidates: choice.candidates.length,
+        result: decoded._tag === "Some" ? decoded.value : undefined,
+        ...(response.tag === "Unavailable" && { transportFailure: response.failure }) });
       return route.fulfill({ headers, status: response.status, contentType: "application/json", body });
     }));
     return {};
@@ -402,6 +406,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         decisionServiceOrigin: decisionProvider === "hosted" && process.env.GRACE_BENCHMARK_CLEF_ORIGIN
           ? new URL(process.env.GRACE_BENCHMARK_CLEF_ORIGIN).origin : undefined,
         outcome: { ...visibleOutcome, chatProvider: definition.chat ?? "fixture", ...(product !== undefined && { ratingListings: run.ratingListings }) }, chatStatus: run.chatStatus,
+        ...(run.chatTransportFailures.length > 0 && { chatTransportFailures: run.chatTransportFailures }),
         decisionResults: run.decisionResults,
       };
       const guided = hasHostedNavigation(observation, run.site?.page.url());
