@@ -185,6 +185,12 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await expect.element(page.getByText("This wasn’t saved. Press Save to try again.")).toBeVisible();
   await click("Save");
   await expect.poll(async () => (await company(secret)).map((e) => e.title), atCloud).toEqual(["Eye check with Dr. Patel", "Joan’s birthday", "Doctor’s appointment"]);
+  await expect.element(page.getByText("Saved to your calendar", { exact: true })).toBeVisible();
+  await expect.element(ringed("Doctor’s appointment", "Done")).toBeVisible();
+  const [stored] = (await run(selectedGmailCalendar)).entries.filter((e) => e.committed.title === entry.details.title && e.phase === "Saved");
+  expect(stored?.identity.occurrenceId).toBe((await company(secret)).find((e) => e.title === entry.details.title)?.externalId);
+  expect(stored?.identity.occurrenceId).not.toBe(entry.identity.occurrenceId);
+  await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("From the clinic’s email · Visit form attached")).toBeVisible();
   await click("Back to Calendar");
   await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
@@ -215,6 +221,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   expect(replacement.externalId).not.toBe(original.identity.occurrenceId);
   await toEyeWeek();
   await expect.poll(async () => (await run(selectedGmailCalendar)).entries.some((e) => e.identity.occurrenceId === replacement.externalId && e.phase === "Saved"), atCloud).toBe(true);
+  await expect.element(ringed("Doctor’s appointment", "Done")).not.toBeInTheDocument();
   await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("West clinic")).toBeVisible();
   await expect.element(page.getByText("No reminder")).toBeVisible();

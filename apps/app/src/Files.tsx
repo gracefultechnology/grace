@@ -146,7 +146,7 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
   const pick = importing ? () => run({ kind: "pick", file: model.tab === "Photos" ? "photo" : "pdf" }) : undefined;
   const capture = importing && model.tab === "Photos" ? () => run({ kind: "capture" }) : undefined;
   const tab = (next: "Photos" | "Documents") => idle({ type: "chooseTab", tab: next }, () => run({ kind: "tab", tab: next }));
-  const browse = model.loaded && (
+  const browse = (model.loaded || model.pending === "ReadingCatalog") && (
     <div className="flex flex-wrap items-end gap-3">
       <form className="flex items-end gap-2" onSubmit={(event) => { event.preventDefault(); find?.(); }}>
         <label>Find a file<Input value={query} maxLength={120} onChange={(event) => setQuery(event.currentTarget.value)} /></label>

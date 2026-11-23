@@ -1312,3 +1312,45 @@ lemma lawCreatedSeriesReceiptIsSpent_ensures(v: CalendarView, receipt: SeriesRec
     CalendarConsumedCreation(after, id);
   }
 }
+
+lemma showPicker_ensures(v: CalendarView, picker: FormPicker, by_: ViewActor)
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysViewIdentity(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysViewWindow(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysEntriesBelongToCalendar(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysOccurrenceIsUnique(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysEditingIsSelected(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysCancelledIdsAreAbsent(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysSeriesDefinitions(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysEntriesUseSeries(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysSelectionIsCurrent(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysDeletionHasSelection(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysDeletedSeriesStayDeleted(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysDeletedSeriesIdsAreNonempty(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysSeriesDeletionIsRecurring(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> stepOccurrenceIdentityIsFixed(v, showPicker(v, picker, by_)))
+{
+  if inv(v) && canShowPicker(v, picker, by_) {
+    CalendarSameEntries(v, showPicker(v, picker, by_));
+  }
+}
+
+lemma hidePicker_ensures(v: CalendarView, picker: FormPicker, by_: ViewActor)
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysViewIdentity(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysViewWindow(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysEntriesBelongToCalendar(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysOccurrenceIsUnique(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysEditingIsSelected(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysCancelledIdsAreAbsent(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysSeriesDefinitions(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysEntriesUseSeries(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysSelectionIsCurrent(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysDeletionHasSelection(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysDeletedSeriesStayDeleted(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysDeletedSeriesIdsAreNonempty(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysSeriesDeletionIsRecurring(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> stepOccurrenceIdentityIsFixed(v, hidePicker(v, picker, by_)))
+{
+  if inv(v) && canHidePicker(v, picker, by_) {
+    CalendarSameEntries(v, hidePicker(v, picker, by_));
+  }
+}

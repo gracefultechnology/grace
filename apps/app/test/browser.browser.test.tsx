@@ -10,9 +10,11 @@ import { Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.v
 import { guidedDetails, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
-import { privateFormRecovery } from "../src/nativePage.vibe";
+import { guidedPageState, privateFormRecovery } from "../src/nativePage.vibe";
+import { LinkObservation } from "../src/nativePage.schema.ts";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, script, signIn } from "./cloud.vibe";
+import { matchesPublicSearch, PublicSearch, publicSearchQuery } from "./browser-receipt.ts";
 import { decisionCloud } from "./browser-decisions.fixture.vibe";
 import "../src/main.css";
 
@@ -257,10 +259,26 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
-type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "bind-native-landing" |
-  "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
+function guidanceRecovery(instruction: string) {
+  return instruction === privateFormRecovery ? "private-form" :
+    instruction.startsWith("I couldn’t read this page.") ? "unobservable" :
+    instruction.startsWith("The page or task changed.") ? "changed" :
+    instruction === "I couldn't find a link to point to on this page." ? "no-link" :
+    instruction === "I could not highlight a link on this page." ? "guide-exception" :
+    /^I (couldn’t reach Grace|need you to sign in)|^Sign in to Grace/u.test(instruction) ? "guide-account" : "other";
+}
 
-it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
+type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "submit-public-search" | "observe-search-landing" | "open-public-category" | "set-website-price-order" |
+  "tap-guide-ring" | "observe-link-landing" | "bind-native-landing" |
+  "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
+type PendingPageCheck = {
+  startedAt: number;
+  returnedAt?: number;
+  resumed: boolean;
+  snapshot: "not-requested" | "requested" | "returned" | "failed";
+};
+
+it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep, publicRating }) => {
   const transport = commands.benchmarkSurface;
   const publicFailure = (failure: unknown, stage: "Browser setup" | "Browser journey" | "Benchmark grading or cleanup") => {
     if (failure instanceof Error && (failure.name === "TimeoutError" ||
@@ -273,6 +291,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
   const read = async () => Schema.decodeUnknownSync(BrowserDocument)(await transport({ kind: "read" }));
   let selected: string | null | undefined;
   let failureStage: BrowserJourneyStage = "prepare-journey";
+  let pendingCheck: PendingPageCheck | undefined;
+  let guidanceSnapshot: object | "failed" | "invalid" | undefined;
+  let guidanceResult: "waiting" | "link" | "menu" | "unavailable" | undefined;
   const outcome: Record<string, unknown> = {
     chatProvider: "fixture", observationPermission: "awaiting permission",
     operator: "trusted Chromium mouse input at visible guide ring",
@@ -304,7 +325,38 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     async controlPage(request) {
       if (request.id !== selected && request.command.guidance?.kind !== "hide")
         throw new Error("The benchmark site is not the selected Grace surface");
-      return Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "control", request }));
+      const check = request.command.subaction === "snapshot" ? pendingCheck : undefined;
+      const guide = failureStage === "follow-guidance" && request.command.subaction === "snapshot";
+      if (check) check.snapshot = "requested";
+      try {
+        const observed = Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "control", request }));
+        if (check) check.snapshot = "returned";
+        if (guide) {
+          const snapshot = Schema.decodeUnknownOption(LinkObservation)(observed);
+          if (snapshot._tag === "None") guidanceSnapshot = "invalid";
+          else {
+            const { url, blockers, elements } = snapshot.value.result;
+            const origin = URL.parse(url)?.origin;
+            const usable = elements.filter(item => !item.disabled && !item.sensitive && item.inViewport && item.label);
+            guidanceSnapshot = {
+              eligibility: guidedPageState(snapshot.value, typedAddress() ?? "", "GuidePublicLinks"),
+              blockerCount: Math.min(blockers.length, 255),
+              blockers: blockers.slice(0, 8).map(({ kind, covers }) => ({
+                kind: ["captcha", "login-wall", "paywall", "modal", "cookie-consent"].includes(kind) ? kind : "other",
+                covers: ["partial", "viewport", "target"].includes(covers) ? covers : "other",
+              })),
+              visibleSameOriginLinks: Math.min(usable.filter(item => item.tag === "a" && item.href &&
+                origin !== undefined && URL.parse(item.href)?.origin === origin).length, 255),
+              visibleMenuControls: Math.min(usable.filter(item => item.role === "menuitem" || item.expanded !== undefined).length, 255),
+            };
+          }
+        }
+        return observed;
+      } catch (error) {
+        if (check) check.snapshot = "failed";
+        if (guide) guidanceSnapshot = "failed";
+        throw error;
+      }
     },
   });
   try {
@@ -312,6 +364,16 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const decisions = await Effect.runPromise(decisionCloud(cloud, secret));
     await transport({ kind: "decisionRoute", cloud, deadlineMs: decisions.deadlineMs });
     const { workspace } = await launch(native.plugin, decisions.host);
+    const bindNativeLanding = async (url: string, timeout: number) => {
+      failureStage = "bind-native-landing";
+      const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
+      native.started(url);
+      native.finished(url);
+      await expect.poll(() => {
+        const tab = workspace().browser.tabs[0];
+        return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
+      }, { timeout }).toEqual({ address: url, arrived: true });
+    };
     await userEvent.click(page.getByRole("button", { name: "Internet" }));
     const address = page.getByRole("textbox", { name: "Address" });
     await userEvent.fill(address, startUrl);
@@ -320,19 +382,50 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const initial = await read();
     outcome.start = { url: initial.url, documentId: initial.documentId };
     expect(initial.url).toBe(new URL(startUrl).href);
+    if (publicRating) {
+      failureStage = "submit-public-search";
+      await transport({ kind: "submitPublicSearch", query: publicRating });
+      failureStage = "observe-search-landing";
+      await transport({ kind: "openPublicRatingProduct" });
+      const landed = await read();
+      expect(landed.readyState).toBe("complete");
+      expect(landed.documentId).not.toBe(initial.documentId);
+      await bindNativeLanding(landed.url, 15_000);
+      outcome.operator = "trusted Chromium input on the public Shopping search and product link";
+      outcome.destination = { url: landed.url, documentId: landed.documentId };
+    }
     await userEvent.click(page.getByRole("button", { name: "Ask Grace" }));
     await userEvent.click(page.getByRole("button", { name: "Allow Grace to read this browser", exact: true }));
     await expect.element(page.getByRole("button", { name: "Turn off browser reading", exact: true })).toBeVisible();
     outcome.observationPermission = "person granted browser reading in Grace";
     await userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), intent);
+    const sentAfter = workspace().assistant.conversation.messages.length;
     await userEvent.click(page.getByRole("button", { name: "Send", exact: true }));
+    if (publicRating) {
+      failureStage = "confirm-completion";
+      const reply = () => {
+        const { messages } = workspace().assistant.conversation;
+        const last = messages.at(-1);
+        return messages.length > sentAfter + 1 && last?.author === "GraceMessage" ? last.text : undefined;
+      };
+      await expect.poll(() => Boolean(reply()), { timeout: 50_000 }).toBe(true);
+      const answer = reply();
+      if (!answer) throw new Error("Grace's answer was no longer current");
+      await expect.element(page.getByText(answer, { exact: true }).last()).toBeVisible();
+      const after = await read();
+      expect({ url: after.url, documentId: after.documentId }).toEqual(outcome.destination);
+      outcome.answer = answer;
+      return;
+    }
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     const reviewed = workspace().review.request.steps;
     const named = reviewed.find(step => step.tag === "ReachNamedPage");
     const record = reviewed.find(step => step.tag === "ReadLatestRecord");
+    const search = reviewed.find(step => step.tag === "SearchPublicSite");
+    const sort = reviewed.find(step => step.tag === "SortPublicListing");
     if (named) outcome.reviewedDestination = named.subject;
     if (requiredStep) {
-      outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: guidedDetails(step).subject }));
+      outcome.reviewedSteps = reviewed.map(step => ({ kind: step.tag, subject: step.tag === "SearchPublicSite" ? step.query : guidedDetails(step).subject }));
       const matches = reviewed.some(step => step.tag === requiredStep);
       if (exploratory && !matches && reviewed.length > 0) {
         outcome.miss = "missing-reviewed-step";
@@ -347,9 +440,77 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const plan = page.getByRole("region", { name: "Task plan" });
     const finished = plan.getByText("Read checks complete", { exact: true });
     const continuing = page.getByRole("status", { name: "Page check result" });
+    if (requiredStep === "SearchPublicSite" && search) {
+      expect(search.query).toBe(publicSearchQuery(intent));
+      expect(search.origin).toBe(new URL(initial.url).origin);
+      outcome.operator = "trusted Chromium keyboard input in the website search field";
+      failureStage = "submit-public-search";
+      const submitted = Schema.decodeUnknownSync(PublicSearch)(await transport({ kind: "submitPublicSearch", query: search.query }));
+      failureStage = "observe-search-landing";
+      const landed = await read();
+      outcome.destination = { url: landed.url, documentId: landed.documentId };
+      outcome.publicSearch = submitted;
+      expect(landed.documentId).not.toBe(initial.documentId);
+      expect(landed.readyState).toBe("complete");
+      expect(matchesPublicSearch(new URL(landed.url), submitted)).toBe(true);
+      await bindNativeLanding(landed.url, 15_000);
+      failureStage = "wait-for-check-controls";
+      const resume = page.getByRole("button", { name: "Resume Grace", exact: true });
+      await expect.element(resume, { timeout: 15_000 }).toBeVisible();
+      await userEvent.click(resume);
+      outcome.resumed = true;
+      failureStage = "check-page";
+      const check = page.getByRole("button", { name: "Check search results", exact: true });
+      await userEvent.click(check);
+      failureStage = "confirm-completion";
+      await expect.element(finished, { timeout: 15_000 }).toBeVisible();
+      expect(workspace().plan.receipts).toHaveLength(1);
+      outcome.hops = [{ url: landed.url, documentId: landed.documentId, checked: true }];
+      outcome.graceTerminal = plan.element().textContent;
+      return;
+    }
+    if (sort && requiredStep === "SortPublicListing") {
+      expect(sort.direction).toBe("PriceAscending");
+      expect(sort.origin).toBe(new URL(initial.url).origin);
+      outcome.operator = "Chromium input through the public category links and website sort toolbar";
+      failureStage = "open-public-category";
+      await transport({ kind: "openPublicCategory" });
+      const category = await read();
+      expect(category.documentId).not.toBe(initial.documentId);
+      outcome.category = { url: category.url, documentId: category.documentId };
+      const resume = page.getByRole("button", { name: "Resume Grace", exact: true });
+      const check = page.getByRole("button", { name: "Check price order", exact: true });
+      const checkedDirection = async (direction: "ascending" | "descending") => {
+        failureStage = "set-website-price-order";
+        await transport({ kind: "setWebsitePriceOrder", direction });
+        const landed = await read();
+        expect(landed.readyState).toBe("complete");
+        await bindNativeLanding(landed.url, 15_000);
+        await expect.element(resume.or(check).first(), { timeout: 15_000 }).toBeVisible();
+        if (resume.query()) await userEvent.click(resume);
+        failureStage = "check-page";
+        await userEvent.click(check);
+        return { url: landed.url, documentId: landed.documentId };
+      };
+      const descending = await checkedDirection("descending");
+      await expect.element(continuing, { timeout: 15_000 }).toBeVisible();
+      expect(finished.query()).toBeNull();
+      expect(workspace().plan.receipts).toHaveLength(0);
+      outcome.wrongDirection = { ...descending, rejectedByGrace: true };
+      const ascending = await checkedDirection("ascending");
+      outcome.destination = ascending;
+      expect(ascending.documentId).not.toBe(descending.documentId);
+      failureStage = "confirm-completion";
+      await expect.element(finished, { timeout: 15_000 }).toBeVisible();
+      expect(workspace().plan.receipts).toHaveLength(1);
+      outcome.hops = [{ ...ascending, checked: true }];
+      outcome.graceTerminal = plan.element().textContent;
+      return;
+    }
     const menuGuidance = page.getByRole("status", { name: "Open submenu guidance" });
     const linkGuidance = page.getByRole("status", { name: "Link guide result" });
     const guidanceFailure = page.getByRole("status", { name: "Link unavailable" });
+    const recordRefusal = page.getByRole("status", { name: "Record check unavailable" });
     const words = (label: string) => (label.toLowerCase().replace(/[’']s\b/gu, "").match(/[\p{L}\p{N}]+/gu) ?? [])
       .map(word => word === "men" ? "man" : word === "women" ? "woman" : word.replace(/s$/u, ""));
     const namedWords = new Set(words(named?.subject ?? ""));
@@ -377,6 +538,8 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     let previous = initial;
     while (actionsTaken() < actionLimit) {
       failureStage = "follow-guidance";
+      guidanceResult = "waiting";
+      guidanceSnapshot = undefined;
       try {
         await userEvent.click(showLink);
       } catch (error) {
@@ -399,6 +562,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
           }, { timeout: lastInstruction === undefined ? 45_000 : 50_000 }).toBe(true);
           const failure = guidanceFailure.query();
           if (failure) {
+            guidanceResult = "unavailable";
             const instruction = failure.textContent ?? "The link could not be highlighted";
             const [, branch, leaf] = instruction.match(/^The open menu (?:“[^”]+” › )*“([^”]+)” calls this link “([^”]+)”\.?$/u) ?? [];
             const branchMatches = labelMatchesGoal(branch);
@@ -435,6 +599,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
                   outcome.guideResult = instruction;
                   return;
                 }
+                outcome.guidanceRecovery = guidanceRecovery(instruction);
                 throw new Error(instruction);
               }
               await userEvent.click(nextMenu);
@@ -445,7 +610,11 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
             }).toBe(true);
             continue;
           }
-          if (linkGuidance.query() !== null) break;
+          if (linkGuidance.query() !== null) {
+            guidanceResult = "link";
+            break;
+          }
+          guidanceResult = "menu";
           const instruction = menuGuidance.element().textContent;
           if (!instruction || instruction === lastInstruction) throw new Error("Grace did not present fresh submenu guidance");
           outcome.menuInstruction = instruction;
@@ -473,12 +642,13 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
           lastInstruction = instruction;
         }
       }
-      if (record) await expect.element(linkGuidance.or(guidanceFailure).first(), { timeout: 45_000 }).toBeVisible();
-      if (record && guidanceFailure.query() !== null) {
-        const instruction = guidanceFailure.element().textContent;
-        if (!exploratory || requiredStep !== "ReadLatestRecord" || instruction !== "I can’t verify which matching record is newest on this list.")
-          throw new Error("Record guidance could not verify the next link");
-        await expect.element(guidanceFailure).toBeVisible();
+      if (record) await expect.element(linkGuidance.or(guidanceFailure).or(recordRefusal).first(), { timeout: 45_000 }).toBeVisible();
+      if (record && guidanceFailure.query() !== null) throw new Error("Record guidance could not verify the next link");
+      if (record && recordRefusal.query() !== null) {
+        if (!exploratory || requiredStep !== "ReadLatestRecord") throw new Error("Record guidance stopped at an unverified collection");
+        const instruction = recordRefusal.element().textContent;
+        const { ringAvailable } = await transport({ kind: "inspectGuide" });
+        expect(ringAvailable).toBe(false);
         const action = Schema.decodeUnknownSync(SelectorRead)(await transport({
           kind: "read", selector: "#my-orders-table tbody tr td.actions a.view",
         }));
@@ -492,8 +662,8 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         expect(recordSelection.tag).toBe("NoGuidedRecordSelection");
         expect(receipts).toHaveLength(0);
         expect(finished.query()).toBeNull();
-        outcome.recordRefusal = { documentId: current.documentId, instruction, visibleAction: action.text.trim(),
-          selection: recordSelection.tag, receiptCount: receipts.length };
+        outcome.recordRefusal = { kind: "record-check-unavailable", documentId: current.documentId, instruction,
+          visibleAction: action.text.trim(), ringAvailable, selection: recordSelection.tag, receiptCount: receipts.length };
         outcome.miss = "insufficient-record-evidence";
         return;
       }
@@ -501,8 +671,25 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
       const bound = record && selection.tag === "StagedGuidedRecord" && selection.selection.documentId === previous.documentId
         ? selection.selection : undefined;
       const returningToRecord = record && linkGuidance.query()?.textContent?.includes("Go back one page in this list.") === true;
-      await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
+      failureStage = "tap-guide-ring";
+      let refusal: string | undefined;
+      await expect.poll(async () => {
+        const unavailable = named || record ? null : guidanceFailure.query();
+        if (unavailable) {
+          refusal = unavailable.textContent ?? "";
+          return true;
+        }
+        return (await transport({ kind: "tapGuide" })).tapped;
+      }, { timeout: 45_000 }).toBe(true);
+      if (refusal !== undefined) {
+        failureStage = "follow-guidance";
+        guidanceResult = "unavailable";
+        outcome.guidanceRecovery = guidanceRecovery(refusal);
+        outcome.linkUnavailable = true;
+        throw new Error("Grace could not offer a link");
+      }
       outcome.ringTap = true;
+      failureStage = "observe-link-landing";
       await expect.poll(async () => {
         const document = await read();
         return document.documentId !== previous.documentId && document.readyState === "complete";
@@ -521,24 +708,21 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
         forwardPath.push(landed.url);
         visited.add(landed.url);
       }
-      failureStage = "bind-native-landing";
-      const beforeLoad = workspace().browser.tabs[0]?.loadVersion ?? 0;
-      native.started(landed.url);
-      native.finished(landed.url);
-      await expect.poll(() => {
-        const tab = workspace().browser.tabs[0];
-        return { address: typedAddress(), arrived: tab !== undefined && tab.load === "Loaded" && tab.loadVersion > beforeLoad };
-      }, { timeout: browserObservationTimeoutMs }).toEqual({ address: landed.url, arrived: true });
+      await bindNativeLanding(landed.url, browserObservationTimeoutMs);
       failureStage = "wait-for-check-controls";
       const resume = page.getByRole("button", { name: "Resume Grace" });
       const check = page.getByRole("button", { name: "Check page", exact: true });
       await expect.element(resume.or(check).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
-      if (resume.query() !== null) await userEvent.click(resume);
+      const resumed = resume.query() !== null;
+      if (resumed) await userEvent.click(resume);
       failureStage = "check-page";
+      const attempt: PendingPageCheck = { startedAt: performance.now(), resumed, snapshot: "not-requested" };
+      pendingCheck = attempt;
       await userEvent.click(check);
       failureStage = "observe-check-result";
-      const checkReturnedAt = performance.now();
+      const checkReturnedAt = attempt.returnedAt = performance.now();
       await expect.element(finished.or(continuing).first(), { timeout: browserObservationTimeoutMs }).toBeVisible();
+      pendingCheck = undefined;
       const checked = finished.query() !== null;
       const reason = continuing.query()?.textContent;
       hops.push({ url: landed.url, documentId: landed.documentId, checked, checkResultWaitMs: Math.round(performance.now() - checkReturnedAt), reason });
@@ -564,6 +748,19 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (
     const failure = publicFailure(error, "Browser journey");
     outcome.failure = failure.message;
     outcome.failureStage = failureStage;
+    if (failureStage === "follow-guidance") outcome.guidanceFailure = {
+      result: guidanceResult, snapshot: guidanceSnapshot ?? "not-requested",
+    };
+    if (pendingCheck) {
+      const endedAt = performance.now();
+      const { startedAt, returnedAt, resumed, snapshot } = pendingCheck;
+      outcome.pageCheckFailure = {
+        elapsedMs: Math.round(endedAt - startedAt), resumed, snapshot,
+        ...(returnedAt === undefined ? {} : { checkResultWaitMs: Math.round(endedAt - returnedAt) }),
+      };
+      pendingCheck = undefined;
+    }
+    if (failureStage === "tap-guide-ring") outcome.linkUnavailable = page.getByRole("status", { name: "Link unavailable", exact: true }).query() !== null;
     if (!gradeWholeCohort) throw failure;
   } finally {
     await transport({ kind: "receipt", outcome }).catch((error: unknown) => {
@@ -606,7 +803,7 @@ async function prepareBillWorldStatement(attempt: string, billerId: string | und
   return { ...statement, transport };
 }
 
-async function readBillWorldStatement(billerId: string | undefined, context: TestContext, prepared: Awaited<ReturnType<typeof prepareBillWorldStatement>>) {
+async function readBillWorldStatement(billerId: string | undefined, refuses: true | undefined, context: TestContext, prepared: Awaited<ReturnType<typeof prepareBillWorldStatement>>) {
   const { url, taskId, question, transport } = prepared;
   let shown: string | null | undefined;
   let observations = 0;
@@ -644,7 +841,18 @@ async function readBillWorldStatement(billerId: string | undefined, context: Tes
     }
     await transport({ kind: "evidence", value: "restored" });
   }
+  const before = observations;
   await userEvent.click(check);
+  if (refuses) {
+    await expect.poll(() => observations).toBeGreaterThan(before);
+    await expect.element(check).toBeEnabled();
+    expect(complete.query()).toBeNull();
+    const grade = await transport({ kind: "answer", text: "" });
+    expect(grade).toMatchObject({ success: false, taskId, predicateSource: "task",
+      results: [{ pass: true }, { pass: true }, { pass: false }, { pass: true }, { pass: true }],
+    });
+    return;
+  }
   await expect.element(complete).toBeVisible();
   await userEvent.click(ui.getByRole("button", { name: "Expand", exact: true }));
   const answer = ui.getByRole("region", { name: "Task plan" }).getByText(/^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u);
@@ -661,7 +869,7 @@ async function readBillWorldStatement(billerId: string | undefined, context: Tes
   }
 }
 
-for (const { billerId, label } of inject("billworldStatements")) {
+for (const { billerId, label, refuses } of inject("billworldStatements")) {
   describe("BillWorld", () => {
     let attempt: string;
     let prepared: Awaited<ReturnType<typeof prepareBillWorldStatement>> | undefined;
@@ -673,7 +881,7 @@ for (const { billerId, label } of inject("billworldStatements")) {
     afterEach(async () => { await commands.releasedStatement(attempt, { kind: "close" }); });
     it(`Read the ${label} BillWorld statement (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")`, { timeout: 120_000 }, async (context) => {
       if (billerId !== undefined && prepared === undefined) throw new Error("The Fleet statement fixture did not finish before the journey");
-      await readBillWorldStatement(billerId, context, prepared ?? await prepareBillWorldStatement(attempt, billerId, context));
+      await readBillWorldStatement(billerId, refuses, context, prepared ?? await prepareBillWorldStatement(attempt, billerId, context));
     });
   });
 }
@@ -857,7 +1065,7 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   expect(count("navigate")).toBe(before + 1);
 }, 180_000);
 
-it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mismatched detail", "wrong record kind", "ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "public list"] as const)('Check the latest item across record pages ($0) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (scenario) => {
+it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mismatched detail", "wrong record kind", "ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "same-name account switch", "short dates", "public list"] as const)('Check the latest item across record pages ($0) (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async (scenario) => {
   localStorage.clear();
   const status = scenario === "earlier winner" ? "cancelled" : "completed";
   const requested = `Show the most recent ${status} order`;
@@ -899,10 +1107,14 @@ it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mism
   const show = ui.getByRole("button", { name: "Show me the link", exact: true });
   const check = ui.getByRole("button", { name: "Check page", exact: true });
   const next = (path: string) => new URL(path, url).href;
-  const follow = async (path: string) => {
-    await expect.poll(async () => (await route({ kind: "tapGuide" })).tapped, { timeout: 15_000 }).toBe(true);
+  const follow = async (path: string, label?: "View order" | "My Account") => {
+    if (label) expect((await route({ kind: "manualRecordLink", label })).tapped).toBe(true);
+    else await expect.poll(async () => (await route({ kind: "tapGuide" })).tapped, { timeout: 15_000 }).toBe(true);
     const destination = next(path);
-    await expect.poll(async () => (await route({ kind: "read" })).url, { timeout: 15_000 }).toBe(destination);
+    await expect.poll(async () => {
+      const landed = await route({ kind: "read" });
+      return { url: landed.url, readyState: landed.readyState };
+    }, { timeout: 15_000 }).toEqual({ url: destination, readyState: "complete" });
     native.started(destination);
     native.finished(destination);
     await expect.poll(() => ({ address: typedAddress(), load: workspace().browser.tabs[0]?.load })).toEqual({ address: destination, load: "Loaded" });
@@ -917,11 +1129,33 @@ it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mism
     await userEvent.click(show);
     await expect.element(ui.getByRole("status", { name: "Link guide result" }), { timeout: 15_000 }).toBeVisible();
   };
-  if (["ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account"].includes(scenario)) {
+  if (scenario === "same-name account switch") {
+    const readRecordRow = async () => Schema.decodeUnknownSync(SelectorRead)(await route({ kind: "read", selector: "main table tbody tr" })).text;
+    const preview = await readRecordRow();
+    await point();
+    await follow("/list");
+    expect(await readRecordRow()).toBe(preview);
     await userEvent.click(show);
-    await expect.element(ui.getByRole("status", { name: "Link unavailable" }), { timeout: 15_000 }).toBeVisible();
-    expect((await route({ kind: "tapGuide" })).tapped).toBe(false);
-    expect(workspace().plan.receipts).toHaveLength(0);
+    await expect.element(ui.getByRole("status", { name: "Record check unavailable" }), { timeout: 15_000 }).toBeVisible();
+    expect(await route({ kind: "inspectGuide" })).toEqual({ ringAvailable: false });
+    const checkUnverified = async () => {
+      await userEvent.click(check);
+      await expect.element(ui.getByRole("status", { name: "Page check result" }), { timeout: 15_000 }).toBeVisible();
+      expect(workspace().plan).toMatchObject({ recordSelection: { tag: "NoGuidedRecordSelection" }, receipts: [] });
+    };
+    await follow("/view/1", "View order");
+    await checkUnverified();
+    await follow("/home", "My Account");
+    await checkUnverified();
+    expect(await route({ kind: "accountVisits" })).toEqual({ visits: ["/home:A", "/list:B", "/view/1:B", "/home:A"] });
+    expect(await route({ kind: "requests" })).toEqual({ count: 0, leaked: false });
+    return;
+  }
+  if (["ambiguous collection", "conflicting counts", "unclear count", "conflicting account", "private form", "newsletter list", "unverified account", "short dates"].includes(scenario)) {
+    await userEvent.click(show);
+    await expect.element(ui.getByRole("status", { name: scenario === "ambiguous collection" ? "Link unavailable" : "Record check unavailable" }), { timeout: 15_000 }).toBeVisible();
+    expect(await route({ kind: "inspectGuide" })).toEqual({ ringAvailable: false });
+    expect(workspace().plan).toMatchObject({ recordSelection: { tag: "NoGuidedRecordSelection" }, receipts: [] });
     expect(await route({ kind: "requests" })).toEqual({ count: 0, leaked: false });
     return;
   }
@@ -944,9 +1178,9 @@ it.each(["later winner", "earlier winner", "tied latest", "changed scope", "mism
   expect(workspace().plan.receipts).toHaveLength(0);
   await userEvent.click(show);
   if (scenario === "tied latest" || scenario === "changed scope") {
-    await expect.element(ui.getByRole("status", { name: "Link unavailable" }), { timeout: 15_000 }).toBeVisible();
-    expect((await route({ kind: "tapGuide" })).tapped).toBe(false);
-    expect(workspace().plan.receipts).toHaveLength(0);
+    await expect.element(ui.getByRole("status", { name: scenario === "changed scope" ? "Link unavailable" : "Record check unavailable" }), { timeout: 15_000 }).toBeVisible();
+    expect(await route({ kind: "inspectGuide" })).toEqual({ ringAvailable: false });
+    expect(workspace().plan).toMatchObject({ recordSelection: { tag: "NoGuidedRecordSelection" }, receipts: [] });
   } else {
     await expect.element(ui.getByRole("status", { name: "Link guide result" }), { timeout: 15_000 }).toBeVisible();
     if (scenario === "earlier winner") {

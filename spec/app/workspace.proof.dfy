@@ -1979,6 +1979,35 @@ lemma confirmGuidedNamedPage_ensures(w: Workspace, pageCheck: GuidedNamedPageChe
   GuidedReceiptPreserves(w, pageCheck.report, by_);
 }
 
+lemma confirmGuidedSearch_ensures(w: Workspace, searchCheck: GuidedSearchCheck, by_: WorkspaceActor)
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysDeviceRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysBrowserRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysAssistantRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysExecutionRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCommitmentRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCommitmentRegistryIsCanonical(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCommitmentAssociation(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysPausedCommitmentCannotSubmit(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysOneTask(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysPausedTogether(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysRecordingHasPermission(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysOperationHasVisibleTask(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysEvidenceVersionsAreNonnegative(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysWakeRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysActiveWakePausesWebsiteWork(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysPreferencesRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCommitmentUsesCanonicalIdentity(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCurrentBeforeAction(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCommitmentReviewUsesCurrentContext(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepInterruptionsKeepTask(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepWakeNeverDispatchesWebsite(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuidedSearch(w, searchCheck, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_)))
+{
+  GuidedReceiptPreserves(w, searchCheck.report, by_);
+}
+
 lemma confirmGuidedRecord_ensures(w: Workspace, recordCheck: GuidedRecordCheck, by_: WorkspaceActor)
   ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysDeviceRules(confirmGuidedRecord(w, recordCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysBrowserRules(confirmGuidedRecord(w, recordCheck, by_)))
@@ -2051,4 +2080,56 @@ lemma lawRemainingBalanceReplacesStatementBalance_ensures(due: seq<string>, bala
   ensures (lawRemainingBalanceReplacesStatementBalance(due, balances, remaining, value) == true)
 {
   ProofLib.FilterMember((set_x: string) => !((set_x in due)), remaining, value);
+}
+
+lemma OnlyBrowserTab(b: app__browser_Browser, tab: app__browser_Tab)
+  requires b.tabs == [tab] && b.selected == tab.id
+  ensures app__browser_activeTab(b) == tab
+{
+  var id := b.selected;
+  var selected := (candidate: app__browser_Tab) => candidate.id == id;
+  assert selected(tab);
+  assert b.tabs[0] == tab && b.tabs[1..] == [];
+  reveal Std.Collections.Seq.Filter();
+  assert Std.Collections.Seq.Filter(selected, b.tabs[1..]) == [];
+  assert Std.Collections.Seq.Filter(selected, b.tabs) == [tab];
+  assert app__browser_tabById(b, id) == tab;
+}
+
+lemma lawPublicSortExampleIsAdmitted_ensures(by_: WorkspaceActor)
+  ensures (lawPublicSortExampleIsAdmitted(by_) == true)
+{
+  if by_.Host? {
+    var w := examplePublicSort;
+    var check := sampleSortCheck;
+    var first := app__browser_blankTab(1, 0);
+    var loading := app__browser_navigated(first, sampleSortUrl, 1);
+    assert exampleSortLoading.tabs == [loading] && exampleSortLoading.selected == 1;
+    OnlyBrowserTab(exampleSortLoading, loading);
+    var ended := app__browser_endedAtCursor(loading, sampleSortUrl);
+    var tab := ended.(load := app__browser_Load.Loaded, secure := true);
+    assert w.browser.tabs == [tab] && w.browser.selected == 1;
+    OnlyBrowserTab(w.browser, tab);
+    reveal Std.Collections.Seq.FoldLeft();
+    assert loading.history == ["", sampleSortUrl] && loading.cursor == 1;
+    app__browser_lawALoadRecordsWhereItEnded_ensures(loading, sampleSortUrl);
+    assert app__browser_tabUrl(tab) == sampleSortUrl;
+    assert w.device.readiness.Ready? && w.device.surface.Browser? && w.device.observationAllowed;
+    assert app__assistant_isVisible(w.assistant) && w.assistant.activity.ReadyForStep?;
+    assert w.execution.phase.Idle? && w.commitmentTask == "";
+    assert !privateSurfaceActive(w);
+    assert check.report.step == nextOutcome(w.plan) == sampleSortStep;
+    assert guidedDetails(check.report.step).surface == app__shell_Surface.Browser;
+    assert w.plan.receipts == [];
+    assert !usedSource(w.plan, check.report.sourceKey) by {
+      forall prior | prior in w.plan.receipts
+        ensures prior.sourceKey != check.report.sourceKey
+      {}
+    }
+    assert guidedReadContextCurrent(w, check.report, by_);
+    assert guidedObservationCurrent(w, check.report, by_);
+    assert tab.load.Loaded? && tab.secure && tab.id == check.tabId;
+    assert app__browser_tabUrl(tab) == check.url && tab.loadVersion == check.loadVersion && tab.loadVersion > w.plan.openingBrowser;
+    assert canConfirmGuidedPublicSort(w, check, by_);
+  }
 }

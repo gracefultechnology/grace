@@ -2,7 +2,7 @@ name: fuzz
 
 # The fixed nightly profile checks 20,000 values with seed 2; repeat it with
 # `pnpm all check -- --nightly`. The shrunk
-# counterexamples a failing run saves come back as a pull request into its branch, or the default branch for a tag.
+# counterexamples a failing run saves come back as a pull request into the checked branch.
 on:
   schedule:
     - cron: "17 4 * * *"

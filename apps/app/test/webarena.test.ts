@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
+import { hasUserAssistedSearch, matchesPublicSearch, publicSearchQuery } from "./browser-receipt.ts";
 import { startWebArenaWorker } from "./webarena.ts";
 
 const fakeEvaluator = `
@@ -29,6 +30,13 @@ class URLEvaluator:
         assert trajectory == [] and page_client is None
         assert page.url in (task["target"], task["control"])
         return int(page.url == task["target"])
+
+class StringEvaluator:
+    def __call__(self, trajectory, config):
+        task = json.loads(config.read_text())
+        [action] = trajectory
+        assert action["action_type"] == "STOP"
+        return int(task["answer"] == action["answer"])
 `;
 
 const fakePage = `
@@ -79,10 +87,12 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     const address = server.address();
     if (address === null || typeof address === "string") throw new Error("The evaluator fixture did not bind a loopback port");
     const module = join(root, "evaluation_harness");
-    await mkdir(module);
+    const actions = join(root, "browser_env");
+    await Promise.all([mkdir(module), mkdir(actions)]);
     await Promise.all([
       writeFile(join(module, "__init__.py"), fakeEvaluator),
       writeFile(join(module, "helper_functions.py"), fakePage),
+      writeFile(join(actions, "actions.py"), 'def create_stop_action(answer): return {"action_type": "STOP", "answer": answer}\n'),
     ]);
     const gradingTimeoutMs = 1000;
     const start = (phase: Exclude<Phase, "grading">, startupTimeoutMs?: number) => {
@@ -103,6 +113,7 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     expect(await Promise.race([completion, Effect.runPromise(Effect.as(Effect.sleep(gradingTimeoutMs * 2), "importing"))])).toBe("importing");
     importGate.release();
     await expect(scores).resolves.toEqual([1, 0]);
+    await expect(worker.grade({ fixture: JSON.stringify({ answer: "four" }), answers: ["four", "", "one"] })).resolves.toEqual([1, 0, 0]);
 
     const nextImport = enter("importing");
     const gradingFailure = worker.grade({ fixture: JSON.stringify({ ...fixture, hang: true }), urls }).catch((error: unknown) => error);
@@ -148,3 +159,46 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     await rm(root, { recursive: true, force: true });
   }
 }, 90_000);
+
+
+it('Verify the exact user-assisted search and its newly checked result (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', () => {
+  const intent = 'Search for "batteries for iphone 13"';
+  const query = "batteries for iphone 13";
+  const start = { url: "https://shops.localhost/", documentId: "homepage" };
+  const search = { action: new URL("/find", start.url).href, field: "term", query };
+  const landed = new URL(search.action);
+  landed.searchParams.set(search.field, query);
+  const destination = { url: landed.href, documentId: "search-results" };
+  const outcome = {
+    operator: "trusted Chromium keyboard input in the website search field", chatProvider: "upstream",
+    start, destination, hops: [{ ...destination, checked: true }], publicSearch: search,
+    resumed: true, reviewedSteps: [{ kind: "SearchPublicSite", subject: query }], graceTerminal: "complete",
+  };
+  const input = {
+    intent, startUrl: start.url, decisionProvider: "none", decisionRequests: 0, decisionResults: [], chatStatus: 200, syntheticStorageState: true, outcome,
+  };
+  const completed = { start, destination, search };
+  const result = (changes: Partial<typeof outcome>) => hasUserAssistedSearch({ ...input, outcome: { ...outcome, ...changes } }, completed, destination);
+  expect({
+    query: publicSearchQuery(intent),
+    ambiguous: publicSearchQuery('Search for "usb" or "wifi"'),
+    exact: matchesPublicSearch(landed, search),
+    shortened: matchesPublicSearch(new URL("/find?term=iphone+13", start.url), search),
+    repeated: matchesPublicSearch(new URL(landed.href + "&term=other"), search),
+    differentOrigin: matchesPublicSearch(new URL(landed.pathname + landed.search, "https://other.localhost"), search),
+    checked: result({}),
+    unsubmitted: hasUserAssistedSearch(input, undefined, destination),
+    replacedResult: hasUserAssistedSearch(input, completed, { ...destination, documentId: "second-results" }),
+    forgedForm: result({ publicSearch: { ...search, action: search.action + "?invented=1" } }),
+    skippedResume: result({ resumed: false }),
+    noSyntheticLogin: hasUserAssistedSearch({ ...input, syntheticStorageState: false }, completed, destination),
+    reusedDocument: result({ destination: { ...destination, documentId: start.documentId } }),
+    changedReview: result({ reviewedSteps: [{ kind: "SearchPublicSite", subject: "iphone 13" }] }),
+    unchecked: result({ hops: [{ ...destination, checked: false }] }),
+    inventedRanking: hasUserAssistedSearch({ ...input, decisionProvider: "hosted", decisionRequests: 1 }, completed, destination),
+  }).toEqual({
+    query, ambiguous: undefined, exact: true, shortened: false, repeated: false, differentOrigin: false,
+    checked: true, unsubmitted: false, replacedResult: false, forgedForm: false,
+    skippedResume: false, noSyntheticLogin: false, reusedDocument: false, changedReview: false, unchecked: false, inventedRanking: false,
+  });
+});

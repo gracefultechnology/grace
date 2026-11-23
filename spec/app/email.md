@@ -120,6 +120,9 @@ establishes a readable connection; send permission is separate.
 Discovered by the proof: the selected account identity must already exist while
 authorization is pending, not only after the connection succeeds. Otherwise a
 successful callback could establish a connection without an owner or account.
+Discovered by the proof: an account identity stays bound while any Outbox entry
+remains, even if the connection ends. Otherwise a connector result could mark a
+draft for deletion without knowing which mailbox holds it.
 
 ```quint
 pure def canConnect(m: Mailbox, owner: str, provider: str, account: str, by: MailActor): bool =
@@ -147,7 +150,8 @@ pure def alwaysConnectedIdentity(m: Mailbox): bool =
     (m.owner != "" and m.provider != "" and m.account != "" and m.canRead)) and
   (m.connection != Connected implies (not(m.canRead) and not(m.canSend)))
 pure def alwaysAccountIdentityIsBound(m: Mailbox): bool =
-  m.connection != Disconnected implies (m.owner != "" and m.provider != "" and m.account != "")
+  (m.connection != Disconnected or m.outbox.length() > 0) implies
+    (m.owner != "" and m.provider != "" and m.account != "")
 pure def alwaysGenerationAndRevision(m: Mailbox): bool =
   m.generation >= 0 and m.revision >= 0 and m.approvedRevision >= -1 and m.draftRequest >= 0
 pure def sometimesConnected(m: Mailbox): bool = m.connection == Connected
@@ -590,7 +594,8 @@ held behind it cannot be confirmed from the list.
 Links in a flagged message never open from a single tap. The prototype draws the
 link as plain text (`prototype/Grace Prototype.html:1962`); here a tap holds it
 behind the warning, and only the person's separate confirmation of that same
-link releases it to the host, which hands it to the Browser. Cancel drops it.
+link releases it to the host, which hands it to the Browser. The mailbox must
+still be connected with read access when she confirms. Cancel drops it.
 A link in an unflagged message is released at once. Grace never taps a link
 (`prototype/Grace Prototype.html:2107`): only the person opens or confirms one.
 A flagged message cannot become a bill source, so a scam's payment request never
@@ -605,8 +610,8 @@ pure def canOpenLink(m: Mailbox, link: str, by: MailActor): bool =
 pure def openLink(m: Mailbox, link: str, by: MailActor): Mailbox =
   { ...m, link: { ref: m.messageRef, link: link, status: if (m.warning.evidence != "") LinkHeld else LinkReleased } }
 pure def canConfirmLink(m: Mailbox, link: str, confirmed: bool, by: MailActor): bool =
-  by == MailUser and confirmed and m.link.status == LinkHeld and m.link.link == link and
-  m.readStatus == ReadIdle and selectedMessageIsCurrent(m)
+  by == MailUser and m.connection == Connected and m.canRead and confirmed and
+  m.link.status == LinkHeld and m.link.link == link and m.readStatus == ReadIdle and selectedMessageIsCurrent(m)
 pure def confirmLink(m: Mailbox, link: str, confirmed: bool, by: MailActor): Mailbox =
   { ...m, link: { ...m.link, status: LinkReleased } }
 pure def canCancelLink(m: Mailbox, by: MailActor): bool = by == MailUser and m.link.status == LinkHeld
