@@ -499,8 +499,11 @@ reports whether this tablet is signed in, signed out, or needs to clear a
 previous sign-in whose owner could not be verified because the credential
 expired or the service rejected it. The Grace service's
 authenticated response reports only the web account, its plan and its Google
-connection; either may report that the account could not be checked. Only a
-signed-in web account carries any Google link state. Every change to the
+connection; either may report that the account could not be checked. A signed-in web
+account or a tablet whose acknowledged mail lease names the signed-in owner
+can carry Google link state. The tablet reports the owner and a non-secret
+lease version. The owner from the Google status must match before that link
+can be shown. Every change to the
 account shown comes from one of these two reports, each carrying only what
 its source may report. Another service, a checkout return and a browser
 tab's sign-in have no way to change the account, so none of them establishes
@@ -534,7 +537,8 @@ is unavailable. Cleanup does not verify an owner.
 
 ```quint
 type GracePlan = PlanUnknown | PlanInactive | PlanInactiveBlocked | PlanActive | PlanInactiveManaged | PlanInactiveManagedCheckout | PlanActiveManaged
-type MailLeaseUpgradePhase = LeaseUpgradeNotRequired | LeaseUpgradeRequired | LeaseUpgradeSignInPending | LeaseUpgradeAcknowledgmentPending
+type TabletMailAuthority = { accountId: str, leaseVersion: str }
+type MailLeaseUpgradePhase = LeaseUpgradeNotRequired | LeaseUpgradeRequired | LeaseUpgradeSignInPending | LeaseUpgradeAcknowledgmentPending | LeaseMailReady(TabletMailAuthority)
 type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignInNeedsCleanup | GraceDeviceSignedIn({ mailLeaseUpgrade: MailLeaseUpgradePhase }) | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
 pure val signedInTablet: GraceAccount = GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeNotRequired })
 type AccountSource = TabletSession | GraceService
@@ -594,8 +598,18 @@ pure def keptTabletSignIn(t: TabletSignIn, report: GraceAccount): TabletSignIn =
   | TabletSignInConfirmed(c) => if (c.accountId == webAccountId(report)) TabletSignInConfirmed({ accountId: c.accountId }) else TabletSignInAsked
   | _ => t
 }
+pure def leaseAccountId(mailLease: MailLeaseUpgradePhase): str = match mailLease {
+  | LeaseMailReady(owner) => if (owner.leaseVersion != "") owner.accountId else ""
+  | _ => ""
+}
+pure def tabletMailAccountId(account: GraceAccount): str = match account {
+  | GraceDeviceSignedIn(tablet) => leaseAccountId(tablet.mailLeaseUpgrade)
+  | _ => ""
+}
+pure def managedReadAccountId(account: GraceAccount): str =
+  if (webAccountId(account) != "") webAccountId(account) else tabletMailAccountId(account)
 pure def canReportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): bool =
-  reportedBy(TabletSession, report) and linkUnknown(link)
+  reportedBy(TabletSession, report) and (linkUnknown(link) or tabletMailAccountId(report) != "")
 pure def reportGraceAccount(s: Setup, report: GraceAccount, link: GoogleLink): Setup =
   { ...s, graceAccount: report, googleLink: link, tabletSignIn: keptTabletSignIn(s.tabletSignIn, report) }
 pure def canReportGraceService(s: Setup, report: GraceAccount, link: GoogleLink): bool =
@@ -625,13 +639,15 @@ pure def stepTheAccountComesOnlyFromItsOwnSource(before: Setup, via: str, after:
   after.graceAccount != before.graceAccount implies
     ((via == "reportGraceAccount" and reportedBy(TabletSession, after.graceAccount)) or
      (via == "reportGraceService" and reportedBy(GraceService, after.graceAccount)))
-pure def alwaysOnlyAWebAccountCarriesAGoogleConnection(s: Setup): bool =
-  linkUnknown(s.googleLink) or webAccountId(s.graceAccount) != ""
+pure def alwaysOnlyAnAuthorizedAccountCarriesAGoogleConnection(s: Setup): bool =
+  linkUnknown(s.googleLink) or managedReadAccountId(s.graceAccount) != ""
 pure val reportValues: Set[GraceAccount] = Set(
   CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignInNeedsCleanup, signedInTablet, AccountUnavailable,
   GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeRequired }),
   GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeSignInPending }),
   GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeAcknowledgmentPending }),
+  GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseMailReady({ accountId: "known", leaseVersion: "first" }) }),
+  GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseMailReady({ accountId: "other", leaseVersion: "second" }) }),
   GraceSignedOut({ google: true, emailCode: true, smsCode: false }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactive }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveManaged }),
@@ -661,7 +677,11 @@ Email and Calendar direct the owner to Account until that sign-in is done.
 The owner can cancel while the browser sign-in is pending.
 The tablet retains the same owner and offers no new attempt while it waits
 for a device acknowledgment. When the device confirms the updated sign-in,
-the prompt goes away. This step does not ask for new Google permissions.
+the prompt goes away and the tablet reads Email and Calendar with the
+connection the owner already granted. The native Eliza auth package holds
+the lease. A read names the same owner, current lease version and Google
+grant throughout. An account or lease change clears results from the old
+access. This step does not ask for new Google permissions.
 
 ```quint
 pure def mayBeginMailLeaseUpgrade(account: GraceAccount): bool =
@@ -669,7 +689,8 @@ pure def mayBeginMailLeaseUpgrade(account: GraceAccount): bool =
 pure def mayCancelMailLeaseUpgrade(account: GraceAccount): bool =
   account == GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeSignInPending })
 pure def showsMailLeaseUpgrade(account: GraceAccount): bool = match account {
-  | GraceDeviceSignedIn(tablet) => tablet.mailLeaseUpgrade != LeaseUpgradeNotRequired
+  | GraceDeviceSignedIn(tablet) => tablet.mailLeaseUpgrade == LeaseUpgradeRequired or
+    tablet.mailLeaseUpgrade == LeaseUpgradeSignInPending or tablet.mailLeaseUpgrade == LeaseUpgradeAcknowledgmentPending
   | _ => false
 }
 pure def lawAMailLeaseUpgradeKeepsTheTabletSignedIn(account: GraceAccount): bool =
@@ -706,11 +727,12 @@ pure def lawLinkRequiresGraceSignIn(link: GoogleLink): bool =
 
 > As a person using Grace, I can search my connected Gmail folders and browse
 > my primary Google calendar by week, month or day. I can start on my tablet,
-> sign in on Grace's web page and choose the message or appointment I want.
+> sign in, and choose the message or appointment I want on my tablet or
+> on Grace's web page.
 
 ### Managed reads show only the matching signed-in account and the capability it granted
 
-The hosted Gmail view opens in Inbox. The person can choose Sent, Drafts
+The connected Gmail view opens in Inbox. The person can choose Sent, Drafts
 or Trash and search within that folder. Inbox unread and Drafts counts come
 from the connected account's provider. The calendar opens on the current
 week. Changing the week, month or selected day shows appointments from the
@@ -722,7 +744,9 @@ Spam label holds the destination for a separate confirmation. A checked read
 without that label releases the address on tap. An incomplete read grants no
 link action. The Browser opens the released address in one new tab.
 A preview carries no authority to inspect attachments, reply or forward.
-The application checks the account bound to each provider result. A
+The application checks the account bound to each provider result. The
+tablet sends only the current authorized reads through its native Eliza
+lease, and returns no response after that owner or lease changes. A
 tablet's hosted handoff retains the selected view through sign-in, and
 uses the browser account matching that tablet when there is a bound owner.
 If the cloud reports the Google connector is unavailable, the selected
@@ -735,11 +759,8 @@ disappear.
 ```quint
 type ManagedReadView = ManagedEmail | ManagedCalendar
 pure def mayReadManaged(account: GraceAccount, link: GoogleLink, view: ManagedReadView): bool =
-  match account {
-    | GraceSignedIn(_) => match link {
-      | GoogleLinkConnected(g) => if (view == ManagedEmail) g.mail else g.calendar
-      | _ => false
-    }
+  managedReadAccountId(account) != "" and match link {
+    | GoogleLinkConnected(g) => if (view == ManagedEmail) g.mail else g.calendar
     | _ => false
   }
 pure def managedReadMatches(accountId: str, receiptAccountId: str, wanted: str, received: str): bool =

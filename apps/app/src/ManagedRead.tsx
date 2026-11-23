@@ -4,7 +4,7 @@ import { Effect, Exit, Stream } from "effect";
 import { type ReactNode, useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
 import type { Recurrence } from "../gen/app__calendar.ts";
-import { mayChangeManaged, mayReadManaged, maySendManagedMail, showsMailLeaseUpgrade, skipsMonthsWithoutItsDay } from "../gen/app__setup.ts";
+import { managedReadAccountId, mayChangeManaged, mayReadManaged, maySendManagedMail, skipsMonthsWithoutItsDay } from "../gen/app__setup.ts";
 import { actionableMailBody, inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type AppointmentChange, type ReadView } from "./managedReads.vibe";
 import { messageLinkParts } from "./messageLinks.vibe";
 import { calendarGrid } from "./Calendar.tsx";
@@ -283,14 +283,16 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
     });
     else setFailed(undefined);
   });
-  const signedIn = account?.graceAccount.tag === "GraceSignedIn" ? account.graceAccount : undefined;
-  const authorized = signedIn !== undefined && account !== undefined &&
-    mayReadManaged(signedIn, account.googleLink, view === "Email" ? "ManagedEmail" : "ManagedCalendar");
+  const person = account?.graceAccount;
+  const signedIn = person?.tag === "GraceSignedIn" ? person : undefined;
+  const authorized = account !== undefined && mayReadManaged(account.graceAccount, account.googleLink, view === "Email" ? "ManagedEmail" : "ManagedCalendar");
+  const phase = person?.tag === "GraceDeviceSignedIn" ? person.mailLeaseUpgrade : undefined;
+  const leaseVersion = phase !== undefined && typeof phase !== "string" ? phase.leaseVersion : undefined;
 
   const link = account?.googleLink;
   const grant = link?.tag === "GoogleLinkConnected" ? link.grant : "";
-  const accountId = signedIn?.accountId ?? "";
-  const projection = JSON.stringify([view, accountId, grant]);
+  const accountId = person ? managedReadAccountId(person) : "";
+  const projection = JSON.stringify([view, accountId, grant, leaseVersion]);
   const selectedMail = snapshot.kind === "mail" ? snapshot.selected : undefined;
   const mailProjection = JSON.stringify([projection, selectedMail?.message.externalId, selectedMail?.historyId]);
   const notice = writeNotice?.key === projection ? writeNotice : undefined;
@@ -330,12 +332,12 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   </div>;
 
   if (snapshot.kind === "waiting" && snapshot.view === view) {
+    if (snapshot.reason === "leaseUpgrade") {
+      return <EmptyState title="Sign in again to use email and calendar">
+        <Button variant="prominent" size="pill" loading={pending} onClick={() => run({ kind: "account" })}>Go to Account</Button>
+      </EmptyState>;
+    }
     if (snapshot.reason === "native") {
-      if (account !== undefined && showsMailLeaseUpgrade(account.graceAccount)) {
-        return <EmptyState title="Sign in again to use email and calendar">
-          <Button variant="prominent" size="pill" loading={pending} onClick={() => run({ kind: "account" })}>Go to Account</Button>
-        </EmptyState>;
-      }
       return <EmptyState title={view === "Email" ? "Open email on Grace’s website" : "Open your calendar on Grace’s website"}>
         <Button variant="prominent" size="pill" loading={pending} onClick={() => run({ kind: "openHosted" })}>Open Grace</Button>
         {view === "Calendar" && <Button variant="capsule" size="pill" disabled={pending}
@@ -364,7 +366,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   }
 
   if (!authorized || (snapshot.kind !== "mail" && snapshot.kind !== "calendar") ||
-    snapshot.accountId !== signedIn?.accountId || snapshot.grant !== grant || (snapshot.kind === "mail") !== (view === "Email")) {
+    snapshot.accountId !== accountId || snapshot.grant !== grant || snapshot.leaseVersion !== leaseVersion || (snapshot.kind === "mail") !== (view === "Email")) {
     return <PageText role="status">{view === "Email" ? "Opening your inbox…" : "Opening your calendar…"}</PageText>;
   }
 
@@ -382,7 +384,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
       if (!opened) setFailed({ key: mailProjection, text: "This link couldn’t open. Reopen the email to check its current contents." });
     });
     const reviewLink = snapshot.linkReview?.link;
-    const canFollow = actionableMailBody(selected) && !snapshot.replying && !snapshot.attachment && !snapshot.proposed;
+    const canFollow = signedIn !== undefined && actionableMailBody(selected) && !snapshot.replying && !snapshot.attachment && !snapshot.proposed;
     const suggested = snapshot.proposed?.proposal;
     const draft = suggested?.kind === "draft" ? snapshot.proposed : undefined;
     const photos = selected?.attachments.filter((part) => part.mimeType.startsWith("image/")) ?? [];
@@ -408,7 +410,8 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
           <Button variant="prominent" onClick={() => follow(reviewLink, "cancel")}>Stay in email</Button>
           <Button variant="capsule" loading={pending} onClick={() => follow(reviewLink, "confirm")}>Open in Browser</Button>
         </>}><BrowserDialogText className="break-all">{reviewLink}</BrowserDialogText></BrowserDialog>}
-        {selected.attachments.length > 0 && <section aria-label="Attachments" aria-busy={pending || undefined} className="flex w-full flex-col gap-3">
+        {leaseVersion !== undefined && selected.attachments.length > 0 && <PageText>Open attachments on Grace’s website.</PageText>}
+        {leaseVersion === undefined && selected.attachments.length > 0 && <section aria-label="Attachments" aria-busy={pending || undefined} className="flex w-full flex-col gap-3">
           {Array.from(new Map(selected.attachments.map((part) => [JSON.stringify([part.partId, part.name, part.mimeType, part.size]), part]))).map(([key, part]) => (
             <MailAttachment key={key} name={part.name}
               kind={part.mimeType === "application/pdf" ? "PDF" : part.mimeType.startsWith("image/") ? "Image" : "File"}
@@ -495,7 +498,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
       <PageHeading>{event.title || "Untitled appointment"}</PageHeading>
       <PageText>{day(event.startAt)} · {start(event)}</PageText>
       {event.location && <PageText>{event.location}</PageText>}
-      {event.editable && !event.isAllDay && event.etag && <fieldset>
+      {signedIn && event.editable && !event.isAllDay && event.etag && <fieldset>
         <legend>Reminder on Grace</legend>
         {([["One hour before", 60], ["One day before", 1440], ["Remove reminder", 0]] as const).map(([label, minutes]) =>
           <Button key={minutes} variant="capsule" size="pill" disabled={pending} onClick={() => {

@@ -133,6 +133,23 @@ public final class GraceAccount extends Plugin {
   });
  }
 
+ @PluginMethod public void readGoogle(PluginCall call) {
+  GraceGoogleRead.run(call, input -> {
+   var context = getContext();
+   long generation = GracePasswordsOwner.generation();
+   var owner = GracePasswordsOwner.stableSession(context);
+   var account = account(context);
+   var authority = account.mailAuthority();
+   if (owner == null || authority == null || !input.matches(authority.accountId(), authority.epoch())
+       || !owner.accountId().equals(authority.accountId()) || !owner.organizationId().equals(authority.organizationId()))
+    throw new IllegalStateException("Connected account changed");
+   var answer = account.readMail(authority, input.path(), input.query());
+   if (GracePasswordsOwner.accountChanging() || generation != GracePasswordsOwner.generation())
+    throw new IllegalStateException("Connected account changed");
+   return new JSObject().put("status", answer.status()).put("body", answer.body());
+  });
+ }
+
  @PluginMethod public void beginSignIn(PluginCall call) {
   ACCOUNT.execute(() -> {
    try (var enrollment = GracePasswordsOwner.beginEnrollment(getContext())) {
@@ -357,7 +374,13 @@ public final class GraceAccount extends Plugin {
    case SIGN_IN_PENDING -> "signInPending";
    case ACKNOWLEDGMENT_PENDING -> "acknowledgmentPending";
   };
-  if (current != null && mailLeaseUpgrade != null) status.put("mailLeaseUpgrade", mailLeaseUpgrade);
+  if (current != null) {
+   var authority = account.mailAuthority();
+   if (mailLeaseUpgrade != null) status.put("mailLeaseUpgrade", mailLeaseUpgrade);
+   else if (authority != null && current.accountId().equals(authority.accountId())
+       && current.organizationId().equals(authority.organizationId()))
+    status.put("mailLease", GraceGoogleRead.authority(authority.accountId(), authority.epoch()));
+  }
   return status;
  }
 

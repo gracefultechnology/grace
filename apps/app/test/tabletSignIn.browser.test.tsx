@@ -201,11 +201,21 @@ it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.m
 
 it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access")', async () => {
   let phase: "required" | "signInPending" | "acknowledgmentPending" | undefined = "required";
+  const accountId = "enrolled-tablet";
+  const leaseVersion = "acknowledged";
+  const grantId = "connected-google";
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  const mail = { externalId: "welcome", from: "Ana", subject: "Mail kept after sign-in", receivedAt: now.toISOString(), isUnread: true };
+  const appointment = { externalId: "checkup", title: "Calendar kept after sign-in", description: "Bring your notes.",
+    location: "Clinic", startAt: start.toISOString(), endAt: new Date(start.getTime() + 3600000).toISOString(), isAllDay: false, editable: true, etag: "confirmed" };
   const status = () => ({
     kind: "signedIn" as const,
     voiceDisclosureScope: "existing-owner",
-    ...(phase === undefined ? {} : { mailLeaseUpgrade: phase }),
+    ...(phase === undefined ? { mailLease: { accountId, leaseVersion } } : { mailLeaseUpgrade: phase }),
   });
+  const reads: string[] = [];
+  const result = (body: unknown) => Promise.resolve({ status: 200, body: JSON.stringify(body) });
   let notify: ((value: ReturnType<typeof status>) => void) | undefined;
   const browserAttempt = Latch.makeUnsafe();
   const begin = vi.fn(() => {
@@ -226,6 +236,23 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
       beginSignIn: () => Promise.reject(new Error("Upgrade must use the dedicated action")),
       beginLeaseUpgrade: begin,
       cancelLeaseUpgrade: cancel,
+      readGoogle: (input) => {
+        expect(phase).toBeUndefined();
+        expect(input).toMatchObject({ accountId, leaseVersion });
+        reads.push(input.route);
+        if (input.route === "status") return result({
+          accountId, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
+          identity: { email: "reader@example.test" }, connectionId: grantId,
+          grantedCapabilities: ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"],
+        });
+        expect(input.query.grantId).toBe(grantId);
+        if (input.route === "gmail/triage") return result({ accountId, messages: [mail], nextPageToken: null });
+        if (input.route === "gmail/read") {
+          expect(input.query.messageId).toBe(mail.externalId);
+          return result({ accountId, message: mail, historyId: null, attachments: [], bodyTextAvailable: true, bodyText: "The original message stayed linked." });
+        }
+        return result({ accountId, events: [appointment], nextPageToken: null });
+      },
       cleanupLegacySignIn: () => Promise.reject(new Error("The current account is already verified")),
       signOut: () => Promise.reject(new Error("Upgrade must retain the current account")),
       manageAccount: () => Promise.resolve(),
@@ -244,9 +271,13 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
 
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   const click = (name: string) => act(() => userEvent.click(button(name)));
-  await click("Settings");
-  await click("Account");
+  const open = (title: "Email" | "Calendar") => act(() => userEvent.click(
+    page.getByRole("group", { name: title, exact: true }).getByText(title, { exact: true })));
+  await open("Email");
+  await expect.element(button("Go to Account")).toBeEnabled();
+  await click("Go to Account");
   await expect.element(button("Sign in again")).toBeEnabled();
+  expect(reads).toEqual([]);
   expect(begin).not.toHaveBeenCalled();
 
   await click("Sign in again");
@@ -273,4 +304,14 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   });
   await expect.element(button("Manage Grace account")).toBeEnabled();
   await expect.element(button("Sign in again")).not.toBeInTheDocument();
+  await click("Close Settings");
+  await act(() => userEvent.click(page.getByRole("button", { name: /Mail kept after sign-in/ })));
+  await expect.element(page.getByText("The original message stayed linked.")).toBeVisible();
+  await expect.element(button("Move to Trash")).not.toBeInTheDocument();
+  await click("Home");
+  await open("Calendar");
+  await act(() => userEvent.click(page.getByRole("button", { name: /Calendar kept after sign-in/ })));
+  await expect.element(page.getByText("Bring your notes.")).toBeVisible();
+  await expect.element(button("Change appointment")).not.toBeInTheDocument();
+  expect(new Set(reads)).toEqual(new Set(["status", "gmail/triage", "gmail/read", "calendar/feed"]));
 });

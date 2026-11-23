@@ -1,10 +1,10 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"
 import {
-  type GoogleLink, type GraceAccount, type GracePlan, type MailLeaseUpgradePhase, isTheRequestsOwnReturn, Machine as Setup, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, signedInTablet, tabletSignInConfirmed
+  type GoogleLink, type GraceAccount, type GracePlan, type MailLeaseUpgradePhase, type TabletMailAuthority, isTheRequestsOwnReturn, Machine as Setup, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, signedInTablet, tabletSignInConfirmed
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin, type AccountBridge } from "./accountPlugin.ts"
-import type { AccountRequest, accountRequests } from "./cloudRequests.vibe"
+import type { AccountRequest, accountRequests, TabletGoogleRead } from "./cloudRequests.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 const filesScope = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
@@ -12,6 +12,7 @@ const Session = Schema.Struct({ account: Schema.NullOr(Schema.Struct({ id: Schem
 const DeviceAccountStatus = Schema.Struct({
   kind: Schema.Literals(["signedIn", "signedOut"]),
   legacySignInNeedsCleanup: Schema.optional(Schema.Literal(true)),
+  mailLease: Schema.optional(Schema.Struct({ accountId: Schema.NonEmptyString, leaseVersion: Schema.NonEmptyString })),
   mailLeaseUpgrade: Schema.optional(Schema.Literals(["required", "signInPending", "acknowledgmentPending"])),
 })
 const upgradePhase = {
@@ -85,6 +86,7 @@ type Transport = {
 
 export service AccountActions {
   run(operation: Operation): boolean!!
+  readTabletGoogle(owner: TabletMailAuthority, route: TabletGoogleRead, query: Record<string, string>): Response!unknown
 }
 
 export function accountFetch(input: RequestInfo | URL, init?: RequestInit) {
@@ -184,8 +186,9 @@ effect function readAccount(transport: Transport): GraceAccount!unknown {
   return { tag: "GraceSignedIn", accountId: account.id, email: account.email ?? "", plan: subscription === undefined ? "PlanUnknown" : planFrom(subscription) }
 }
 
-effect function googleLink(transport: Transport, accountId: string): GoogleLink!unknown {
-  const status = try decode(try accepted(transport, "/api/v1/eliza/google/status", "GET"), GoogleStatus)
+effect function googleLink(response: Response, accountId: string): GoogleLink!unknown {
+  if (!response.ok) throw new AccountRequestFailed()
+  const status = try decode(response, GoogleStatus)
   if (status.accountId !== accountId) throw new AccountRequestFailed()
   if (!status.configured) return { tag: "GoogleLinkUnavailable" }
   if (!status.connected) return { tag: "GoogleLinkReady" }
@@ -201,7 +204,7 @@ effect function googleLink(transport: Transport, accountId: string): GoogleLink!
 }
 
 export effect function currentManagedMailGrant(account: string, grant: string) {
-  const link = try googleLink(webTransport, account)
+  const link = try googleLink(try accepted(webTransport, "/api/v1/eliza/google/status", "GET"), account)
   return link.tag === "GoogleLinkConnected" && link.mail && link.grant === grant
 }
 
@@ -239,13 +242,29 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     setup.send({ type: "reportTabletSignIn", waiting: false }) catch () => undefined
   }
 
+  effect function readTabletGoogle(owner: TabletMailAuthority, route: TabletGoogleRead, query: Record<string, string>) {
+    const read = native ? plugin?.readGoogle?.bind(plugin) : undefined
+    if (read === undefined) throw new AccountRequestFailed()
+    const response = Schema.Struct({ status: Schema.Int.check(Schema.isBetween({ minimum: 200, maximum: 599 })), body: Schema.String })
+    const { status, body } = try Schema.decodeUnknownEffect(response)(try tryPromise(() => read({ ...owner, route, query })))
+    return new Response(status === 204 || status === 205 || status === 304 ? null : body, { status })
+  }
+
   effect function refresh() {
     const account: GraceAccount = native ? (readDevice() catch () => ({ tag: "AccountUnavailable" } as const)) :
       (readAccount(webTransport) catch () => ({ tag: "AccountUnavailable" } as const))
     const previous = try setup.get()
     const fallback: GoogleLink = hasLocalConnector && previous.googleLink.tag === "GoogleLinkUnknown" ? { tag: "GoogleLinkUnknown" } : { tag: "GoogleLinkUnavailable" }
-    const link: GoogleLink = account.tag !== "GraceSignedIn" ? { tag: "GoogleLinkUnknown" } :
-      (googleLink(webTransport, account.accountId) catch () => fallback)
+    const link: GoogleLink = effect {
+      if (account.tag === "GraceSignedIn")
+        return try googleLink(try accepted(webTransport, "/api/v1/eliza/google/status", "GET"), account.accountId)
+      if (account.tag === "GraceDeviceSignedIn" && typeof account.mailLeaseUpgrade !== "string" && account.mailLeaseUpgrade.tag === "LeaseMailReady") {
+        const { accountId, leaseVersion } = account.mailLeaseUpgrade
+        const response = try timeout(readTabletGoogle({ accountId, leaseVersion }, "status", {}), "10 seconds")
+        return try googleLink(response, accountId)
+      }
+      return { tag: "GoogleLinkUnknown" }
+    } catch () => fallback
     const held = setup.send({ type: native ? "reportGraceAccount" : "reportGraceService", report: account, link }) catch () => undefined
     return held?.state.graceAccount ?? ({ tag: "AccountUnavailable" } as const)
   }
@@ -254,6 +273,10 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     if (plugin === undefined) throw new AccountRequestFailed()
     const status: unknown = try tryPromise(() => plugin.status())
     const result = try Schema.decodeUnknownEffect(DeviceAccountStatus)(status)
+    if (result.mailLease !== undefined) {
+      if (result.kind !== "signedIn" || result.legacySignInNeedsCleanup === true || result.mailLeaseUpgrade !== undefined) throw new AccountRequestFailed()
+      return { tag: "GraceDeviceSignedIn", mailLeaseUpgrade: { tag: "LeaseMailReady", ...result.mailLease } }
+    }
     if (result.mailLeaseUpgrade !== undefined) {
       if (result.kind !== "signedIn" || result.legacySignInNeedsCleanup === true) throw new AccountRequestFailed()
       return { tag: "GraceDeviceSignedIn", mailLeaseUpgrade: upgradePhase[result.mailLeaseUpgrade] }
@@ -381,7 +404,7 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     return (try gate.withPermit(refresh())).tag === "GraceDeviceSignedIn"
   }
 
-  return { run: effect (operation) => {
+  return { readTabletGoogle, run: effect (operation) => {
     if (operation.kind === "beginLeaseUpgrade" || operation.kind === "cancelLeaseUpgrade") return upgrade(operation.kind) catch () => false
     return (operation.kind === "cancelDevice" && !native ? tabletHandoff : gate).withPermit(perform(operation)) catch () => false
   } }

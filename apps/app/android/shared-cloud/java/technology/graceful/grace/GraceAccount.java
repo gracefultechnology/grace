@@ -4,6 +4,7 @@ import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
 import ai.eliza.plugins.securestore.nativeonly.PasswordBackupApproval;
 import ai.eliza.plugins.signin.BrowserSignIn;
+import ai.eliza.plugins.signin.CloudRequests;
 import ai.eliza.plugins.signin.CredentialPolicy;
 import ai.eliza.plugins.signin.CredentialPolicy.MailLeaseUpgrade;
 import ai.eliza.plugins.signin.CredentialPolicy.Notice;
@@ -25,6 +26,8 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,6 +57,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
  private GracePasswordRecovery recovery;
  private GraceBrowserGuide guide;
  private GraceSharedSpeech speech;
+ private CloudRequests mailReads;
  private CredentialReader.Subscription custodySubscription;
  private Runnable signOutCanonical;
 
@@ -90,6 +94,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
   recovery = new GracePasswordRecovery(getActivity(), this);
   guide = new GraceBrowserGuide(getContext());
   speech = new GraceSharedSpeech(getContext());
+  mailReads = CloudRequests.forMailReads(getContext().getCacheDir());
   super.load();
   custodySubscription = DeviceCustody.reader(getContext(), API.toString()).listen(notice -> {
    if (!GracePasswordsOwner.accountChanging() && (notice instanceof Notice.SignedOutNotice || notice instanceof Notice.ExpiredNotice)) {
@@ -231,13 +236,19 @@ public final class GraceAccount extends ElizaSignInPlugin {
    var owner = session(context);
    var account = projection(owner);
    if (owner != null) {
-    var credentials = DeviceCustody.cloud(context, API.toString()).credentials().state();
+    var custody = DeviceCustody.cloud(context, API.toString());
+    var credentials = custody.credentials().state();
     var current = enrollment;
     if (current != null && current.mailUpgrade()) {
      var state = credentials.attempt() instanceof CredentialPolicy.Attempt.Acknowledging ? "acknowledgmentPending" : "signInPending";
      account.put("mailLeaseUpgrade", state);
     } else if (CredentialPolicy.mailLeaseUpgrade(credentials) != null) {
      account.put("mailLeaseUpgrade", "required");
+    } else {
+     var authority = custody.mailAuthority();
+     if (authority != null && owner.accountId().equals(authority.account().userId())
+         && owner.organizationId().equals(authority.account().organizationId()))
+      account.put("mailLease", GraceGoogleRead.authority(owner.accountId(), String.valueOf(authority.version())));
     }
    }
    return account;
@@ -248,6 +259,24 @@ public final class GraceAccount extends ElizaSignInPlugin {
   ACCOUNT.execute(() -> {
    try { call.resolve(accountProjection()); }
    catch (Exception unavailable) { call.reject("Device account is unavailable"); }
+  });
+ }
+
+ @PluginMethod public void readGoogle(PluginCall call) {
+  GraceGoogleRead.run(call, input -> {
+   var context = getContext();
+   long generation = GracePasswordsOwner.generation();
+   var owner = session(context);
+   var custody = DeviceCustody.cloud(context, API.toString());
+   var authority = custody.mailAuthority();
+   if (owner == null || authority == null || !input.matches(authority.account().userId(), String.valueOf(authority.version()))
+       || !owner.accountId().equals(authority.account().userId()) || !owner.organizationId().equals(authority.account().organizationId()))
+    throw new IllegalStateException("Connected account changed");
+   var result = mailReads.readMail(API.toString(), custody, authority, input.target(), Map.of("Accept", "application/json"));
+   if (!(result instanceof CloudRequests.Answered answer) || answer.body() == null
+       || GracePasswordsOwner.accountChanging() || generation != GracePasswordsOwner.generation())
+    throw new IllegalStateException("Connected account read was not confirmed");
+   return new JSObject().put("status", answer.status()).put("body", new String(answer.body(), StandardCharsets.UTF_8));
   });
  }
 
