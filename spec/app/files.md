@@ -197,7 +197,7 @@ matches ask which item rather than guessing from a repeated name. No match
 states that plainly. Finding does not open, share or delete content.
 Each explicit find request carries a new generation. A new query replaces the
 old request, including while the open Files window waits for its catalog. A
-background catalog load for an attachment stays separate.
+catalog load for an attachment on a closed library stays separate.
 Close cancels the find. A result must match the owner, generation and
 exact requested query, so stale retrieval cannot reopen Files or replace the
 current answer.
