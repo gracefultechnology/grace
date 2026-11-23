@@ -78,6 +78,7 @@ const outcomes: Record<Outcome, string> = {
   OwnerRefused: "was not done: the screen does not allow it as it is now",
   AlreadyInCalendar: "was not done: it is already in their calendar, or you already asked them",
   NothingAsked: "was not done: you are not waiting on their answer to a question",
+  NotTheirAnswer: "was not done: the person has not answered your question yet, and asking you for help is not their answer, so it still waits for them",
   NotOnScreen: "was not done: that is not on the screen"
 }
 
