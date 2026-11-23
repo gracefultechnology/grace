@@ -10,7 +10,8 @@ import { Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.v
 import { guidedDetails, Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
-import { privateFormRecovery } from "../src/nativePage.vibe";
+import { guidedPageState, privateFormRecovery } from "../src/nativePage.vibe";
+import { LinkObservation } from "../src/nativePage.schema.ts";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, script, signIn } from "./cloud.vibe";
 import { matchesPublicSearch, PublicSearch, publicSearchQuery } from "./browser-receipt.ts";
@@ -282,6 +283,8 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
   let selected: string | null | undefined;
   let failureStage: BrowserJourneyStage = "prepare-journey";
   let pendingCheck: PendingPageCheck | undefined;
+  let guidanceSnapshot: object | "failed" | "invalid" | undefined;
+  let guidanceResult: "waiting" | "link" | "menu" | "unavailable" | undefined;
   const outcome: Record<string, unknown> = {
     chatProvider: "fixture", observationPermission: "awaiting permission",
     operator: "trusted Chromium mouse input at visible guide ring",
@@ -314,13 +317,35 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
       if (request.id !== selected && request.command.guidance?.kind !== "hide")
         throw new Error("The benchmark site is not the selected Grace surface");
       const check = request.command.subaction === "snapshot" ? pendingCheck : undefined;
+      const guide = failureStage === "follow-guidance" && request.command.subaction === "snapshot";
       if (check) check.snapshot = "requested";
       try {
         const observed = Schema.decodeUnknownSync(BrowserControl)(await transport({ kind: "control", request }));
         if (check) check.snapshot = "returned";
+        if (guide) {
+          const snapshot = Schema.decodeUnknownOption(LinkObservation)(observed);
+          if (snapshot._tag === "None") guidanceSnapshot = "invalid";
+          else {
+            const { url, blockers, elements } = snapshot.value.result;
+            const origin = URL.parse(url)?.origin;
+            const usable = elements.filter(item => !item.disabled && !item.sensitive && item.inViewport && item.label);
+            guidanceSnapshot = {
+              eligibility: guidedPageState(snapshot.value, typedAddress() ?? "", "GuidePublicLinks"),
+              blockerCount: Math.min(blockers.length, 255),
+              blockers: blockers.slice(0, 8).map(({ kind, covers }) => ({
+                kind: ["captcha", "login-wall", "paywall", "modal", "cookie-consent"].includes(kind) ? kind : "other",
+                covers: ["partial", "viewport", "target"].includes(covers) ? covers : "other",
+              })),
+              visibleSameOriginLinks: Math.min(usable.filter(item => item.tag === "a" && item.href &&
+                origin !== undefined && URL.parse(item.href)?.origin === origin).length, 255),
+              visibleMenuControls: Math.min(usable.filter(item => item.role === "menuitem" || item.expanded !== undefined).length, 255),
+            };
+          }
+        }
         return observed;
       } catch (error) {
         if (check) check.snapshot = "failed";
+        if (guide) guidanceSnapshot = "failed";
         throw error;
       }
     },
@@ -436,6 +461,8 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
     let previous = initial;
     while (actionsTaken() < actionLimit) {
       failureStage = "follow-guidance";
+      guidanceResult = "waiting";
+      guidanceSnapshot = undefined;
       try {
         await userEvent.click(showLink);
       } catch (error) {
@@ -458,6 +485,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
           }, { timeout: lastInstruction === undefined ? 45_000 : 50_000 }).toBe(true);
           const failure = guidanceFailure.query();
           if (failure) {
+            guidanceResult = "unavailable";
             const instruction = failure.textContent ?? "The link could not be highlighted";
             const [, branch, leaf] = instruction.match(/^The open menu (?:“[^”]+” › )*“([^”]+)” calls this link “([^”]+)”\.?$/u) ?? [];
             const branchMatches = labelMatchesGoal(branch);
@@ -494,6 +522,12 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
                   outcome.guideResult = instruction;
                   return;
                 }
+                outcome.guidanceRecovery = instruction === privateFormRecovery ? "private-form" :
+                  instruction.startsWith("I couldn’t read this page.") ? "unobservable" :
+                  instruction.startsWith("The page or task changed.") ? "changed" :
+                  instruction === "I couldn't find a link to point to on this page." ? "no-link" :
+                  instruction === "I could not highlight a link on this page." ? "guide-exception" :
+                  /^I (couldn’t reach Grace|need you to sign in)|^Sign in to Grace/u.test(instruction) ? "guide-account" : "other";
                 throw new Error(instruction);
               }
               await userEvent.click(nextMenu);
@@ -504,7 +538,11 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
             }).toBe(true);
             continue;
           }
-          if (linkGuidance.query() !== null) break;
+          if (linkGuidance.query() !== null) {
+            guidanceResult = "link";
+            break;
+          }
+          guidanceResult = "menu";
           const instruction = menuGuidance.element().textContent;
           if (!instruction || instruction === lastInstruction) throw new Error("Grace did not present fresh submenu guidance");
           outcome.menuInstruction = instruction;
@@ -623,6 +661,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
     const failure = publicFailure(error, "Browser journey");
     outcome.failure = failure.message;
     outcome.failureStage = failureStage;
+    if (failureStage === "follow-guidance") outcome.guidanceFailure = {
+      result: guidanceResult, snapshot: guidanceSnapshot ?? "not-requested",
+    };
     if (pendingCheck) {
       const endedAt = performance.now();
       const { startedAt, returnedAt, resumed, snapshot } = pendingCheck;
