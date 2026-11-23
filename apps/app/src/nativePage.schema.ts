@@ -10,9 +10,13 @@ export type RequestKey = typeof RequestKey.Type
 export const Url = Schema.String.pipe(Schema.brand("Url"))
 export type Url = typeof Url.Type
 
-export const SecurePage = Url.check(Schema.isPattern(/^https:\/\/[a-z0-9.-]+(?::\d+)?(?:[/?#]\S*)?$/i))
+const pageUrl = (pattern: RegExp) => Url.check(Schema.isPattern(pattern, {
+  arbitraryConstraint: { minLength: 32, patterns: [{ source: pattern.source.replace("^https", "^[hH][tT][tT][pP][sS]"), flags: "" }] }
+}))
 
-export const LoopbackPage = Url.check(Schema.isPattern(/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|[a-z0-9.-]+\.localhost)(?::\d+)?(?:[/?#]\S*)?$/i))
+export const SecurePage = pageUrl(/^https:\/\/[a-z0-9.-]+(?::\d+)?(?:[/?#]\S*)?$/i)
+
+export const LoopbackPage = pageUrl(/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\]|[a-z0-9.-]+\.localhost)(?::\d+)?(?:[/?#]\S*)?$/i)
 
 const surface = {
   id: PageId,
