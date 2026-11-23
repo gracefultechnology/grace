@@ -476,7 +476,7 @@ it("See all my email in one place", async () => {
     await new Promise<void>((resolve, reject) => {
       const transaction = deviceFiles.transaction("files", "readwrite");
       transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(new Error("Could not seed saved attachment choices", { cause: transaction.error }));
+      transaction.onabort = () => reject(new Error("Could not seed saved attachment choices", { cause: transaction.error }));
       const store = transaction.objectStore("files");
       const stored = store.getAll();
       stored.onsuccess = () => {
