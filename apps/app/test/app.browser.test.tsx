@@ -2359,7 +2359,10 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
   await act(() => userEvent.fill(page.getByRole("textbox", { name: "Find a file" }), "Garden notes"));
   await tap("Find");
   await expect.poll(() => reads.length).toBe(3);
-  await act(() => { reads[2].resolve({ entries: [current] }); });
+  await act(async () => {
+    reads[2].resolve({ entries: [current] });
+    await reads[2].promise;
+  });
   const result = page.getByRole("button", { name: /Garden notes/ });
   const resultIsSelected = () => Boolean(result.query()?.closest('[aria-current="true"]'));
   await expect.poll(resultIsSelected).toBe(true);
@@ -3264,24 +3267,21 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     }
     signInWidget = "accountNumber";
     identifierEvidence = idleIdentifier;
-    for (const [index, label] of ["Account number or email", "Email address or account ID"].entries()) {
-      combinedLabel = label;
+    const expectHelpGuide = async (expectedCalls: number) => {
       await tap(showLink);
-      await expect.poll(() => guideCalls).toBe(beforeIdentifierGuide + index + 1);
+      await expect.poll(() => guideCalls).toBe(expectedCalls);
       await routeTo(page.getByText("Look for “Help center” on example.org."));
       expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
         documentId: about.id, command: { guidance: { nodeId: "help" } },
       });
+    };
+    for (const [index, label] of ["Account number or email", "Email address or account ID"].entries()) {
+      combinedLabel = label;
+      await expectHelpGuide(beforeIdentifierGuide + index + 1);
     }
     signInWidget = "hidden";
     newsletterEmail = blankNewsletterEmail;
-    const beforeNewsletterGuide = guideCalls;
-    await tap(showLink);
-    await expect.poll(() => guideCalls).toBe(beforeNewsletterGuide + 1);
-    await routeTo(page.getByText("Look for “Help center” on example.org."));
-    expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
-      documentId: about.id, command: { guidance: { nodeId: "help" } },
-    });
+    await expectHelpGuide(guideCalls + 1);
 
     newsletterEmail = null;
     currentPage = { ...help, path: "/help/center" };

@@ -533,6 +533,13 @@ pure def stepWindowChangesKeepConversation(before: Assistant, via: str, after: A
 ```quint
 pure def sometimesPaused(a: Assistant): bool = a.activity == Paused
 pure def sometimesRechecking(a: Assistant): bool = a.activity == Rechecking
+pure val eval_witness_sometimesRechecking = (
+  ("open", C::ConversationUser),
+  ("beginTask", "task", "Read the account", C::ConversationUser),
+  ("collapseForWork", "task", 1, C::ConversationRuntime),
+  ("startStep", "task", 1, "read", C::ConversationRuntime),
+  ("receiveStep", "task", 1, "read", "account", true, C::ConversationRuntime),
+  ("continueTask", C::ConversationUser))
 pure def sometimesWebsiteWait(a: Assistant): bool = a.activity == WebsiteWait
 pure def sometimesUserWait(a: Assistant): bool = a.activity == UserWait
 pure def sometimesReplacementQuestion(a: Assistant): bool = a.replacementId != ""
