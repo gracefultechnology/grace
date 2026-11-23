@@ -382,7 +382,8 @@ pure def exampleFillWorkspace(target: str, valueRef: str): WS::Workspace = {
 pure val billFill = exampleFillWorkspace("bill-amount", "chosen-payment")
 pure val bookedNameWrite = MA::savedWorkspace(AC::observedSample(WS::initial))
 pure val bookingNameBinding: BookingDetailBinding = { target: "name-field", valueRef: "memory-name-revision-2", detail: "name", answerVersion: 5 }
-pure val bookingNameField = BookingSavedField(bookingNameBinding)
+pure val bookingNameField = BookingSavedField({ target: bookingNameBinding.target, valueRef: bookingNameBinding.valueRef,
+  detail: bookingNameBinding.detail, answerVersion: bookingNameBinding.answerVersion })
 pure val bookedNameAuthorization = MA::authorizedFill(MA::approvedFact(M::initial))
 pure val bookingNameRead: ResolvedBookingDetail = { details: { facts: List(bookedNameAuthorization.state) },
   resolved: { owner: K::sampleVisitKey.owner, valueRef: bookingNameBinding.valueRef, authorization: bookedNameAuthorization.out.nth(0) } }
