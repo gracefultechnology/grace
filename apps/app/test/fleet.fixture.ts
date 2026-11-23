@@ -295,19 +295,16 @@ export const fleetStatementCases = [
   { billerId: "adventhealth-castle-rock-castle-rock-co-de3968", template: "mychart" },
   { billerId: "advance-america-82c9f5", template: "loan-servicer" },
   { billerId: "alexandria-oh-municipal-income-tax-administered--565714", template: "income-tax" },
-  { billerId: "anoka-municipal-utility-city-of-anoka-252a5c", template: "invoicecloud" },
   { billerId: "b-and-b-sanitation-waste-connections-fec9e8", template: "waste-hauler" },
   { billerId: "belton-honea-path-wa-sc0410011-66b378", template: "xpress" },
   { billerId: "colyell-community-water-6ce73c", template: "doxo" },
-  { billerId: "aflac-dental-insurance-60fdf1", template: "insurance" },
-  { billerId: "ace-cash-express-bill-payment-5a3f3c", template: "invoice-portal" },
   { billerId: "above-all-satellite-localoop-inc-a40f31", template: "telecom" },
   { billerId: "a-federal-credit-union-ede01e", template: "bank-billpay" },
   { billerId: "american-eagle-financial-credit-union-e29614", template: "paymentus" },
+  { billerId: "ameren-illinois-7add9b", template: "kubra" },
 ];
 
 export const fleetStatementRefusals = [
-  { billerId: "ameren-illinois-7add9b", template: "kubra" },
   { billerId: "accura-healthcare-2b95c9", template: "rent-portal" },
   { billerId: "1-800-contacts-49fab3", template: "streaming" },
   { billerId: "180-medical-ce4448", template: "patient-pay" },
@@ -315,6 +312,9 @@ export const fleetStatementRefusals = [
   { billerId: "aarp-medicare-rx-unitedhealthcare-prescription-d-a4cd2b", template: "health-plan" },
   { billerId: "abbeville-county-treasurer-sc-cfd70d", template: "property-tax" },
   { billerId: "adams-county-ms-online-car-tag-renewal-county-ta-c199ba", template: "dmv" },
+  { billerId: "anoka-municipal-utility-city-of-anoka-252a5c", template: "invoicecloud" },
+  { billerId: "aflac-dental-insurance-60fdf1", template: "insurance" },
+  { billerId: "ace-cash-express-bill-payment-5a3f3c", template: "invoice-portal" },
 ];
 
 const fleetStatementSelections = [
