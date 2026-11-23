@@ -7,6 +7,8 @@ import { Client } from "pg"
 import { googleRequest } from "../../../vendor/eliza/packages/cloud/src/google.vibe"
 import { approveSave, beginEdit, create, edit, initial as noEntry, save, saveFailed, type Calendar } from "../gen/app__calendar.effect.vibe"
 import { canStoreCreated, initial as noView, storeCreated } from "../gen/app__calendarView.effect.vibe"
+import { machine as accountsMachine } from "../gen/app__accounts.effect.vibe"
+import { instances, Instances, tablet } from "../src/instances.vibe"
 import type { Folder } from "../gen/app__emailItem.effect.vibe"
 import { accountRequests, googleChanges, googleReads, googleRoute } from "../src/cloudRequests.vibe"
 import { type AccountRef, Connector, connector, NeedsSignIn, secretPassword, SignInPage } from "../src/connector.vibe"
@@ -407,7 +409,7 @@ it.live("Write or reply and confirm before sending: contacts resolve, drafts kee
   }
 })
 
-it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment whose provider receipt binds its reminder, person and source email to the saved occurrence, and, when no receipt arrived, the feed brings the company's copy with the reminder, person and email the tablet's entry held and the tablet's entry leaves, a refresh that keeps what only the tablet knows, a change, an all-day day that stays one date in every zone and is never turned into a timed one, and a deletion the company cannot confirm twice", () => effect {
+it.live("Browse my calendar and open an exact occurrence, and add and correct an appointment: the feed, a new appointment whose provider receipt binds its reminder, person and source email to the saved occurrence, and, when no receipt arrived, the feed brings the company's copy with the reminder, person and email the tablet's entry held and the tablet's entry leaves, a refresh that keeps what only the tablet knows, a change, an all-day day that stays one date in every zone and is never turned into a timed one, a deletion the company cannot confirm twice, and a repetition the company never held removed on the tablet only", () => effect {
   provide client {
     const { secret } = try signIn(cloud)
     provide connectorAt(secret) {
@@ -530,6 +532,8 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const newAllDay = try calendar.write(approveSave(create(noEntry, { ...identity, occurrenceId: "picnic", sourceRef: "", sourceAccount: 0 }, { ...birthday.committed, title: "Picnic" }, "CalendarUser"), 1, "CalendarUser"), view([], "Asia/Tokyo"))
       const afterRename = (try birthdayIn("Asia/Tokyo", [birthday]))?.incoming.committed
       const removed = [try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(eyeCheck.identity, "EntireSeries")]
+      const eyeInstance = `eye-check_${new Date(eyeCheck.committed.startAt).toISOString().replace(/[-:]|\.\d+/g, "")}`
+      const repetitionKeptHere = try calendar.removeRepetition(eyeCheck.identity, eyeCheck.committed)
       const gone = (try feed([eyeCheck, visit])).filter((p) => p.incoming.identity.occurrenceId === visit.identity.occurrenceId).map((p) => p.incoming.phase)
       const held = approveSave(create(noEntry, { ...identity, occurrenceId: "delayed-visit" }, { ...details, title: "Second appointment" }, "CalendarUser"), 1, "CalendarUser")
       try outage(cloud, secret, false, "beforeCreate")
@@ -584,7 +588,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         allDay: [seen?.incoming.committed.allDay, seen?.incoming.committed.startAt === tokyoMidnight, seen?.incoming.committed.timezone, seen?.scheduleVerified],
         floating: [elsewhereSeen?.incoming.committed.startAt === tokyoMidnight + 9 * hour, elsewhereSeen?.incoming.committed.timezone, elsewhereSeen?.scheduleVerified],
         stored: [renamed.succeeded, shifted.succeeded, newAllDay.succeeded, afterRename?.title, afterRename?.allDay, afterRename?.startAt === tokyoMidnight],
-        removed, gone
+        removed, repetitionKeptHere, gone
       }, {
         eyeCheck: ["Saved", "Dr. Patel", true],
         added: { revision: 2, succeeded: true, published: [], providerId: visit.identity.occurrenceId },
@@ -603,9 +607,23 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         floating: [true, "UTC", true],
         stored: [true, false, false, "Joan’s 80th birthday", true, true],
         removed: [{ succeeded: true, evidence: `deleted:${visit.identity.occurrenceId}` }, { succeeded: false, evidence: "" }, { succeeded: false, evidence: "series-unsupported" }],
+        repetitionKeptHere: { succeeded: true, evidence: `kept-here:${eyeInstance}` },
         gone: ["Deleted"]
       }))
     }
+  }
+})
+
+it.live("Browse my calendar and open an exact occurrence: a calendar the tablet stored before the form's Day and Time lists opens as it was", () => effect {
+  const details = { title: "Bridge club", location: "", participant: "", notes: "", startAt: 0, endAt: 60 * 60 * 1000, timezone: "UTC", allDay: false, seriesId: "", recurrence: "Once" as const, reminderEnabled: false, leadTime: 0, important: false }
+  const identity = { owner: "tablet", calendarId: "tablet", occurrenceId: "bridge", sourceRef: "", sourceAccount: 0, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
+  const { picker: _picker, ...before } = { ...noView, owner: "tablet", calendarId: "tablet", timezone: "UTC", entries: [save(approveSave(create(noEntry, identity, details, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore")] }
+  provide Layer.provideMerge(instances, Layer.merge(accountsMachine(), KeyValueStore.layerMemory)) {
+    try (try KeyValueStore.KeyValueStore).set("calendar/0", JSON.stringify(before))
+    const box = try (try Instances).calendar(tablet)
+    try box.send({ type: "openCalendar", owner: "tablet", calendarId: "tablet", timezone: "UTC" }, "ViewUser")
+    const opened = try box.get()
+    try Effect.try(() => assert.deepStrictEqual([opened.opened, opened.picker, opened.entries.map((c) => [c.identity.occurrenceId, c.phase])], [true, "NoPicker", [["bridge", "Saved"]]]))
   }
 })
 

@@ -21,7 +21,10 @@ not necessarily 168 hours. Grid rows cover every date in the displayed month.
 The prototype's five-row grid, 21-day picker and fixed sample date do not limit
 this model: the form's Day and Time lists are the prototype's 21 days from
 today and half hours from 7 am to 7 pm, plus the appointment's own day and
-time, so a form never moves an appointment she did not move. UI sorts each day's rows by start time and shows their occurrence IDs.
+time, so a form never moves an appointment she did not move. Likewise Remind
+me offers No, Day before and 1 hour before, plus the appointment's own
+reminder when it is another, such as the 30 minutes before its company sent,
+so saving never changes a reminder she did not change. UI sorts each day's rows by start time and shows their occurrence IDs.
 
 ## Story: Browse my calendar and open an exact occurrence
 
@@ -327,7 +330,7 @@ pure def freshEntryAllowed(v: CalendarView, entry: EntrySeed): bool =
   not(v.cancelledIds.contains(entry.identity.occurrenceId)) and
   v.entries.every(c => c.identity.occurrenceId != entry.identity.occurrenceId) and
   (entry.details.seriesId == "" or seriesAt(v, entry.details.seriesId).version == -1) and
-  not(v.deletedSeries.contains(entry.details.seriesId))
+  not(v.deletedSeries.contains(entry.details.seriesId)) and repetitionAllowed(v, C::initial, entry.details)
 pure def canCreateOccurrence(v: CalendarView, entry: EntrySeed, by: ViewActor): bool =
   by == ViewUser and v.opened and entry.identity.kind == C::Appointment and freshEntryAllowed(v, entry)
 pure def createOccurrence(v: CalendarView, entry: EntrySeed, by: ViewActor): CalendarView =
@@ -344,6 +347,7 @@ pure def canChangeOccurrence(v: CalendarView, id: str, command: OccurrenceAction
   mayChangeEntry(c, command, by) and
   (match command {
     | ChangeDetails(request) => not(v.deletedSeries.contains(request.details.seriesId)) and
+        repetitionAllowed(v, c, request.details) and
         (if (c.hasSaved and c.committed.seriesId != "") request.details.seriesId == c.committed.seriesId
          else request.details.seriesId == "" or seriesAt(v, request.details.seriesId).version == -1)
     | EntryStored(_) => c.committed.seriesId == "" and c.draft.seriesId == "" and c.draft.recurrence == C::Once
@@ -368,6 +372,34 @@ pure def sometimesUnsavedEntryCancelled(v: CalendarView): bool = v.cancelledIds.
 pure def sometimesEntrySaveFailed(v: CalendarView): bool = v.entries.some(c => c.storageError == C::SaveFailure)
 pure def sometimesOwnedReminderShown(v: CalendarView): bool = v.entries.some(c => c.reminder == C::ReminderShown)
 pure def sometimesOwnedReminderDismissed(v: CalendarView): bool = v.entries.some(c => c.reminder == C::ReminderDismissed)
+```
+
+### An email account's calendar is asked to keep only what its company keeps
+
+Eliza Cloud's calendar route sends the company an appointment's title, place,
+notes, day and time, and refuses a repetition rule or a reminder with
+`400 invalid_request` (`spec/cloud/services/google/calendar.md`, "A create
+needs an Idempotency-Key, a change or deletion one exact If-Match revision,
+and none takes a recurrence rule"; a reminder is a field its create and
+change bodies do not take). So the tablet never claims a repetition the
+company does not hold: on an email account's calendar a new appointment, hers
+or one Grace proposes, does not repeat, and a saved one keeps the repetition
+its company sent, which is all the form's Repeats offers for it. Only the
+tablet's own calendar, the collection bound to the calendar `tablet`, makes,
+changes or stops a repetition. A reminder on any calendar is the tablet's
+own: the tablet reminds her, and the company keeps whatever reminders it
+had.
+
+```quint
+pure val tabletCalendarId: str = "tablet"
+pure def keepsRepetition(v: CalendarView): bool = v.calendarId == tabletCalendarId
+pure def repetitionAllowed(v: CalendarView, c: C::Calendar, details: C::EntryDetails): bool =
+  keepsRepetition(v) or details.recurrence == (if (c.hasSaved) c.committed.recurrence else C::Once)
+pure def lawAccountCalendarStartsNoRepetition(v: CalendarView, entry: EntrySeed): bool =
+  (not(keepsRepetition(v)) and freshEntryAllowed(v, entry)) implies entry.details.recurrence == C::Once
+pure def lawAccountCalendarKeepsItsRepetition(v: CalendarView, c: C::Calendar, details: C::EntryDetails): bool =
+  (not(keepsRepetition(v)) and c.hasSaved and repetitionAllowed(v, c, details)) implies
+    details.recurrence == c.committed.recurrence
 ```
 
 ### The form opens its Day or its Time list, one at a time
@@ -553,7 +585,7 @@ pure def canConfirmChange(v: CalendarView, changeRequest: ConfirmedChange, by: V
   v.deletion == NoDeletion and not(hasEditing(v)) and
   (not(v.opened) or v.selectedId == "" or v.selectedId == changeRequest.id) and
   C::validDetails(details) and details.important == c.committed.important and
-  not(v.deletedSeries.contains(details.seriesId)) and
+  not(v.deletedSeries.contains(details.seriesId)) and repetitionAllowed(v, c, details) and
   (if (c.committed.seriesId != "") details.seriesId == c.committed.seriesId
    else details.seriesId == "" or seriesAt(v, details.seriesId).version == -1)
 pure def changedEntry(c: C::Calendar, details: C::EntryDetails): C::Calendar =
@@ -839,6 +871,13 @@ store persists the exact request generation before success is displayed; failed
 storage retains the selected entry and lets the user choose again. Navigating
 or publishing another row cannot change a pending target. The store's result
 names its receipt evidence; the view keeps only the result, not the receipt.
+On an email account's calendar, Delete only this one of a repeating
+appointment deletes that one occurrence at its company, by the company's own
+ID for it, its event's ID and the occurrence's original start, as Eliza
+Cloud's deletion of an instance ID removes one occurrence; the rest of the
+series stays there and here. Where the company answers that it has no such
+occurrence, the repetition was the tablet's own and is removed here only.
+Delete every one deletes the company's event, and with it the series.
 Discovered by the proof: a pending or failed whole-series deletion retains a
 recurring selected event. Without that fact an arbitrary pending state could
 treat a nonrepeating event's empty series ID as a deleted series.
