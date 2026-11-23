@@ -165,6 +165,7 @@
       "inputs": [
         "vibestack/**",
         "!vibestack/selftest.ts",
+        "!vibestack/selftests/**",
         "!vibestack/{testing,stories,design}/test/**",
         "!vibestack/fixtures/**",
         "!vibestack/examples/**",
@@ -208,6 +209,7 @@
         "!*.md",
         "vibestack/**",
         "!vibestack/{examples,studio}/**",
+        "!vibestack/selftests/{docs,examples}.ts",
         "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static}/**",
         "!**/.DS_Store",
         "spec/**",
@@ -234,6 +236,7 @@
         "eslint.config.js",
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
+        "!vibestack/selftests/{docs,examples}.ts",
         "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static,__traces__}/**",
         "!**/.DS_Store",
         "!vibestack/{studio,examples}/**/gen/**",
@@ -265,6 +268,7 @@
         "eslint.config.js",
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
+        "!vibestack/selftests/{docs,examples}.ts",
         "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static,__traces__}/**",
         "!**/.DS_Store",
         "!vibestack/{studio,examples}/**/gen/**",
@@ -296,6 +300,7 @@
         "eslint.config.js",
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
+        "!vibestack/selftests/{docs,examples}.ts",
         "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static,__traces__}/**",
         "!**/.DS_Store",
         "!{apps,packages,vibestack/studio,vibestack/examples}/**/gen/**",
@@ -330,6 +335,8 @@
     "//#selftest:examples": {
       "inputs": [
         "vibestack/**",
+        "!vibestack/selftest.ts",
+        "!vibestack/selftests/{docs,tools}.ts",
         "!vibestack/{studio,fixtures}/**",
         "!vibestack/{testing,stories,design}/test/**",
         "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static,__traces__}/**",
