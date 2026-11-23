@@ -37,11 +37,21 @@ public final class GraceAccount extends Plugin {
  private CloudPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
  private GraceBrowserGuide guide;
+ private Runnable stopLeaseUpdates;
 
  @Override public void load() {
   guide = new GraceBrowserGuide(getContext());
   passwordBackup = new CloudPasswordBackup(account(getContext()), BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT);
   recovery = new GracePasswordRecovery(getActivity(), this);
+  stopLeaseUpdates = GraceDeviceLeaseJob.listen(getContext(), () -> ACCOUNT.execute(() -> {
+   try { publishStatus(account(getContext())); }
+   catch (Exception unavailable) { }
+  }));
+ }
+
+ @Override protected void handleOnDestroy() {
+  if (stopLeaseUpdates != null) stopLeaseUpdates.run();
+  super.handleOnDestroy();
  }
 
  @PluginMethod public void passwordRecoveryStatus(PluginCall call) {
@@ -106,6 +116,22 @@ public final class GraceAccount extends Plugin {
   CloudDeviceAccount account = account(context);
   if (account.awaitingAcknowledgment()) throw new IllegalStateException("Account change in progress");
   return account.session();
+ }
+
+ static String vaultCredentialBinding(Context context, CloudDeviceAccount.Session current) throws Exception {
+  return account(context).accountBinding(current.token());
+ }
+
+ static void maintainDeviceLease(Context context) throws Exception {
+  CloudDeviceAccount account = account(context);
+  var before = account.session();
+  try { account.maintainLease(); }
+  finally {
+   if (!java.util.Objects.equals(before, account.session())) {
+    GraceAgentService.deviceCredentialChanged(context);
+    GraceDeviceLeaseJob.leaseChanged(context);
+   }
+  }
  }
 
  static boolean deviceOnly(Context context) throws Exception { return account(context).isDeviceOnly(); }

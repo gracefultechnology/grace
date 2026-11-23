@@ -74,6 +74,14 @@ public final class GraceAccount extends ElizaSignInPlugin {
   return new CloudDeviceAccount.Session(current.value(), owner.accountId(), owner.organizationId());
  }
 
+ static String vaultCredentialBinding(Context context, CloudDeviceAccount.Session current) {
+  return DeviceCustody.accountBinding(context, API.toString(), current.token());
+ }
+
+ static void maintainDeviceLease(Context context) {
+  DeviceCustody.maintain(context, API.toString());
+ }
+
  static boolean deviceOnly(Context context) throws Exception {
   return !GracePasswordsOwner.accountChanging() && new SharedGraceCredentials(context).legacyOwner() == null
    && DeviceCustody.deviceOnly(context, API.toString());
@@ -97,8 +105,14 @@ public final class GraceAccount extends ElizaSignInPlugin {
   mailReads = CloudRequests.forMailReads(getContext().getCacheDir());
   super.load();
   custodySubscription = DeviceCustody.reader(getContext(), API.toString()).listen(notice -> {
-   if (!GracePasswordsOwner.accountChanging() && (notice instanceof Notice.SignedOutNotice || notice instanceof Notice.ExpiredNotice)) {
+   if (GracePasswordsOwner.accountChanging()) return;
+   if (notice instanceof Notice.SignedOutNotice || notice instanceof Notice.ExpiredNotice) {
     ACCOUNT.execute(this::retireUnconfirmedOwner);
+   } else if (notice instanceof Notice.Announce) {
+    ACCOUNT.execute(() -> {
+     GraceAgentService.deviceCredentialChanged(getContext());
+     publishSession();
+    });
    }
   });
  }
