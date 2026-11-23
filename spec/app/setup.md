@@ -485,8 +485,9 @@ without asking the person to sign in for every key rotation. The operating
 system can maintain the lease and renew the key on a connected tablet
 while Grace is closed. The selected Grace Cloud deployment issues the lease
 and acknowledges the successor key before the tablet uses it. A tablet
-obtains its lease at verified enrollment. An open Grace view checks the
-current lease again when Android reports that its credential changed.
+obtains its lease at verified enrollment or by signing in again as the
+same owner. An open Grace view checks the current lease again when Android
+reports that its credential changed.
 
 The native account custodian keeps the lease secrets. The renderer, the
 assistant and browser tabs receive no lease credentials. A key renewed
