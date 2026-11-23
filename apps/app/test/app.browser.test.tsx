@@ -3648,7 +3648,7 @@ it.each(["simple index", "sectioned index", "wrapped directory", "grouped help",
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const target = layout === "simple index" || layout === "wrapped directory" ? "Club events" : "help topics";
   const request = 'Find the public index of "' + target + '".';
-  const articleName = target;
+  const articleName = layout === "sectioned index" ? "Saturday hike" : target;
   const articleRequest = 'Open the page named "' + articleName + '".';
   await Effect.runPromise(Effect.provide(script(cloud, secret, [
     { said: request, answer: JSON.stringify({ text: "Review this plan.", isQuestion: false, answers: [],
@@ -3676,7 +3676,7 @@ it.each(["simple index", "sectioned index", "wrapped directory", "grouped help",
   const opening = await fixture(home, indexContent);
   const collection = await fixture(index, collectionContent);
   const detail = await fixture(article, '<nav aria-label="Breadcrumb"><a href="/events">Club events</a></nav>' +
-    '<article>' + heading + '<p>Saturday’s hike starts at the east gate.</p></article>' +
+    '<article><h1>' + articleName + '</h1><p>Saturday’s hike starts at the east gate.</p></article>' +
     '<aside aria-label="Related club events"><h2>' + target + '</h2>' + entries + '</aside>');
   let current = opening;
   let documentId = "opening";
@@ -3743,6 +3743,7 @@ it.each(["simple index", "sectioned index", "wrapped directory", "grouped help",
     await tap(check);
     await routeTo(status);
     expectOpen();
+    if (layout === "sectioned index") await expect.element(button("Show me the link")).toBeVisible();
 
     const privateField = collection.document.createElement("input");
     privateField.type = "password";
