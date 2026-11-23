@@ -136,7 +136,7 @@ lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: Workspac
 {
   hide *;
   reveal inv;
-  reveal stepAHeldTaskDoesNotAdvance;
+  reveal stepAHeldTaskDoesNotAdvance, heldTaskSteps, heldTaskEvidence;
   if inv(w) && canVisit(w, destination, by_) {
     VisitInvariant(w, destination, by_);
     VisitTransitionFacts(w, destination, by_);
@@ -236,7 +236,7 @@ lemma togglePopover_ensures(w: Workspace, popover: app__shell_RailPopover, by_: 
 {
   hide *;
   reveal inv;
-  reveal stepAHeldTaskDoesNotAdvance;
+  reveal stepAHeldTaskDoesNotAdvance, heldTaskSteps, heldTaskEvidence;
   if inv(w) && canTogglePopover(w, popover, by_) {
     PopoverInvariant(w, popover, by_);
     PopoverTransitionFacts(w, popover, by_);
@@ -1668,7 +1668,7 @@ lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_Browse
 {
   hide *;
   reveal inv;
-  reveal stepAHeldTaskDoesNotAdvance;
+  reveal stepAHeldTaskDoesNotAdvance, heldTaskSteps, heldTaskEvidence;
   if inv(w) && canChangePage(w, browserInput, by_) {
     ChangePageInvariant(w, browserInput, by_);
     ChangePageTransitionFacts(w, browserInput, by_);
