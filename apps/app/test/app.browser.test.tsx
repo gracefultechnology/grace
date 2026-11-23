@@ -609,7 +609,11 @@ it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday
   await tap("Home");
   await expect.element(button("Expand")).toBeVisible();
   await tap("More apps");
+  await expect.element(page.getByRole("button", { name: /^Files\b/ })).toBeVisible();
+  await expect.element(button("Passwords")).not.toBeInTheDocument();
   await tap("More apps");
+  await expect.element(button("Passwords")).toBeVisible();
+  await expect.element(page.getByRole("button", { name: /^Files\b/ })).not.toBeInTheDocument();
   await tap("Previous page");
   await tap("Previous page");
   await tap("Close Grace");
@@ -2521,19 +2525,23 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
   await expect.element(page.getByText("Updated on this tablet", { exact: true })).not.toBeInTheDocument();
   const filesPage = page.getByRole("button", { name: "Page 2", exact: true });
   await expect.element(filesPage).toBeVisible();
-  const swipe = (direction: "left" | "right") => act(async () => {
+  const swipe = (direction: "left" | "right", cancel = false) => act(async () => {
     const session = cdp();
     const cards = filesPage.element().parentElement!.getBoundingClientRect();
     const [from, to] = direction === "left" ? [0.85, 0.2] : [0.2, 0.85];
     const point = (across: number) => [{ x: cards.left + cards.width * across, y: innerHeight * 0.4 }];
     await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: point(from) });
     await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: point(to) });
-    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await session.send("Input.dispatchTouchEvent", { type: cancel ? "touchCancel" : "touchEnd", touchPoints: [] });
   });
+  await swipe("left", true);
+  await expect.element(page.getByRole("button", { name: "Page 1", exact: true })).toHaveAttribute("aria-current", "true");
   await swipe("left");
   await expect.element(filesPage).toHaveAttribute("aria-current", "true");
+  await expect.element(page.getByRole("button", { name: "Passwords", exact: true })).not.toBeInTheDocument();
   await swipe("left");
   await expect.element(page.getByRole("button", { name: "Page 3", exact: true })).toHaveAttribute("aria-current", "true");
+  await expect.element(page.getByRole("button", { name: /^Files\b/ })).not.toBeInTheDocument();
   await swipe("right");
   await expect.element(filesPage).toHaveAttribute("aria-current", "true");
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
