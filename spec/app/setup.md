@@ -478,6 +478,23 @@ pure def sometimesWaitsForGraceAtTheHandOver(s: Setup): bool = s.phase == Away a
 > As a person using Grace, I can sign in to my own Grace account, see my
 > subscription, manage it with the payment provider, or sign out from Settings.
 
+### A verified tablet renews its mail and calendar lease in native custody
+
+The acknowledged tablet can keep its delegated mail and calendar access
+without asking the person to sign in for every key rotation. The operating
+system can run renewal on a connected tablet while Grace is closed. The
+selected Grace Cloud deployment issues the lease and acknowledges the
+successor key before the tablet uses it. An existing install without a
+lease can continue its hosted Email and Calendar visits. It obtains a
+lease at its next verified enrollment.
+
+The native account custodian keeps the lease secrets. The renderer, the
+assistant and browser tabs receive no lease credentials. A key renewed
+through the same lease retains its binding to the same vault owner even
+after an interruption or restart. A new enrollment has its own credential
+binding and follows the existing vault ownership rules. Sign-out removes
+the lease from use and keeps any outstanding revocation in native custody.
+
 ### Subscription actions belong to the Grace account that is signed in
 
 Settings opens Account even without a network connection. The device uses
@@ -1020,7 +1037,7 @@ pure def lawSignedOutCannotOpenBoundPasswords(scope: str, generationId: str): bo
 
 ### Linking local passwords requires account verification and the person's approval
 
-The host verifies the current account and product scope before binding the current credential generation. Linking existing device-only entries additionally requires confirmation from the person after device authentication. The same owner may verify a renewed credential. A different owner cannot take over this vault.
+The host verifies the current account and product scope before binding the current credential generation. Linking existing device-only entries additionally requires confirmation from the person after device authentication. A successor acknowledged through the same lease retains the verified credential binding. A different owner cannot take over this vault.
 
 ```quint
 pure def mayBindPasswords(custody: PasswordCustody, verifiedScope: str, activeId: str, hasEntries: bool, confirmedLink: bool): bool =

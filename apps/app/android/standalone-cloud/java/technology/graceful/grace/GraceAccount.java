@@ -107,6 +107,16 @@ public final class GraceAccount extends Plugin {
   return account.session();
  }
 
+ static String vaultCredentialBinding(Context context, CloudDeviceAccount.Session current) throws Exception {
+  return account(context).accountBinding(current.token());
+ }
+
+ static void maintainDeviceLease(Context context) throws Exception {
+  CloudDeviceAccount account = account(context);
+  account.renewIfDue();
+  account.retryRevocation();
+ }
+
  static boolean deviceOnly(Context context) throws Exception { return account(context).isDeviceOnly(); }
 
  static boolean handles(Context context, Uri address) { return account(context).handles(address); }
