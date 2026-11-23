@@ -170,7 +170,9 @@ const forgotten = (owner: string) => new Promise<void>((resolve, reject) => {
 });
 const writeTo = async (name: string) => {
   await click(page.getByRole("button", { name: "Write" }));
-  await click(page.getByRole("button", { name, exact: true }));
+  const recipient = page.getByRole("button", { name, exact: true });
+  await expect.element(recipient).toBeVisible();
+  await click(recipient);
 };
 const opened = async (from: RegExp, title: string) => {
   await click(email(from));
