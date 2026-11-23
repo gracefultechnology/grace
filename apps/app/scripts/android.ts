@@ -212,7 +212,7 @@ function resolveNodeRuntime(directory: string, lock: typeof NodeLock.Type, abi: 
 }
 
 function bundleAgent(commit: string, bundle: string) {
-  const generate = (owner: string) => execFileSync("pnpm", ["--dir", upstream, "gen", "--owner", owner], { stdio: "inherit" });
+  const generate = (owner: string) => execFileSync(process.execPath, [path.resolve(app, "../../vibestack/spec.ts"), "gen", "--owner", owner, upstream], { stdio: "inherit" });
   generate("core");
   generate("cloud");
   generate("agent");
