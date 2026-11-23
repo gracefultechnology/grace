@@ -20,6 +20,12 @@ and measures legibility on hardware; this model does not prescribe new pixels.
 > As an older adult, I want to hear Grace at a comfortable pace or read her
 > replies, preview larger text and keep my chosen settings on this device.
 
+While Grace is running and the tablet holds her current volume choice, a volume
+or mute the person sets with the tablet's own keys or Android's sound panel is
+their choice too: it is previewed like a tap, so Settings shows it, Undo
+restores the one before and the next start keeps it. A change made while Grace
+is not running is replaced by the saved choice when she starts.
+
 ### Output voice, pace and text size have one local source of truth
 
 Output Voice off never means that an unheard response is unavailable: the
@@ -142,10 +148,7 @@ volume, mute and output Voice off are different controls; none starts capture.
 Zero volume is muted. Unmute at zero chooses the prototype's 50 percent value.
 Each brightness or volume button press steps from the current session choice,
 including any earlier press still waiting to appear on screen. Volume steps
-from zero while muted. Once the tablet holds Grace's current volume choice, a
-volume or mute the person sets with the tablet's own keys or Android's sound
-panel is their choice too: it is previewed like a tap, so Settings shows it,
-Undo restores the one before and the next start keeps it.
+from zero while muted.
 
 ```quint
 pure def canUndo(p: Preferences, by: PreferenceActor): bool = by == PreferenceUser and p.canUndo
