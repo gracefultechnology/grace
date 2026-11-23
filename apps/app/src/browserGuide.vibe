@@ -435,7 +435,7 @@ function linkGuidance({ native, fixture, page, website, workspace, setup, recove
         }
         if (opensMenu || (branch.length > 0 && !node.exact)) {
           const correction: GuidedNameCorrection = { ...start.step, owner: start.owner, loadVersion: start.loadVersion,
-            documentId: current.documentId, url: start.url.href, href: node.href, original: start.target, label: node.label }
+            documentId: current.documentId, url: start.url.href, href: node.href, original: start.target, label: node.label, witness: { tag: "PublicLinkName" } }
           const offered = hasPublicName(current, start.url, node.label, node.href)
             ? (workspace.send({ type: "offerGuidedNameCorrection", correction }, "Host") catch () => undefined) : undefined
           const alternateHref = offered === undefined ? undefined : node.href

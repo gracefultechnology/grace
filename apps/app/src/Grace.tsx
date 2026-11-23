@@ -68,6 +68,7 @@ const notCounted = (check: Exclude<GuidedCheck, "Confirmed">, step: GuidedStep |
     case "Covered": return "Something on the website covers the page. Close it or answer it there, then check again.";
     case "Used": return `You already used this ${item} for an earlier step. Open the next one.`;
     case "PrivateForm": return privateFormRecovery;
+    case "CategoryOffered": return "Use the category name shown on this website, then check the price order again.";
     case "Refused": return "I couldn’t confirm this step yet.";
   }
 };
@@ -186,12 +187,20 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   };
   const feedback = guideKey && linkFeedback?.key === guideKey ? linkFeedback : undefined;
   const alternateHref = feedback?.result && "alternateHref" in feedback.result ? feedback.result.alternateHref : undefined;
-  const nameOffer = workspace && alternateHref ? currentGuidedNameCorrection(workspace) : undefined;
-  const correction = nameOffer?.tag === "PendingGuidedNameCorrection" && alternateHref === nameOffer.value.href ? nameOffer.value : undefined;
+  const nameOffer = workspace ? currentGuidedNameCorrection(workspace) : undefined;
+  const correction = nameOffer?.tag === "PendingGuidedNameCorrection" &&
+    (nameOffer.value.witness.tag === "LocatedSortCategory" ? checked?.result === "CategoryOffered" : alternateHref === nameOffer.value.href)
+    ? nameOffer.value : undefined;
   const chooseSiteName = () => {
     if (!correction) return;
-    const refused = () => setLinkFeedback((current) => current === feedback
-      ? { key: guideKey, attempt: Symbol(), result: { kind: "Unavailable", words: "The page or task changed. Ask me again on the page you want." } } : current);
+    const refused = () => {
+      if (correction.witness.tag === "LocatedSortCategory") {
+        setStepCheck((current) => current === checked ? { key: scopeKey, result: "Changed" } : current);
+      } else {
+        setLinkFeedback((current) => current === feedback
+          ? { key: guideKey, attempt: Symbol(), result: { kind: "Unavailable", words: "The page or task changed. Ask me again on the page you want." } } : current);
+      }
+    };
     void confirmGuidedName(correction).then((accepted) => { if (!accepted) refused(); }, refused);
   };
   const showLink = () => {
@@ -204,11 +213,10 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": compact over a
   // shown page, and expanded over one the host has not hidden yet. One window at both sizes, so resizing keeps its focus.
   return (
-    <OverPage className={cn(besideRail, "pointer-events-none z-[3]")} style={{ bottom: 6 + keyboard }}>{(drawn) => <>
+    <OverPage className={cn(besideRail, "z-[3]")} style={{ bottom: 6 + keyboard }}>
       <GraceWindow size={expanded ? "expanded" : "compact"} onHeightChange={onHeightChange}
         // Prototype `sizeCompact()`: an explicit height at both sizes, so every change animates.
-        expandedHeight={`calc(100dvh - ${12 + keyboard}px)`}
-        presence={drawn ? "open" : "waiting"}
+        style={expanded ? { height: `calc(100dvh - ${12 + keyboard}px)` } : undefined}
         header={
           <GraceHeader pause={paused ? "paused" : pausable ? "live" : conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
             onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void resumeReadPlan() : interact({ tag: "ResumeSpeech" })}
@@ -309,6 +317,6 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
         </GraceMessages>
       </GraceWindow>
       <VoiceNoticeDialog notice={voiceNotice} continueWith={talk} cancel={() => setVoiceNotice(undefined)} />
-    </>}</OverPage>
+    </OverPage>
   );
 }
