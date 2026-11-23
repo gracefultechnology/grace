@@ -775,9 +775,12 @@ existing item, and its receipt must name the item this operation made.
 Before showing success, Grace checks that the provider receipt names the
 same account, item and operation. Undo is built only from a Trash receipt
 that passed that check, and it names that receipt's operation as the one it
-reverses: the managed Google shell keeps the receipt with the mailbox it shows
-and sends an Undo only for the message, the version and the operation that
-receipt names, so without a confirmed move to Trash there is nothing to undo.
+reverses: the managed Google shell keeps the receipt with the mailbox it shows,
+through a change of folder or another page, until that Undo is confirmed, and
+sends an Undo only for the message, the version and the operation that receipt
+names, so without a confirmed move to Trash there is nothing to undo. The Undo
+button is drawn from that kept receipt, so the page never offers an Undo the
+shell would refuse.
 
 An appointment change is read back before it is sent: the review the person
 sees is the change itself, held by the managed Google shell, and Grace sends
