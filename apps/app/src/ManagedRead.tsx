@@ -320,7 +320,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
           : action.action === "delete" ? "Appointment removed." : "Appointment saved.";
     setWriteNotice({ key: projection, text, offerUndo: action.kind === "trash" && receipt !== undefined });
   });
-  const undo = notice?.offerUndo && snapshot.kind === "mail" ? snapshot.trashed : undefined;
+  const undo = canTrash && notice?.offerUndo && snapshot.kind === "mail" ? snapshot.trashed : undefined;
   const undoVersion = undo?.version;
   const showNotice = notice && <div className="flex flex-wrap items-center gap-3">
     <PageText role="status">{notice.text}</PageText>
