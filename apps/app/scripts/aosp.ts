@@ -62,7 +62,7 @@ try {
   const reviewed = path.join(scratch, "launcher.json");
   fs.writeFileSync(reviewed, JSON.stringify(descriptor));
   await imageRuntime.runPromise(stageLauncher({descriptor: reviewed, apk: stagedApk, output: pending, aapt: tool("aapt"), apksigner,
-    development, provisioning: {
+    development, nativeAbi: targetAbi, provisioning: {
       assistant: {tag: "NoAssistant"}, requires: {autofill: false, allFilesAccess: false},
       telephonyRoles: false, lockScreen: "LauncherMayUseLockScreen",
     }}));
