@@ -150,7 +150,7 @@ async function operatePublicSort(site: Site, definition: BenchmarkDefinition, ac
       definition.taskId === "352" ? [/^Health (&|and) Household$/i, /^Diet (&|and) Sports Nutrition$/i, /^Nutrition Bars (&|and) Drinks$/i] : [];
     const leafName = definition.taskId === "353" ? /^Competitive Swimwear$/i :
       definition.taskId === "354" ? /^Living Room Furniture$/i :
-      definition.taskId === "355" ? /^Kids(?:['’])? Bedding$/i : undefined;
+      definition.taskId === "355" ? /^Kids(?:[\u0027’])? Bedding$/i : undefined;
     const navName = known[0] ?? leafName;
     if (!navName) throw new Error("The fixture has no public category operator");
     const nav = website.getByRole("navigation").filter({
@@ -168,7 +168,11 @@ async function operatePublicSort(site: Site, definition: BenchmarkDefinition, ac
         return [labels];
       })) : undefined;
     const menu = disclosed?.length === 1
-      ? (disclosed[0] ?? []).map(label => new RegExp("^" + label.replace(/[.*+?^$${}()|[\]\\]/gu, "\\$&") + "$", "iu")) : known;
+      ? (disclosed[0] ?? []).map(label => {
+          const escaped = label.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")
+            .replace(/['"]/gu, quote => quote === "'" ? "\\u0027" : "\\u0022");
+          return new RegExp("^" + escaped + "$", "iu");
+        }) : known;
     const names = menu.slice(0, -1);
     const final = menu.at(-1);
     if (!names.length || names.length > 5 || !final) throw new Error("The fixture does not have one public category menu");
