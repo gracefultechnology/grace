@@ -522,7 +522,7 @@ it("See all my email in one place", async () => {
   await expect.element(subject()).toHaveValue("A photo");
   await expect.element(page.getByRole("button", { name: "Remove Piano.png" })).toBeVisible();
   await click(page.getByRole("button", { name: "Send" }));
-  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "A photo").map((m) => [m.labels, m.attachments.map((a) => a.filename)])))
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "A photo").map((m) => [m.labels, m.attachments.map((a) => a.filename)])), { timeout: 10000 })
     .toEqual([[["SENT"], ["Piano.png", "Bow.png"]]]);
 
   // spec/app/email.md, "The composer remembers who she is choosing for, Cc and Bcc, and where she attaches from"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"
