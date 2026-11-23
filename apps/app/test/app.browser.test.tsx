@@ -2989,7 +2989,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let replaceDocumentDuringRead = false;
   let addChallengeDuringRead = false;
   let challengeShown: false | "code" | "captcha" = false;
-  let signInWidget: "hidden" | "idle" | "active" | "accountOnly" = "hidden";
+  let signInWidget: "hidden" | "idle" | "active" | "accountOnly" | "accountNumber" | "accountLookup" = "hidden";
+  const idleIdentifier = { focused: false, edited: false, hasInput: false };
+  let identifierEvidence: Partial<typeof idleIdentifier> = idleIdentifier;
   const card = { id: "card-statements", frame: await pinnedPage("statements", origin + "/topic.html?history", (html) => html
     .replace("<dt>New Balance</dt><dd>$1,284.56</dd>", '<dt>Current balance</dt><dd>$1,301.12</dd><dt>Last statement balance</dt><dd id="balance">$1,284<sup>56</sup></dd>')
     .replace("<dt>Previous Balance</dt><dd>$1,102.13</dd>", "<dt>Previous Balance</dt><dd>$1,102.13</dd><dt>Pending charges</dt><dd>$16.56</dd><dt>Available credit</dt><dd>$3,698.88</dd>")) };
@@ -3010,6 +3012,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   const native = fakePlugin(({ command }) => {
     if (pinned && guideShow(command)) return { result: { accepted: pinned.frame.shows(command.guidance) } };
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
+      const combinedIdentifier = signInWidget === "accountNumber" || signInWidget === "accountLookup";
       if (pinned) {
         const result = { ...pinned.frame.snapshot(command), url: pinned.url };
         const change = betweenReads;
@@ -3023,9 +3026,13 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
           ...(signInWidget === "hidden" ? [] : [
-            { id: "username", tag: "input", type: "text", fieldName: "username", label: signInWidget === "accountOnly" ? "Username" : "Private username", sensitive: null, form: { index: 0 }, focused: false, edited: false, hasInput: false, href: null, inViewport: true },
-            signInWidget === "accountOnly"
-              ? { id: "continue", tag: "button", label: "Continue ›", submits: true, form: { index: 0 }, focused: false, href: null, inViewport: true }
+            { id: "username", tag: "input", type: "text", fieldName: "username",
+              label: combinedIdentifier ? "Account number or email" : signInWidget === "accountOnly" ? "Username" : "Private username",
+              sensitive: null, form: { index: 0 }, ...identifierEvidence, href: null, inViewport: true },
+            signInWidget === "accountOnly" || combinedIdentifier
+              ? { id: "continue", tag: "button", type: "submit",
+                  label: signInWidget === "accountOnly" ? "Continue ›" : signInWidget === "accountLookup" ? "Find account" : "Login",
+                  submits: true, form: { index: 0 }, focused: false, href: null, inViewport: true }
               : { id: "password", tag: "input", type: "password", fieldName: "password", label: "Private password", sensitive: "password", form: { index: 0 }, focused: false, edited: signInWidget === "active", hasInput: false, href: null, inViewport: true },
             { id: "sign-in-link", tag: "a", label: "Private sign-in link", form: { index: 0 }, focused: false, href: "https://example.org/forgot", inViewport: true },
             { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
@@ -3081,6 +3088,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         guideCalls++;
         expect(init?.body).not.toContain("Private sign-in link");
         expect(init?.body).not.toContain("Private username");
+        expect(init?.body).not.toContain("Account number or email");
         expect(init?.body).not.toContain("Credential URL");
         expect(init?.body).not.toContain("Help center inside a form");
         expect(init?.body).not.toContain("Sign Up for Our Newsletter");
@@ -3229,6 +3237,32 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: about.id, command: {
       subaction: "guide", guidance: { kind: "show", nodeId: "help" },
     } });
+    await expect.element(pending).toHaveAttribute("aria-current", "step");
+
+    const beforeIdentifierGuide = guideCalls;
+    for (const [widget, evidence] of [
+      ["accountLookup", idleIdentifier],
+      ["accountNumber", { ...idleIdentifier, edited: true }],
+      ["accountNumber", { ...idleIdentifier, focused: true }],
+      ["accountNumber", { ...idleIdentifier, hasInput: true }],
+      ["accountNumber", { focused: false, hasInput: false }],
+    ] as const) {
+      signInWidget = widget;
+      identifierEvidence = evidence;
+      await tap(showLink);
+      await routeTo(page.getByText(/Finish the form yourself in this tab/));
+      expect(guideCalls).toBe(beforeIdentifierGuide);
+    }
+    signInWidget = "accountNumber";
+    identifierEvidence = idleIdentifier;
+    await tap(showLink);
+    await expect.poll(() => guideCalls).toBe(beforeIdentifierGuide + 1);
+    await routeTo(page.getByText("Look for “Help center” on example.org."));
+    expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
+      documentId: about.id, command: { guidance: { nodeId: "help" } },
+    });
+    await tap(check);
+    await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
     await expect.element(pending).toHaveAttribute("aria-current", "step");
 
     signInWidget = "hidden";
