@@ -310,7 +310,8 @@ it("Use the website under Grace's controls", async () => {
   expect([tab(1).history, native.calls("reloadSurface")]).toEqual([firstVisit, []]);
   await native.started("tab-1");
   await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
-  await expect.poll(async () => { await native.route(); return tab(1).secure; }).toBe(true);
+  await expect.poll(() => tab(1).secure).toBe(true);
+  await expect.poll(native.unanswered).toBe(1);
   await expect.element(siteAddress).toHaveAccessibleDescription("Encrypted connection");
   // spec/app/surface.md, "The page fills the rect the interface measured for it"
   const pageArea = document.querySelector("section[aria-label='Internet'] div[aria-hidden='true']")!;
@@ -321,6 +322,8 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("presentSurface").at(-1)).toMatchObject({ id: null });
   // spec/app/surface.md, "The page is paused while Grace's window is in the background"
   expect(native.calls("pauseSurface").at(-1)).toMatchObject({ id: "tab-1" });
+  expect(native.unanswered()).toBe(1);
+  await native.route();
   // What expanded Grace covers is out of reach.
   expect(page.getByRole("textbox", { name: "Address" }).query()).toBeNull();
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": expanded Grace
@@ -3378,11 +3381,14 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       await expect.element(plan.getByText(receipt, { exact: true })).toBeVisible();
     await expect.poll(() => plan.getByText(`Open message: ${subject}`, { exact: true }).elements().length).toBe(2);
 
-    await tap(page.getByRole("button", { name: "Close Grace", exact: true }));
-    await tap(page.getByRole("button", { name: "Home", exact: true }));
-    await tap(mail);
-    await tap(page.getByRole("button", { name: "Back to Inbox" }));
-    await tap(page.getByRole("button", { name: /482913 is your Chase verification code/ }));
+    const reopenInboxMessage = async (name: RegExp) => {
+      await tap(page.getByRole("button", { name: "Close Grace", exact: true }));
+      await tap(page.getByRole("button", { name: "Home", exact: true }));
+      await tap(mail);
+      await tap(page.getByRole("button", { name: "Back to Inbox" }));
+      await tap(page.getByRole("button", { name }));
+    };
+    await reopenInboxMessage(/482913 is your Chase verification code/);
     await expect.element(page.getByText(/Use 482913 to finish signing in/)).toBeVisible();
     const question = "What does this email say?";
     await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
@@ -3391,11 +3397,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const opened = await shownToGrace();
     expect(opened.includes("A private sign-in email is open.")).toBe(true);
     assertMailWithheld(opened);
-    await tap(page.getByRole("button", { name: "Close Grace", exact: true }));
-    await tap(page.getByRole("button", { name: "Home", exact: true }));
-    await tap(mail);
-    await tap(page.getByRole("button", { name: "Back to Inbox" }));
-    await tap(page.getByRole("button", { name: /Westside Reception/ }));
+    await reopenInboxMessage(/Westside Reception/);
     await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
     const followUp = "What does this other email say?";
     const previousRequests = (await modelRequests()).length;
