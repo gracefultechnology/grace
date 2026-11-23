@@ -130,6 +130,11 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await joinedTo("Riverside Library Guest");
 
     await tap("NETGEAR-4F2");
+    await act(() => userEvent.type(page.getByLabelText("Password"), "abandoned"));
+    await tap("Cancel");
+    await expect.element(button("NETGEAR-4F2")).toBeVisible();
+    await tap("NETGEAR-4F2");
+    await expect.element(page.getByLabelText("Password")).toHaveValue("");
     for (const typed of ["abc", "wrongpass"]) {
       await act(() => userEvent.type(page.getByLabelText("Password"), typed));
       await tap("Join");
