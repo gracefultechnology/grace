@@ -70,8 +70,9 @@ function statementLabels(text: string) {
   return { labels, detachedDates };
 }
 
-export function statementAnswer(text: string): StatementAnswer {
+export function statementAnswer(text: string, section?: Extract<StatementAnswer, { tag: "Read" }>): StatementAnswer {
   const { labels: found, detachedDates } = statementLabels(text);
+  if (section) found.push(section.amount, section.due);
   const values = (fact: StatementFact) => [...new Set(found.filter((item) => item.fact === fact).map((item) => item.value))];
   const amounts = statementAmounts(values("AmountDue"), values("StatementBalance"), values("RemainingBalance"));
   const dates = values("DueDate");
