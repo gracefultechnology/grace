@@ -1850,6 +1850,7 @@ pure def lawSortNameCorrectionExampleIsCurrent(by: WorkspaceActor): bool = {
   by == Person implies canOfferGuidedNameCorrection(ready, exampleSortName, Host) and
     canConfirmGuidedNameCorrection(offered, exampleSortName, by) and
     not(canConfirmGuidedNameCorrection(offered, exampleSortName, Host)) and
+    not(canConfirmGuidedNameCorrection(holdForWebsite(offered, true, Host), exampleSortName, by)) and
     not(canConfirmGuidedNameCorrection(offered, { ...exampleSortName, owner: "another-owner" }, by)) and
     not(canOfferGuidedNameCorrection(ready, { ...exampleSortName, witness: LocatedSortCategory({
       domRevision: 1, origin: "https://other.example", direction: PriceAscending }) }, Host)) and
@@ -2683,7 +2684,7 @@ pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspac
     task: w.assistant.taskId, workVersion: w.assistant.workVersion, observation: w.execution.observation
   }) }
 pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
-  "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection",
+  "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection", "confirmGuidedNameCorrection",
   "confirmGuided", "confirmGuidedNamedPage", "confirmGuidedSearch", "confirmGuidedPublicSort",
   "stageGuidedRecord", "confirmGuidedRecord", "confirmGuidedMail",
   "rebindGuidedMail", "expectGuidedCalendar", "observeGuidedCalendar", "reconcileGuidedSave",
