@@ -167,19 +167,17 @@ pure def publicResultLoad(plan: GuidedPlan, loadVersion: int, documentId: str): 
 pure def nextOutcome(plan: GuidedPlan): GuidedStep = {
   val index = plan.receipts.length()
   val plannedOutcome = plan.steps.nthOr(index, noGuidedStep)
+  val session = plan.tabSession
   if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match plannedOutcome {
     | ReachNamedPage(_) => ReachNamedPage({ subject: plan.nameOverride.label })
     | _ => plannedOutcome
-  } else {
-    val session = plan.tabSession
-    match session {
+  } else match session {
       | RestoredPublicTab(binding) => if (binding.stepIndex == index) match plannedOutcome {
         | SearchPublicSite(target) => SearchPublicSite({ query: target.query, origin: target.origin, tabId: binding.tabId })
         | SortPublicListing(target) => SortPublicListing({ subject: target.subject, origin: target.origin, direction: target.direction, tabId: binding.tabId })
         | _ => plannedOutcome
       } else plannedOutcome
       | _ => plannedOutcome
-    }
   }
 }
 type Workspace = {
