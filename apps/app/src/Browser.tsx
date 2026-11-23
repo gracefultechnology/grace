@@ -12,7 +12,8 @@ import { parseBrowserAddressInput } from "@elizaos/os/browser/address";
 import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
 import { watchInboxArrival } from "./inboxArrival.vibe";
 import { Part, type VerificationAppHandoff } from "./page.vibe";
-import { useDraft, usePasswordGuide, usePageLayer, useRuntime, useWorkspace } from "./useApp.ts";
+import { useDraft, usePageLayer, usePagePreview, usePasswordGuide, useRuntime, useWorkspace } from "./useApp.ts";
+import type { DevPagePreview } from "./app.vibe";
 import type { PrivateVerificationApp } from "./surfacePlugin.ts";
 import { WebsiteRequests, site } from "./WebsiteRequests.tsx";
 
@@ -203,10 +204,37 @@ function PrivateToolbar({ active, browser, edit, offered, step, navigate, openVe
   );
 }
 
+function DevPageContent({ preview, onOpen }: { preview: DevPagePreview; onOpen: (url: string) => void }) {
+  return (
+    <article aria-label={preview.title} className="mx-auto flex max-w-3xl flex-col gap-5 px-8 py-7 font-site text-site-ink">
+      <header className="flex flex-col gap-2 rounded-card border border-site-line bg-card p-6 shadow-site-card">
+        <p className="m-0 text-detail font-semibold text-site-muted">{preview.domain}</p>
+        <h1 className="m-0 text-title font-bold text-site-brand">{preview.title}</h1>
+        <p className="m-0 text-body text-site-ink">{preview.summary}</p>
+      </header>
+      <div className="flex flex-col gap-4">
+        {preview.sections.map((section) => {
+          const link = section.link;
+          return (
+            <section key={section.heading} className="flex flex-col items-start gap-2 rounded-row border border-site-line bg-card p-5 shadow-site-card">
+              <h2 className="m-0 text-body-lg font-bold text-site-ink">{section.heading}</h2>
+              <p className="m-0 text-body text-site-muted">{section.body}</p>
+              {link && (
+                <Button variant="capsule" size="pill" onClick={() => onOpen(link.url)}>{link.label}</Button>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </article>
+  );
+}
+
 /** @model spec/app/browserControls.md */
 export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert" | "aria-hidden">) {
   const strip = useWatch(tabStrip);
   const { guide } = usePasswordGuide();
+  const pagePreview = usePagePreview();
   const { workspace, can, send, current, closeBrowser, navigatePrivate, stepPrivate, openPrivateVerificationApp, opensWebsites } = useWorkspace();
   const layer = usePageLayer();
   const browser = workspace?.browser;
@@ -239,11 +267,13 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
   const fillNotice = guide === "FillPasswordGuide"
     ? secureOrigin(tabUrl(active)) === "" ? "Open a secure website first." : "Ask Grace to use a saved password."
     : undefined;
+  const activeUrl = tabUrl(active);
+  const preview = activeUrl !== "" && failure === undefined && !active.manualSignIn && pagePreview ? pagePreview(activeUrl) : undefined;
 
   return (
     <BrowserWindow aria-label="Internet" className="bg-transparent" {...props}
       tabStrip={
-        <BrowserTabStrip ref={strip} className="pointer-events-auto" selectedId={browser.selected}
+        <BrowserTabStrip ref={strip} className="pointer-events-auto bg-glass/42" selectedId={browser.selected}
           tabs={visibleTabs(browser).map(tabItem)} overflow={overflow.map(tabItem)} overflowOpen={listingTabs} onOverflowOpenChange={setListingTabs}
           onSelectTab={(id) => edit({ tag: "SelectTab", id })} onCloseTab={(id) => edit({ tag: "CloseTab", id })}
           onNewTab={() => edit({ tag: "NewTab" })} onCloseBrowser={() => { if (can({ type: "closeBrowser" })) void closeBrowser(); }} />
@@ -253,7 +283,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
         step={(direction) => void stepPrivate(active.id, direction)} openInbox={can(email) ? openConnectedInbox : undefined}
         openVerificationApp={pageShows(workspace.device, workspace.assistant) && canOpenPrivateVerificationApp(browser, active.id, browser.revision, "BrowserControlUser") ? (app) => openPrivateVerificationApp(active.id, browser.revision, app) : undefined} /> : (
         <BrowserToolbar className="pointer-events-auto" canGoBack={offered({ tag: "Back" })} canGoForward={offered({ tag: "Forward" })} canGo={offered(going)}
-          reloadable={tabUrl(active) !== ""} onReload={() => edit({ tag: "Reload" })}
+          reloadable={activeUrl !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}>
           <AddressBar ref={fieldRef} value={address} secureAddress={secureAddress} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : fillNotice}
             onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
@@ -261,9 +291,14 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
         </BrowserToolbar>
       )}>
       <PageArea className="absolute inset-0 rounded-b-window" />
+      {preview && (
+        <OverPage className="absolute inset-0 overflow-y-auto rounded-b-window bg-site">
+          <DevPageContent preview={preview} onOpen={(next) => edit({ tag: "Navigate", url: next })} />
+        </OverPage>
+      )}
       {listingTabs && <OverPage className="absolute inset-0 rounded-b-window" />}
       {browser.emptyAddressNotice && <OverPage className="absolute inset-x-0 top-0 h-20" />}
-      {tabUrl(active) === "" && (
+      {activeUrl === "" && (
         <OverPage className="absolute inset-0 overflow-hidden rounded-b-window">
           <NewTabPage shortcuts={browser.recent.map((url) => ({ url, title: site(url) }))} onOpenShortcut={(url) => edit({ tag: "Navigate", url })}
             removable onRemoveShortcut={(url) => edit({ tag: "RemoveRecent", url })}

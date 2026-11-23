@@ -14,16 +14,24 @@ import "./main.css";
 const root = createRoot(document.getElementById("root")!);
 const native = Capacitor.isNativePlatform();
 
-function renderApp() {
+async function renderApp() {
+  if (import.meta.env.DEV && !native && new URLSearchParams(window.location.search).get("fixture") !== "off") {
+    const { createDevFixture, maybeSleep } = await import("./devFixture.ts");
+    const fixture = createDevFixture(window.location.search);
+    const runtime = ManagedRuntime.make(application(fixture.surface, fixture.wifi, fixture.platform, fixture.vault));
+    maybeSleep(runtime, fixture.sleep);
+    root.render(<StrictMode><App runtime={runtime} /></StrictMode>);
+    return;
+  }
   root.render(<StrictMode><App runtime={ManagedRuntime.make(application(devicePlugin, wifiPlugin, { native, agent: agentPlugin, vault: passwordClient }))} /></StrictMode>);
 }
 
 if (native) {
-  renderApp();
+  void renderApp();
 } else {
   void pendingPasswordApproval().then(async ({ present, approval, account }) => {
     if (!present) {
-      renderApp();
+      await renderApp();
       return;
     }
     const providers = approval ? await backupSignInProviders() : undefined;

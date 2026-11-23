@@ -39,7 +39,7 @@ import { useMachine as usePasswordView } from "../gen/app.react.ts";
 import { Passwords } from "./passwords.vibe";
 import { type MailServers, type OtherDetails, SignIns } from "./accounts.vibe";
 import type { Agent } from "./agent.vibe";
-import { Keyboard } from "./app.vibe";
+import { Keyboard, PagePreview, WifiHost } from "./app.vibe";
 import { BrowserGuide, type BrowserGuidance } from "./browserGuide.vibe";
 import { CalendarNews, settled } from "./calendar.vibe";
 import { Conversation, type PersonTurn } from "./conversation.vibe";
@@ -50,7 +50,7 @@ import { PageHost } from "./page.vibe";
 import type { NoticeServices } from "./notices.vibe";
 
 /** What `application` of app.vibe provides. */
-export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | CalendarNews | Accounts | Proposal | Instances | SignIns | NoticeServices | Library | MailChoices, never>;
+export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | CalendarNews | Accounts | Proposal | Instances | SignIns | NoticeServices | Library | MailChoices | WifiHost | PagePreview, never>;
 
 export const RuntimeContext = createContext<Runtime | null>(null);
 
@@ -58,6 +58,14 @@ export function useRuntime(): Runtime {
   const runtime = use(RuntimeContext);
   if (!runtime) throw new Error("useRuntime outside RuntimeContext");
   return runtime;
+}
+
+export function useWifiRuntime() {
+  return useRuntime().runSync(Effect.map(Effect.service(WifiHost), (host) => host.runtime));
+}
+
+export function usePagePreview() {
+  return useRuntime().runSync(Effect.map(Effect.service(PagePreview), (preview) => preview.render));
 }
 
 const keyboardHeights = Stream.unwrap(Effect.map(Effect.service(Keyboard), (k) => k.height));

@@ -1,18 +1,14 @@
 // spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"; spec/app/network.md, "The password goes from Grace's field to Android only, and Show never shares it with Grace"; spec/app/network.md, "Android handles Wi-Fi sign-in"
 import { Alert, Button, PageHeading, PageText, WifiJoinForm, WifiNetworkList, type WifiNetwork, type WifiStatus } from "@repo/ui";
-import { Effect, ManagedRuntime } from "effect";
+import { Effect } from "effect";
 import { useState, useSyncExternalStore } from "react";
-import type { Machine } from "../gen/app__network.effect.vibe";
 import { type Discovery, type Event, type ListAction, type NetworkJoin, helpOffered, listAction, wifiSignInOffered } from "../gen/app__network.ts";
 import { useMachine } from "../gen/app__network.react.ts";
-import { wifiPlugin } from "./surfacePlugin.ts";
-import { wifiSignIn } from "./preferencesPlugin.ts";
-import { useWorkspace } from "./useApp.ts";
-import { type Offer, WifiPage, ssidOf, wifiPage } from "./wifi.vibe";
+import type { WifiRuntime } from "./app.vibe";
+import { useWifiRuntime, useWorkspace } from "./useApp.ts";
+import { type Offer, WifiPage, ssidOf } from "./wifi.vibe";
 
-export type WifiRuntime = ManagedRuntime.ManagedRuntime<WifiPage | Machine, never>;
-
-const device: WifiRuntime | undefined = wifiPlugin && wifiSignIn && ManagedRuntime.make(wifiPage(wifiPlugin, wifiSignIn));
+export type { WifiRuntime };
 
 const statuses: Readonly<Record<Discovery["tag"], WifiStatus>> = {
   Scanning: "scanning", WifiOff: "off", NetworksFound: "ready",
@@ -33,6 +29,7 @@ const unnamed: WifiNetwork = { name: "Internet connection" };
 
 export function Wifi() {
   const { workspace, can, send } = useWorkspace();
+  const device = useWifiRuntime();
   const online = workspace?.device.connectivity === "Online";
   if (!device) return <><PageHeading>Wi-Fi</PageHeading><PageText role="status">{online ? "Connected" : "No internet connection"}</PageText></>;
   return <WifiNetworks runtime={device} online={online} onFix={() => { if (can(fix)) void send(fix); }} />;
