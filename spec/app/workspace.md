@@ -1845,7 +1845,8 @@ pure val exampleSortName: GuidedNameCorrection = {
   witness: LocatedSortCategory({ domRevision: 1, origin: "https://utility.example", direction: PriceAscending })
 }
 pure def lawSortNameCorrectionExampleIsCurrent(by: WorkspaceActor): bool = {
-  val ready: Workspace = { ...examplePublicSort, device: exampleSortNameDevice }
+  val ready: Workspace = { ...examplePublicSort, device: exampleSortNameDevice,
+    assistant: A::resize(exampleSortAssistant, false, C::ConversationUser) }
   val offered = offerGuidedNameCorrection(ready, exampleSortName, Host)
   by == Person implies canOfferGuidedNameCorrection(ready, exampleSortName, Host) and
     canConfirmGuidedNameCorrection(offered, exampleSortName, by) and
