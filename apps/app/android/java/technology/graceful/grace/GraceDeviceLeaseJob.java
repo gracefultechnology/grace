@@ -66,7 +66,7 @@ public final class GraceDeviceLeaseJob extends JobService {
  }
 
  @Override public boolean onStopJob(JobParameters params) {
-  if (running != params) return false;
+  if (running == null || running.getJobId() != params.getJobId()) return false;
   running = null;
   if (task != null) task.cancel(true);
   task = null;
