@@ -81,7 +81,6 @@ type GuidedReadSource =
   | ({ tag: "CurrentMessage" } & GuidedMail)
   | { tag: "CurrentDocument"; tab: number; loadVersion: number; documentId: string }
   | { tag: "PublicSortDocument"; tabId: number; loadVersion: number; documentId: string; domRevision: number; url: string; origin: string; category: string; direction: "PriceAscending" | "PriceDescending" }
-  | { tag: "PublicCollectionDocument"; tabId: number; loadVersion: number; documentId: string; domRevision: number; url: string; origin: string; subject: string; entries: number }
   | { tag: "NamedDocument"; tab: number; loadVersion: number; documentId: string; url: string; heading: string }
   | { tag: "SearchDocument"; loadVersion: number; documentId: string; url: string; origin: string; query: string; heading: string }
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string }
