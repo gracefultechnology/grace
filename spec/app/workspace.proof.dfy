@@ -2179,3 +2179,33 @@ lemma lawPublicSortExampleIsAdmitted_ensures(by_: WorkspaceActor)
     assert canConfirmGuidedPublicSort(w, check, by_);
   }
 }
+
+lemma lawSortNameCorrectionExampleIsCurrent_ensures(by_: WorkspaceActor)
+  ensures (lawSortNameCorrectionExampleIsCurrent(by_) == true)
+{
+  if by_.Person? {
+    var ready := examplePublicSort.(device := exampleSortNameDevice);
+    var correction := exampleSortName;
+    var loading := app__browser_navigated(app__browser_blankTab(1, 0), sampleSortUrl, 1);
+    assert exampleSortLoading.tabs == [loading] && exampleSortLoading.selected == 1;
+    OnlyBrowserTab(exampleSortLoading, loading);
+    var tab := app__browser_endedAtCursor(loading, sampleSortUrl).(load := app__browser_Load.Loaded, secure := true);
+    assert ready.browser.tabs == [tab] && ready.browser.selected == 1;
+    OnlyBrowserTab(ready.browser, tab);
+    reveal Std.Collections.Seq.FoldLeft();
+    assert loading.history == ["", sampleSortUrl] && loading.cursor == 1;
+    app__browser_lawALoadRecordsWhereItEnded_ensures(loading, sampleSortUrl);
+    assert app__browser_tabUrl(tab) == sampleSortUrl;
+    assert ready.assistant.presentation.Expanded? && ready.assistant.activity.ReadyForStep?;
+    assert !privateSurfaceActive(ready) && app__shell_mayObserveBrowser(ready.device);
+    assert mayReadGuidedBrowser(ready);
+    assert nextOutcome(ready.plan) == sampleSortStep && !needsRecoveredPublicTab(ready.plan);
+    assert correction.loadVersion == tab.loadVersion && publicResultLoad(ready.plan, tab.loadVersion, correction.documentId);
+    assert guidedNameCorrectionCurrent(ready, correction);
+    assert canOfferGuidedNameCorrection(ready, correction, WorkspaceActor.Host);
+    var offered := offerGuidedNameCorrection(ready, correction, WorkspaceActor.Host);
+    assert currentGuidedNameCorrection(offered) == PendingGuidedNameCorrection(correction);
+    assert canConfirmGuidedNameCorrection(offered, correction, by_);
+    assert !canConfirmGuidedNameCorrection(holdForWebsite(offered, true, WorkspaceActor.Host), correction, by_);
+  }
+}

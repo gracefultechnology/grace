@@ -503,6 +503,21 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
       outcome.destination = correct;
       expect(correct.documentId).not.toBe(wrong.documentId);
       failureStage = "confirm-completion";
+      const categoryCorrection = page.getByRole("button", { name: /^Use “.+” for this step$/u });
+      await expect.element(finished.or(categoryCorrection), { timeout: 15_000 }).toBeVisible();
+      if (categoryCorrection.query()) {
+        expect(workspace().plan.receipts).toHaveLength(0);
+        const offer = workspace().plan.nameCorrection;
+        expect(offer.tag).toBe("PendingGuidedNameCorrection");
+        if (offer.tag !== "PendingGuidedNameCorrection") throw new Error("Category choice has no current offer");
+        const { label, witness } = offer.value;
+        expect(witness.tag).toBe("LocatedSortCategory");
+        await userEvent.click(categoryCorrection);
+        await expect.poll(() => workspace().plan.nameOverride.label).toBe(label);
+        expect(workspace().plan.receipts).toHaveLength(0);
+        outcome.categoryCorrection = { original: sort.subject, selected: label, operator: "Chromium input on Grace's exact label control" };
+        await userEvent.click(check);
+      }
       await expect.element(finished, { timeout: 15_000 }).toBeVisible();
       expect(workspace().plan.receipts).toHaveLength(1);
       outcome.hops = [{ ...correct, checked: true }];
