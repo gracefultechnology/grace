@@ -441,9 +441,9 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await readOutlookFromHome();
 
   // spec/app/accounts.md, "Signing in again renews the same account"
-  await Effect.runPromise(Effect.provide(expire(cloud, secret, riverview), client));
   const oldProviderMessage = page.getByRole("button", { name: /Riverview Internet/ });
-  await expect.element(oldProviderMessage).toBeVisible({ timeout: 12_000 });
+  await expect.element(oldProviderMessage, { timeout: 12_000 }).toBeVisible();
+  await Effect.runPromise(Effect.provide(expire(cloud, secret, riverview), client));
   await tap(oldProviderMessage);
   await expect.element(page.getByRole("alert")).toBeVisible();
   await tap(page.getByRole("button", { name: "Back to Inbox" }));
@@ -472,6 +472,8 @@ it("Choose what each email brings and take it off the tablet", async () => {
   localStorage.setItem("accounts", JSON.stringify(legacy));
   assert(waitingMail !== null);
   localStorage.setItem(outboxKey, waitingMail);
+  network.online = false;
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
   mounted = connectTablet();
   await mounted.render();
   await host(false);
