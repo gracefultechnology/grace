@@ -134,12 +134,6 @@ version, and converts only for a workspace bound to that booking. Runtime
 values range beyond these finite simulation examples.
 
 ```quint
-pure val visitPreparationValues = {
-  val begun = P::begin(P::initial, K::sampleVisitKey, "source", T::Person)
-  val signed = P::inspectAccess(begun, { key: K::sampleVisitKey, version: 1, access: P::SignedIn }, T::Host)
-  val facts = P::readFacts(signed, { key: K::sampleVisitKey, version: 2, evidence: "source", facts: K::sampleVisitFacts }, T::Host)
-  Set(P::choose(P::confirmFacts(facts, T::Person), K::sampleBookTerms, T::Person))
-}
 pure val preparationValues = {
   val begun = P::begin(P::initial, CM::exampleKey, "source", T::Person)
   val signed = P::inspectAccess(begun, { key: CM::exampleKey, version: 1, access: P::SignedIn }, T::Host)
@@ -150,11 +144,15 @@ pure val preparationValues = {
   val verified = P::verifyForm(chosen, { ...CM::exampleReview, revision: 4 }, T::Host)
   val handed = P::handOff(verified, T::Actuator).state
   val paused = P::pause(handed, T::Person)
+  val visitBegun = P::begin(P::initial, K::sampleVisitKey, "source", T::Person)
+  val visitSigned = P::inspectAccess(visitBegun, { key: K::sampleVisitKey, version: 1, access: P::SignedIn }, T::Host)
+  val visitFacts = P::readFacts(visitSigned, { key: K::sampleVisitKey, version: 2, evidence: "source", facts: K::sampleVisitFacts }, T::Host)
+  val visitChosen = P::choose(P::confirmFacts(visitFacts, T::Person), K::sampleBookTerms, T::Person)
+  val visitVerified = P::verifyForm(visitChosen, { key: K::sampleVisitKey, proposal: K::sampleBookTerms, revision: 4, evidence: "source" }, T::Host)
   Set(P::initial, chosen, verified, handed, paused, P::resume(paused, T::Person))
     .union(Set(yes, no, P::decideFill(no, P::GraceFills, no.version, T::Person)))
     .union(Set(P::pause(yes, T::Host), P::retire(handed, handed.version, T::Host)))
-    .union(visitPreparationValues.map(v => P::handOff(P::verifyForm(v,
-      { key: K::sampleVisitKey, proposal: K::sampleBookTerms, revision: 4, evidence: "source" }, T::Host), T::Actuator).state))
+    .union(Set(visitChosen, P::handOff(visitVerified, T::Actuator).state))
 }
 pure val wValues = {
   val started = WS::changeLifecycle(WS::initial, WS::StartupSucceeded, WS::Host)
@@ -324,13 +322,13 @@ pure val fillWorkspaceValues: Set[WS::Workspace] = {
 pure val queuedValues = {
   val pending = fillWorkspaceValues.filter(w => w.execution.phase == X::Queued).getOnlyElement()
   val write = WS::dispatch(pending, AC::sampleOperationTokens(pending), WS::Actuator)
-  val chosen = preparationValues.filter(p => p.phase == P::Preparing and p.fillBy == P::NotAsked).getOnlyElement()
+  val chosen = preparationValues.filter(p => p.key == CM::exampleKey and p.phase == P::Preparing and p.fillBy == P::NotAsked).getOnlyElement()
   val yes = P::decideFill(chosen, P::GraceFills, chosen.version, T::Person)
   val queued = captureWebsiteCommand(yes, write.out.nth(0), "task")
   Set(queued, captureWebsiteCommand(P::initial, queued.command, ""),
     { ...queued, source: TaskForm({ task: "other-task", key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }) },
     { ...queued, command: AC::ordinarySample(AC::observedSample(WS::initial)).out.nth(0) })
-    .union(visitPreparationValues.map(v => captureWebsiteCommand(P::decideFill(v, P::GraceFills, v.version, T::Person), queued.command, "task")))
+    .union(preparationValues.filter(p => p.key == K::sampleVisitKey and p.phase == P::Preparing).map(v => captureWebsiteCommand(P::decideFill(v, P::GraceFills, v.version, T::Person), queued.command, "task")))
 }
 pure val operationValues: Set[X::WebsiteEffect] = queuedValues.map(q => {
   val command = q.command
@@ -512,9 +510,9 @@ pure def lawEndingTheFinishedRunKeepsItsReceipt(view: TaskView): bool =
     implies (joined(ended) and taskStatus(ended) == taskStatus(view))
 
 pure val viewValues: Set[TaskView] = {
-  val chosen = preparationValues.filter(p => p.phase == P::Preparing and p.fillBy == P::NotAsked).getOnlyElement()
+  val chosen = preparationValues.filter(p => p.key == CM::exampleKey and p.phase == P::Preparing and p.fillBy == P::NotAsked).getOnlyElement()
   val guarded = wValues.filter(w => w.commitment.stage == CM::Draft and WS::currentCommitmentContext(w)).map(w =>
-    Set(chosen).union(visitPreparationValues).map(picked => {
+    Set(chosen).union(preparationValues.filter(p => p.key == K::sampleVisitKey and p.phase == P::Preparing)).map(picked => {
       val form = P::verifyForm(picked, { key: picked.key, proposal: picked.choice, revision: picked.version, evidence: "source" }, T::Host)
       val handed = P::handOff(form, T::Actuator)
       val transfer = { handoff: handed.out.nth(0), captured: AC::sampleCommitmentTokens(w) }
