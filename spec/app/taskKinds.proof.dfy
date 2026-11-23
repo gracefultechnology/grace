@@ -10,6 +10,19 @@ lemma lawASuggestionFitsOrIsAbsent_ensures(kind: app__task_TaskKind, facts: Fact
     assert app__billKind_payFits(bill, pay);
     assert termsFit(facts, suggestion(facts, today));
   }
+  if factsFit(kind, facts) && facts.VisitRead? && standing(facts).Actionable? && app__bookingKind_onlyFreeSlot(facts.visit) {
+    var visit := facts.visit;
+    var free := app__bookingKind_freeSlots(visit);
+    var book := app__bookingKind_suggestedBooking(visit);
+    ProofLib.FilterMember((s: app__task_Slot) => !((s in visit.busy)), visit.slots, free[0]);
+    assert free[0] in free;
+    assert book.slot == free[0];
+    assert book.slot in visit.slots && book.slot !in visit.busy;
+    assert book.shares == visit.asks;
+    assert app__task_validBooking(book);
+    assert app__bookingKind_bookingFits(visit, book);
+    assert termsFit(facts, suggestion(facts, today));
+  }
 }
 
 lemma lawEveryPlanConfirmsReviewsAndConsents_ensures(kind: app__task_TaskKind)

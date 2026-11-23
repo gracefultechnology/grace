@@ -30,6 +30,13 @@ class URLEvaluator:
         assert trajectory == [] and page_client is None
         assert page.url in (task["target"], task["control"])
         return int(page.url == task["target"])
+
+class StringEvaluator:
+    def __call__(self, trajectory, config):
+        task = json.loads(config.read_text())
+        [action] = trajectory
+        assert action["action_type"] == "STOP"
+        return int(task["answer"] == action["answer"])
 `;
 
 const fakePage = `
@@ -80,10 +87,12 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     const address = server.address();
     if (address === null || typeof address === "string") throw new Error("The evaluator fixture did not bind a loopback port");
     const module = join(root, "evaluation_harness");
-    await mkdir(module);
+    const actions = join(root, "browser_env");
+    await Promise.all([mkdir(module), mkdir(actions)]);
     await Promise.all([
       writeFile(join(module, "__init__.py"), fakeEvaluator),
       writeFile(join(module, "helper_functions.py"), fakePage),
+      writeFile(join(actions, "actions.py"), 'def create_stop_action(answer): return {"action_type": "STOP", "answer": answer}\n'),
     ]);
     const gradingTimeoutMs = 1000;
     const start = (phase: Exclude<Phase, "grading">, startupTimeoutMs?: number) => {
@@ -104,6 +113,7 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     expect(await Promise.race([completion, Effect.runPromise(Effect.as(Effect.sleep(gradingTimeoutMs * 2), "importing"))])).toBe("importing");
     importGate.release();
     await expect(scores).resolves.toEqual([1, 0]);
+    await expect(worker.grade({ fixture: JSON.stringify({ answer: "four" }), answers: ["four", "", "one"] })).resolves.toEqual([1, 0, 0]);
 
     const nextImport = enter("importing");
     const gradingFailure = worker.grade({ fixture: JSON.stringify({ ...fixture, hang: true }), urls }).catch((error: unknown) => error);
