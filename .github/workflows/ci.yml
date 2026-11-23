@@ -472,9 +472,19 @@ jobs:
           import { chromium } from "playwright";
           const origin = process.env.GITLAB_ORIGIN;
           const privateDir = process.env.WEBARENA_PRIVATE;
-          const { username, password } = JSON.parse(await readFile(privateDir + "/gitlab-login.json", "utf8"));
-          const browser = await chromium.launch();
+          const selectors = { username: "username-field", password: "password-field", submit: "sign-in-button" };
+          const diagnostic = { signedIn: false, phase: "read-seeded-login", completed: [] };
+          const started = performance.now();
+          const advance = (phase) => {
+            diagnostic.completed.push({ phase: diagnostic.phase, elapsedMs: Math.round(performance.now() - started) });
+            diagnostic.phase = phase;
+          };
+          let browser;
+          let page;
           try {
+            const { username, password } = JSON.parse(await readFile(privateDir + "/gitlab-login.json", "utf8"));
+            advance("launch-chromium");
+            browser = await chromium.launch();
             const context = await browser.newContext({ ignoreHTTPSErrors: true, serviceWorkers: "block" });
             await context.route("**/*", (route) => {
               const request = route.request();
@@ -482,22 +492,61 @@ jobs:
               const login = request.method() === "POST" && url.pathname === "/users/sign_in";
               return url.origin === origin && (login || ["GET", "HEAD"].includes(request.method())) ? route.continue() : route.abort();
             });
-            const page = await context.newPage();
-            await page.goto(origin + "/users/sign_in", { timeout: 120000 });
-            await page.getByTestId("username-field").fill(username);
-            await page.getByTestId("password-field").fill(password);
-            await page.getByTestId("sign-in-button").click();
+            page = await context.newPage();
+            advance("load-sign-in");
+            const signIn = await page.goto(origin + "/users/sign_in", { timeout: 120000 });
+            diagnostic.signInStatus = signIn?.status() ?? null;
+            const signInUrl = new URL(page.url());
+            if (!signIn?.ok() || signInUrl.origin !== origin || signInUrl.pathname !== "/users/sign_in")
+              throw new Error("Synthetic sign-in did not open");
+            advance("fill-username");
+            await page.getByTestId(selectors.username).fill(username);
+            advance("fill-password");
+            await page.getByTestId(selectors.password).fill(password);
+            advance("submit-sign-in");
+            await page.getByTestId(selectors.submit).click();
+            advance("wait-for-authenticated-navigation");
             await page.waitForURL((url) => url.origin === origin && url.pathname !== "/users/sign_in", { timeout: 120000 });
+            advance("verify-profile");
             const profile = await page.goto(origin + "/-/profile", { timeout: 120000 });
+            diagnostic.profileStatus = profile?.status() ?? null;
             if (!profile?.ok() || new URL(page.url()).pathname !== "/-/profile") throw new Error("Synthetic profile did not open");
+            advance("verify-home");
             const start = await page.goto(origin + "/", { timeout: 120000 });
+            diagnostic.homeStatus = start?.status() ?? null;
             if (!start?.ok() || page.url() !== origin + "/") throw new Error("The authenticated GitLab home did not open");
+            advance("save-private-state");
             await context.storageState({ path: privateDir + "/gitlab-state.json" });
-            await writeFile(process.env.WEBARENA_RESULTS + "/authentication.json", JSON.stringify({ signedIn:true, homeStatus:start.status() }));
-          } catch {
-            throw new Error("The isolated synthetic GitLab sign-in was not verified");
+            advance("verified");
+            diagnostic.signedIn = true;
+          } catch (error) {
+            diagnostic.timedOut = error instanceof Error && error.name === "TimeoutError";
+            if (page) {
+              const url = new URL(page.url());
+              diagnostic.document = url.origin !== origin ? "other-origin" :
+                url.pathname === "/users/sign_in" ? "sign-in" :
+                url.pathname === "/-/profile" ? "profile" : url.pathname === "/" ? "home" : "other-local";
+              if (diagnostic.document === "sign-in") diagnostic.controls = await Promise.race([
+                page.evaluate((controls) => Object.fromEntries(Object.entries(controls).map(([name, id]) => {
+                  const nodes = document.querySelectorAll(`[data-testid="${id}"]`);
+                  const node = nodes[0];
+                  return [name, { count: Math.min(nodes.length, 2),
+                    visible: node?.checkVisibility({ checkVisibilityCSS: true, checkOpacity: true }) ?? false,
+                    enabled: node ? !node.matches(':disabled,[aria-disabled="true"]') : false,
+                    readOnly: node?.matches("[readonly]") ?? false,
+                    sameOriginPost: node?.form?.method === "post" && node.form.action === location.origin + "/users/sign_in" }];
+                })), selectors).catch(() => null),
+                new Promise((resolve) => AbortSignal.timeout(3000).addEventListener("abort", () => resolve(null), { once: true })),
+              ]);
+            }
+            throw new Error(`The isolated synthetic GitLab sign-in failed during ${diagnostic.phase}`);
           } finally {
-            await browser.close();
+            diagnostic.elapsedMs = Math.round(performance.now() - started);
+            try {
+              await writeFile(process.env.WEBARENA_RESULTS + "/authentication.json", JSON.stringify(diagnostic, null, 2));
+            } finally {
+              await browser?.close();
+            }
           }
           JS
       - name: Grade official GitLab public-project navigation
