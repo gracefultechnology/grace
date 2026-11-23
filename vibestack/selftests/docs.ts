@@ -139,6 +139,9 @@ describe("the documents name what exists", () => {
     assert.match(ci, /TASK: \$\{\{ matrix\.tasks \}\}/, "the fixture command reads its matrix task");
     assert.match(ci, /pnpm all "\$TASK" --only --continue=dependencies-successful --summarize/, "a dedicated runner executes only its shard after setup");
     assert.match(scripts.prepare, /^node vibestack\/spec\.ts gen --install --skip-gen-on-pack \/\/#build(?: |$)/);
+    const fuzz = read(".github/workflows/fuzz.yml");
+    const nightly = fuzz.match(/^  vibestack-nightly-check:\n((?: {4}.*\n|\n)*)/m)?.[1] ?? "";
+    assert.match(nightly, /^ +- run: pnpm all check --continue -- --nightly$/m);
     const [first, ...others] = shards.map((task) => JSON.parse(read("turbo.json")).tasks[`//#${task}`].dependsOn);
     assert.deepEqual(others, others.map(() => first), "the shards wait for the same integration prerequisites");
   });
