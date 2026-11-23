@@ -196,8 +196,8 @@ IDs. A single result highlights the actual row and selects its tab; multiple
 matches ask which item rather than guessing from a repeated name. No match
 states that plainly. Finding does not open, share or delete content.
 Each explicit find request carries a new generation. A new query replaces the
-old request, including while that request waits for its catalog. A catalog
-load started by opening Files or preparing an attachment stays separate.
+old request, including while the open Files window waits for its catalog. A
+background catalog load for an attachment stays separate.
 Close cancels the find. A result must match the owner, generation and
 exact requested query, so stale retrieval cannot reopen Files or replace the
 current answer.
@@ -215,7 +215,7 @@ pure def canFindFiles(f: Files, owner: str, query: str, by: FileActor): bool =
   by == FileUser and owner != "" and (f.owner == "" or owner == f.owner) and query != "" and
   (f.pending == NoFileOperation or
     (f.loaded and f.pending == Locating) or
-    (not(f.loaded) and f.pending == ReadingCatalog and f.opened and f.query != ""))
+    (not(f.loaded) and f.pending == ReadingCatalog and f.opened))
 pure def findFiles(f: Files, owner: str, query: str, by: FileActor): FilesResult = {
   state: { ...f, owner: owner, opened: true, selected: "", contentReady: false, page: 0,
     pending: if (f.loaded) Locating else ReadingCatalog,

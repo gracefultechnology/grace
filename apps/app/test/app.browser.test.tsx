@@ -2292,6 +2292,73 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   expect(stored.revision).toBe(1);
 });
 
+it('Find a saved file and replace the request before Files loads (spec/app/files.md, "Story: Find and open something I saved")', async () => {
+  const { agent, requests, answer } = deviceAgent();
+  const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
+  const previous = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "pdf", name: "Lunch notes.pdf", savedAt: 1, pages: 1 };
+  const current = { id: "85b46188-fb54-4a7e-a7b8-1f706e7a3b86", kind: "pdf", name: "Garden notes.pdf", savedAt: 2, pages: 1 };
+  const reads: Array<PromiseWithResolvers<{ entries: (typeof current)[] }>> = [];
+  const releases: string[] = [];
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    agent,
+    account: {
+      status: () => Promise.resolve({ kind: "signedIn", voiceDisclosureScope: "a".repeat(64) }),
+      beginSignIn: () => Promise.resolve(),
+      signOut: () => Promise.resolve(),
+      cleanupLegacySignIn: () => Promise.resolve(),
+      manageAccount: () => Promise.resolve(),
+      addListener: () => Promise.resolve({ remove: () => Promise.resolve() }),
+    },
+    files: {
+      saveAttachments: () => Promise.reject(new Error("No attachment is saved during this find")),
+      open: () => Promise.resolve({ lease }),
+      close: () => Promise.resolve(),
+      list: (request) => {
+        expect(request).toEqual({ lease });
+        const read = Promise.withResolvers<{ entries: (typeof current)[] }>();
+        reads.push(read);
+        return read.promise;
+      },
+      preview: ({ id, page }) => {
+        releases.push(id);
+        return Promise.resolve({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" });
+      },
+      content: () => Promise.reject(new Error("Search does not read file bytes")),
+      remove: () => Promise.reject(new Error("Search does not remove files")),
+    },
+  }));
+  await mount(runtime);
+  const workspace = await runtime.runPromise(Workspaces);
+  await expect.poll(() => runtime.runSync(workspace.get()).device.reasoningAvailable).toBe(true);
+  const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  await tap("Ask Grace");
+  const request = 'Find the file "Lunch notes".';
+  await act(() => userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), request));
+  await tap("Send");
+  await expect.poll(() => sentTurn(requests[0]?.body).said).toBe(request);
+  await answer(0, { text: "You can find it in Files.", isQuestion: false, answers: [],
+    actions: [{ kind: "findFile", tab: "Documents", query: "Lunch notes" }] });
+  await expect.element(page.getByRole("button", { name: "Find in Files", exact: true })).toBeVisible();
+  expect(reads).toHaveLength(0);
+  await tap("Find in Files");
+  await expect.poll(() => reads.length).toBe(2);
+  await act(() => userEvent.fill(page.getByRole("textbox", { name: "Find a file" }), "Garden notes"));
+  await tap("Find");
+  await expect.poll(() => reads.length).toBe(3);
+  await act(() => { reads[2].resolve({ entries: [current] }); });
+  const result = page.getByRole("button", { name: /Garden notes/ });
+  await expect.element(result).toHaveAttribute("aria-current", "true");
+  await act(async () => {
+    reads[0].resolve({ entries: [previous] });
+    reads[1].resolve({ entries: [previous] });
+    await Promise.all(reads.map((read) => read.promise));
+  });
+  await expect.element(result).toHaveAttribute("aria-current", "true");
+  expect(page.getByRole("button", { name: /Lunch notes/ }).query()).toBeNull();
+  expect(releases).toEqual([]);
+});
+
 it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and remove the chosen file")', async () => {
   const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
   const photo = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "photo", name: "Garden.jpg", savedAt: 3, pages: 0 };
