@@ -1397,12 +1397,15 @@ pure def lawRemainingBalanceReplacesStatementBalance(due: Set[str], balances: Se
 pure def hasOneStatementAnswer(amounts: Set[str], dates: Set[str]): bool =
   amounts.size() == 1 and dates.size() == 1 and not(amounts.contains("")) and not(dates.contains(""))
 type StatementSection = { key: str, amount: str, due: str }
-pure def provesStatementSection(complete: bool, sections: Set[StatementSection], amount: str, due: str): bool =
-  complete and amount != "" and due != "" and sections.size() == 1 and
-    sections.forall(section => section.key != "" and section.amount == amount and section.due == due)
-pure def lawAStatementRequiresItsOwnCompleteSection(complete: bool, sections: Set[StatementSection], amount: str, due: str): bool =
+pure def provesStatementSection(complete: bool, sections: List[StatementSection], amount: str, due: str): bool =
+  if (sections.length() != 1) false
+  else {
+    val section = sections.head()
+    complete and section.key != "" and amount != "" and due != "" and section.amount == amount and section.due == due
+  }
+pure def lawAStatementRequiresItsOwnCompleteSection(complete: bool, sections: List[StatementSection], amount: str, due: str): bool =
   provesStatementSection(complete, sections, amount, due) implies
-    (complete and sections.size() == 1 and sections.exists(section => section.key != "" and section.amount == amount and section.due == due))
+    (complete and sections.length() == 1 and amount != "" and due != "")
 pure def isNamedDestination(guidedStep: GuidedStep): bool = match guidedStep {
   | ReachNamedPage(_) => true
   | _ => false
