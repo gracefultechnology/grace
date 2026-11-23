@@ -23,6 +23,13 @@ on:
         description: Positive cohort number from the pinned Fleet catalog (up to 100 billers each)
         type: string
         default: '1'
+      billworld_statement_cohort:
+        description: Pinned Fleet statement cohort
+        type: choice
+        options:
+          - reference
+          - held-out
+        default: reference
       billworld_resume_run:
         description: Optional earlier CI run ID at the exact same product commit
         type: string
@@ -968,10 +975,11 @@ jobs:
           path: ${{ runner.temp }}/grace-fleet-shards/qualification.json
           if-no-files-found: error
   billworld-released:
-    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
+    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && (inputs.billworld || inputs.billworld_statement_cohort == 'held-out')
     runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository_id == '1457180554' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     env:
+      GRACE_BILLWORLD_STATEMENT_COHORT: ${{ inputs.billworld_statement_cohort }}
       GRACE_BILLWORLD_RELEASED_DIR: ${{ github.workspace }}/.cache/billworld
       GRACE_BILLWORLD_RESULTS: ${{ github.workspace }}/.cache/grace-released-billworld-results
     steps:
@@ -1110,7 +1118,7 @@ jobs:
           mkdirSync(results, { recursive: true });
           writeFileSync(join(results, "fleet-view-bill-qualification.json"), JSON.stringify(coverage, null, 2) + "\n");
           const summary = [
-            "### Fleet view-bill coverage",
+            `### Fleet view-bill coverage (${coverage.statementCohort})`,
             "",
             "| Status | Unique simulator websites | Portal templates |",
             "| --- | ---: | ---: |",
@@ -1135,7 +1143,7 @@ jobs:
           if-no-files-found: error
   verify:
     name: ${{ matrix.lane }}
-    if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only || inputs.webarena_sort_only)
+    if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.billworld_statement_cohort == 'held-out' || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only || inputs.webarena_sort_only)
     runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -1401,7 +1409,7 @@ jobs:
           include-hidden-files: true
   vibestack-fixture-selftests:
     name: ${{ matrix.lane }}
-    if: ${{ !inputs.cross_app_only && (github.event_name != 'workflow_dispatch' || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only || inputs.webarena_sort_only)) }}
+    if: ${{ !inputs.cross_app_only && (github.event_name != 'workflow_dispatch' || !inputs.benchmarks_only || !(inputs.billworld || inputs.billworld_statement_cohort == 'held-out' || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only || inputs.webarena_sort_only)) }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
