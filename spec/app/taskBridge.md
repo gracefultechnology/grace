@@ -154,7 +154,7 @@ pure val preparationValues = {
     .union(Set(P::pause(yes, T::Host), P::retire(handed, handed.version, T::Host)))
     .union(Set(visitChosen, P::handOff(visitVerified, T::Actuator).state))
 }
-pure val wValues = {
+pure val exampleLoadedWorkspace = {
   val started = WS::changeLifecycle(WS::initial, WS::StartupSucceeded, WS::Host)
   val opened = WS::openGrace(WS::visit(started, S::Browser, WS::Person), WS::Person)
   val allowed = WS::setBrowserObservation(opened, { allowed: true,
@@ -164,9 +164,12 @@ pure val wValues = {
   val compact = WS::interact(available, I::Resize({ expanded: false }), WS::Person)
   val begun = WS::begin(compact,
     { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, WS::Person)
-  val loaded = WS::receiveLoad(begun, { id: begun.browser.selected,
+  WS::receiveLoad(begun, { id: begun.browser.selected,
     version: B::tabById(begun.browser, begun.browser.selected).loadVersion, result: B::Loaded,
     secure: false, endedAt: "https://utility.example" }, WS::Host)
+}
+pure val wValues = {
+  val loaded = exampleLoadedWorkspace
   val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion,
     browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
     website: X::goodObservation, checkpoint: "Read the current account" }, WS::Host)
@@ -368,7 +371,7 @@ pure def lawATaskFillUsesItsOwnVerifiedForm(
 }
 
 pure def exampleFillWorkspace(target: str, valueRef: str): WS::Workspace = {
-  val loaded = wValues.filter(w => w.commitment.stage == CM::Empty and w.assistant.taskId == "task").getOnlyElement()
+  val loaded = exampleLoadedWorkspace
   val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion, browserRevision: loaded.browser.revision,
     taskVersion: loaded.assistant.workVersion, checkpoint: "Read the form", website: { ...X::goodObservation,
       generation: loaded.execution.generation, targets: List({ id: target, consequence: X::AskFirst, inReach: true }) } }, WS::Host)
