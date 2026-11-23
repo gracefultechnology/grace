@@ -2299,11 +2299,12 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
   const current = { id: "85b46188-fb54-4a7e-a7b8-1f706e7a3b86", kind: "pdf", name: "Garden notes.pdf", savedAt: 2, pages: 1 };
   const reads: Array<PromiseWithResolvers<{ entries: (typeof current)[] }>> = [];
   const releases: string[] = [];
+  let ownerScope = "a".repeat(64);
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     agent,
     account: {
-      status: () => Promise.resolve({ kind: "signedIn", voiceDisclosureScope: "a".repeat(64) }),
+      status: () => Promise.resolve({ kind: "signedIn", voiceDisclosureScope: ownerScope }),
       beginSignIn: () => Promise.resolve(),
       signOut: () => Promise.resolve(),
       cleanupLegacySignIn: () => Promise.resolve(),
@@ -2334,12 +2335,22 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   await tap("Ask Grace");
   const request = 'Find the file "Lunch notes".';
-  await act(() => userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), request));
-  await tap("Send");
-  await expect.poll(() => sentTurn(requests[0]?.body).said).toBe(request);
-  await answer(0, { text: "You can find it in Files.", isQuestion: false, answers: [],
-    actions: [{ kind: "findFile", tab: "Documents", query: "Lunch notes" }] });
-  await expect.element(page.getByRole("button", { name: "Find in Files", exact: true })).toBeVisible();
+  const offer = async (index: number) => {
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), request));
+    await tap("Send");
+    await expect.poll(() => sentTurn(requests[index]?.body).said).toBe(request);
+    await answer(index, { text: "You can find it in Files.", isQuestion: false, answers: [],
+      actions: [{ kind: "findFile", tab: "Documents", query: "Lunch notes" }] });
+    await expect.element(page.getByRole("button", { name: "Find in Files", exact: true })).toBeVisible();
+  };
+  await offer(0);
+  ownerScope = "b".repeat(64);
+  await tap("Find in Files");
+  await expect.element(page.getByRole("button", { name: "Find in Files", exact: true })).not.toBeInTheDocument();
+  expect(runtime.runSync(workspace.get()).device.surface).toBe("Home");
+  expect(reads).toHaveLength(0);
+  ownerScope = "a".repeat(64);
+  await offer(1);
   expect(reads).toHaveLength(0);
   await tap("Find in Files");
   await expect.poll(() => reads.length).toBe(2);
