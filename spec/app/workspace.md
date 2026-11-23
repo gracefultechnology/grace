@@ -1411,14 +1411,15 @@ pure val sectionsValues = Set(
   List({ key: "", ordinary: true, source: SectionAmount, amount: "a", due: "b" }),
   List({ key: "first", ordinary: true, source: SectionAmount, amount: "a", due: "b" }),
   List({ key: "first", ordinary: true, source: SectionAmount, amount: "a", due: "b" }, { key: "second", ordinary: true, source: SectionAmount, amount: "a", due: "b" }))
+pure def statementAmountBelongsToSection(source: StatementAmountSource, sectionKey: str): bool = match source {
+  | SectionAmount => true
+  | OwnedLineTotal(row) => row.rowKey != "" and row.rowKey != sectionKey and row.parentKey == sectionKey
+}
 pure def provesStatementSection(complete: bool, sections: List[StatementSection], amount: str, due: str): bool =
   if (sections.length() != 1) false
   else complete and sections.head().ordinary and amount != "" and due != "" and sections.head().key != "" and
     sections.head().amount == amount and sections.head().due == due and
-    (match sections.head().source {
-      | SectionAmount => true
-      | OwnedLineTotal(row) => row.rowKey != "" and row.rowKey != sections.head().key and row.parentKey == sections.head().key
-    })
+    statementAmountBelongsToSection(sections.head().source, sections.head().key)
 pure def lawAStatementRequiresItsOwnCompleteSection(complete: bool, sections: List[StatementSection], amount: str, due: str): bool =
   provesStatementSection(complete, sections, amount, due) implies
     (complete and sections.length() == 1 and sections.head().ordinary and amount != "" and due != "")
