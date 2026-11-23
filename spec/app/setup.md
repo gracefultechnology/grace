@@ -687,8 +687,10 @@ pure def lawAReturningCustomerMayManageAndSubscribeAgain(accountId: str, email: 
 
 ### An enrolled tablet offers one sign-in to update mail and calendar access
 
-A tablet with an older device credential offers sign-in again in Account.
-Email and Calendar direct the owner to Account until that sign-in is done.
+A tablet with an older device credential offers sign-in again in Account
+when its Grace service offers the upgrade. Email and Calendar direct the owner
+to Account until that sign-in is done. On a standalone tablet whose service has
+yet to offer the upgrade, Email and Calendar still open on Grace’s website.
 The owner can cancel while the browser sign-in is pending.
 The tablet retains the same owner and offers no new attempt while it waits
 for a device acknowledgment. When the device confirms the updated sign-in,
@@ -844,8 +846,9 @@ reverses: the managed Google shell keeps the receipt with the mailbox it shows,
 through a change of folder or another page, until that Undo is confirmed, and
 sends an Undo only for the message, the version and the operation that receipt
 names, so without a confirmed move to Trash there is nothing to undo. The Undo
-button is drawn from that kept receipt, so the page never offers an Undo the
-shell would refuse.
+button is drawn from that kept receipt, and only while it is the receipt of the
+Trash the page just reported, so the page never offers an Undo the shell would
+refuse, nor one for another message.
 
 An appointment change is read back before it is sent: the review the person
 sees is the change itself, held by the managed Google shell, and Grace sends

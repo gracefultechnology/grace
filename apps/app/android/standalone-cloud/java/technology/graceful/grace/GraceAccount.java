@@ -33,6 +33,7 @@ public final class GraceAccount extends Plugin {
  private static final ExecutorService ACCOUNT = Executors.newSingleThreadExecutor();
  private static final ExecutorService RECOVERY = Executors.newSingleThreadExecutor();
  private static final String CLOUD_ORIGIN = BuildConfig.CLOUD_API_ORIGIN;
+ private static final String MOBILE_ENVIRONMENT = "production";
  private CloudPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
  private GraceBrowserGuide guide;
@@ -40,7 +41,7 @@ public final class GraceAccount extends Plugin {
 
  @Override public void load() {
   guide = new GraceBrowserGuide(getContext());
-  passwordBackup = new CloudPasswordBackup(account(getContext()), BuildConfig.APPLICATION_ID, "production");
+  passwordBackup = new CloudPasswordBackup(account(getContext()), BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT);
   recovery = new GracePasswordRecovery(getActivity(), this);
   stopLeaseUpdates = GraceDeviceLeaseJob.listen(getContext(), () -> ACCOUNT.execute(() -> {
    try { publishStatus(account(getContext())); }
@@ -184,7 +185,7 @@ public final class GraceAccount extends Plugin {
     if (finishAcknowledgment(account)) { publishStatus(account); call.resolve(); return; }
     closePicker(account);
     var attempt = "browser".equals(call.getString("method")) || !hasGooglePlayServices() ? null
-        : account.prepareNativeGoogle(getContext().getPackageName(), "production");
+        : account.prepareNativeGoogle(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT);
     if (attempt == null) open(account.begin(), call);
     else {
      Picker next = new Picker(attempt, new CancellationSignal(), call);
@@ -199,7 +200,7 @@ public final class GraceAccount extends Plugin {
   ACCOUNT.execute(() -> {
    try {
     CloudDeviceAccount account = account(getContext());
-    Uri address = account.beginLeaseUpgrade();
+    Uri address = account.beginLeaseUpgrade(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT);
     publishStatus(account);
     open(address, call);
    } catch (Exception unavailable) { call.reject("Couldn't open sign-in for email and calendar"); }
@@ -211,7 +212,7 @@ public final class GraceAccount extends Plugin {
    try {
     CloudDeviceAccount account = account(getContext());
     if (account.leaseUpgradeStatus() == CloudDeviceAccount.LeaseUpgradeStatus.SIGN_IN_PENDING) {
-     account.cancelLeaseUpgrade(account.beginLeaseUpgrade());
+     account.cancelLeaseUpgrade(account.beginLeaseUpgrade(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT));
      publishStatus(account);
     }
     call.resolve();
@@ -394,6 +395,9 @@ public final class GraceAccount extends Plugin {
   var current = upgrade == CloudDeviceAccount.LeaseUpgradeStatus.ACKNOWLEDGMENT_PENDING
       ? account.session() : GracePasswordsOwner.stableSession(getContext());
   var status = projection(current);
+  if (upgrade == CloudDeviceAccount.LeaseUpgradeStatus.REQUIRED && current != null
+      && !account.leaseUpgradeAvailable(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT))
+   upgrade = CloudDeviceAccount.LeaseUpgradeStatus.NOT_REQUIRED;
   String mailLeaseUpgrade = switch (upgrade) {
    case NOT_REQUIRED -> null;
    case REQUIRED -> "required";

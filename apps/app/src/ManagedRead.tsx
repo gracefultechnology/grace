@@ -4,7 +4,7 @@ import { Effect, Exit, Stream } from "effect";
 import { type ReactNode, useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
 import type { Recurrence } from "../gen/app__calendar.ts";
-import { managedReadAccountId, mayChangeManaged, mayReadManaged, maySendManagedMail, skipsMonthsWithoutItsDay } from "../gen/app__setup.ts";
+import { type GraceAccount, managedReadAccountId, mayChangeManaged, mayReadManaged, maySendManagedMail, skipsMonthsWithoutItsDay } from "../gen/app__setup.ts";
 import { actionableMailBody, inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type AppointmentChange, type ReadView } from "./managedReads.vibe";
 import { messageLinkParts } from "./messageLinks.vibe";
 import { calendarGrid } from "./Calendar.tsx";
@@ -256,15 +256,24 @@ function Agenda({ calendar, today, move, open, busy, children }: {
   </section>;
 }
 
-/** Grace's hosted read view for an Inbox or the primary Google calendar. */
+type ReadCommand = Parameters<ManagedReads.Shape["send"]>[0];
+
+function retryRead(command: ReadCommand | undefined, run: (command: ReadCommand) => void) {
+  return command && (() => run(command));
+}
+
+function signedInMailLeaseVersion(account: GraceAccount | undefined) {
+  return account?.tag === "GraceDeviceSignedIn" && account.mailLeaseUpgrade.tag === "LeaseMailReady"
+    ? account.mailLeaseUpgrade.leaseVersion : undefined;
+}
+
 export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const runtime = useRuntime();
   const account = useMachine(runtime).state;
-  type ReadCommand = Parameters<ManagedReads.Shape["send"]>[0];
   const [failed, setFailed] = useState<{ key: string; text: string; retry?: Extract<ReadCommand, {kind: "mailFolder"}> }>();
   const [pending, startTransition] = useTransition();
   const [editor, setEditor] = useState<{ key: string; event?: EventRow; seriesFor?: string }>();
-  const [writeNotice, setWriteNotice] = useState<{ key: string; text: string; offerUndo?: boolean }>();
+  const [writeNotice, setWriteNotice] = useState<{ key: string; text: string; undoOf?: string }>();
   const subscribe = useCallback((changed: () => void) => {
     const fiber = runtime.runFork(Stream.runForEach(managedState, () => Effect.sync(changed)));
     return () => fiber.interruptUnsafe();
@@ -286,8 +295,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const person = account?.graceAccount;
   const signedIn = person?.tag === "GraceSignedIn" ? person : undefined;
   const authorized = account !== undefined && mayReadManaged(account.graceAccount, account.googleLink, view === "Email" ? "ManagedEmail" : "ManagedCalendar");
-  const phase = person?.tag === "GraceDeviceSignedIn" ? person.mailLeaseUpgrade : undefined;
-  const leaseVersion = phase?.tag === "LeaseMailReady" ? phase.leaseVersion : undefined;
+  const leaseVersion = signedInMailLeaseVersion(person);
 
   const link = account?.googleLink;
   const grant = link?.tag === "GoogleLinkConnected" ? link.grant : "";
@@ -320,14 +328,13 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
       : action.kind === "trash" ? "Moved to Trash."
         : action.kind === "undo" ? "Message restored."
           : action.action === "delete" ? "Appointment removed." : "Appointment saved.";
-    setWriteNotice({ key: projection, text, offerUndo: action.kind === "trash" && receipt !== undefined });
+    setWriteNotice({ key: projection, text, undoOf: action.kind === "trash" ? receipt?.operationId : undefined });
   });
-  const undo = canTrash && notice?.offerUndo && snapshot.kind === "mail" ? snapshot.trashed : undefined;
-  const undoVersion = undo?.version;
+  const undo = canTrash && snapshot.kind === "mail" && notice?.undoOf !== undefined && snapshot.trashed?.operationId === notice.undoOf ? snapshot.trashed : undefined;
   const showNotice = notice && <div className="flex flex-wrap items-center gap-3">
     <PageText role="status">{notice.text}</PageText>
-    {undo && undoVersion && <Button variant="capsule" size="pill" disabled={pending}
-      onClick={() => write({ kind: "undo", id: undo.itemId, version: undoVersion, prior: undo.operationId })}>Undo</Button>}
+    {undo?.version && <Button variant="capsule" size="pill" disabled={pending}
+      onClick={() => write({ kind: "undo", id: undo.itemId, version: undo.version, prior: undo.operationId })}>Undo</Button>}
     <Button variant="capsule" size="pill" disabled={pending} onClick={() => setWriteNotice(undefined)}>Dismiss</Button>
   </div>;
 
@@ -373,8 +380,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const back = <Button variant="capsule" size="pill" onClick={() => run({ kind: "back" })}>{snapshot.kind === "mail" ? `Back to ${folderNames[snapshot.folder]}` : "Back to calendar"}</Button>;
   const more = snapshot.next === null ? null :
     <Button variant="capsule" size="pill" loading={pending} onClick={() => run({ kind: "more" })}>Load more</Button>;
-  const retry = failed?.retry;
-  const problem = failed && (failed.key === projection || failed.key === mailProjection) && <RetryNotice role="alert" retrying={pending} onRetry={retry && (() => run(retry))}>{failed.text}</RetryNotice>;
+  const problem = failed && (failed.key === projection || failed.key === mailProjection) && <RetryNotice role="alert" retrying={pending} onRetry={retryRead(failed.retry, run)}>{failed.text}</RetryNotice>;
 
   if (snapshot.kind === "mail") {
     const selected = snapshot.selected;

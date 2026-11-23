@@ -15,11 +15,16 @@ ids in more detail.
 
 ## Eliza integration inventory
 
-Grace release source `245a5a111aa2a18df0861a9a72658ead636859c4` pins
-Eliza Vibestack at `c1fd0627ab20611019ce2bdaffca58c20ea91cc8`. Its
-production dependency graph crosses into four Eliza packages.
-[Grace release pin](https://github.com/gracefultechnology/grace-new/pull/144)
-· [Eliza source](https://github.com/elizaOS/eliza/tree/c1fd0627ab20611019ce2bdaffca58c20ea91cc8)
+The deployed Grace release `56fbef12050ab598e069cdf0d517ab3976f628e8`
+pins official Eliza Vibestack at `427ffd9e993cd2a1cb76620c6dac6990342c102e`.
+It uses four Eliza packages. The signed ARM64 launcher and standalone
+contain the same eight web assets served by Grace's Cloudflare Worker
+`9edad6d9-9c57-4dba-80c5-c755546cfb7e`. The Worker uses Grace's dedicated
+Railway PostgreSQL database through Hyperdrive. A read-only production
+check verified the Grace database identity over TLS and matched all 51
+migration ledger entries, including one historical migration.
+[Grace release source](https://github.com/gracefultechnology/grace/tree/56fbef12050ab598e069cdf0d517ab3976f628e8)
+· [Eliza source](https://github.com/elizaOS/eliza/tree/427ffd9e993cd2a1cb76620c6dac6990342c102e)
 
 | Eliza package | Grace consumer |
 | --- | --- |
@@ -28,16 +33,29 @@ production dependency graph crosses into four Eliza packages.
 | `@elizaos/agent` | The Android build compiles and stages the device bundle from the pinned checkout. Grace uses the authenticated local socket for status, turns, streaming and cancellation. |
 | `@elizaos/core` | The Android build compiles Core for the Agent bundle. Cloud and OS also depend on Core upstream. |
 
-The shared Eliza Cloud Android profiles compile the Grace-owned Steward client
-for native sign-in and per-action Passwords approval. Standalone Grace Cloud
-uses the OS device account and the protected browser approval page.
+The shared Eliza Cloud Android profiles source native sign-in, secure storage,
+Agent service and runtime files from Eliza OS. Grace removed its copied
+Steward Android SDK in #229. Standalone Grace Cloud uses the OS device
+account and the protected browser approval page.
 
-The device Agent plugin load list is empty. Grace's native Capacitor bridge
-registrations are part of its Android host. Its React screens, components,
-and tokens are owned by `apps/app`, `@repo/ui`, and
-`@repo/design-system`, with no dependency on Eliza's SDK or UI packages.
+The eleven modules that the embedded device Agent registers from
+`@elizaos/agent` are `approvals`, `basic-actions`, `cloud`, `notifications`, `reply-draft`,
+`scheduled-tasks`, `storage`, `surface`, `tasks`, `triggers` and `views`.
+Grace's Android host registers its native Capacitor bridges. Grace owns its
+React screens, components and design tokens in `apps/app`, `@repo/ui` and
+`@repo/design-system`.
 
-The previous Grace release pinned `grace/integration` at `9bd888f`.
+Google sign-in and Gmail acceptance for this release used fixtures only.
+The Chromium journeys exercised owned Gmail, saving attachments to Files
+and creating a Calendar appointment from email. Email-code sign-in was
+exercised in the bundled Worker fixture and SMS is disabled. The Grace Plus
+plan costs USD 30 per month. Production Stripe ingress accepted a signed
+synthetic event and rejected an invalid signature. No customer was charged.
+Physical acceptance on the exact signed Lenovo build is tracked separately.
+
+### Migration history and earlier release evidence
+
+An earlier Grace release pinned `grace/integration` at `9bd888f`.
 That commit included the embedded service, Google sign-in and speech changes
 from Eliza PRs #39795, #39789 and #39784. Eliza’s v4 branch changes package
 ownership and the mobile runtime. A portable Gradle host alone does not
@@ -49,7 +67,7 @@ establish that an agent can start or complete a turn.
 | Launcher Wi-Fi and web surface | Legacy native Wi-Fi and browser-surface plugin Android directories | OS Android Wi-Fi and browser-surface modules | Install launcher, join a network, interact with a page |
 | APK and AOSP build | Legacy app build scripts, agent inventory and overlay tooling | OS Android consumer tooling and AOSP overlay | Build both flavors, inspect their payload, boot the launcher |
 | Ask Grace | Embedded agent service, assistant, Eliza Cloud and SQL plugins | Device-owned agent on core with bounded Grace actions, dedicated cloud inference and local conversation storage | Cold start, stream a reply, cancel, resume, sign out |
-| Sign-in and paid access | Integration branch Google enrollment and external pilot funding | Cloud identity, device grants, checkout, portal and current entitlement | Real Google, SMS and email sign-in, isolated account, payment-provider test subscription and revocation |
+| Sign-in and paid access | Integration branch Google enrollment and external pilot funding | Cloud identity, device grants, checkout, portal and current entitlement | Email-code session, fixture Google sign-in, SMS disabled, and Stripe checkout and revocation evidence scoped to its environment |
 | Managed Gmail and Calendar | Managed Google routes and the connector prototype | Cloud provider grants associated with the authenticated owner | Separate consent, owned mailbox/calendar, disconnect and expiry |
 | Voice | Legacy speech bridge and cloud relay | OS audio and cloud speech with account-bound admission | Renew or revoke a real speech session and hear a reply |
 | Grace screens | Grace React app, design system and UI library | Grace | Build the production Vite entry without an Eliza UI import |
@@ -92,8 +110,7 @@ come from the pinned checkout. The browser address parser uses
 `@elizaos/os/browser/address`, and Wi-Fi and browser bridge types use
 `@elizaos/os/bridges/definitions/*`. Grace renders the browser controls, account settings,
 managed data and voice controls from its own React app. The old policy's
-refusal list records disallowed capabilities. The current plugin load list
-is empty.
+refusal list records disallowed capabilities from the legacy plugin stack.
 
 The signed launcher consumes OS’s Android consumer host and APK distribution
 tools. The overlay stages that APK for the stock Cuttlefish product through

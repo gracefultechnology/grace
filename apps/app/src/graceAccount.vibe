@@ -249,7 +249,7 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     if (read === undefined) throw new AccountRequestFailed()
     const response = Schema.Struct({ status: Schema.Int.check(Schema.isBetween({ minimum: 200, maximum: 599 })), body: Schema.String })
     const { status, body } = try Schema.decodeUnknownEffect(response)(try tryPromise(() => read({ ...owner, route, query })))
-    return accountReadResponse(status, body)
+    return try Effect.try(() => accountReadResponse(status, body))
   }
 
   effect function refresh() {
