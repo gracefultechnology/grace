@@ -132,9 +132,11 @@ lemma visit_ensures(w: Workspace, destination: app__shell_Surface, by_: Workspac
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepEffectsRequireCurrentContext(w, visit(w, destination, by_), []))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "visit", visit(w, destination, by_)))
   ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepCommitmentSwitchRetainsRecords(w, "visit", visit(w, destination, by_)))
+  ensures (inv(w) ==> canVisit(w, destination, by_) ==> stepAHeldTaskDoesNotAdvance(w, "visit", visit(w, destination, by_)))
 {
   hide *;
   reveal inv;
+  reveal stepAHeldTaskDoesNotAdvance;
   if inv(w) && canVisit(w, destination, by_) {
     VisitInvariant(w, destination, by_);
     VisitTransitionFacts(w, destination, by_);
@@ -166,6 +168,7 @@ lemma openReleasedEmailLink_ensures(w: Workspace, release: ReleasedEmailLink, by
   ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> stepEffectsRequireCurrentContext(w, openReleasedEmailLink(w, release, by_), []))
   ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "openReleasedEmailLink", openReleasedEmailLink(w, release, by_)))
   ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> stepCommitmentSwitchRetainsRecords(w, "openReleasedEmailLink", openReleasedEmailLink(w, release, by_)))
+  ensures (inv(w) ==> canOpenReleasedEmailLink(w, release, by_) ==> stepAHeldTaskDoesNotAdvance(w, "openReleasedEmailLink", openReleasedEmailLink(w, release, by_)))
 {
   if inv(w) && canOpenReleasedEmailLink(w, release, by_) {
     ComponentInvariants(w);
@@ -229,9 +232,11 @@ lemma togglePopover_ensures(w: Workspace, popover: app__shell_RailPopover, by_: 
   ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepEffectsRequireCurrentContext(w, togglePopover(w, popover, by_), []))
   ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "togglePopover", togglePopover(w, popover, by_)))
   ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepCommitmentSwitchRetainsRecords(w, "togglePopover", togglePopover(w, popover, by_)))
+  ensures (inv(w) ==> canTogglePopover(w, popover, by_) ==> stepAHeldTaskDoesNotAdvance(w, "togglePopover", togglePopover(w, popover, by_)))
 {
   hide *;
   reveal inv;
+  reveal stepAHeldTaskDoesNotAdvance;
   if inv(w) && canTogglePopover(w, popover, by_) {
     PopoverInvariant(w, popover, by_);
     PopoverTransitionFacts(w, popover, by_);
@@ -263,6 +268,7 @@ lemma openGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> stepEffectsRequireCurrentContext(w, openGrace(w, by_), []))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "openGrace", openGrace(w, by_)))
   ensures (inv(w) ==> canOpenGrace(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "openGrace", openGrace(w, by_)))
+  ensures (inv(w) ==> canOpenGrace(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "openGrace", openGrace(w, by_)))
 {
   if inv(w) && canOpenGrace(w, by_) {
     ComponentInvariants(w);
@@ -296,6 +302,7 @@ lemma closeGrace_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> stepEffectsRequireCurrentContext(w, closeGrace(w, by_), []))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "closeGrace", closeGrace(w, by_)))
   ensures (inv(w) ==> canCloseGrace(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "closeGrace", closeGrace(w, by_)))
+  ensures (inv(w) ==> canCloseGrace(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "closeGrace", closeGrace(w, by_)))
 {
   if inv(w) && canCloseGrace(w, by_) {
     ComponentInvariants(w);
@@ -330,6 +337,7 @@ lemma talk_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canTalk(w, by_) ==> stepEffectsRequireCurrentContext(w, talk(w, by_), []))
   ensures (inv(w) ==> canTalk(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "talk", talk(w, by_)))
   ensures (inv(w) ==> canTalk(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "talk", talk(w, by_)))
+  ensures (inv(w) ==> canTalk(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "talk", talk(w, by_)))
 {
   if inv(w) && canTalk(w, by_) {
     ComponentInvariants(w);
@@ -363,6 +371,7 @@ lemma purgePrivate_ensures(w: Workspace, token: int, messageIndex: int, purgeDra
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> stepEffectsRequireCurrentContext(w, purgePrivate(w, token, messageIndex, purgeDraft, by_), []))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "purgePrivate", purgePrivate(w, token, messageIndex, purgeDraft, by_)))
   ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> stepCommitmentSwitchRetainsRecords(w, "purgePrivate", purgePrivate(w, token, messageIndex, purgeDraft, by_)))
+  ensures (inv(w) ==> canPurgePrivate(w, token, messageIndex, purgeDraft, by_) ==> stepAHeldTaskDoesNotAdvance(w, "purgePrivate", purgePrivate(w, token, messageIndex, purgeDraft, by_)))
 {
   if inv(w) && canPurgePrivate(w, token, messageIndex, purgeDraft, by_) {
     ComponentInvariants(w);
@@ -397,6 +406,7 @@ lemma cancelWake_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCancelWake(w, by_) ==> stepEffectsRequireCurrentContext(w, cancelWake(w, by_), []))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "cancelWake", cancelWake(w, by_)))
   ensures (inv(w) ==> canCancelWake(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "cancelWake", cancelWake(w, by_)))
+  ensures (inv(w) ==> canCancelWake(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "cancelWake", cancelWake(w, by_)))
 {
   if inv(w) && canCancelWake(w, by_) {
     ComponentInvariants(w);
@@ -429,6 +439,7 @@ lemma changePreferences_ensures(w: Workspace, settings: app__preferences_Display
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> stepEffectsRequireCurrentContext(w, changePreferences(w, settings, by_), []))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "changePreferences", changePreferences(w, settings, by_)))
   ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> stepCommitmentSwitchRetainsRecords(w, "changePreferences", changePreferences(w, settings, by_)))
+  ensures (inv(w) ==> canChangePreferences(w, settings, by_) ==> stepAHeldTaskDoesNotAdvance(w, "changePreferences", changePreferences(w, settings, by_)))
 {
   if inv(w) && canChangePreferences(w, settings, by_) {
     ComponentInvariants(w);
@@ -462,6 +473,7 @@ lemma adjustPreferenceLevel_ensures(w: Workspace, levelStep: app__preferences_Le
   ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepEffectsRequireCurrentContext(w, adjustPreferenceLevel(w, levelStep, by_), []))
   ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_)))
   ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepCommitmentSwitchRetainsRecords(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_)))
+  ensures (inv(w) ==> canAdjustPreferenceLevel(w, levelStep, by_) ==> stepAHeldTaskDoesNotAdvance(w, "adjustPreferenceLevel", adjustPreferenceLevel(w, levelStep, by_)))
 {
   changePreferences_ensures(w, app__preferences_adjustedLevel(w.preferences.session, levelStep), by_);
 }
@@ -491,6 +503,7 @@ lemma savePreferences_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> stepEffectsRequireCurrentContext(w, savePreferences(w, by_), []))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "savePreferences", savePreferences(w, by_)))
   ensures (inv(w) ==> canSavePreferences(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "savePreferences", savePreferences(w, by_)))
+  ensures (inv(w) ==> canSavePreferences(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "savePreferences", savePreferences(w, by_)))
 {
   if inv(w) && canSavePreferences(w, by_) {
     ComponentInvariants(w);
@@ -523,6 +536,7 @@ lemma preferencesSaved_ensures(w: Workspace, saveToken: int, succeeded: bool, by
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> stepEffectsRequireCurrentContext(w, preferencesSaved(w, saveToken, succeeded, by_), []))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "preferencesSaved", preferencesSaved(w, saveToken, succeeded, by_)))
   ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> stepCommitmentSwitchRetainsRecords(w, "preferencesSaved", preferencesSaved(w, saveToken, succeeded, by_)))
+  ensures (inv(w) ==> canPreferencesSaved(w, saveToken, by_) ==> stepAHeldTaskDoesNotAdvance(w, "preferencesSaved", preferencesSaved(w, saveToken, succeeded, by_)))
 {
   if inv(w) && canPreferencesSaved(w, saveToken, by_) {
     ComponentInvariants(w);
@@ -556,6 +570,7 @@ lemma wakeNoSpeech_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Worksp
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> stepEffectsRequireCurrentContext(w, wakeNoSpeech(w, timer, by_).state, wakeNoSpeech(w, timer, by_).out))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "wakeNoSpeech", wakeNoSpeech(w, timer, by_).state))
   ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> stepCommitmentSwitchRetainsRecords(w, "wakeNoSpeech", wakeNoSpeech(w, timer, by_).state))
+  ensures (inv(w) ==> canWakeNoSpeech(w, timer, by_) ==> stepAHeldTaskDoesNotAdvance(w, "wakeNoSpeech", wakeNoSpeech(w, timer, by_).state))
 {
   if inv(w) && canWakeNoSpeech(w, timer, by_) {
     ComponentInvariants(w);
@@ -589,6 +604,7 @@ lemma wakeReturn_ensures(w: Workspace, timer: app__wake_WakeTimer, by_: Workspac
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> stepEffectsRequireCurrentContext(w, wakeReturn(w, timer, by_), []))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "wakeReturn", wakeReturn(w, timer, by_)))
   ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> stepCommitmentSwitchRetainsRecords(w, "wakeReturn", wakeReturn(w, timer, by_)))
+  ensures (inv(w) ==> canWakeReturn(w, timer, by_) ==> stepAHeldTaskDoesNotAdvance(w, "wakeReturn", wakeReturn(w, timer, by_)))
 {
   if inv(w) && canWakeReturn(w, timer, by_) {
     ComponentInvariants(w);
@@ -627,6 +643,7 @@ lemma stop_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canStop(w, by_) ==> stepEffectsRequireCurrentContext(w, stop(w, by_), []))
   ensures (inv(w) ==> canStop(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "stop", stop(w, by_)))
   ensures (inv(w) ==> canStop(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "stop", stop(w, by_)))
+  ensures (inv(w) ==> canStop(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "stop", stop(w, by_)))
 {
   if inv(w) && canStop(w, by_) {
     ComponentInvariants(w);
@@ -863,6 +880,7 @@ lemma newConversation_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canNewConversation(w, by_) ==> stepEffectsRequireCurrentContext(w, newConversation(w, by_), []))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "newConversation", newConversation(w, by_)))
   ensures (inv(w) ==> canNewConversation(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "newConversation", newConversation(w, by_)))
+  ensures (inv(w) ==> canNewConversation(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "newConversation", newConversation(w, by_)))
 {
   if inv(w) && canNewConversation(w, by_) {
     ComponentInvariants(w);
@@ -896,6 +914,7 @@ lemma requestReplacement_ensures(w: Workspace, requestedTask: string, requestedG
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> stepEffectsRequireCurrentContext(w, requestReplacement(w, requestedTask, requestedGoal, by_), []))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "requestReplacement", requestReplacement(w, requestedTask, requestedGoal, by_)))
   ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> stepCommitmentSwitchRetainsRecords(w, "requestReplacement", requestReplacement(w, requestedTask, requestedGoal, by_)))
+  ensures (inv(w) ==> canRequestReplacement(w, requestedTask, requestedGoal, by_) ==> stepAHeldTaskDoesNotAdvance(w, "requestReplacement", requestReplacement(w, requestedTask, requestedGoal, by_)))
 {
   if inv(w) && canRequestReplacement(w, requestedTask, requestedGoal, by_) {
     ComponentInvariants(w);
@@ -930,6 +949,7 @@ lemma keepTask_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canKeepTask(w, by_) ==> stepEffectsRequireCurrentContext(w, keepTask(w, by_), []))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "keepTask", keepTask(w, by_)))
   ensures (inv(w) ==> canKeepTask(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "keepTask", keepTask(w, by_)))
+  ensures (inv(w) ==> canKeepTask(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "keepTask", keepTask(w, by_)))
 {
   if inv(w) && canKeepTask(w, by_) {
     ComponentInvariants(w);
@@ -963,6 +983,7 @@ lemma continueTask_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canContinueTask(w, by_) ==> stepEffectsRequireCurrentContext(w, continueTask(w, by_), []))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "continueTask", continueTask(w, by_)))
   ensures (inv(w) ==> canContinueTask(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "continueTask", continueTask(w, by_)))
+  ensures (inv(w) ==> canContinueTask(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "continueTask", continueTask(w, by_)))
 {
   if inv(w) && canContinueTask(w, by_) {
     ComponentInvariants(w);
@@ -1000,6 +1021,7 @@ lemma completeOrdinary_ensures(w: Workspace, completion: GoalCompletion, by_: Wo
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> stepEffectsRequireCurrentContext(w, completeOrdinary(w, completion, by_), []))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "completeOrdinary", completeOrdinary(w, completion, by_)))
   ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> stepCommitmentSwitchRetainsRecords(w, "completeOrdinary", completeOrdinary(w, completion, by_)))
+  ensures (inv(w) ==> canCompleteOrdinary(w, completion, by_) ==> stepAHeldTaskDoesNotAdvance(w, "completeOrdinary", completeOrdinary(w, completion, by_)))
 {
   if inv(w) && canCompleteOrdinary(w, completion, by_) {
     ComponentInvariants(w);
@@ -1033,6 +1055,7 @@ lemma approveSpokenCommitment_ensures(w: Workspace, commitmentTokens: Commitment
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> stepEffectsRequireCurrentContext(w, approveSpokenCommitment(w, commitmentTokens, spoken, by_), []))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "approveSpokenCommitment", approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
   ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> stepCommitmentSwitchRetainsRecords(w, "approveSpokenCommitment", approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
+  ensures (inv(w) ==> canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) ==> stepAHeldTaskDoesNotAdvance(w, "approveSpokenCommitment", approveSpokenCommitment(w, commitmentTokens, spoken, by_)))
 {
   if inv(w) && canApproveSpokenCommitment(w, commitmentTokens, spoken, by_) {
     ComponentInvariants(w);
@@ -1067,6 +1090,7 @@ lemma interact_ensures(w: Workspace, input: app__interaction_Interaction, by_: W
   ensures (inv(w) ==> canInteract(w, input, by_) ==> stepEffectsRequireCurrentContext(w, interact(w, input, by_), []))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "interact", interact(w, input, by_)))
   ensures (inv(w) ==> canInteract(w, input, by_) ==> stepCommitmentSwitchRetainsRecords(w, "interact", interact(w, input, by_)))
+  ensures (inv(w) ==> canInteract(w, input, by_) ==> stepAHeldTaskDoesNotAdvance(w, "interact", interact(w, input, by_)))
 {
   if inv(w) && canInteract(w, input, by_) {
     ComponentInvariants(w);
@@ -1101,6 +1125,7 @@ lemma bindCommitment_ensures(w: Workspace, key: app__task_Subject, by_: Workspac
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> stepEffectsRequireCurrentContext(w, bindCommitment(w, key, by_), []))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "bindCommitment", bindCommitment(w, key, by_)))
   ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> stepCommitmentSwitchRetainsRecords(w, "bindCommitment", bindCommitment(w, key, by_)))
+  ensures (inv(w) ==> canBindCommitment(w, key, by_) ==> stepAHeldTaskDoesNotAdvance(w, "bindCommitment", bindCommitment(w, key, by_)))
 {
   if inv(w) && canBindCommitment(w, key, by_) {
     ComponentInvariants(w);
@@ -1153,6 +1178,7 @@ lemma saveCommitment_ensures(w: Workspace, saveReport: SaveReport, by_: Workspac
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> stepEffectsRequireCurrentContext(w, saveCommitment(w, saveReport, by_), []))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "saveCommitment", saveCommitment(w, saveReport, by_)))
   ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> stepCommitmentSwitchRetainsRecords(w, "saveCommitment", saveCommitment(w, saveReport, by_)))
+  ensures (inv(w) ==> canSaveCommitment(w, saveReport, by_) ==> stepAHeldTaskDoesNotAdvance(w, "saveCommitment", saveCommitment(w, saveReport, by_)))
 {
   if inv(w) && canSaveCommitment(w, saveReport, by_) {
     SaveCommitmentInvariant(w, saveReport, by_);
@@ -1245,6 +1271,7 @@ lemma begin_ensures(w: Workspace, taskRequest: TaskRequest, by_: WorkspaceActor)
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepEffectsRequireCurrentContext(w, begin(w, taskRequest, by_), []))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "begin", begin(w, taskRequest, by_)))
   ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepCommitmentSwitchRetainsRecords(w, "begin", begin(w, taskRequest, by_)))
+  ensures (inv(w) ==> canBegin(w, taskRequest, by_) ==> stepAHeldTaskDoesNotAdvance(w, "begin", begin(w, taskRequest, by_)))
 {
   if inv(w) && canBegin(w, taskRequest, by_) {
     ComponentInvariants(w);
@@ -1281,6 +1308,7 @@ lemma replaceTask_ensures(w: Workspace, taskRequest: TaskRequest, by_: Workspace
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepEffectsRequireCurrentContext(w, replaceTask(w, taskRequest, by_), []))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "replaceTask", replaceTask(w, taskRequest, by_)))
   ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepCommitmentSwitchRetainsRecords(w, "replaceTask", replaceTask(w, taskRequest, by_)))
+  ensures (inv(w) ==> canReplaceTask(w, taskRequest, by_) ==> stepAHeldTaskDoesNotAdvance(w, "replaceTask", replaceTask(w, taskRequest, by_)))
 {
   if inv(w) && canReplaceTask(w, taskRequest, by_) {
     ComponentInvariants(w);
@@ -1323,6 +1351,7 @@ lemma closeBrowser_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepEffectsRequireCurrentContext(w, closeBrowser(w, by_), []))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "closeBrowser", closeBrowser(w, by_)))
   ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "closeBrowser", closeBrowser(w, by_)))
+  ensures (inv(w) ==> canCloseBrowser(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "closeBrowser", closeBrowser(w, by_)))
 {
   if inv(w) && canCloseBrowser(w, by_) {
     ComponentInvariants(w);
@@ -1357,6 +1386,7 @@ lemma unexpectedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepEffectsRequireCurrentContext(w, unexpectedPage(w, unexpected, by_), []))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "unexpectedPage", unexpectedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepCommitmentSwitchRetainsRecords(w, "unexpectedPage", unexpectedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnexpectedPage(w, unexpected, by_) ==> stepAHeldTaskDoesNotAdvance(w, "unexpectedPage", unexpectedPage(w, unexpected, by_)))
 {
   if inv(w) && canUnexpectedPage(w, unexpected, by_) {
     ComponentInvariants(w);
@@ -1390,6 +1420,7 @@ lemma unwatchedPage_ensures(w: Workspace, unexpected: UnexpectedNavigation, by_:
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepEffectsRequireCurrentContext(w, unwatchedPage(w, unexpected, by_), []))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "unwatchedPage", unwatchedPage(w, unexpected, by_)))
   ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepCommitmentSwitchRetainsRecords(w, "unwatchedPage", unwatchedPage(w, unexpected, by_)))
+  ensures (inv(w) ==> canUnwatchedPage(w, unexpected, by_) ==> stepAHeldTaskDoesNotAdvance(w, "unwatchedPage", unwatchedPage(w, unexpected, by_)))
 {
   if inv(w) && canUnwatchedPage(w, unexpected, by_) {
     ComponentInvariants(w);
@@ -1423,6 +1454,7 @@ lemma receiveLoad_ensures(w: Workspace, loadReport: LoadReport, by_: WorkspaceAc
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepEffectsRequireCurrentContext(w, receiveLoad(w, loadReport, by_), []))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "receiveLoad", receiveLoad(w, loadReport, by_)))
   ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepCommitmentSwitchRetainsRecords(w, "receiveLoad", receiveLoad(w, loadReport, by_)))
+  ensures (inv(w) ==> canReceiveLoad(w, loadReport, by_) ==> stepAHeldTaskDoesNotAdvance(w, "receiveLoad", receiveLoad(w, loadReport, by_)))
 {
 if inv(w) && canReceiveLoad(w, loadReport, by_) {
   ComponentInvariants(w);
@@ -1461,6 +1493,7 @@ lemma stayOnPage_ensures(w: Workspace, stayed: StayedLoad, by_: WorkspaceActor)
   ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> stepEffectsRequireCurrentContext(w, stayOnPage(w, stayed, by_), []))
   ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "stayOnPage", stayOnPage(w, stayed, by_)))
   ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> stepCommitmentSwitchRetainsRecords(w, "stayOnPage", stayOnPage(w, stayed, by_)))
+  ensures (inv(w) ==> canStayOnPage(w, stayed, by_) ==> stepAHeldTaskDoesNotAdvance(w, "stayOnPage", stayOnPage(w, stayed, by_)))
 {
   if inv(w) && canStayOnPage(w, stayed, by_) {
     ComponentInvariants(w);
@@ -1542,6 +1575,7 @@ lemma receiveProgress_ensures(w: Workspace, progress: ProgressReport, by_: Works
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepEffectsRequireCurrentContext(w, receiveProgress(w, progress, by_), []))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "receiveProgress", receiveProgress(w, progress, by_)))
   ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepCommitmentSwitchRetainsRecords(w, "receiveProgress", receiveProgress(w, progress, by_)))
+  ensures (inv(w) ==> canReceiveProgress(w, progress, by_) ==> stepAHeldTaskDoesNotAdvance(w, "receiveProgress", receiveProgress(w, progress, by_)))
 {
   if inv(w) && canReceiveProgress(w, progress, by_) {
     ComponentInvariants(w);
@@ -1630,9 +1664,11 @@ lemma changePage_ensures(w: Workspace, browserInput: app__browserControls_Browse
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepEffectsRequireCurrentContext(w, changePage(w, browserInput, by_), []))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "changePage", changePage(w, browserInput, by_)))
   ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepCommitmentSwitchRetainsRecords(w, "changePage", changePage(w, browserInput, by_)))
+  ensures (inv(w) ==> canChangePage(w, browserInput, by_) ==> stepAHeldTaskDoesNotAdvance(w, "changePage", changePage(w, browserInput, by_)))
 {
   hide *;
   reveal inv;
+  reveal stepAHeldTaskDoesNotAdvance;
   if inv(w) && canChangePage(w, browserInput, by_) {
     ChangePageInvariant(w, browserInput, by_);
     ChangePageTransitionFacts(w, browserInput, by_);
@@ -1838,6 +1874,7 @@ lemma changeLifecycle_ensures(w: Workspace, lifecycle: Lifecycle, by_: Workspace
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepEffectsRequireCurrentContext(w, changeLifecycle(w, lifecycle, by_), []))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
   ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepCommitmentSwitchRetainsRecords(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
+  ensures (inv(w) ==> canChangeLifecycle(w, lifecycle, by_) ==> stepAHeldTaskDoesNotAdvance(w, "changeLifecycle", changeLifecycle(w, lifecycle, by_)))
 {
   if inv(w) && canChangeLifecycle(w, lifecycle, by_) {
     if lifecycle.RestartDevice? {
@@ -1873,6 +1910,7 @@ lemma beginGuided_ensures(w: Workspace, request: GuidedRequest, by_: WorkspaceAc
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepEffectsRequireCurrentContext(w, beginGuided(w, request, by_), []))
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "beginGuided", beginGuided(w, request, by_)))
   ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepCommitmentSwitchRetainsRecords(w, "beginGuided", beginGuided(w, request, by_)))
+  ensures (inv(w) ==> canBeginGuided(w, request, by_) ==> stepAHeldTaskDoesNotAdvance(w, "beginGuided", beginGuided(w, request, by_)))
 {
   if inv(w) && canBeginGuided(w, request, by_) {
     ComponentInvariants(w);
@@ -1946,6 +1984,7 @@ lemma confirmGuided_ensures(w: Workspace, report: GuidedObservation, by_: Worksp
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuided(w, report, by_), []))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "confirmGuided", confirmGuided(w, report, by_)))
   ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuided", confirmGuided(w, report, by_)))
+  ensures (inv(w) ==> canConfirmGuided(w, report, by_) ==> stepAHeldTaskDoesNotAdvance(w, "confirmGuided", confirmGuided(w, report, by_)))
 {
   GuidedReceiptPreserves(w, report, by_);
 }
@@ -1975,6 +2014,7 @@ lemma confirmGuidedNamedPage_ensures(w: Workspace, pageCheck: GuidedNamedPageChe
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuidedNamedPage(w, pageCheck, by_), []))
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "confirmGuidedNamedPage", confirmGuidedNamedPage(w, pageCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuidedNamedPage", confirmGuidedNamedPage(w, pageCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedNamedPage(w, pageCheck, by_) ==> stepAHeldTaskDoesNotAdvance(w, "confirmGuidedNamedPage", confirmGuidedNamedPage(w, pageCheck, by_)))
 {
   GuidedReceiptPreserves(w, pageCheck.report, by_);
 }
@@ -2033,6 +2073,7 @@ lemma confirmGuidedSearch_ensures(w: Workspace, searchCheck: GuidedSearchCheck, 
   ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuidedSearch(w, searchCheck, by_), []))
   ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepAHeldTaskDoesNotAdvance(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_)))
 {
   GuidedReceiptPreserves(w, searchCheck.report, by_);
 }
@@ -2062,6 +2103,7 @@ lemma confirmGuidedRecord_ensures(w: Workspace, recordCheck: GuidedRecordCheck, 
   ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuidedRecord(w, recordCheck, by_), []))
   ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> stepAHeldTaskDoesNotAdvance(w, "confirmGuidedRecord", confirmGuidedRecord(w, recordCheck, by_)))
 {
   GuidedReceiptPreserves(w, recordCheck.report, by_);
 }
@@ -2091,6 +2133,7 @@ lemma resume_ensures(w: Workspace, by_: WorkspaceActor)
   ensures (inv(w) ==> canResume(w, by_) ==> stepEffectsRequireCurrentContext(w, resume(w, by_), []))
   ensures (inv(w) ==> canResume(w, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "resume", resume(w, by_)))
   ensures (inv(w) ==> canResume(w, by_) ==> stepCommitmentSwitchRetainsRecords(w, "resume", resume(w, by_)))
+  ensures (inv(w) ==> canResume(w, by_) ==> stepAHeldTaskDoesNotAdvance(w, "resume", resume(w, by_)))
 {
   if inv(w) && canResume(w, by_) {
     ComponentInvariants(w);
