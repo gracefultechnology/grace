@@ -467,6 +467,18 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await click("Delete it");
   await expect.element(row("Eye check in room 5")).not.toBeInTheDocument();
   await expect.poll(titles, atCloud).toEqual([]);
+
+  await click("Today");
+  await act(() => userEvent.click(row("Joan’s birthday")));
+  const birthday = async () => (await run(selectedGmailCalendar)).entries.find((entry) => entry.identity.occurrenceId === "birthday")?.committed;
+  const before = await birthday();
+  expect(before?.allDay).toBe(true);
+  expect((await atCompany(secret, "birthday", { method: "PATCH", body: { location: "Garden room" } })).ok).toBe(true);
+  await edit("Birthday at the library", "Never");
+  await expect.element(page.getByText(newer)).toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "Joan’s birthday" })).toBeVisible();
+  await expect.element(page.getByText("Garden room")).toBeVisible();
+  expect(await birthday()).toEqual({ ...before, location: "Garden room" });
 }, journey);
 
 it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {

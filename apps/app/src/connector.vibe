@@ -186,21 +186,15 @@ function manifest(account: AccountRef, ref: string, m: Message, all: readonly At
 const addresses = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
 const iso = (at: number) => new Date(at).toISOString()
 
-function wallClock(at: number, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" }).formatToParts(at)
-  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value)
-  return Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"))
-}
-
 function midnight(date: string, timeZone: string) {
-  const guess = Date.parse(`${date}T00:00:00Z`)
-  const first = guess - (wallClock(guess, timeZone) - guess)
-  return guess - (wallClock(first, timeZone) - first)
+  const start = Option.getOrUndefined(DateTime.makeZoned(`${date}T00:00:00Z`, { timeZone, adjustForTimeZone: true }))
+  return start !== undefined && DateTime.formatIsoDate(start) === date ? DateTime.toEpochMillis(start) : undefined
 }
 
 const dateIn = (at: number, timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at)
 
 function exactly(zones: ReadonlySet<string>, text: string, allDay: boolean, timeZone: string) {
+  if (allDay && /^\d{4}-\d{2}-\d{2}$/.test(text)) return zones.has(timeZone) ? midnight(text, timeZone) : undefined
   const at = /(?:[zZ]|[+-]\d\d:?\d\d)$/.test(text) ? Date.parse(text) : Number.NaN
   if (Number.isNaN(at)) return undefined
   return allDay && !(zones.has(timeZone) && midnight(dateIn(at, timeZone), timeZone) === at) ? undefined : at
