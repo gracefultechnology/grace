@@ -272,7 +272,7 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   const click = (name: string) => act(() => userEvent.click(button(name)));
   const open = (title: "Email" | "Calendar") => act(() => userEvent.click(
-    page.getByRole("group", { name: title, exact: true }).getByText(title, { exact: true })));
+    page.getByRole("button", { name: new RegExp(`^${title}(?:$| )`) })));
   await open("Email");
   await expect.element(button("Go to Account")).toBeEnabled();
   await click("Go to Account");
