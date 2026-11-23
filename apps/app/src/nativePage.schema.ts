@@ -94,6 +94,7 @@ export const LinkObservation = Schema.Struct({
         key: Schema.NonEmptyString, fragments: Schema.Array(Schema.String),
         heading: Schema.optional(Schema.NonEmptyString), authorLabel: Schema.optional(Schema.NonEmptyString),
         ancestorLabels: Schema.optional(Schema.Array(Schema.NonEmptyString)), ambiguous: Schema.optional(Schema.Literal(true)),
+        tableRow: Schema.optional(Schema.Struct({ parentKey: Schema.NonEmptyString, columns: Schema.Array(Schema.NonEmptyString) })),
       })),
     })),
     viewport: Schema.optional(Schema.Struct({

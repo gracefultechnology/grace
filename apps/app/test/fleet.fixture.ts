@@ -303,6 +303,7 @@ export const fleetStatementCases = [
   { billerId: "american-eagle-financial-credit-union-e29614", template: "paymentus" },
   { billerId: "ameren-illinois-7add9b", template: "kubra" },
   { billerId: "ace-cash-express-bill-payment-5a3f3c", template: "invoice-portal" },
+  { billerId: "aflac-dental-insurance-60fdf1", template: "insurance" },
 ];
 
 export const fleetStatementRefusals = [
@@ -314,7 +315,6 @@ export const fleetStatementRefusals = [
   { billerId: "abbeville-county-treasurer-sc-cfd70d", template: "property-tax" },
   { billerId: "adams-county-ms-online-car-tag-renewal-county-ta-c199ba", template: "dmv" },
   { billerId: "anoka-municipal-utility-city-of-anoka-252a5c", template: "invoicecloud" },
-  { billerId: "aflac-dental-insurance-60fdf1", template: "insurance" },
 ];
 
 const fleetStatementSelections = [

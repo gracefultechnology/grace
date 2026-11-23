@@ -3396,7 +3396,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.poll(() => result.query()?.textContent).toBe("This is an earlier statement. Open the current one.");
     card.frame.document.title = "Statements & Documents";
     const statementHeading = card.frame.document.getElementById("statement-heading")!;
-    for (const historical of ["Previous statement", "Paid statement"]) {
+    for (const historical of ["Previous statement", "Paid statement", "Previous installment"]) {
       statementHeading.textContent = historical;
       expect(await tablet.checkStep()).toBe("Past");
       await expect.element(pending).toHaveAttribute("aria-current", "step");
