@@ -37,11 +37,11 @@ export const websiteTask = Layer.unwrap(effect {
       try Effect.interruptible(released)
     }
   }
-  const answer: WebsiteRequests.Shape["send"] = (event, by, isCurrent) => serial(effect {
+  const answer: WebsiteRequests.Shape["send"] = (event, by, isCurrent) => serial(Effect.uninterruptible(effect {
     const result = try requests.send(event, by, isCurrent)
     try follow
     return result
-  })
+  }))
   try serial(follow)
   return Layer.mergeAll(
     Layer.succeed(Workspaces, { ...workspace, send, receive: effect (input, by) => try send(try workspaceEvent(input), by) }),
