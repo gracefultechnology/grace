@@ -2297,7 +2297,8 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
   const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
   const previous = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "pdf", name: "Lunch notes.pdf", savedAt: 1, pages: 1 };
   const current = { id: "85b46188-fb54-4a7e-a7b8-1f706e7a3b86", kind: "pdf", name: "Garden notes.pdf", savedAt: 2, pages: 1 };
-  const reads: Array<PromiseWithResolvers<{ entries: (typeof current)[] }>> = [];
+  type Catalog = { entries: (typeof current)[] };
+  const reads: Array<{ promise: Promise<Catalog>; resolve: (catalog: Catalog) => void }> = [];
   const releases: string[] = [];
   let ownerScope = "a".repeat(64);
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
@@ -2317,9 +2318,10 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
       close: () => Promise.resolve(),
       list: (request) => {
         expect(request).toEqual({ lease });
-        const read = Promise.withResolvers<{ entries: (typeof current)[] }>();
-        reads.push(read);
-        return read.promise;
+        let resolve!: (catalog: Catalog) => void;
+        const promise = new Promise<Catalog>((resolveCatalog) => { resolve = resolveCatalog; });
+        reads.push({ promise, resolve });
+        return promise;
       },
       preview: ({ id, page }) => {
         releases.push(id);
