@@ -29,7 +29,7 @@ const BenchmarkDefinition = Schema.Struct({
   siteStorageState: Schema.optional(Schema.NonEmptyString),
   evaluator: Schema.optional(Schema.Literal("webarena")),
   exploratory: Schema.optional(Schema.Literal(true)),
-  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord", "SearchPublicSite"])),
+  requiredStep: Schema.optional(Schema.Literals(["ReachNamedPage", "ReadLatestRecord", "SearchPublicSite", "SortPublicListing"])),
   receipt: Schema.NonEmptyString,
 });
 type BenchmarkDefinition = typeof BenchmarkDefinition.Type;
@@ -93,6 +93,8 @@ type SiteAction =
   | { kind: "open"; url: string }
   | { kind: "read"; selector?: string }
   | { kind: "submitPublicSearch"; query: string }
+  | { kind: "openPublicCategory" }
+  | { kind: "setWebsitePriceOrder"; direction: "ascending" | "descending" }
   | { kind: "openPublicRatingProduct" }
   | { kind: "inspectGuide" }
   | { kind: "tapGuide" }
@@ -151,6 +153,64 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   if (!run) throw new Error("No benchmark fixture was supplied to the Chromium transport");
   const { fixture: definition } = run;
   const publicSearch = definition.requiredStep === "SearchPublicSite";
+  const publicSort = definition.requiredStep === "SortPublicListing";
+  if (action.kind === "openPublicCategory" || action.kind === "setWebsitePriceOrder") {
+    const site = run.site;
+    if (!publicSort || !site) throw new Error("The website sort is outside its reviewed case");
+    const website = site.page;
+    await website.bringToFront();
+    if (action.kind === "openPublicCategory") {
+      if (website.url() !== definition.startUrl) throw new Error("The public category must start from the storefront");
+      const menu = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
+        definition.taskId === "352" ? [/^Health (&|and) Household$/i, /^Diet (&|and) Sports Nutrition$/i, /^Nutrition Bars (&|and) Drinks$/i] : [];
+      const [first, second, leafName] = menu;
+      if (!first || !second || !leafName) throw new Error("The fixture has no public category operator sequence");
+      const nav = website.getByRole("navigation").filter({ has: website.locator("a").filter({ hasText: first }) }).first();
+      const navControl = (name: RegExp) => nav.locator("a[href]").filter({ hasText: name }).filter({ visible: true }).first();
+      const leaf = navControl(leafName);
+      await nav.locator('ul[role="menu"]').filter({ visible: true }).first().waitFor({ timeout: 15_000 });
+      await navControl(first).hover({ timeout: 15_000 });
+      const intermediate = navControl(second);
+      await intermediate.hover({ timeout: 10_000 }).catch(async () => {
+        await intermediate.press("ArrowRight", { timeout: 5_000 });
+      });
+      if (!await leaf.isVisible()) await intermediate.press("ArrowRight", { timeout: 5_000 });
+      const href = await leaf.getAttribute("href", { timeout: 15_000 });
+      if (!href) throw new Error("The disclosed category does not have an address");
+      const category = new URL(href, website.url());
+      if (category.origin !== site.origin || category.search || category.hash)
+        throw new Error("The disclosed category is outside the same-origin public storefront");
+      const [response] = await Promise.all([
+        website.waitForResponse(item => item.url() === category.href && item.request().isNavigationRequest() &&
+          item.request().frame() === website.mainFrame(), { timeout: 30_000 }),
+        website.waitForURL(category.href, { waitUntil: "load", timeout: 30_000 }),
+        leaf.click({ timeout: 15_000 }),
+      ]);
+      if (!response.ok()) throw new Error("The category did not load after the disclosed menu link was clicked");
+    } else {
+      const main = website.getByRole("main");
+      const sorter = main.getByRole("combobox", { name: /^Sort By$/i }).filter({ visible: true }).first();
+      if (await sorter.locator("option:checked").textContent({ timeout: 15_000 }) !== "Price") {
+        await Promise.all([
+          website.waitForEvent("framenavigated", { predicate: frame => frame === website.mainFrame(), timeout: 30_000 }),
+          sorter.selectOption({ label: "Price" }, { timeout: 15_000 }),
+        ]);
+        await website.waitForLoadState("load", { timeout: 30_000 });
+      }
+      const toggle = main.locator('[title="Set Ascending Direction"],[title="Set Descending Direction"]').filter({ visible: true }).first();
+      const title = action.direction === "ascending" ? "Set Ascending Direction" : "Set Descending Direction";
+      if (await toggle.getAttribute("title", { timeout: 15_000 }) === title) {
+        await Promise.all([
+          website.waitForEvent("framenavigated", { predicate: frame => frame === website.mainFrame(), timeout: 30_000 }),
+          toggle.click({ timeout: 15_000 }),
+        ]);
+        await website.waitForLoadState("load", { timeout: 30_000 });
+      }
+      const opposite = action.direction === "ascending" ? "Set Descending Direction" : "Set Ascending Direction";
+      if (await toggle.getAttribute("title", { timeout: 15_000 }) !== opposite) throw new Error("The storefront did not expose the selected price direction");
+    }
+    return {};
+  }
   const product = definition.taskId === publicRatingTask ? ratingProduct(definition.intent) : undefined;
   if (action.kind === "openPublicRatingProduct") {
     const site = run.site;
@@ -285,7 +345,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   }
   if (action.kind === "receipt") {
     try {
-      const decisionProvider = publicSearch || product !== undefined ? "none" : definition.fixtureChoice === undefined ? "hosted" : "fixture";
+      const decisionProvider = publicSearch || publicSort || product !== undefined ? "none" : definition.fixtureChoice === undefined ? "hosted" : "fixture";
       const { answer, ...visibleOutcome } = action.outcome;
       const observation = {
         surface: "desktop-chromium", taskId: definition.taskId, intent: definition.intent, startUrl: definition.startUrl,
