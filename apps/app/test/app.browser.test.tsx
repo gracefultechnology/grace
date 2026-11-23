@@ -3131,9 +3131,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         goals.push(asked.goal);
         duringDecision?.();
         duringDecision = undefined;
-        const history = asked.candidates.find(({ label }) => label.startsWith("Payment history"));
-        if (history && asked.goal.includes("Prefer a page that shows the bill")) return Promise.resolve(Response.json({ status: "ok", kind: "choice", model: "fixture",
-          choice: history.id, confidence: 1, probabilities: Object.fromEntries([...asked.candidates.map(({ id }) => id), "none"].map((id) => [id, id === history.id ? 1 : 0])) }));
+        const overview = asked.candidates.find(({ label }) => label.startsWith("Account overview"));
+        if (overview) return Promise.resolve(Response.json({ status: "ok", kind: "choice", model: "fixture",
+          choice: overview.id, confidence: 1, probabilities: Object.fromEntries([...asked.candidates.map(({ id }) => id), "none"].map((id) => [id, id === overview.id ? 1 : 0])) }));
         return browserFetch(new URL(url.pathname, cloud), { ...init, credentials: "omit",
           headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" } }).then((response) => {
           if (replaceGuideOwner) {
@@ -3384,8 +3384,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const left = counting.frame.document.getElementById("left")!;
     duringDecision = () => { left.textContent = "4:40"; };
     await tap(showLink);
-    await routeTo(page.getByText("Look for “Payment history” on example.org."));
-    expect(goals.at(-1)).toContain("Prefer a page that shows the bill, statement or account activity. Avoid a link that only starts a payment, such as Make a payment.");
+    await routeTo(page.getByText("Look for “Account overview” on example.org."));
+    expect(goals.at(-1)).toMatch(/current bill or account summary.*Avoid invoice history.*account switching.*start a payment/u);
     expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: counting.id,
       command: { subaction: "guide", guidance: { kind: "show", snapshotId: `countdown-${counting.frame.snapshots()}` } } });
 
