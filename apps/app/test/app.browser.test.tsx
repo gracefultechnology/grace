@@ -2015,9 +2015,16 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap("Move to Trash");
     await expect.element(page.getByText("Moved to Trash.")).toBeVisible();
     await expect.element(folders.getByRole("button", { name: "Inbox", exact: true })).toBeVisible();
+    await act(() => folders.getByRole("button", { name: "Sent", exact: true }).click());
+    await expect.element(page.getByText("Lunch invitation", { exact: true })).toBeVisible();
+    expect(await runtime.runPromise(managed.change(scope, {
+      kind: "undo", id: mail.externalId, version: "9", prior: "another-operation",
+    }))).toBeUndefined();
+    expect(trashRequests).toBe(1);
     await tap("Undo");
     await expect.element(page.getByText("Message restored.")).toBeVisible();
-    await expect.element(folders.getByRole("button", { name: "Inbox 1", exact: true })).toBeVisible();
+    await expect.element(page.getByText("Lunch invitation", { exact: true })).toBeVisible();
+    await act(() => folders.getByRole("button", { name: "Inbox 1", exact: true }).click());
     await tap("New email");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "To", exact: true }), "robin@example.test"));
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Subject", exact: true }), "Hello"));
