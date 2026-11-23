@@ -7,7 +7,7 @@ export type StatementRead =
   | { readonly tag: "Read"; readonly document: string; readonly region: string; readonly text: string }
   | { readonly tag: "Unread"; readonly reason: "NotFound" | "Several" | "Past" | "Changed" | "Covered" }
 
-const pastStatement = /\b(?:past|previous|prior)\s+(?:bills?|statements?|invoices?)\b/iu
+const pastStatement = /\b(?:(?:past|previous|prior|paid|settled|closed|archived)\s+(?:billing\s+)?(?:bills?|statements?|invoices?)|(?:bill|statement|invoice|payment)\s+(?:history|archive)|(?:bill|statement|invoice)\s+(?:paid|settled|closed))\b/iu
 
 function sentence({ label, value }: Labeled): string {
   return label.charAt(0).toUpperCase() + label.slice(1) + ": " + value + "."
@@ -20,15 +20,21 @@ export function statementRead(snapshot: LinkObservation, scoped: LinkObservation
   if (pastStatement.test(result.title ?? "") || pastStatement.test(scoped.result.title ?? "")) return { tag: "Unread", reason: "Past" }
   const evidence = scoped.result.statementRegions
   if (!evidence?.complete) return { tag: "Unread", reason: "NotFound" }
+  if (pastStatement.test(evidence.primaryHeading ?? "")) return { tag: "Unread", reason: "Past" }
   const sections = evidence.regions.flatMap((region) => {
     const pair = statementAnswer(region.fragments.join("\n"))
-    return pair.tag === "Read" ? [{ key: region.key, pair }] : []
+    if (pair.tag === "Unread") return []
+    const historical = [region.heading, region.authorLabel, ...(region.ancestorLabels ?? [])]
+      .some((label) => label !== undefined && pastStatement.test(label))
+    return [{ key: region.key, pair, historical, ambiguous: region.ambiguous === true }]
   })
   const section = sections[0]
   if (section === undefined) return { tag: "Unread", reason: "NotFound" }
+  if (sections.length !== 1 || section.ambiguous) return { tag: "Unread", reason: "Several" }
+  if (section.historical) return { tag: "Unread", reason: "Past" }
   const answer = statementAnswer(result.text ?? "", section.pair)
   if (answer.tag === "Unread") return answer
-  const sources = sections.map(({ key, pair }) => ({ key, amount: pair.amount.value, due: pair.due.value }))
+  const sources = sections.map(({ key, pair, historical, ambiguous }) => ({ key, ordinary: !historical && !ambiguous, amount: pair.amount.value, due: pair.due.value }))
   if (!provesStatementSection(evidence.complete, sources, answer.amount.value, answer.due.value))
     return { tag: "Unread", reason: "Several" }
   return { tag: "Read", document: snapshot.documentId, region: section.key,

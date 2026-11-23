@@ -89,7 +89,12 @@ export const LinkObservation = Schema.Struct({
     domRevision: Schema.optional(Schema.Int),
     statementRegions: Schema.optional(Schema.Struct({
       complete: Schema.Boolean,
-      regions: Schema.Array(Schema.Struct({ key: Schema.NonEmptyString, fragments: Schema.Array(Schema.String) })),
+      primaryHeading: Schema.optional(Schema.NonEmptyString),
+      regions: Schema.Array(Schema.Struct({
+        key: Schema.NonEmptyString, fragments: Schema.Array(Schema.String),
+        heading: Schema.optional(Schema.NonEmptyString), authorLabel: Schema.optional(Schema.NonEmptyString),
+        ancestorLabels: Schema.optional(Schema.Array(Schema.NonEmptyString)), ambiguous: Schema.optional(Schema.Literal(true)),
+      })),
     })),
     viewport: Schema.optional(Schema.Struct({
       width: Schema.Finite, height: Schema.Finite, scale: Schema.Number,
