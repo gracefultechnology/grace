@@ -2292,6 +2292,87 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   expect(stored.revision).toBe(1);
 });
 
+it('Find a saved file and replace the request before Files loads (spec/app/files.md, "Story: Find and open something I saved")', async () => {
+  const { agent, requests, answer } = deviceAgent();
+  const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
+  const previous = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "pdf", name: "Lunch notes.pdf", savedAt: 1, pages: 1 };
+  const current = { id: "85b46188-fb54-4a7e-a7b8-1f706e7a3b86", kind: "pdf", name: "Garden notes.pdf", savedAt: 2, pages: 1 };
+  type Catalog = { entries: (typeof current)[] };
+  const reads: Array<{ promise: Promise<Catalog>; resolve: (catalog: Catalog) => void }> = [];
+  const releases: string[] = [];
+  let ownerScope = "a".repeat(64);
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    agent,
+    account: {
+      status: () => Promise.resolve({ kind: "signedIn", voiceDisclosureScope: ownerScope }),
+      beginSignIn: () => Promise.resolve(),
+      signOut: () => Promise.resolve(),
+      cleanupLegacySignIn: () => Promise.resolve(),
+      manageAccount: () => Promise.resolve(),
+      addListener: () => Promise.resolve({ remove: () => Promise.resolve() }),
+    },
+    files: {
+      saveAttachments: () => Promise.reject(new Error("No attachment is saved during this find")),
+      open: () => Promise.resolve({ lease }),
+      close: () => Promise.resolve(),
+      list: (request) => {
+        expect(request).toEqual({ lease });
+        let resolve!: (catalog: Catalog) => void;
+        const promise = new Promise<Catalog>((resolveCatalog) => { resolve = resolveCatalog; });
+        reads.push({ promise, resolve });
+        return promise;
+      },
+      preview: ({ id, page }) => {
+        releases.push(id);
+        return Promise.resolve({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" });
+      },
+      content: () => Promise.reject(new Error("Search does not read file bytes")),
+      remove: () => Promise.reject(new Error("Search does not remove files")),
+    },
+  }));
+  await mount(runtime);
+  const workspace = await runtime.runPromise(Workspaces);
+  await expect.poll(() => runtime.runSync(workspace.get()).device.reasoningAvailable).toBe(true);
+  const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  await tap("Ask Grace");
+  const request = 'Find the file "Lunch notes".';
+  const offer = async (index: number) => {
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), request));
+    await tap("Send");
+    await expect.poll(() => sentTurn(requests[index]?.body).said).toBe(request);
+    await answer(index, { text: "You can find it in Files.", isQuestion: false, answers: [],
+      actions: [{ kind: "findFile", tab: "Documents", query: "Lunch notes" }] });
+    await expect.element(page.getByRole("button", { name: "Find in Files", exact: true })).toBeVisible();
+  };
+  await offer(0);
+  ownerScope = "b".repeat(64);
+  await tap("Find in Files");
+  await expect.element(page.getByRole("button", { name: "Find in Files", exact: true })).not.toBeInTheDocument();
+  expect(runtime.runSync(workspace.get()).device.surface).toBe("Home");
+  expect(reads).toHaveLength(0);
+  ownerScope = "a".repeat(64);
+  await offer(1);
+  expect(reads).toHaveLength(0);
+  await tap("Find in Files");
+  await expect.poll(() => reads.length).toBe(2);
+  await act(() => userEvent.fill(page.getByRole("textbox", { name: "Find a file" }), "Garden notes"));
+  await tap("Find");
+  await expect.poll(() => reads.length).toBe(3);
+  await act(() => { reads[2].resolve({ entries: [current] }); });
+  const result = page.getByRole("button", { name: /Garden notes/ });
+  const resultIsSelected = () => Boolean(result.query()?.closest('[aria-current="true"]'));
+  await expect.poll(resultIsSelected).toBe(true);
+  await act(async () => {
+    reads[0].resolve({ entries: [previous] });
+    reads[1].resolve({ entries: [previous] });
+    await Promise.all(reads.map((read) => read.promise));
+  });
+  await expect.poll(resultIsSelected).toBe(true);
+  expect(page.getByRole("button", { name: /Lunch notes/ }).query()).toBeNull();
+  expect(releases).toEqual([]);
+});
+
 it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and remove the chosen file")', async () => {
   const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
   const photo = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "photo", name: "Garden.jpg", savedAt: 3, pages: 0 };
@@ -2908,7 +2989,12 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let replaceDocumentDuringRead = false;
   let addChallengeDuringRead = false;
   let challengeShown: false | "code" | "captcha" = false;
-  let signInWidget: "hidden" | "idle" | "active" | "accountOnly" = "hidden";
+  let signInWidget: "hidden" | "idle" | "active" | "accountOnly" | "accountNumber" | "accountLookup" = "hidden";
+  let combinedLabel = "Account number or email";
+  let disabledLogin = false;
+  let ambiguousLogin = false;
+  const idleIdentifier = { focused: false, edited: false, hasInput: false };
+  let identifierEvidence: Partial<typeof idleIdentifier> = idleIdentifier;
   const card = { id: "card-statements", frame: await pinnedPage("statements", origin + "/topic.html?history", (html) => html
     .replace("<dt>New Balance</dt><dd>$1,284.56</dd>", '<dt>Current balance</dt><dd>$1,301.12</dd><dt>Last statement balance</dt><dd id="balance">$1,284<sup>56</sup></dd>')
     .replace("<dt>Previous Balance</dt><dd>$1,102.13</dd>", "<dt>Previous Balance</dt><dd>$1,102.13</dd><dt>Pending charges</dt><dd>$16.56</dd><dt>Available credit</dt><dd>$3,698.88</dd>")) };
@@ -2929,6 +3015,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   const native = fakePlugin(({ command }) => {
     if (pinned && guideShow(command)) return { result: { accepted: pinned.frame.shows(command.guidance) } };
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
+      const combinedIdentifier = signInWidget === "accountNumber" || signInWidget === "accountLookup";
       if (pinned) {
         const result = { ...pinned.frame.snapshot(command), url: pinned.url };
         const change = betweenReads;
@@ -2942,10 +3029,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
           ...(signInWidget === "hidden" ? [] : [
-            { id: "username", tag: "input", type: "text", fieldName: "username", label: signInWidget === "accountOnly" ? "Username" : "Private username", sensitive: null, form: { index: 0 }, focused: false, edited: false, hasInput: false, href: null, inViewport: true },
-            signInWidget === "accountOnly"
-              ? { id: "continue", tag: "button", label: "Continue ›", submits: true, form: { index: 0 }, focused: false, href: null, inViewport: true }
+            { id: "username", tag: "input", type: "text", fieldName: "username",
+              label: combinedIdentifier ? combinedLabel : signInWidget === "accountOnly" ? "Username" : "Private username",
+              sensitive: null, form: { index: 0 }, ...identifierEvidence, href: null, inViewport: true },
+            signInWidget === "accountOnly" || combinedIdentifier
+              ? { id: "continue", tag: "button", type: "submit",
+                  label: signInWidget === "accountOnly" ? "Continue ›" : signInWidget === "accountLookup" ? "Find account" : "Login",
+                  submits: true, disabled: disabledLogin, form: { index: 0 }, focused: false, href: null, inViewport: true }
               : { id: "password", tag: "input", type: "password", fieldName: "password", label: "Private password", sensitive: "password", form: { index: 0 }, focused: false, edited: signInWidget === "active", hasInput: false, href: null, inViewport: true },
+            ...(ambiguousLogin ? [{ id: "register", tag: "button", type: "submit", label: "Register", submits: true,
+              disabled: false, form: { index: 0 }, focused: false, href: null, inViewport: true }] : []),
             { id: "sign-in-link", tag: "a", label: "Private sign-in link", form: { index: 0 }, focused: false, href: "https://example.org/forgot", inViewport: true },
             { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
           ]),
@@ -3000,6 +3093,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         guideCalls++;
         expect(init?.body).not.toContain("Private sign-in link");
         expect(init?.body).not.toContain("Private username");
+        expect(init?.body).not.toContain(combinedLabel);
         expect(init?.body).not.toContain("Credential URL");
         expect(init?.body).not.toContain("Help center inside a form");
         expect(init?.body).not.toContain("Sign Up for Our Newsletter");
@@ -3150,6 +3244,35 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     } });
     await expect.element(pending).toHaveAttribute("aria-current", "step");
 
+    const beforeIdentifierGuide = guideCalls;
+    for (const [widget, evidence, disabled = false, ambiguous = false] of [
+      ["accountLookup", idleIdentifier],
+      ["accountNumber", idleIdentifier, true],
+      ["accountNumber", idleIdentifier, false, true],
+      ["accountNumber", { ...idleIdentifier, edited: true }],
+      ["accountNumber", { ...idleIdentifier, focused: true }],
+      ["accountNumber", { ...idleIdentifier, hasInput: true }],
+      ["accountNumber", { focused: false, hasInput: false }],
+    ] as const) {
+      signInWidget = widget;
+      identifierEvidence = evidence;
+      disabledLogin = disabled;
+      ambiguousLogin = ambiguous;
+      await tap(showLink);
+      await routeTo(page.getByText(/Finish the form yourself in this tab/));
+      expect(guideCalls).toBe(beforeIdentifierGuide);
+    }
+    signInWidget = "accountNumber";
+    identifierEvidence = idleIdentifier;
+    for (const [index, label] of ["Account number or email", "Email address or account ID"].entries()) {
+      combinedLabel = label;
+      await tap(showLink);
+      await expect.poll(() => guideCalls).toBe(beforeIdentifierGuide + index + 1);
+      await routeTo(page.getByText("Look for “Help center” on example.org."));
+      expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
+        documentId: about.id, command: { guidance: { nodeId: "help" } },
+      });
+    }
     signInWidget = "hidden";
     newsletterEmail = blankNewsletterEmail;
     const beforeNewsletterGuide = guideCalls;
@@ -3168,10 +3291,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(resume);
     expect(check.query()).toBeNull();
     await tap(resume);
-    signInWidget = "idle";
-    await tap(check);
-    await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
-    await expect.element(pending).toHaveAttribute("aria-current", "step");
+    for (const widget of ["idle", "accountNumber"] as const) {
+      signInWidget = widget;
+      const beforeCheck = native.calls("controlPage").length;
+      const readsBeforeCheck = native.calls("readPage").length;
+      await tap(check);
+      await expect.poll(() => native.calls("controlPage").length).toBeGreaterThan(beforeCheck);
+      await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+      expect(native.calls("readPage")).toHaveLength(readsBeforeCheck);
+    }
     signInWidget = "hidden";
     replaceDocumentDuringRead = true;
     await tap(check);
@@ -3508,6 +3637,96 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
     await tap(check);
     await routeTo(plan.getByText("Read checks complete"));
     expect(plan.getByText("Search results for “green tea”.").query()).not.toBeNull();
+  } finally {
+    await dispose();
+    localStorage.clear();
+  }
+}, 120_000);
+
+it('Check the price direction in the reviewed public category (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async () => {
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const target = "Rain jackets";
+  const request = "List products from Rain jackets category by ascending price";
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said: request,
+    answer: JSON.stringify({ text: "Review this plan.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "SortPublicListing", target, direction: "PriceAscending" }] }] }),
+  }]), client));
+  const home = "https://example.org/";
+  const frame = await pinnedPage("statements", home, (html) => html.replace(/<main>[\s\S]*<\/main>/u, () =>
+    `<script>(${String(pageCommand)})(null, "");</script><main><h1>Rain jackets</h1>
+      <div id="sort"><label for="order">Sort By</label><select id="order"><option selected>Name</option><option>Price</option></select>
+      <a href="#" id="direction" title="Set Descending Direction">Change sort direction</a></div>
+      <ul><li>Lightweight jacket</li><li>Winter jacket</li></ul></main>`));
+  const sorter = frame.document.querySelector<HTMLSelectElement>("#order")!;
+  const direction = frame.document.querySelector<HTMLAnchorElement>("#direction")!;
+  const heading = frame.document.querySelector("h1")!;
+  let address = home;
+  let documentId = "home";
+  let replaceDuringRead = false;
+  const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
+    result: { ...frame.snapshot(command), url: address } }), false, ({ selector }) => {
+    const read = frame.read(selector);
+    if (replaceDuringRead && typeof read["text"] === "string" && read["text"].includes("Sort By")) {
+      replaceDuringRead = false;
+      documentId += "-replaced";
+    }
+    return { ...read, url: address };
+  });
+  localStorage.clear();
+  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const complete = page.getByText("Read checks complete", { exact: true });
+  const check = button("Check price order");
+  const load = async (url: string) => {
+    await native.started("tab-1", url);
+    address = url;
+    documentId = url;
+    await native.report("tab-1", url, 100, { pageError: null, securityBlocked: false });
+  };
+  const visit = async (url: string) => {
+    await load(url);
+    await tap(button("Resume Grace"));
+  };
+  const pending = async () => {
+    await tap(check);
+    await routeTo(page.getByRole("status", { name: "Page check result" }));
+    expect(complete.query()).toBeNull();
+  };
+  try {
+    await tap(button("Internet"));
+    await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+    await load(home);
+    await tap(button("Ask Grace"));
+    await tap(button("Allow Grace to read this browser"));
+    const message = page.getByRole("textbox", { name: "Message to Grace" });
+    await routeTo(message);
+    await act(() => message.fill(request));
+    await act(() => userEvent.keyboard("{Enter}"));
+    await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(/Rain jackets.*lowest price first/u));
+    await tap(button("Collapse"));
+    await tap(button("Start read plan"));
+    await pending();
+    await visit(home + "coats?display=grid");
+    await pending();
+    sorter.selectedIndex = 1;
+    direction.title = "Set Ascending Direction";
+    await pending();
+    direction.title = "Set Descending Direction";
+    heading.textContent = "Snow jackets";
+    await pending();
+    heading.textContent = target;
+    await visit("https://other.example/coats?display=grid");
+    await pending();
+    await visit(home + "coats?display=list");
+    replaceDuringRead = true;
+    await pending();
+    expect(replaceDuringRead).toBe(false);
+    await tap(check);
+    await routeTo(complete);
+    expect(page.getByText("Rain jackets sorted by ascending price.", { exact: true }).query()).not.toBeNull();
   } finally {
     await dispose();
     localStorage.clear();

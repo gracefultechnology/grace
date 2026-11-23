@@ -141,6 +141,10 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     return <MailApp noAccount folder="inbox" messages={[]} onConnect={fire(accountSettings)} onAskGrace={askGrace("connectEmail")} {...frame} />;
 
   const shown = boxes.filter((b) => showsMail(registry, b.id));
+  const currentNotice = mail?.note;
+  const source = currentNotice?.source;
+  const note = source && shown.some(({ id, state }) => id === source.id && state.owner === source.owner &&
+    state.provider === source.provider && state.account === source.account) ? currentNotice : undefined;
   const name = (id: number) => registry.accounts.find((a) => a.id === id)?.name ?? "";
   const filter = (id: number) => { if (account.can({ type: "filterInbox", id })) void account.send({ type: "filterInbox", id }); };
   const renew = (id: number) => account.can({ type: "signInAgain", id }) && can(accountSettings)
@@ -165,7 +169,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
     const c = read(opening.id, ref);
     const saver = saverOf(opening, mail, files);
     const unopened = m.view === "Message" && m.readKind === "OpenAttachment" && m.readStatus === "ReadFailed";
-    const toast = unopened ? <Toast placement="screen">{unshown}</Toast> : mail?.note ? <Toast key={mail.note.id} placement="screen">{mail.note.text}</Toast> : undefined;
+    const toast = unopened ? <Toast placement="screen">{unshown}</Toast> : note ? <Toast key={note.id} placement="screen">{note.text}</Toast> : undefined;
     if (m.view === "Attachment")
       return <Attachment box={opening} held={held} saver={saver} sender={c?.from ?? ""} subject={c?.subject ?? ""} toast={toast} frame={frame} />;
     const open: MailEvent = { type: "readMail", kind: "OpenMessage", ref, approved: true };
@@ -259,7 +263,7 @@ function Mail({ registry, boxes, ...props }: Covered & { registry: Accounts; box
   const search = (query: string): MailEvent => ({ type: "readMail", kind: "Search", ref: query, approved: true });
   const undo = shown.flatMap((b) => undoable(b.state).map((r) => ({ b, event: { type: "undoMessageTrash", target: { ref: r.identity.ref, revision: r.undoRevision } } satisfies MailEvent })))[0];
   const toast = undo ? <Toast placement="screen" onUndo={offer(undo.b, undo.event)}>Moved to Trash</Toast>
-    : mail?.note ? <Toast key={mail.note.id} placement="screen">{mail.note.text}</Toast> : undefined;
+    : note ? <Toast key={note.id} placement="screen">{note.text}</Toast> : undefined;
   const writable = mail && fromChoices(registry, sources).some((a) => shown.find((b) => b.id === a.id)?.can({ type: "startDraft", reply: false }));
   const replace = (b: MailInstance, event: MailEvent) => {
     const stop: MailEvent = { type: "showInbox" };

@@ -814,6 +814,42 @@ it(`Keep the latest draft count (spec/app/email.md, "Drafts shows the provider's
   }
 }, 120_000);
 
+it('Settle a hidden mailbox send (spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere")', async () => {
+  const { secret, host, person, company } = await start();
+  await replyToClinic();
+  await act(() => userEvent.fill(words(), "Use the west entrance tomorrow."));
+  const provider = (fault?: "sendResponse") => Effect.runPromise(Effect.provide(outage(cloud, secret, false, fault), client));
+  const notification = page.getByText("Sent to Main St Clinic", { exact: true });
+  const state = () => {
+    const raw = localStorage.getItem("mail/1");
+    return raw === null ? undefined : parseMail(JSON.parse(raw));
+  };
+  const sentFrom = async () => (await company()).boxes.flatMap((box) => box.mail.filter((message) =>
+    message.subject === "Re: Reminder: your appointment tomorrow at 10 am" && message.labels.includes("SENT")).map(() => box.address));
+  await provider("sendResponse");
+  try {
+    await click(page.getByRole("button", { name: "Send", exact: true }));
+    await expect.poll(state).toMatchObject({ sendStatus: "SendUnknown", account: gmail });
+    await expect.poll(sentFrom).toEqual([gmail]);
+    await person({ type: "setUse", id: 1, use: { mail: false, calendar: true, contacts: true } });
+    await expect.element(notification).not.toBeInTheDocument();
+    await provider();
+    await host("Offline");
+    await host("Online");
+    await expect.poll(state, { timeout: 15_000 }).toMatchObject({ sendStatus: "Sent", sendResultSaved: true, account: gmail });
+    await expect.element(notification).not.toBeInTheDocument();
+    expect(await sentFrom()).toEqual([gmail]);
+
+    await person({ type: "openAccount", id: 1 });
+    await person({ type: "requestRemoval", id: 1 });
+    await person({ type: "removeAccount", id: 1, waiting: 0 });
+    await expect.poll(state).toBeUndefined();
+    await expect.element(notification).not.toBeInTheDocument();
+  } finally {
+    await provider();
+  }
+}, 120_000);
+
 it('Review an unsent reply (spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry")', async () => {
   const { secret, host, company, restartFromEarlierMailbox } = await start();
   await replyToClinic();
