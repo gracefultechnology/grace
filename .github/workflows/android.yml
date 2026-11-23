@@ -54,7 +54,7 @@ jobs:
           java-version: "21"
       - uses: ./.github/actions/setup
         with:
-          job: product
+          job: android
           verification: "false"
       - uses: actions/cache@v6
         with:

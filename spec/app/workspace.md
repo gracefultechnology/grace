@@ -2511,6 +2511,19 @@ pure val progressValues = Set(
   { owner: "owner", task: "task", deviceVersion: 7, browserRevision: 3, taskVersion: 1,
     generation: 1, observation: 1, commitmentRevision: 2, attempt: 1, kind: CommitmentProgress, destination: "" })
 pure val weight_changeLifecycle = 4
+pure val eval_witness_sometimesOperationDispatched = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("prepare", operation, Host),
+  ("dispatch", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 }, Actuator)
+)
 pure val weight_setAvailability = 4
 pure val weight_visit = 16
 pure val weight_setBrowserObservation = 100

@@ -99,7 +99,10 @@ runs:
           echo "key=$key"
           echo "path<<EOF"
           if [[ $JOB == selftest-* ]]; then printf '%s\n' .cache/selftest/.spec-cache
-          else printf '%s\n' .spec-cache 'apps/*/.spec-cache' 'packages/*/.spec-cache' vibestack/studio/.spec-cache 'vibestack/examples/*/.spec-cache'
+          else
+            for cache in .spec-cache 'apps/*/.spec-cache' 'packages/*/.spec-cache' vibestack/studio/.spec-cache 'vibestack/examples/*/.spec-cache'; do
+              printf '%s\n' "$cache/*.json.zst" "$cache/*.json.gz"
+            done
           fi
           echo '~/.quint'
           echo "EOF"
@@ -123,7 +126,7 @@ runs:
         echo "fixture-prefix=$scope" >> "$GITHUB_OUTPUT"
         echo "key=${scope:-$prefix}$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
     - id: restore-turbo-cache
-      if: steps.turbo-cache.outputs.key != ''
+      if: inputs.job != 'android' && steps.turbo-cache.outputs.key != ''
       uses: actions/cache/restore@v6
       with:
         path: .turbo/cache
@@ -148,10 +151,15 @@ runs:
       shell: bash
     - id: gen-seed
       if: >-
-        inputs.job == 'product' && inputs.cache-verification == 'true' &&
+        (inputs.job == 'product' || inputs.job == 'android') && inputs.cache-verification == 'true' &&
         env.TURBO_CACHE == 'local:rw' && steps.turbo-cache.outputs.key != ''
       shell: bash
-      run: printf 'prefix=turbo-gen-v2-%s-%s-product-\n' "$RUNNER_OS" "$RUNNER_ARCH" >> "$GITHUB_OUTPUT"
+      env:
+        JOB: ${{ inputs.job }}
+        PUBLISH: ${{ inputs.verification == 'true' || (inputs.job == 'android' && matrix.abi == 'arm64-v8a') }}
+      run: |
+        printf 'prefix=turbo-gen-v2-%s-%s-%s-\n' "$RUNNER_OS" "$RUNNER_ARCH" "$JOB" >> "$GITHUB_OUTPUT"
+        printf 'publish=%s\n' "$PUBLISH" >> "$GITHUB_OUTPUT"
     - id: lookup-gen-seed
       if: steps.gen-seed.outputs.prefix != ''
       continue-on-error: true
@@ -210,7 +218,7 @@ runs:
       id: install-workspace
       shell: bash
       env:
-        PUBLISH_GEN_SEED: ${{ inputs.verification == 'true' && steps.gen-seed.outputs.prefix != '' }}
+        PUBLISH_GEN_SEED: ${{ steps.gen-seed.outputs.publish == 'true' }}
         REMEMBER_RESTORED_EVALUATORS: >-
           ${{ startsWith(inputs.job, 'selftest-') &&
               steps.restore-spec-cache.outcome == 'success' && steps.restore-spec-cache.outputs.cache-matched-key != '' &&
@@ -234,22 +242,24 @@ runs:
         if [[ $PUBLISH_GEN_SEED == true ]]; then export TURBO_RUN_SUMMARY=true; fi
         pnpm install --frozen-lockfile --package-import-method=clone-or-copy
     - id: publish-gen-seed
-      if: inputs.verification == 'true' && steps.gen-seed.outputs.prefix != ''
+      if: steps.gen-seed.outputs.publish == 'true'
       continue-on-error: true
       shell: bash
       env:
         PREFIX: ${{ steps.gen-seed.outputs.prefix }}
+        ANDROID: ${{ inputs.job == 'android' }}
       run: |
         shopt -s nullglob
         reports=(.turbo/runs/*.json)
         (( ${#reports[@]} )) || exit 0
-        seed=$(jq -sr '
-          map(select(.version == "1" and .execution.command == "turbo run //#gen" and .execution.exitCode == 0))
-          | select(length == 1) | .[0].tasks
-          | map(select(.taskId | test("#gen($|:)")))
+        seed=$(jq -sr --argjson android "$ANDROID" '
+          map(select(.version == "1" and .execution.exitCode == 0 and
+            (.execution.command == "turbo run //#gen" or ($android and .execution.command == "turbo run //#build //#gen:eliza"))))
+          | select(map(select(.execution.command == "turbo run //#gen")) | length == 1)
+          | [.[].tasks[] | select($android or (.taskId | test("#gen($|:)")))]
           | select(any(.[]; .taskId == "//#gen") and any(.[]; .cache.status == "MISS"))
           | select(all(.[]; .execution.exitCode == 0 and (.cache.status == "HIT" or .cache.status == "MISS")))
-          | sort_by(.taskId != "//#gen", .taskId) | map(.hash) | join("-")
+          | unique_by(.hash) | sort_by(.taskId != "//#gen", .taskId) | map(.hash) | join("-")
         ' "${reports[@]}") || exit 0
         [[ $seed =~ ^[0-9a-f]{16}(-[0-9a-f]{16})*$ ]] || exit 0
         key="$PREFIX$GITHUB_SHA-"
