@@ -470,7 +470,9 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
       return;
     }
     if (sort && requiredStep === "SortPublicListing") {
-      expect(sort.direction).toBe("PriceAscending");
+      const requested = /\b(ascending|descending) price$/iu.exec(intent)?.[1]?.toLowerCase();
+      if (requested !== "ascending" && requested !== "descending") throw new Error("The fixture has no explicit price direction");
+      expect(sort.direction).toBe(requested === "ascending" ? "PriceAscending" : "PriceDescending");
       expect(sort.origin).toBe(new URL(initial.url).origin);
       outcome.operator = "Chromium input through the public category links and website sort toolbar";
       failureStage = "open-public-category";
@@ -492,18 +494,18 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
         await userEvent.click(check);
         return { url: landed.url, documentId: landed.documentId };
       };
-      const descending = await checkedDirection("descending");
+      const wrong = await checkedDirection(requested === "ascending" ? "descending" : "ascending");
       await expect.element(continuing, { timeout: 15_000 }).toBeVisible();
       expect(finished.query()).toBeNull();
       expect(workspace().plan.receipts).toHaveLength(0);
-      outcome.wrongDirection = { ...descending, rejectedByGrace: true };
-      const ascending = await checkedDirection("ascending");
-      outcome.destination = ascending;
-      expect(ascending.documentId).not.toBe(descending.documentId);
+      outcome.wrongDirection = { ...wrong, rejectedByGrace: true };
+      const correct = await checkedDirection(requested);
+      outcome.destination = correct;
+      expect(correct.documentId).not.toBe(wrong.documentId);
       failureStage = "confirm-completion";
       await expect.element(finished, { timeout: 15_000 }).toBeVisible();
       expect(workspace().plan.receipts).toHaveLength(1);
-      outcome.hops = [{ ...ascending, checked: true }];
+      outcome.hops = [{ ...correct, checked: true }];
       outcome.graceTerminal = plan.element().textContent;
       return;
     }

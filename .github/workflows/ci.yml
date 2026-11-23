@@ -42,6 +42,10 @@ on:
         description: Diagnose the public product rating answer on the pinned Shopping fixture
         type: boolean
         default: false
+      webarena_sort_only:
+        description: Run the two official Shopping category price sorts with a simulated person
+        type: boolean
+        default: false
       webarena_gitlab:
         description: Run official GitLab public-project task 258 with hosted guidance and controls
         type: boolean
@@ -77,7 +81,7 @@ permissions:
 
 jobs:
   webarena:
-    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && (inputs.webarena || inputs.webarena_rating_only)
+    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && (inputs.webarena || inputs.webarena_rating_only || inputs.webarena_sort_only)
     runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
     defaults:
@@ -91,6 +95,7 @@ jobs:
       WEBARENA_NAVIGATION_TASKS: '[260,261,262,263,264]'
       WEBARENA_RECORD_TASKS: ${{ inputs.webarena_pending_order && '[298,299,300]' || '[298,299]' }}
       WEBARENA_REQUIRED: '[260,261,262,263]'
+      WEBARENA_SORT_TASKS: '[353,355]'
     steps:
       - &webarena_checkout
         uses: actions/checkout@v7
@@ -118,6 +123,9 @@ jobs:
           if [[ "${{ inputs.webarena_rating_only }}" == true ]]; then
             tasks='[386]'
             required='[]'
+          elif [[ "${{ inputs.webarena_sort_only }}" == true ]]; then
+            tasks="$WEBARENA_SORT_TASKS"
+            required="$tasks"
           fi
           git -C "$GRACE_WEBARENA_UPSTREAM" show "$catalog_object" |
             jq -e --arg revision "$revision" --arg sha256 "$catalog_sha256" \
@@ -213,7 +221,8 @@ jobs:
           CADDY
           XDG_DATA_HOME="$WEBARENA_PRIVATE/caddy-data" XDG_CONFIG_HOME="$WEBARENA_PRIVATE/caddy-config" \
             caddy start --config "$WEBARENA_PRIVATE/Caddyfile" --adapter caddyfile
-          status=$(curl --insecure --fail --silent --show-error --max-time 90 -o /dev/null -w '%{http_code}' "$SHOPPING_ORIGIN/")
+          status=$(timeout 90 curl --insecure --fail --silent --show-error --retry 5 --retry-all-errors \
+            --retry-delay 1 --max-time 15 -o /dev/null -w '%{http_code}' "$SHOPPING_ORIGIN/")
           test "$status" = 200
       - name: Verify the published synthetic Shopping sign-in
         working-directory: apps/app
@@ -244,7 +253,7 @@ jobs:
           }
           JS
       - name: Grade official Shopping navigation
-        if: ${{ !inputs.webarena_rating_only }}
+        if: ${{ !inputs.webarena_rating_only && !inputs.webarena_sort_only }}
         env:
           GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
@@ -401,8 +410,36 @@ jobs:
             select(.noActionScore == 0 and .wrongAnswerScore == 0 and (.officialScore == 0 or .officialScore == 1) and
               $receipt.outcome.graceResponded and
               $receipt.outcome.failure == null)' "$WEBARENA_RESULTS/task-386.json" > "$WEBARENA_RESULTS/scorecard.json"
+      - name: Grade the public Shopping category sorts and controls
+        if: ${{ inputs.webarena_sort_only && !inputs.webarena_rating_only }}
+        env:
+          GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
+          GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
+        run: |
+          test -n "$GRACE_BENCHMARK_CLEF_ORIGIN" && test -n "$GRACE_BENCHMARK_CLEF_KEY"
+          git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
+            jq -e --arg start "$SHOPPING_ORIGIN/" --arg results "$WEBARENA_RESULTS" \
+              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$WEBARENA_SORT_TASKS" \
+              '[.[] | select(.task_id as $id | $tasks | index($id) != null) |
+                {taskId: (.task_id | tostring), intent, startUrl: $start,
+                 receipt: ($results + "/task-" + (.task_id | tostring) + ".json"), siteStorageState: $state,
+                 evaluator: "webarena", chat: "upstream", requiredStep: "SortPublicListing"}] |
+                select(map(.taskId | tonumber) == $tasks)' > "$GRACE_BROWSER_BENCHMARK_FILE"
+          browser_exit=0
+          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' 2>&1 |
+            tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
+          jq -s 'sort_by(.taskId) | map({taskId, chatStatus, decisionProvider, decisionRequests,
+            failure: .outcome.failure, wrongDirection: .outcome.wrongDirection, landing: .outcome.destination,
+            checked: (.outcome.hops[-1].checked == true and .outcome.hops[-1].documentId == .outcome.destination.documentId),
+            completed: (.outcome.graceTerminal | type == "string"), officialScore: .webArena.officialScore,
+            noActionScore: .webArena.noActionScore})' "$WEBARENA_RESULTS"/task-*.json > "$WEBARENA_RESULTS/scorecard.json"
+          jq -e --argjson tasks "$WEBARENA_SORT_TASKS" 'map(.taskId | tonumber) == $tasks and
+            all(.[]; .chatStatus == 200 and .decisionProvider == "none" and .decisionRequests == 0 and .failure == null and
+              .wrongDirection.rejectedByGrace and .wrongDirection.documentId != .landing.documentId and
+              .checked and .completed and .officialScore == 1 and .noActionScore == 0)' "$WEBARENA_RESULTS/scorecard.json"
+          test "$browser_exit" -eq 0
       - name: Exercise the public search and its negative controls in Chromium
-        if: ${{ !cancelled() && !inputs.webarena_rating_only && inputs.webarena_public_search && env.WEBARENA_RESULTS != '' }}
+        if: ${{ !cancelled() && !inputs.webarena_rating_only && !inputs.webarena_sort_only && inputs.webarena_public_search && env.WEBARENA_RESULTS != '' }}
         run: |
           unset GRACE_BROWSER_BENCHMARK_FILE
           pnpm --filter @repo/app test:browser test/app.browser.test.tsx -t 'Check a public search the person performs' \
@@ -1106,7 +1143,7 @@ jobs:
           if-no-files-found: error
   verify:
     name: ${{ matrix.lane }}
-    if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.billworld_statement_cohort == 'held-out' || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only)
+    if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.billworld_statement_cohort == 'held-out' || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only || inputs.webarena_sort_only)
     runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -1372,7 +1409,7 @@ jobs:
           include-hidden-files: true
   vibestack-fixture-selftests:
     name: ${{ matrix.lane }}
-    if: ${{ !inputs.cross_app_only && (github.event_name != 'workflow_dispatch' || !inputs.benchmarks_only || !(inputs.billworld || inputs.billworld_statement_cohort == 'held-out' || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only)) }}
+    if: ${{ !inputs.cross_app_only && (github.event_name != 'workflow_dispatch' || !inputs.benchmarks_only || !(inputs.billworld || inputs.billworld_statement_cohort == 'held-out' || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only || inputs.webarena_sort_only)) }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
