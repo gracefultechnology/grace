@@ -43,7 +43,7 @@ public final class GraceAccount extends Plugin {
   passwordBackup = new CloudPasswordBackup(account(getContext()), BuildConfig.APPLICATION_ID, "production");
   recovery = new GracePasswordRecovery(getActivity(), this);
   stopLeaseUpdates = GraceDeviceLeaseJob.listen(getContext(), () -> ACCOUNT.execute(() -> {
-   try { didSignIn(); }
+   try { publishStatus(account(getContext())); }
    catch (Exception unavailable) { }
   }));
  }
@@ -147,11 +147,32 @@ public final class GraceAccount extends Plugin {
   ACCOUNT.execute(() -> {
    try {
     CloudDeviceAccount account = account(getContext());
-    if (finishAcknowledgment(account)) didSignIn();
-    call.resolve(projection(GracePasswordsOwner.stableSession(getContext())));
+    try {
+     if (finishAcknowledgment(account)) publishStatus(account);
+    } catch (Exception unavailable) {
+     if (account.leaseUpgradeStatus() != CloudDeviceAccount.LeaseUpgradeStatus.ACKNOWLEDGMENT_PENDING) throw unavailable;
+    }
+    call.resolve(accountStatus(account));
    }
    catch (Exception unavailable) { call.reject("Device account is unavailable"); }
    retryRevocation();
+  });
+ }
+
+ @PluginMethod public void readGoogle(PluginCall call) {
+  GraceGoogleRead.run(call, input -> {
+   var context = getContext();
+   long generation = GracePasswordsOwner.generation();
+   var owner = GracePasswordsOwner.stableSession(context);
+   var account = account(context);
+   var authority = account.mailAuthority();
+   if (owner == null || authority == null || !input.matches(authority.accountId(), authority.epoch())
+       || !owner.accountId().equals(authority.accountId()) || !owner.organizationId().equals(authority.organizationId()))
+    throw new IllegalStateException("Connected account changed");
+   var answer = account.readMail(authority, input.path(), input.query());
+   if (GracePasswordsOwner.accountChanging() || generation != GracePasswordsOwner.generation())
+    throw new IllegalStateException("Connected account changed");
+   return new JSObject().put("status", answer.status()).put("body", answer.body());
   });
  }
 
@@ -160,7 +181,7 @@ public final class GraceAccount extends Plugin {
    try (var enrollment = GracePasswordsOwner.beginEnrollment(getContext())) {
     CloudDeviceAccount account = account(getContext());
     account.retryRevocation();
-    if (finishAcknowledgment(account)) { didSignIn(); call.resolve(); return; }
+    if (finishAcknowledgment(account)) { publishStatus(account); call.resolve(); return; }
     closePicker(account);
     var attempt = "browser".equals(call.getString("method")) || !hasGooglePlayServices() ? null
         : account.prepareNativeGoogle(getContext().getPackageName(), "production");
@@ -171,6 +192,30 @@ public final class GraceAccount extends Plugin {
      getActivity().runOnUiThread(() -> pickGoogle(next));
     }
    } catch (Exception unavailable) { call.reject("Couldn't open sign-in"); }
+  });
+ }
+
+ @PluginMethod public void beginLeaseUpgrade(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try {
+    CloudDeviceAccount account = account(getContext());
+    Uri address = account.beginLeaseUpgrade();
+    publishStatus(account);
+    open(address, call);
+   } catch (Exception unavailable) { call.reject("Couldn't open sign-in for email and calendar"); }
+  });
+ }
+
+ @PluginMethod public void cancelLeaseUpgrade(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try {
+    CloudDeviceAccount account = account(getContext());
+    if (account.leaseUpgradeStatus() == CloudDeviceAccount.LeaseUpgradeStatus.SIGN_IN_PENDING) {
+     account.cancelLeaseUpgrade(account.beginLeaseUpgrade());
+     publishStatus(account);
+    }
+    call.resolve();
+   } catch (Exception unavailable) { call.reject("Couldn't cancel sign-in for email and calendar"); }
   });
  }
 
@@ -219,7 +264,7 @@ public final class GraceAccount extends Plugin {
      GracePasswordsOwner.confirmVerifiedAccount(getContext(), account.session());
      return null;
     });
-    didSignIn();
+    publishStatus(account);
     pending.call().resolve();
    } else if (error instanceof NoCredentialException || error instanceof GetCredentialProviderConfigurationException
        || error instanceof GetCredentialUnsupportedException) {
@@ -301,15 +346,23 @@ public final class GraceAccount extends Plugin {
  void acceptCallback(Uri data) {
   if (CloudPasswordBackup.isBackupReturn(data)) { acceptPasswordBackup(data); return; }
   ACCOUNT.execute(() -> {
+   boolean upgradeReturn = false;
    try {
     var account = account(getContext());
     if (!account.handles(data)) return;
-    if (changeAccount(() -> {
-     if (!account.exchange(data)) return false;
-     GracePasswordsOwner.confirmVerifiedAccount(getContext(), account.session());
-     return true;
-    })) didSignIn();
+    upgradeReturn = account.leaseUpgradeStatus() == CloudDeviceAccount.LeaseUpgradeStatus.SIGN_IN_PENDING;
+    boolean signedIn = false;
+    try {
+     signedIn = changeAccount(() -> {
+      if (!account.exchange(data)) return false;
+      GracePasswordsOwner.confirmVerifiedAccount(getContext(), account.session());
+      return true;
+     });
+    } finally {
+     if (signedIn || upgradeReturn) publishStatus(account);
+    }
    } catch (Exception unavailable) { }
+   finally { if (upgradeReturn) retryRevocation(); }
   });
  }
 
@@ -336,8 +389,29 @@ public final class GraceAccount extends Plugin {
   }
  }
 
- private void didSignIn() throws Exception {
-  JSObject status = projection(GracePasswordsOwner.stableSession(getContext()));
+ private JSObject accountStatus(CloudDeviceAccount account) throws Exception {
+  var upgrade = account.leaseUpgradeStatus();
+  var current = upgrade == CloudDeviceAccount.LeaseUpgradeStatus.ACKNOWLEDGMENT_PENDING
+      ? account.session() : GracePasswordsOwner.stableSession(getContext());
+  var status = projection(current);
+  String mailLeaseUpgrade = switch (upgrade) {
+   case NOT_REQUIRED -> null;
+   case REQUIRED -> "required";
+   case SIGN_IN_PENDING -> "signInPending";
+   case ACKNOWLEDGMENT_PENDING -> "acknowledgmentPending";
+  };
+  if (current != null) {
+   var authority = account.mailAuthority();
+   if (mailLeaseUpgrade != null) status.put("mailLeaseUpgrade", mailLeaseUpgrade);
+   else if (authority != null && current.accountId().equals(authority.accountId())
+       && current.organizationId().equals(authority.organizationId()))
+    status.put("mailLease", GraceGoogleRead.authority(authority.accountId(), authority.epoch()));
+  }
+  return status;
+ }
+
+ private void publishStatus(CloudDeviceAccount account) throws Exception {
+  JSObject status = accountStatus(account);
   getActivity().runOnUiThread(() -> {
    if (getActivity().isFinishing() || getActivity().isDestroyed()) return;
    notifyListeners("sessionChanged", status);
