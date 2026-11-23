@@ -3514,6 +3514,121 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   }
 }, 120_000);
 
+it('Check the public events collection after following its breadcrumb (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async () => {
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const target = "Club events";
+  const request = 'Find the public index of "Club events".';
+  const articleName = target;
+  const articleRequest = 'Open the page named "Club events".';
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [
+    { said: request, answer: JSON.stringify({ text: "Review this plan.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachPublicCollection", target }] }] }) },
+    { said: articleRequest, answer: JSON.stringify({ text: "Review this plan.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "ReachNamedPage", target: articleName }] }] }) },
+  ]), client));
+  const home = "https://example.org/";
+  const index = new URL("/events", home).href;
+  const article = new URL("/events/saturday", home).href;
+  const entries = '<ul><li><a href="/events/saturday">Saturday hike</a></li><li><a href="/events/sunday">Sunday picnic</a></li></ul>';
+  const fixture = (url: string, content: string) => pinnedPage("statements", url, (html) =>
+    html.replace(/<main>[\s\S]*<\/main>/u, () => `<script>(${String(pageCommand)})(null, "");</script><main>${content}</main>`));
+  const indexContent = '<h1>Club events</h1>' + entries;
+  const opening = await fixture(home, indexContent);
+  const collection = await fixture(index, indexContent);
+  const detail = await fixture(article, '<nav aria-label="Breadcrumb"><a href="/events">Club events</a></nav>' +
+    '<article><h1>Club events</h1><p>Saturday’s hike starts at the east gate.</p></article>' +
+    '<aside aria-label="Related club events"><h2>Club events</h2>' + entries + '</aside>');
+  let current = opening;
+  let documentId = "opening";
+  let replaceDuringRead = false;
+  const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
+    result: { ...current.snapshot(command), url: current.url } }), false, ({ selector }) => {
+    const read = { ...current.read(selector), url: current.url };
+    if (replaceDuringRead && read.text === "Sunday picnic") {
+      replaceDuringRead = false;
+      documentId = "replaced-index";
+    }
+    return read;
+  });
+  localStorage.clear();
+  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const plan = page.getByRole("region", { name: "Task plan" });
+  const complete = plan.getByText("Read checks complete", { exact: true });
+  const collectionReceipt = plan.getByText("Found the collection for " + target + ".", { exact: true });
+  const status = page.getByRole("status", { name: "Page check result" });
+  const check = button("Check page");
+  const start = async (words: string) => {
+    const message = page.getByRole("textbox", { name: "Message to Grace" });
+    await routeTo(message);
+    await act(() => message.fill(words));
+    await act(() => userEvent.keyboard("{Enter}"));
+    await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(words, { exact: true }));
+    if (button("Collapse").query()) await tap(button("Collapse"));
+    await tap(button("Start read plan"));
+    if (button("Resume Grace").query()) await tap(button("Resume Grace"));
+  };
+  const follow = async (destination: typeof opening, link: HTMLAnchorElement) => {
+    let selected: string | undefined;
+    link.addEventListener("click", (event) => { event.preventDefault(); selected = link.href; }, { once: true });
+    link.click();
+    expect(selected).toBe(destination.url);
+    await native.started("tab-1", destination.url);
+    current = destination;
+    documentId = destination.url;
+    await native.report("tab-1", current.url, 100, { pageError: null, securityBlocked: false });
+    await tap(button("Resume Grace"));
+  };
+  const expectOpen = () => {
+    expect(complete.query()).toBeNull();
+    expect(collectionReceipt.query()).toBeNull();
+  };
+  try {
+    await tap(button("Internet"));
+    await visitExampleSite(native);
+    await tap(button("Ask Grace"));
+    await tap(button("Allow Grace to read this browser"));
+    await start(request);
+    await tap(check);
+    await routeTo(status);
+    expectOpen();
+
+    await follow(detail, opening.document.querySelector<HTMLAnchorElement>('main a[href="/events/saturday"]')!);
+    await tap(check);
+    await routeTo(status);
+    expectOpen();
+
+    const privateField = collection.document.createElement("input");
+    privateField.type = "password";
+    collection.document.querySelector("main")!.append(privateField);
+    await follow(collection, detail.document.querySelector<HTMLAnchorElement>('nav a[href="/events"]')!);
+    await tap(check);
+    await routeTo(page.getByText(/^Choose Turn off browser reading\./u));
+    expectOpen();
+    privateField.remove();
+
+    replaceDuringRead = true;
+    await tap(check);
+    await routeTo(status);
+    expect(replaceDuringRead).toBe(false);
+    expectOpen();
+    await tap(check);
+    await routeTo(complete);
+    expect(collectionReceipt.query()).not.toBeNull();
+
+    if (!page.getByRole("textbox", { name: "Message to Grace" }).query()) await tap(button("Ask Grace"));
+    await start(articleRequest);
+    await follow(detail, collection.document.querySelector<HTMLAnchorElement>('main a[href="/events/saturday"]')!);
+    await tap(check);
+    await routeTo(complete);
+    expect(plan.getByText("Open page: " + articleName, { exact: true }).query()).not.toBeNull();
+  } finally {
+    await dispose();
+    localStorage.clear();
+  }
+}, 120_000);
+
 it('Approve the website’s exact label for one step (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
