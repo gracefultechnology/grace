@@ -71,6 +71,7 @@ export const Action = Schema.Union([
   action("proposeReadPlan", { steps: Schema.NonEmptyArray(Schema.Union([
     of<GuidedStep["tag"]>()(["ReadMail", "ReadBrowser", "ReadChangedBrowser", "ReadStatement", "ReadCalendar", "SaveMailAppointment"]),
     action("ReachNamedPage", { target: Words.check(Schema.isMaxLength(128)) }),
+    action("SearchPublicSite", { query: Words.check(Schema.isMaxLength(128)) }),
     action("ReadLatestRecord", {
       collection: Words.check(Schema.isMaxLength(40), Schema.isPattern(/^[\p{L}]+(?: [\p{L}]+){0,2}$/u)),
       status: Words.check(Schema.isMaxLength(40), Schema.isPattern(/^[\p{L}]+(?: [\p{L}]+){0,2}$/u)),
@@ -123,7 +124,8 @@ const read = (raw: string) => {
   const working = trimmed(said.working)
   const asked = said.isQuestion == null ? text.endsWith("?") : said.isQuestion === true || said.isQuestion === "true"
   const supplied = list(said.actions).map(present)
-  const bareStep = supplied.some((item) => isFields(item) && (item.kind === "ReachNamedPage" || item.kind === "ReadLatestRecord"))
+  const bareStep = supplied.some((item) => isFields(item) &&
+    (item.kind === "ReachNamedPage" || item.kind === "ReadLatestRecord" || item.kind === "SearchPublicSite"))
   const actions = bareStep
     ? supplied.length === 1 ? [{ kind: "proposeReadPlan", steps: supplied }] : []
     : supplied

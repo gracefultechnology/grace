@@ -414,7 +414,7 @@ configured scopes are in `knip.config.js`, `.madgerc`, `.jscpd.json` and
 | When | Runs |
 |---|---|
 | Pull request or push to `develop` or `main` | All `pnpm verify` tasks on four runners. The product runner checks the application, documents and examples. Each tool shard has its own runner. After a failure, independent tasks still run and tasks with a failed prerequisite stop. The `verify` status requires all four to pass. |
-| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into `develop` |
+| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into the checked branch. A dispatch from a tag checks the default branch. |
 | Changes to Android build inputs on a pull request or push to `develop` or `main` | `.github/workflows/android.yml` builds the APKs for each ABI and stages the x86_64 launcher and browser for Cuttlefish |
 
 Each row's budget is in [Seeds and budgets](#seeds-and-budgets). A failing
@@ -430,6 +430,7 @@ cache keys include the job, lockfile, commit and run attempt. A job tries both
 key layouts for its own name and current lockfile, then the current layout for
 another lockfile. Selftest jobs on pull requests first try an archive for that pull request and lockfile.
 A successful replay of the entire fixture task can reuse that archive when setup leaves the cached evaluator intact.
+Fixture jobs restore their pull request’s Turbo archive before the shared fallback. A full replay keeps that archive when the cached files stay unchanged and no files need pruning. Turbo refreshes its checkout-specific restore manifests locally.
 Each entry is named by the tools and inputs that produced it.
 Nightly verification restores
 only the pinned evaluator and runs fresh checks.
@@ -447,12 +448,12 @@ Pull requests read shared results; only branch pushes receive the publishing
 credential, protected by the `turbo-cache-publish` environment's branch
 policy. A pull request keeps its own Turborepo results in the GitHub cache
 instead, which only that pull request reads, so its next push reuses them. Branch pushes without a remote cache token also save their local results for later runs. Newer commits replace an older run of the same pull request.
-A pull request from `develop` into `main` waits for the push of the same commit
-to `develop` and replays its published results.
-A job restores only the Turborepo results a job of its name saved. Pushes to
-one branch run one at a time: the running commit finishes and the newest push
-replaces an older pending run. A push re-run uses a separate concurrency group.
-Completed tasks are shared through the cache.
+A push to `develop` shares a concurrency group with the promotion of that exact
+commit into `main`. A running push can finish and publish its results before the
+promotion replays them. On other branches, the newest pending push replaces
+older pending pushes. Explicit retries of those pushes use their own group.
+Each job restores its own Turbo archive. Merging an ordinary PR retires its remaining PR jobs.
+Closing one without merging keeps the run available for qualification.
 Local `pnpm` task commands read the operator's cache credential from
 `~/.config/vibestack/turbo-cache.json`, outside the repository. Credentials
 are never part of a task fingerprint.

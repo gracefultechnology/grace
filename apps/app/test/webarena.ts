@@ -20,6 +20,11 @@ const urlTask = {
 const Task = Schema.Union([
   Schema.Struct({ ...urlTask, task_id: Schema.Int, sites: Schema.Tuple([Schema.Literal("shopping")]), start_url: Schema.Literal("__SHOPPING__") }),
   Schema.Struct({ ...urlTask, task_id: Schema.Literal(157), sites: Schema.Tuple([Schema.Literal("shopping_admin")]), start_url: Schema.Literal("__SHOPPING_ADMIN__") }),
+  Schema.Struct({
+    ...urlTask, task_id: Schema.Literal(258), sites: Schema.Tuple([Schema.Literal("gitlab")]),
+    start_url: Schema.Literal("__GITLAB__"), require_login: Schema.Literal(true),
+    eval: Schema.Struct({ ...urlTask.eval.fields, reference_url: Schema.Literal("__GITLAB__/explore") }),
+  }),
 ]);
 const Document = Schema.Struct({ url: Schema.NonEmptyString, documentId: Schema.NonEmptyString });
 const Outcome = Schema.Struct({
@@ -193,16 +198,19 @@ export function webArena({ checkout, python, cases }: { checkout: string; python
     const task = Schema.decodeUnknownSync(Task)(hits[0]);
     const start = new URL(startUrl);
     const { origin } = start;
-    const admin = task.start_url === "__SHOPPING_ADMIN__";
+    const site = task.sites[0];
+    const admin = site === "shopping_admin";
     const siteRoot = admin ? `${origin}/admin` : origin;
     const initialPath = admin ? "/admin/admin/dashboard/" : "/";
     if (start.protocol !== "https:" || !["127.0.0.1", "localhost"].includes(start.hostname) || start.href !== `${origin}${initialPath}` || task.intent !== intent)
       throw new Error("WebArena input needs the unchanged official task intent and the synthetic site's starting document");
+    const checkedPath = site === "gitlab" ? new URL(task.eval.reference_url.replace(task.start_url, siteRoot)).pathname : undefined;
     const fixture = JSON.stringify(hits[0]).replaceAll(task.start_url, siteRoot);
     const unused = "http://127.0.0.1:1";
-    const env = { SHOPPING: admin ? unused : siteRoot, SHOPPING_ADMIN: admin ? siteRoot : unused,
-      REDDIT: unused, GITLAB: unused, WIKIPEDIA: unused, MAP: unused, HOMEPAGE: unused };
-    scopes.set(siteRoot, env);
+    const env = { SHOPPING: unused, SHOPPING_ADMIN: unused, REDDIT: unused, GITLAB: unused,
+      WIKIPEDIA: unused, MAP: unused, HOMEPAGE: unused, [site.toUpperCase()]: siteRoot };
+    const scope = site + ":" + siteRoot;
+    scopes.set(scope, env);
     return async (observed: unknown, evidence: Evidence) => {
       const outcome = Schema.decodeUnknownSync(Outcome)(observed);
       const { destination } = outcome;
@@ -214,17 +222,18 @@ export function webArena({ checkout, python, cases }: { checkout: string; python
         const landed = destination && new URL(destination.url);
         if (new URL(initial.url).href !== start.href || landed && (landed.origin !== origin || admin && !landed.pathname.startsWith("/admin/")))
           throw new Error("The observed Chromium URL left the pinned WebArena fixture");
-        const worker = workers.get(siteRoot);
+        const worker = workers.get(scope);
         if (!worker) throw new WebArenaEvaluatorError("startup", "closed");
         [officialScore, noActionScore] = await worker.grade({ fixture, urls: [destination?.url ?? initial.url, initial.url] });
         if (destination) {
           const next = new URL(destination.url);
           next.hash = "";
-          groundedNavigation = destination.documentId !== initial.documentId && next.href !== start.href;
+          groundedNavigation = destination.documentId !== initial.documentId && next.href !== start.href &&
+            (checkedPath === undefined || next.pathname.replace(/\/$/, "") === checkedPath);
         }
       }
       return {
-        evaluatorRevision: revision, catalogSha256, site: task.sites[0], officialScore, noActionScore, groundedNavigation,
+        evaluatorRevision: revision, catalogSha256, site, officialScore, noActionScore, groundedNavigation,
         qualifiedHostedGuidance: officialScore === 1 && noActionScore === 0 && groundedNavigation && evidence.guided &&
           (!task.require_login || evidence.authenticatedFixture),
       };
@@ -243,9 +252,9 @@ export function webArena({ checkout, python, cases }: { checkout: string; python
     if (shutdown) await shutdown;
     return startup ??= (async () => {
       try {
-        await Promise.all([...scopes].map(async ([siteRoot, env]) => {
+        await Promise.all([...scopes].map(async ([scope, env]) => {
           const worker = startWebArenaWorker({ python, root, env });
-          workers.set(siteRoot, worker);
+          workers.set(scope, worker);
           await worker.ready;
         }));
       } catch (error) {
