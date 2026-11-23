@@ -29,7 +29,7 @@ const unobservable = unavailableBecause("I couldn’t read this page. Wait for i
 const privateForm = unavailableBecause(privateFormRecovery)
 const changed = unavailableBecause("The page or task changed. Ask me again on the page you want.")
 const namedPageContext = " Prefer an exact page label. If it is absent, choose a navigation section that leads there. Keep the requested kind of page, such as a category or an individual item."
-const choiceContext = " Compare the meaning of the links rather than requiring exact words. If the request is for a collection, prefer the parent section over an individual item."
+const choiceContext = " Compare the meaning of the links rather than requiring exact words. For an index or collection, choose the full listing over a link to one topic, article, or search result. A link with query parameters may lead to a filtered view. Use the visible link labels and section clues to distinguish them."
 const statementContext = " Prefer a page that shows the bill, statement or account activity. Avoid a link that only starts a payment, such as Make a payment."
 
 function context(w: Workspace, authority: GuidedAuthority) {
@@ -160,7 +160,8 @@ function links(snapshot: LinkObservation, page: URL, target: string, publicOnly:
     const prefix = link.path.replace(/\/+$/u, "") + "/"
     const children = [...destinations.values()].filter(other => other.path !== link.path && other.path.startsWith(prefix))
     const section = children.length ? " (section with links including " + children.slice(0, 3).map(child => child.label).join(", ") + ")" : ""
-    return { id: link.id, label: link.label, description: (description + section).slice(0, CLEF_DECISION_LIMITS.candidateLabel), href,
+    const query = URL.parse(href)?.search ? " (address has query parameters)" : ""
+    return { id: link.id, label: link.label, description: (description + query + section).slice(0, CLEF_DECISION_LIMITS.candidateLabel), href,
       menuItem: false, selector: undefined, samePage: false, exact: false, pointable: link.rank === 2 }
   })
 }
