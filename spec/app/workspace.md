@@ -149,7 +149,7 @@ type Workspace = {
   plan: GuidedPlan, review: GuidedReview, commitmentTask: str, observedDevice: int, observedBrowser: int,
   websiteHold: WebsiteHold
 }
-type WebsiteHold = NoWebsiteHold | WebsiteHolds | WebsiteAnswered({ observation: int })
+type WebsiteHold = NoWebsiteHold | WebsiteHolds | WebsiteAnswered({ task: str, workVersion: int, observation: int })
 type WorkspaceEffect = Execute({ deviceVersion: int, browserRevision: int, effect: X::WebsiteEffect })
   | Commit({ deviceVersion: int, browserRevision: int, taskVersion: int, effect: CM::CommitmentEffect })
   | WakeFeedback({ signal: W::WakeSignal })
@@ -2438,8 +2438,8 @@ commitment. Evidence of work already sent, a commitment's outcome, prior
 result or save, is kept only where it leaves the task's activity and version
 as they were; applying it to the task waits for her answer. Her answer, Stop,
 leaving and every other event are not held. When the hold ends, the workspace
-notes how many observations Grace had made, and an observation after that is
-the task going on.
+records the current task, its work version, and its last observation. A fresh
+observation for that task and work version shows that it can continue.
 
 ```quint
 pure def heldByWebsite(w: Workspace): bool = w.websiteHold == WebsiteHolds
@@ -2448,7 +2448,9 @@ pure def taskStandsStill(w: Workspace, after: Workspace): bool =
 pure def canHoldForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): bool =
   by == Host and holds != heldByWebsite(w)
 pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspace =
-  { ...w, websiteHold: if (holds) WebsiteHolds else WebsiteAnswered({ observation: w.execution.observation }) }
+  { ...w, websiteHold: if (holds) WebsiteHolds else WebsiteAnswered({
+    task: w.assistant.taskId, workVersion: w.assistant.workVersion, observation: w.execution.observation
+  }) }
 pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
   "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection",
   "confirmGuided", "confirmGuidedNamedPage", "confirmGuidedSearch", "stageGuidedRecord", "confirmGuidedRecord", "confirmGuidedMail",
@@ -2461,7 +2463,8 @@ pure def stepAHeldTaskDoesNotAdvance(before: Workspace, via: str, after: Workspa
 pure def sometimesAHeldTaskGoesOnAfterHerAnswer(w: Workspace): bool =
   val hold = w.websiteHold
   match hold {
-    | WebsiteAnswered(answered) => w.execution.observation > answered.observation
+    | WebsiteAnswered(answered) => answered.task != "" and w.assistant.taskId == answered.task and
+      w.assistant.workVersion == answered.workVersion and w.execution.observation > answered.observation
     | _ => false
   }
 pure val weight_holdForWebsite = 8
