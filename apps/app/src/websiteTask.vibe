@@ -23,7 +23,7 @@ export const websiteTask = Layer.unwrap(effect {
   })
   const follow = effect {
     const hold = { type: "holdForWebsite", holds: holdsThePerson(try requests.get()) } as const
-    if (enabled(try workspace.get(), hold, "Host")) try workspace.send(hold, "Host")
+    if (enabled(try workspace.get(), hold, "Host")) try Effect.orDie(workspace.send(hold, "Host"))
   }
   const send: Workspaces.Shape["send"] = effect (event, by, isCurrent) => {
     while (true) {
