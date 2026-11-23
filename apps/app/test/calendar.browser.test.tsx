@@ -449,7 +449,8 @@ it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: De
   await expect.element(row("Physio with Sam")).not.toBeInTheDocument();
 }, journey);
 
-it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event"; spec/app/notices.md, "Story: See what needs me on Home")', async () => {
+it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event")', async () => {
+  // spec/app/notices.md, "Story: See what needs me on Home"
   const now = Date.now();
   const { card, run } = await start({ clockAt: now });
   const network = { online: true };
