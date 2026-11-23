@@ -414,7 +414,7 @@ configured scopes are in `knip.config.js`, `.madgerc`, `.jscpd.json` and
 | When | Runs |
 |---|---|
 | Pull request or push to `develop` or `main` | All `pnpm verify` tasks on four runners. The product runner checks the application, documents and examples. Each tool shard has its own runner. After a failure, independent tasks still run and tasks with a failed prerequisite stop. The `verify` status requires all four to pass. |
-| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into the checked branch, or into the default branch for a tag |
+| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into the checked branch. A dispatch from a tag checks the default branch. |
 | Changes to Android build inputs on a pull request or push to `develop` or `main` | `.github/workflows/android.yml` builds the APKs for each ABI and stages the x86_64 launcher and browser for Cuttlefish |
 
 Each row's budget is in [Seeds and budgets](#seeds-and-budgets). A failing

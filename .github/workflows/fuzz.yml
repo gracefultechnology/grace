@@ -2,7 +2,7 @@ name: fuzz
 
 # The fixed nightly profile checks 20,000 values with seed 2; repeat it with
 # `pnpm all check -- --nightly`. The shrunk
-# counterexamples a failing run saves come back as a pull request into its branch, or the default branch for a tag.
+# counterexamples a failing run saves come back as a pull request into the checked branch.
 on:
   schedule:
     - cron: "17 4 * * *"
@@ -18,10 +18,11 @@ jobs:
     env:
       TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
       TURBO_CACHE: local:rw,remote:r
+      BASE_BRANCH: ${{ github.ref_type == 'branch' && github.ref_name || github.event.repository.default_branch }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: develop
+          ref: ${{ env.BASE_BRANCH }}
           submodules: true
       - uses: ./.github/actions/setup
         with:
@@ -32,7 +33,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: fuzz/${{ github.run_id }}
-          BASE_BRANCH: ${{ github.ref_type == 'branch' && github.ref_name || github.event.repository.default_branch }}
         run: |
           traces=':(glob)**/test/counterexamples/**'
           [[ -n $(git status --porcelain=v1 --untracked-files=all -- "$traces") ]] || exit 0
