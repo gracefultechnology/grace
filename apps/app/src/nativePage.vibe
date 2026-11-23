@@ -46,8 +46,14 @@ function idleAccountForm(group: readonly PageElement[]): boolean {
   if (account.length !== 1 || !fields.every((field) => field.edited === false && field.hasInput === false)) return false
   if (password.length === 1 && fields.length === 2) return true
   const identifier = account[0]
-  return fields.length === 1 && identifier?.fieldName === "username" &&
-    /^(?:username(?: or email)?|email(?: address)?|phone number)$/iu.test(identifier.label?.trim() ?? "") &&
+  if (fields.length !== 1 || identifier?.fieldName !== "username") return false
+  const label = identifier.label?.trim() ?? ""
+  if (/^(?:account (?:number|id|identifier) or email(?: address)?|email(?: address)? or account (?:number|id|identifier))$/iu.test(label)) {
+    const submits = group.filter((element) => element.inViewport && element.disabled === false && element.submits === true &&
+      (element.tag === "button" || element.tag === "input"))
+    return submits.length === 1 && /^(?:sign in|log[ -]?in)$/iu.test(submits[0]?.label?.trim() ?? "")
+  }
+  return /^(?:username(?: or email)?|email(?: address)?|phone number)$/iu.test(label) &&
     group.some((element) => /\b(?:sign[ -]?in|log[ -]?in)\b/iu.test(element.form?.name ?? "") ||
       (element.submits === true && /^(?:sign in|log in|login|continue)$/iu.test(element.label?.trim().replace(/[\s\p{P}\p{S}]+$/gu, "") ?? "")))
 }
