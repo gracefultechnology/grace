@@ -3580,11 +3580,12 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   }
 }, 240_000);
 
-async function startPublicReadPlan(native: ReturnType<typeof fakePlugin>, tap: Awaited<ReturnType<typeof cloudReadPlan>>["tap"], loadHome: () => Promise<void>) {
+async function startPublicReadPlan(native: ReturnType<typeof fakePlugin>, tap: Awaited<ReturnType<typeof cloudReadPlan>>["tap"], loadHome: () => Promise<void>, tab = 1) {
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   await tap(button("Internet"));
+  if (tab === 2) await tap(button("Open a new tab"));
   await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
-  await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+  await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe(`tab-${tab}`);
   await loadHome();
   await tap(button("Ask Grace"));
   await tap(button("Allow Grace to read this browser"));
@@ -3611,7 +3612,8 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
     result: { ...frame.snapshot(command), url } }), false, ({ selector }) => ({ ...frame.read(selector), url }));
   localStorage.clear();
-  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  let view = await cloudReadPlan(native, cloud, secret);
+  const { routeTo, tap } = view;
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   const review = page.getByRole("region", { name: "Review read plan" });
   const field = page.getByRole("textbox", { name: "Message to Grace" });
@@ -3621,22 +3623,23 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
     await act(() => field.fill(words));
     await act(() => userEvent.keyboard("{Enter}"));
   };
+  let activeId = "tab-2";
   const arrive = async (address: string, title: string) => {
-    await native.started("tab-1", address);
+    await native.started(activeId, address);
     url = address;
     documentId = address;
     heading.textContent = title;
     searchField.setAttribute("value", query);
-    await native.report("tab-1", url, 100, { pageError: null, securityBlocked: false });
+    await native.report(activeId, url, 100, { pageError: null, securityBlocked: false });
     await tap(button("Resume Grace"));
   };
   const unverified = page.getByRole("status", { name: "Page check result" });
   const check = button("Check search results");
   try {
     await startPublicReadPlan(native, tap, async () => {
-      await native.started("tab-1", home);
-      await native.report("tab-1", home, 100, { pageError: null, securityBlocked: false });
-    });
+      await native.started(activeId, home);
+      await native.report(activeId, home, 100, { pageError: null, securityBlocked: false });
+    }, 2);
     await send(rewritten);
     await routeTo(page.getByText("I could not prepare that read plan."));
     expect(review.query()).toBeNull();
@@ -3662,12 +3665,31 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
     await tap(check);
     await routeTo(page.getByText(/^Choose Turn off browser reading\./u));
     expect(plan.getByText("Read checks complete").query()).toBeNull();
+    await view.dispose();
+    view = await cloudReadPlan(native, cloud, secret);
+    activeId = "tab-1";
+    url = home;
+    documentId = "reopened";
+    await startPublicReadPlan(native, tap, async () => {
+      await native.started(activeId, home);
+      await native.report(activeId, home, 100, { pageError: null, securityBlocked: false });
+    });
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    await tap(button("Resume Grace"));
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    expect(check.query()).toBeNull();
     privateField.remove();
+    await arrive("https://other.example/results?q=green+tea", right);
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    expect(check.query()).toBeNull();
+    await arrive(result, right);
+    await routeTo(check);
+    expect(plan.getByText("Read checks complete").query()).toBeNull();
     await tap(check);
     await routeTo(plan.getByText("Read checks complete"));
     expect(plan.getByText("Search results for “green tea”.").query()).not.toBeNull();
   } finally {
-    await dispose();
+    await view.dispose();
     localStorage.clear();
   }
 }, 120_000);

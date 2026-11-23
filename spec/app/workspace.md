@@ -84,11 +84,16 @@ type GuidedRecordSelection = {
   key: str, coverage: RecordCoverage, matches: int
 }
 type GuidedRecordState = NoGuidedRecordSelection | StagedGuidedRecord({ selection: GuidedRecordSelection })
+type GuidedTabSession = ReviewedTabs | RestoredTabs | RestoredPublicTab({ stepIndex: int, tabId: int, loadVersion: int, documentId: str })
+type GuidedTabRecovery = {
+  owner: str, task: str, version: int, stepIndex: int, deviceVersion: int, browserRevision: int,
+  tabId: int, loadVersion: int, documentId: str, url: str, origin: str
+}
 type GuidedPlan = {
   owner: str, steps: List[GuidedStep], receipts: List[GuidedReceipt], openingBrowser: int, originalAsk: str, linkStep: int, linkUrl: str,
   mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str,
   nameCorrection: GuidedNameCorrectionState, nameOverride: GuidedNameOverride, saveRecovery: GuidedCheckpointSave,
-  recordSelection: GuidedRecordState
+  recordSelection: GuidedRecordState, tabSession: GuidedTabSession
 }
 type GuidedRequest = { owner: str, task: str, goal: str, steps: List[GuidedStep] }
 type GuidedObservation = {
@@ -121,7 +126,7 @@ pure val emptyPlan: GuidedPlan = {
   owner: "", steps: List(), receipts: List(), openingBrowser: 0, originalAsk: "", linkStep: -1, linkUrl: "",
   mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: "",
   nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched,
-  recordSelection: NoGuidedRecordSelection
+  recordSelection: NoGuidedRecordSelection, tabSession: ReviewedTabs
 }
 pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
@@ -138,13 +143,44 @@ pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
 }
 pure val noGuidedStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "", outcome: "" })
 pure def hasNext(plan: GuidedPlan): bool = plan.receipts.length() < plan.steps.length()
+pure def publicStepOrigin(guidedStep: GuidedStep): str = match guidedStep {
+  | SearchPublicSite(target) => target.origin
+  | SortPublicListing(target) => target.origin
+  | _ => ""
+}
+pure def needsRecoveredPublicTab(plan: GuidedPlan): bool =
+  val index = plan.receipts.length()
+  val session = plan.tabSession
+  publicStepOrigin(plan.steps.nthOr(index, noGuidedStep)) != "" and (match session {
+    | ReviewedTabs => false
+    | RestoredTabs => true
+    | RestoredPublicTab(binding) => binding.stepIndex != index
+  })
+pure def publicResultLoad(plan: GuidedPlan, loadVersion: int, documentId: str): bool =
+  val session = plan.tabSession
+  match session {
+    | RestoredPublicTab(binding) => if (binding.stepIndex == plan.receipts.length())
+      loadVersion > binding.loadVersion or (loadVersion == binding.loadVersion and documentId == binding.documentId)
+      else loadVersion > plan.openingBrowser
+    | _ => loadVersion > plan.openingBrowser
+  }
 pure def nextOutcome(plan: GuidedPlan): GuidedStep = {
   val index = plan.receipts.length()
   val plannedOutcome = plan.steps.nthOr(index, noGuidedStep)
   if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match plannedOutcome {
     | ReachNamedPage(_) => ReachNamedPage({ subject: plan.nameOverride.label })
     | _ => plannedOutcome
-  } else plannedOutcome
+  } else {
+    val session = plan.tabSession
+    match session {
+      | RestoredPublicTab(binding) => if (binding.stepIndex == index) match plannedOutcome {
+        | SearchPublicSite(target) => SearchPublicSite({ query: target.query, origin: target.origin, tabId: binding.tabId })
+        | SortPublicListing(target) => SortPublicListing({ subject: target.subject, origin: target.origin, direction: target.direction, tabId: binding.tabId })
+        | _ => plannedOutcome
+      } else plannedOutcome
+      | _ => plannedOutcome
+    }
+  }
 }
 type Workspace = {
   device: S::Shell, browser: B::Browser, assistant: A::Assistant,
@@ -1008,11 +1044,13 @@ pure def hasRecoveredSaveReference(save: GuidedCheckpointSave): bool = match sav
   | GuidedSaveUntouched => false
   | GuidedSaveReconcile(ref) => ref.occurrence != "" and ref.detailsDigest != ""
 }
-pure def canResume(w: Workspace, by: WorkspaceActor): bool =
+pure def resumeAvailable(w: Workspace, by: WorkspaceActor): bool =
   by == Person and A::canResume(w.assistant, C::ConversationUser) and
   (if (hasNext(w.plan)) w.device.readiness == S::Ready and w.assistant.replacementId == "" and
     (w.plan.saveRecovery == GuidedSaveUntouched or hasRecoveredSaveReference(w.plan.saveRecovery))
    else mayAssist(w) and X::canResume(w.execution, X::User))
+pure def canResume(w: Workspace, by: WorkspaceActor): bool =
+  resumeAvailable(w, by) and not(needsRecoveredPublicTab(w.plan))
 pure def resume(w: Workspace, by: WorkspaceActor): Workspace = {
   ...w, assistant: A::resume(w.assistant, C::ConversationUser),
   execution: if (hasNext(w.plan)) w.execution else X::resume(w.execution, X::User),
@@ -1268,7 +1306,16 @@ owner. An account change retires a guided task only when the host names its
 current task and work version.
 
 Grace restores the next instruction with a work version newer than the saved
-one. Recovery starts closed and paused. Opening Grace waits for an explicit
+one. Recovery starts closed and paused. For a public search or price sort,
+the person opens the reviewed site in Internet and allows browser reading.
+When the person chooses Resume, Grace observes the selected secure public
+document on the reviewed origin and binds its tab to that step for this
+session. A different site, a private form or a stale observation leaves it
+paused. Binding preserves the reviewed query or category and price order and
+all prior receipts. The person checks the result separately on that same
+document or a later load in that tab. Each later
+public search or sort in the recovered plan needs its own binding.
+Opening Grace waits for an explicit
 Resume with the current authority. An observation must use the new work
 version and current app, page and permission. The checkpoint contains no
 queued work, browser session, selected private source, page observation,
@@ -1325,7 +1372,7 @@ pure def restoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActo
   val request = checkpoint.request
   val nextIndex = checkpoint.receipts.length()
   val recoveredPlan: GuidedPlan = { ...emptyPlan, owner: request.owner, steps: request.steps, receipts: checkpoint.receipts,
-    openingBrowser: w.browser.revision, originalAsk: request.goal, saveRecovery: checkpoint.save }
+    openingBrowser: w.browser.revision, originalAsk: request.goal, saveRecovery: checkpoint.save, tabSession: RestoredTabs }
   val correction = checkpoint.correction
   val plan: GuidedPlan = match correction {
     | NoGuidedCheckpointCorrection => recoveredPlan
@@ -1341,6 +1388,33 @@ pure def restoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActo
         else "Check whether the appointment was already saved before starting another plan.",
       workVersion: version },
     commitment: quietCommitment(w.commitment), wake: W::cancel(w.wake, W::WakeHost) }
+pure def canResumePublicTab(w: Workspace, tabRecovery: GuidedTabRecovery, by: WorkspaceActor): bool =
+  val tab = B::activeTab(w.browser)
+  resumeAvailable(w, by) and needsRecoveredPublicTab(w.plan) and not(heldByWebsite(w)) and
+  not(privateSurfaceActive(w)) and w.device.surface == S::Browser and w.device.observationAllowed and
+  w.execution.phase == X::Idle and w.commitmentTask == "" and
+  tab.load == B::Loaded and tab.secure and tabRecovery.owner == w.plan.owner and
+  tabRecovery.task == w.assistant.taskId and tabRecovery.version == w.assistant.workVersion and
+  tabRecovery.stepIndex == w.plan.receipts.length() and tabRecovery.deviceVersion == w.device.contextVersion and
+  tabRecovery.browserRevision == w.browser.revision and tabRecovery.tabId == tab.id and
+  tabRecovery.loadVersion == tab.loadVersion and
+  tabRecovery.documentId != "" and tabRecovery.url != "" and tabRecovery.url == B::tabUrl(tab) and
+  tabRecovery.origin == publicStepOrigin(nextOutcome(w.plan))
+pure def resumePublicTab(w: Workspace, tabRecovery: GuidedTabRecovery, by: WorkspaceActor): Workspace =
+  val active = resume(w, by)
+  { ...active, plan: { ...w.plan, tabSession: RestoredPublicTab({ stepIndex: tabRecovery.stepIndex, tabId: tabRecovery.tabId,
+      loadVersion: tabRecovery.loadVersion, documentId: tabRecovery.documentId }) } }
+pure def lawRestoredPublicTabPreservesReview(w: Workspace, tabRecovery: GuidedTabRecovery, by: WorkspaceActor): bool =
+  val after = resumePublicTab(w, tabRecovery, by)
+  canResumePublicTab(w, tabRecovery, by) implies (
+    not(canResume(w, by)) and not(needsRecoveredPublicTab(after.plan)) and
+    after.plan.steps == w.plan.steps and after.plan.receipts == w.plan.receipts and
+    publicStepOrigin(nextOutcome(after.plan)) == tabRecovery.origin)
+pure val sampleTabRecovery: GuidedTabRecovery = {
+  owner: "owner", task: "task", version: 4, stepIndex: 0, deviceVersion: 3, browserRevision: 4,
+  tabId: 1, loadVersion: 3, documentId: "public-document", url: "https://utility.example/", origin: "https://utility.example"
+}
+pure val tabRecoveryValues: Set[GuidedTabRecovery] = Set(sampleTabRecovery, { ...sampleTabRecovery, tabId: 2 })
 pure def canDiscardGuidedRecovery(w: Workspace, fence: GuidedFence, by: WorkspaceActor): bool =
   by == Host and w.plan.owner != "" and fence.task == w.assistant.taskId and fence.version == w.assistant.workVersion
 pure def discardGuidedRecovery(w: Workspace, fence: GuidedFence, by: WorkspaceActor): Workspace = {
@@ -1613,7 +1687,7 @@ pure def isAppointmentSave(guidedStep: GuidedStep): bool = match guidedStep {
 }
 pure def usedSource(plan: GuidedPlan, sourceKey: str): bool = plan.receipts.some(receipt => receipt.sourceKey == sourceKey)
 pure def guidedReadContextCurrent(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  by == Host and not(heldByWebsite(w)) and not(privateSurfaceActive(w)) and hasNext(w.plan) and
+  by == Host and not(heldByWebsite(w)) and not(privateSurfaceActive(w)) and hasNext(w.plan) and not(needsRecoveredPublicTab(w.plan)) and
   w.execution.phase == X::Idle and w.commitmentTask == "" and A::isVisible(w.assistant) and w.device.readiness == S::Ready and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
   w.assistant.replacementId == "" and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
@@ -1635,7 +1709,7 @@ pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceAct
     recordSelection: NoGuidedRecordSelection }
   val assistant = w.assistant
   { ...w, plan: plan, assistant:
-    if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
+    if (hasNext(plan)) { ...assistant, activity: if (needsRecoveredPublicTab(plan)) A::Paused else A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
       workVersion: assistant.workVersion + 1 }
     else A::finishTask(assistant, report.task, report.version, A::Completed, report.evidence, C::ConversationRuntime) }
 pure def canConfirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): bool =
@@ -1657,7 +1731,7 @@ pure def canConfirmGuidedPublicSort(w: Workspace, sortCheck: GuidedSortCheck, by
   guidedObservationCurrent(w, sortCheck.report, by) and sortCheck.documentId != "" and
   tab.load == B::Loaded and tab.secure and tab.id == sortCheck.tabId and
   sortCheck.url != "" and sortCheck.url == B::tabUrl(tab) and
-  sortCheck.loadVersion == tab.loadVersion and sortCheck.loadVersion > w.plan.openingBrowser and
+  sortCheck.loadVersion == tab.loadVersion and publicResultLoad(w.plan, sortCheck.loadVersion, sortCheck.documentId) and
   (match observedStep {
     | SortPublicListing(target) => target.tabId == sortCheck.tabId and target.origin == sortCheck.origin and
       target.subject == sortCheck.category and target.direction == sortCheck.direction
@@ -1756,7 +1830,7 @@ pure def canConfirmGuidedSearch(w: Workspace, searchCheck: GuidedSearchCheck, by
   val searchedStep = searchCheck.report.step
   guidedObservationCurrent(w, searchCheck.report, by) and searchCheck.documentId != "" and
   tab.load == B::Loaded and tab.secure and searchCheck.url != "" and searchCheck.url == B::tabUrl(tab) and
-  searchCheck.loadVersion == tab.loadVersion and searchCheck.loadVersion > w.plan.openingBrowser and
+  searchCheck.loadVersion == tab.loadVersion and publicResultLoad(w.plan, searchCheck.loadVersion, searchCheck.documentId) and
   match searchedStep {
     | SearchPublicSite(target) => target.origin == searchCheck.origin and target.query == searchCheck.query and target.tabId == tab.id
     | _ => false

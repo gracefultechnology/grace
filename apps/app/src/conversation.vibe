@@ -13,7 +13,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, privateSurfaceActive, publicResultLoad, resumeAvailable, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type GraceAction } from "./agent.vibe"
 import { BrowserGuide } from "./browserGuide.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
@@ -207,13 +207,14 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
     case "SearchPublicSite": {
       const tab = activeTab(workspace.browser)
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
-          tab.id !== step.tabId || tab.load !== "Loaded" || !tab.secure || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+          tab.id !== step.tabId || tab.load !== "Loaded" || !tab.secure) return undefined
       const url = tabUrl(tab)
       const address = URL.parse(url)
       if (address?.origin !== step.origin || address.username || address.password || address.hash) return undefined
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
-      if (!before || (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
+      if (!before || !publicResultLoad(workspace.plan, tab.loadVersion, before.documentId) ||
+          (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
       const miss = pageMiss(before, url, "CheckPublicSearchResult")
       if (miss !== undefined) return miss
       const heading = native.readPrimaryHeading(id, true) catch () => undefined
@@ -233,10 +234,10 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const tab = activeTab(workspace.browser)
       const url = URL.parse(tabUrl(tab))
       if (!url || url.origin !== step.origin || url.username || url.password || url.hash || tab.id !== step.tabId ||
-          !tab.secure || tab.load !== "Loaded" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+          !tab.secure || tab.load !== "Loaded") return undefined
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
-      if (!before || before.result.domRevision === undefined ||
+      if (!before || before.result.domRevision === undefined || !publicResultLoad(workspace.plan, tab.loadVersion, before.documentId) ||
           (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
       const miss = pageMiss(before, url.href, "CheckPublicSort")
       if (miss !== undefined) return miss
@@ -514,7 +515,25 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     resumeReadPlan: effect () => {
       const state = try workspace.get()
       if (!hasNext(state.plan) || !(try recovery.canAccess(state))) return false
-      return (workspace.send({ type: "resume" }, "Person") catch () => undefined) !== undefined
+      if (!needsRecoveredPublicTab(state.plan)) return (workspace.send({ type: "resume" }, "Person") catch () => undefined) !== undefined
+      if (!resumeAvailable(state, "Person") || !(try website.clear) || privateSurfaceActive(state) ||
+          state.device.surface !== "Browser" || !state.device.observationAllowed) return false
+      const step = nextOutcome(state.plan)
+      const tab = activeTab(state.browser)
+      const url = tabUrl(tab)
+      const address = URL.parse(url)
+      if ((step.tag !== "SearchPublicSite" && step.tag !== "SortPublicListing") || !address ||
+          address.protocol !== "https:" || address.origin !== step.origin || address.username || address.password || address.hash ||
+          tab.load !== "Loaded" || !tab.secure) return false
+      const account = try browserReadAccount()
+      if (account === undefined) return false
+      const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
+      if (!snapshot?.documentId || pageMiss(snapshot, url, step.tag === "SearchPublicSite" ? "CheckPublicSearchResult" : "CheckPublicSort") !== undefined ||
+          !(try recovery.canAccess(state)) || (try browserReadAccount()) !== account || !(try website.clear)) return false
+      const tabRecovery = { owner: state.plan.owner, task: state.assistant.taskId, version: state.assistant.workVersion,
+        stepIndex: state.plan.receipts.length, deviceVersion: state.device.contextVersion, browserRevision: state.browser.revision,
+        tabId: tab.id, loadVersion: tab.loadVersion, documentId: snapshot.documentId, url, origin: address.origin }
+      return (workspace.send({ type: "resumePublicTab", tabRecovery }, "Person") catch () => undefined) !== undefined
     },
     checkGuidedRead: effect () => {
       if (!(try website.clear)) return "Refused"
