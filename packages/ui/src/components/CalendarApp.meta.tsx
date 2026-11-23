@@ -116,7 +116,7 @@ export const detail: CalendarEventDetailProps & { title: string } = {
   who: "Dr. Patel",
   reminder: "Reminder day before",
   repeat: "Doesn’t repeat",
-  note: "From the clinic’s email · Visit form attached",
+  note: "From Main St Clinic’s email · Visit form attached",
   onEdit: fn(),
   onDelete: fn(),
 };

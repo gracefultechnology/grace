@@ -19,7 +19,7 @@ import { FileEntry } from "../src/files.vibe";
 import { Instances } from "../src/instances.vibe";
 import { chooseMailLink } from "../src/mailLink.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
-import { client, expire, outage, script, signIn } from "./cloud.vibe";
+import { client, expire, modelTurns, outage, script, signIn } from "./cloud.vibe";
 import { actOnScreen, allowOutlook, browserAccountResponse, connected, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
@@ -557,9 +557,9 @@ it("Write or reply and confirm before sending", async () => {
   await expect.poll(() => sentWith("Re: Reminder: your appointment tomorrow at 10 am")).toEqual([gmail]);
   await click(row("Sent"));
   await opened(/Main St Clinic/, "Re: Reminder: your appointment tomorrow at 10 am");
-  await click(page.getByRole("button", { name: "Reply" }));
-  await expect.element(page.getByRole("button", { name: "Remove Main St Clinic" })).toBeVisible();
-  await click(page.getByRole("button", { name: /^Back to / }));
+  // spec/app/email.md, "A draft is editable and a reply stays attached to its source message"
+  await expect.element(page.getByRole("button", { name: "Forward" })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Reply" })).not.toBeInTheDocument();
   await click(page.getByRole("button", { name: "Back to Sent" }));
   await click(row("All inboxes"));
   await expect.element(email(/^Main St Clinic.*You replied: “Thank you, I’ll be there\.…”/)).toBeVisible();
@@ -741,6 +741,13 @@ it("Write or reply and confirm before sending", async () => {
   await click(page.getByRole("button", { name: "Susan" }));
   await click(page.getByRole("button", { name: "Send" }));
   await expect.element(row("Outbox 1")).toBeVisible();
+  // spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"
+  await click(page.getByRole("button", { name: "Fix Wi-Fi" }));
+  await expect.element(page.getByRole("textbox", { name: "Message to Grace" })).toBeVisible();
+  await expect.poll(async () => (await Effect.runPromise(Effect.provide(modelTurns(cloud, secret), client))).at(-1)?.context, { timeout: 60_000 }).toContain("tapped Fix Wi-Fi in Email");
+  await expect.element(page.getByRole("heading", { name: "Wi-Fi" })).not.toBeInTheDocument();
+  await click(page.getByRole("button", { name: "Close Grace", exact: true }));
+  await expect.element(page.getByText("No internet right now")).toBeVisible();
   await host("Online");
   await expect.poll(() => sentWith("Recital photos")).toHaveLength(1);
   await expect.element(row("Outbox")).not.toBeInTheDocument();
@@ -1019,4 +1026,19 @@ it('Take a photo for an email on the tablet (spec/app/files.md, "A photo taken o
   const provider = async () => Schema.decodeUnknownSync(Sent)(await (await fetch(new URL("/fake/account", cloud), { headers: { authorization: `Bearer ${secret}` } })).json());
   await expect.poll(async () => (await provider()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "The garden" && m.labels.includes("SENT")).map((m) => m.attachments)))
     .toEqual([[{ filename: "Garden.jpg", data: jpeg }]]);
+
+  // spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"
+  await writeTo("Susan");
+  await act(() => userEvent.fill(subject(), "More of the garden"));
+  await click(page.getByRole("button", { name: "Attach" }));
+  await click(page.getByRole("menuitem", { name: "Take a photo" }));
+  await expect.element(page.getByRole("button", { name: "Remove Garden.jpg" })).toBeVisible();
+  entries = [];
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(page.getByText("Garden.jpg can’t go by email, so this email is kept on the tablet. Remove it to save it to Drafts.")).toBeVisible();
+  await expect.element(subject()).toHaveValue("More of the garden");
+  await click(page.getByRole("button", { name: "Remove Garden.jpg" }));
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(page.getByText("Saved to Drafts")).toBeVisible();
+  await expect.poll(async () => (await provider()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "More of the garden").map((m) => [m.labels, m.attachments]))).toEqual([[["DRAFT"], []]]);
 }, 300_000);

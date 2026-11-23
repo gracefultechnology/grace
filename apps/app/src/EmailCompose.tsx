@@ -9,7 +9,7 @@ import type { ComposeChoice, DraftContent, Event as MailEvent, Mailbox, SendStat
 import { draftMovable, contactAccounts, fromChoices, type MailSource, pickerBack, showsCopies, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import { sendableAttachments, type Contact } from "./connector.vibe";
 import { Library, type SavedPreview } from "./files.vibe";
-import { recipientsOf, recipientsValid } from "./mail.vibe";
+import { keptOnTablet, recipientsOf, recipientsValid } from "./mail.vibe";
 import { type MailInstance, type MailWriter, useRuntime, useWorkspace } from "./useApp.ts";
 
 type Field = "subject" | "body";
@@ -188,7 +188,7 @@ export function EmailCompose({ registry, boxes, box, mail, sender, frame }: Emai
       onSend={ready ? () => void mail.confirmSend(box.id, m.revision) : undefined}
       onDiscard={offered(box, throwAway) && (() => void discard(box))}
       draftError={!attachmentsValid ? "Remove any unsupported or duplicate files. Email can send up to 10 attachments." :
-        m.draftStorage !== "DraftStoreFailed" ? undefined : undeleted ? "This email couldn’t be deleted from Drafts." : "This email couldn’t be saved to Drafts."}
+        m.draftStorage !== "DraftStoreFailed" ? undefined : undeleted ? "This email couldn’t be deleted from Drafts." : keptOnTablet(mail.unsendable.get(box.id) ?? []) ?? "This email couldn’t be saved to Drafts."}
       onRetryDraft={attachmentsValid && box.can(retry) ? () => void (undeleted ? discard(box) : box.send(keep)) : undefined}
       onBack={leavable(box) ? () => void leave(box) : undefined}
       onAttach={{ camera: mail.camera && editable ? () => void mail.capture(box.id) : undefined, photos: chooser("ChoosePhoto"), file: chooser("ChooseFile") }}

@@ -649,7 +649,11 @@ hidden draft remains recoverable and cannot be silently overwritten. `startDraft
 opens only a new, unaddressed message; a reply opens only through
 `replyToMessage` (next rule), so there is one reply path. No reply is sent
 merely by selecting an email. Trash exposes Restore and Delete forever, so
-reply and forwarding are unavailable until that message is restored.
+reply and forwarding are unavailable until that message is restored. Her own
+email in Sent offers Forward and never Reply, and a saved draft in Drafts is
+never replied to, so neither she nor Grace replies to what she wrote herself; the prototype offers
+Reply on a sent email (`prototype/Grace Prototype.html:2023`), and the owner
+chose Forward only.
 
 ```quint
 pure def composerFree(m: Mailbox): bool =
@@ -658,6 +662,7 @@ pure def composerFree(m: Mailbox): bool =
   (m.sendStatus == NoDraft or m.sendStatus == Sent or (not(m.composeVisible) and m.draftStorage == DraftSaved))
 pure def replyable(m: Mailbox): bool =
   composerFree(m) and m.connection == Connected and m.canRead and m.folder != I::TrashFolder and
+  m.folder != I::SentFolder and m.folder != I::DraftsFolder and
   selectedMessageIsCurrent(m) and m.readStatus == ReadIdle
 pure def openComposer(replyTo: str, m: Mailbox): Mailbox =
   { ...m, sendStatus: Composing, draft: emptyContent, autoSubject: "",
@@ -1025,7 +1030,13 @@ delayed older Save cannot resurrect a deleted draft after restart. The composer 
 close while storage is pending but another draft cannot overwrite it. Failure
 reopens the recoverable draft. Saving gives the provider each attachment's own
 bytes, a photo taken on the tablet or a file from Files included, so the saved
-draft holds them. Reopening Drafts reads the selected provider draft
+draft holds them. Saving prepares the attachments as sending does, so a draft
+holding one that cannot be sent (its bytes gone from Files, or a kind or size
+email cannot carry) is never saved without it: the save fails, the draft stays
+on the tablet exactly as it was and reopens, and the composer names each
+attachment that cannot go, so she can remove it and save the rest. The
+prototype saves every draft (`prototype/Grace Prototype.html:2337`); here no
+saved draft silently lacks what she attached. Reopening Drafts reads the selected provider draft
 and restores all recipients and attachments as that draft's own, so a saved
 draft can be open in the composer again and sends with what it holds. Discard of an existing draft awaits durable deletion; the
 single Discard tap is the user's authorization.
@@ -1062,6 +1073,12 @@ pure def restoreDraft(m: Mailbox, snapshot: DraftSnapshot, generation: int, veri
     draftAttachments: snapshot.attachments, replyTo: snapshot.replyTo, composeVisible: true,
     sendStatus: Composing, draftStorage: DraftSaved, revision: m.revision + 1, storedRevision: m.revision + 1,
     approvedRevision: -1, operationId: "", sendEvidence: "", sendResultSaved: false }
+pure def lawFailedSaveKeepsTheDraft(m: Mailbox, draftId: str, revision: int, request: int, by: MailActor): bool =
+  val after = draftStoreResult(m, draftId, revision, request, false, by)
+  (canDraftStoreResult(m, draftId, revision, request, by) and m.draftStorage == DraftSaving) implies
+    (sameRecipients(after.draft, m.draft) and after.draft.subject == m.draft.subject and after.draft.body == m.draft.body and
+      after.draftAttachments == m.draftAttachments and after.replyTo == m.replyTo and
+      after.draftId == m.draftId and after.composeVisible and after.draftStorage == DraftStoreFailed)
 pure def alwaysDraftHasAccount(m: Mailbox): bool =
   m.sendStatus != NoDraft implies (m.owner != "" and m.provider != "" and m.account != "")
 pure def alwaysDraftStoreHasRevision(m: Mailbox): bool =

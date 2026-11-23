@@ -19,7 +19,7 @@ account whose calendar it is. The shell keeps one source per key, so a
 calendar is found by its key. A row carries its calendar’s key and the
 appointment as shown; the shell sorts rows by start time and composes every
 sentence the person or Grace reads, including an account’s name in a tag and
-the note "From the clinic’s email · Visit form attached", because the model
+the note "From Main St Clinic’s email · Visit form attached", which names the sender, because the model
 has no string building.
 
 ## Story: See every calendar together and know where each appointment lives

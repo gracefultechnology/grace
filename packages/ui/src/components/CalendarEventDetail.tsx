@@ -23,7 +23,7 @@ export type CalendarEventDetailProps = ComponentProps<"div"> & {
   snoozeReminderLabel?: string;
   /** How it repeats: "Doesn’t repeat", "Repeats every week". */
   repeat: string;
-  /** Where it came from: "From the clinic’s email · Visit form attached". */
+  /** Where it came from: "From Main St Clinic’s email · Visit form attached". */
   note?: string;
   /** Opens the event in the form; without it Edit is not offered. */
   onEdit?: () => void;
