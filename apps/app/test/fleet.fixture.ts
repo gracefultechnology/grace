@@ -286,7 +286,7 @@ export async function fleetFixture({ directory, results, shardSetting, resumeDir
   }
 }
 
-export const fleetStatementCases = [
+const referenceStatementCases = [
   { billerId: "121-disposal-co-d58f27", template: "utility-account" },
   { billerId: "405-express-lanes-orange-county-ca-32605e", template: "toll-account" },
   { billerId: "aberdeen-news-aberdeen-sd-newspaper-subscription-446eec", template: "newspaper" },
@@ -306,7 +306,7 @@ export const fleetStatementCases = [
   { billerId: "aflac-dental-insurance-60fdf1", template: "insurance" },
 ];
 
-export const fleetStatementRefusals = [
+const referenceStatementRefusals = [
   { billerId: "accura-healthcare-2b95c9", template: "rent-portal" },
   { billerId: "1-800-contacts-49fab3", template: "streaming" },
   { billerId: "180-medical-ce4448", template: "patient-pay" },
@@ -316,6 +316,45 @@ export const fleetStatementRefusals = [
   { billerId: "adams-county-ms-online-car-tag-renewal-county-ta-c199ba", template: "dmv" },
   { billerId: "anoka-municipal-utility-city-of-anoka-252a5c", template: "invoicecloud" },
 ];
+
+const heldOutStatements = {
+  positive: [
+    { billerId: "whitney-bros-oil-corp-a3f7fa", template: "utility-account" },
+    { billerId: "e-zpass-maryland-driveezmd-video-tolls-pay-by-pl-367ea5", template: "toll-account" },
+    { billerId: "the-telegraph-alton-il-newspaper-subscription-7faea5", template: "newspaper" },
+    { billerId: "eddie-bauer-world-mastercard-ab5317", template: "card-servicer" },
+    { billerId: "wayland-mi-f87669", template: "municipal-portal" },
+    { billerId: "baptist-health-medical-group-oncology-llc-oncolo-66f4a0", template: "mychart" },
+    { billerId: "dyck-oneal-inc-4511b6", template: "loan-servicer" },
+    { billerId: "kansas-department-of-revenue-individual-income-t-68361f", template: "income-tax" },
+    { billerId: "wm-waste-management-mississippi-residential-serv-726d41", template: "waste-hauler" },
+    { billerId: "eagle-mountain-city-utilities-6e18b0", template: "xpress" },
+    { billerId: "athens-town-of-8a8452", template: "doxo" },
+    { billerId: "halstad-telephone-company-e677dd", template: "telecom" },
+    { billerId: "pasadena-federal-credit-union-758928", template: "bank-billpay" },
+    { billerId: "potomac-westmoreland-shores-368a42", template: "paymentus" },
+    { billerId: "cordes-lakes-water-company-37519d", template: "kubra" },
+    { billerId: "michigan-mdhhs-child-support-michigan-state-disb-22121c", template: "invoice-portal" },
+    { billerId: "west-virginia-essential-property-insurance-assoc-e535b1", template: "insurance" },
+  ],
+  refusal: [
+    { billerId: "watermark-retirement-communities-a12ce3", template: "rent-portal" },
+    { billerId: "pbs-member-station-wlrn-public-media-wlrn-c9c0d0", template: "streaming" },
+    { billerId: "north-american-partners-in-anesthesia-pennsylvan-663668", template: "patient-pay" },
+    { billerId: "panhandle-telephone-cooperative-ptci-2c9fda", template: "smarthub" },
+    { billerId: "carefirst-bluecross-blueshield-group-pdp-cms-s03-b5a01a", template: "health-plan" },
+    { billerId: "carbon-county-treasurer-tax-claim-bureau-pa-debc40", template: "property-tax" },
+    { billerId: "randall-county-tax-assessor-collector-tx-vehicle-187f5a", template: "dmv" },
+    { billerId: "city-of-marlborough-ma-water-sewer-98aefb", template: "invoicecloud" },
+  ],
+};
+
+const statementCohort = Schema.decodeUnknownSync(Schema.Literals(["reference", "held-out"]))(
+  process.env.GRACE_BILLWORLD_STATEMENT_COHORT ?? "reference",
+);
+export const { positive: fleetStatementCases, refusal: fleetStatementRefusals } = statementCohort === "held-out"
+  ? heldOutStatements
+  : { positive: referenceStatementCases, refusal: referenceStatementRefusals };
 
 const fleetStatementSelections = [
   ...fleetStatementCases.map((item) => ({ ...item, expected: "pass" as const })),
@@ -491,7 +530,7 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
   const requiredComplete = attempts.length === selected.size && metExpectation.size === selected.size && duplicateAttemptWebsites.length === 0;
   const coverageCounts = (counts: number[]) => ({ websites: counts.reduce((sum, count) => sum + count, 0), templates: counts.filter(Boolean).length });
   return {
-    productRevision, fixtureRevision: revision, catalogWebsites: billers.size, requiredComplete,
+    productRevision, fixtureRevision: revision, statementCohort, catalogWebsites: billers.size, requiredComplete,
     totals: {
       eligible: coverageCounts(templates.map((row) => row.eligibleWebsites)),
       selected: coverageCounts(templates.map((row) => row.selectedWebsites.length)),
