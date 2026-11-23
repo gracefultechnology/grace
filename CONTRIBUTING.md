@@ -99,8 +99,8 @@ line ends with. `pnpm selftest` builds scratch projects from this project's spec
 one thing at a time and asserts which stage catches each. It runs as five cached tasks, each keyed by what its tests
 read: `selftest:docs` the documents against every file they can name, `selftest:examples` each standalone example
 against its own files and the tools. `selftest:tools:a` and `selftest:tools:b` build scratch projects from the order
-example and fixtures. `selftest:tools:rest` also rebuilds the packaged CLI from the workspace, so changes under
-`apps/`, `packages/` and `spec/` invalidate its isolated CI run. The first two each run one shard of the kinds of mistake, the
+example and fixtures. `selftest:tools:rest` also rebuilds the packaged CLI from the workspace, so app manifest changes and changes under
+`packages/` or `spec/` invalidate its isolated CI run. The first two each run one shard of the kinds of mistake, the
 `describe` named `in shard a` or `in shard b` in `vibestack/selftest.ts`. The third runs the remaining tool tests there.
 Changes to either docs or standalone example test code keep the tool shards cached. Keep the longest tests spread over the three.
 Changes to the root README rerun the docs and packaged tool checks.
@@ -249,15 +249,19 @@ actions to verify the whole project.
 For a transfer between trusted runners, call `prepareSimulationReceipts` with
 the same three arguments and an existing private scratch directory as the
 fourth. It returns `results` and, when all requested simulations passed and
-their receipts are complete, `seedDirectory`. Transfer only the files in that
-returned directory. They hold the model typechecks and simulation results the
-ordinary check can reuse. Copy them into the receiving project's `.spec-cache`
-before the full normal check. Match the checkout and toolchain, and keep the
-seed within the same trust boundary as other spec cache entries. The check
-computes its own keys and recomputes a missing or unreadable result.
+their receipts are complete, `seedDirectory`. Otherwise `partialDirectory`
+can hold the certified model typechecks and simulation results available from
+the run, including reproducible failures. Transfer only the files in the
+returned directory. Copy them into the receiving project's `.spec-cache`
+before the full normal check and keep them within the same trust boundary as
+other spec cache entries. The check computes its own keys and recomputes a
+missing or unreadable result.
 
 Turborepo caches `gen`, `build`, `typecheck`, tests, selftest and lint according
-to `turbo.json`. The task entry point fingerprints Node, VibeLang, Dafny, Z3
+to `turbo.json`. When a legacy generation config excludes proof paths, the
+task entry point includes the spec ownership layout and any Markdown under
+those proof-named directories in the generation key. Dependent task keys
+follow these changes. The task entry point fingerprints Node, VibeLang, Dafny, Z3
 and their runtime files before Turbo hashes its inputs. A build can run
 without the verifier. Its task key records missing verification tools,
 and a proof still requires them. What it reads of an
@@ -414,7 +418,7 @@ configured scopes are in `knip.config.js`, `.madgerc`, `.jscpd.json` and
 | When | Runs |
 |---|---|
 | Pull request or push to `develop` or `main` | All `pnpm verify` tasks on four runners. The product runner checks the application, documents and examples. Each tool shard has its own runner. After a failure, independent tasks still run and tasks with a failed prerequisite stop. The `verify` status requires all four to pass. |
-| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into the checked branch. A dispatch from a tag checks the default branch. |
+| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into the checked branch. Scheduled runs check `develop`. Manual runs check the requested branch, or the default branch for a tag. |
 | Changes to Android build inputs on a pull request or push to `develop` or `main` | `.github/workflows/android.yml` builds the APKs for each ABI and stages the x86_64 launcher and browser for Cuttlefish |
 
 Each row's budget is in [Seeds and budgets](#seeds-and-budgets). A failing
@@ -430,7 +434,7 @@ cache keys include the job, lockfile, commit and run attempt. A job tries both
 key layouts for its own name and current lockfile, then the current layout for
 another lockfile. Selftest jobs on pull requests first try an archive for that pull request and lockfile.
 A successful replay of the entire fixture task can reuse that archive when setup leaves the cached evaluator intact.
-Fixture jobs restore their pull request’s Turbo archive before the shared fallback. A full replay keeps that archive when the cached files stay unchanged and no files need pruning. Turbo refreshes its checkout-specific restore manifests locally.
+Fixture jobs retain the pinned Eliza source checkout and skip the nested dependency install. They restore their pull request’s Turbo archive before the shared fallback. A full replay keeps that archive when the cached files stay unchanged and no files need pruning. Turbo refreshes its checkout-specific restore manifests locally.
 Each entry is named by the tools and inputs that produced it.
 Nightly verification restores
 only the pinned evaluator and runs fresh checks.
@@ -443,7 +447,7 @@ the shared task cache is unavailable. Closed pull requests skip late cache
 uploads on their first attempt; an explicit rerun keeps its normal publication.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
-The product and nightly runners install full Chromium and its headless shell. Tool shard A installs full Chromium when its Bombadil journey runs. Shards B and rest run without a browser.
+The product runner installs the Playwright headless shell. A Bombadil exploration or saved replay installs full Chromium on first use. The nightly and cross-app runners install both browsers during setup. Tool shard A installs full Chromium when its Bombadil journey runs. Shards B and rest run without a browser.
 Pull requests read shared results; only branch pushes receive the publishing
 credential, protected by the `turbo-cache-publish` environment's branch
 policy. A pull request keeps its own Turborepo results in the GitHub cache

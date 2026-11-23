@@ -42,7 +42,7 @@ const kept = (withOutlook: boolean) => {
 
 async function company(key: string) {
   const response = await fetch(`${cloud}/fake/account`, { headers: { authorization: `Bearer ${key}` } });
-  return await response.json() as { boxes: { calendar: { title: string; startAt: string }[]; mail: { subject: string; labels: string[] }[] }[] };
+  return await response.json() as { boxes: { calendar: { title: string; startAt: string; externalId: string }[]; mail: { subject: string; labels: string[] }[] }[] };
 }
 
 async function start(withOutlook = false) {
@@ -199,7 +199,10 @@ it('Save the clinic appointment (spec/app/calendars.md, "Story: Ask Grace to put
   await act(() => userEvent.click(page.getByRole("button", { name: "Back to Calendar" })));
   await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
   const added = (await calendar(1)).entries.filter((c) => c.identity.sourceRef === "clinic" && c.phase !== "Deleted");
-  expect(added.map((c) => c.committed.notes)).toEqual(["From Main St Clinic’s email · Visit form attached"]);
+  const providerId = (await company(secret)).boxes[0].calendar.find((event) => event.title === "Doctor’s appointment")?.externalId;
+  expect(providerId).toBeTruthy();
+  expect(added.map((c) => [c.identity.occurrenceId, c.committed.notes])).toEqual([[providerId, "From Main St Clinic’s email · Visit form attached"]]);
+  await expect.element(page.getByRole("heading", { name: "Doctor’s appointment", exact: true })).not.toBeInTheDocument();
   expect((await asked()).ask.tag).toBe("NoAsk");
 
   // spec/app/agentActions.md, "An appointment from an email is asked only as the calendar rules allow"

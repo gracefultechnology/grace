@@ -79,9 +79,18 @@ checks on the completed trial, including unchanged protected state and
 credentials. CI uploads asset provenance and both grader receipts as
 `billworld-released-task-md9`.
 
-The same CI job also runs the separate Fleet `view-bill` cases listed in
-`test/fleet.fixture.ts`. For a Fleet-only local run, set
-`GRACE_BILLWORLD_RELEASED_DIR` to the pinned checkout and use:
+The same CI job runs the Fleet `view-bill` cases listed in
+`test/fleet.fixture.ts`. Manual CI defaults to the `reference` cohort. Select
+`held-out` in `billworld_statement_cohort` to run the 25 disjoint assignments
+from the [preregistered run](https://github.com/gracefultechnology/grace/actions/runs/45240036784).
+That assignment takes the lowest SHA-256 of `Grace held-out statement 1/`
+plus the eligible catalog ID per family, excluding all reference sites. Both
+cohorts apply the same grader and controls. Set `billworld=false` with
+`held-out` to run the statement job without the navigation cohort. The
+qualification inventory records the selected cohort and exact billers.
+
+For a Fleet-only local run, set `GRACE_BILLWORLD_RELEASED_DIR` to the pinned
+checkout and optionally set `GRACE_BILLWORLD_STATEMENT_COHORT=held-out`:
 
 ```sh
 pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the Fleet .* BillWorld statement'
@@ -90,18 +99,22 @@ pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the 
 Each Fleet case signs in to an isolated local simulator and reads its
 current statement through the reviewed Grace plan. The pinned Fleet grader
 checks the amount and due date, login, unchanged account settings and zero
-payments. It also rejects a no-action and a wrong-answer trial. CI uploads
-these receipts and the qualification inventory as `billworld-fleet-view-bill`.
+payments. Each Fleet episode must reject no action, a wrong answer, and the
+correct amount with the due date one day late. After the journey captures
+Grace’s answer or refusal, the test supervisor reads the episode’s original
+amount and due date to build the third control. Only the supervisor sees those
+reference values. CI uploads these receipts and the qualification inventory as
+`billworld-fleet-view-bill`.
 The inventory derives eligibility from the pinned catalog and upstream task
-generator. The required cohort includes 17 official passing reads and two
-expected refusals. The KUBRA and Rent journeys check in Chromium that Grace
-leaves an ambiguous read unconfirmed. Their receipt check requires an empty
-answer, rejection by the bound grader on the answer predicate alone, and
-both rejected controls. The inventory lists each eligible template's website
-count and the selected, attempted and officially passing billers. A pass requires the bound grader's
-accepted answer and both rejected controls. CI writes the inventory when
-journeys fail or produce no receipts. The planner is scripted for these
-statement journeys.
+generator. The required cohort includes 17 official passing reads and eight
+expected refusals. The refusal journeys check in Chromium that Grace leaves
+an ambiguous read unconfirmed. Their receipt check requires an empty answer,
+rejection by the bound grader on the answer predicate alone, and all three
+rejected controls. The inventory lists each eligible template's website count
+and the selected, attempted and officially passing billers. A pass requires the
+bound grader's accepted answer and all three rejected controls. CI writes the
+inventory when journeys fail or produce no receipts. The planner is scripted
+for these statement journeys.
 
 The standard verification job exercises Google sign-in and cross-app tasks in
 Chromium. A resettable loopback provider serves OAuth consent, Gmail messages

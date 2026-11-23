@@ -286,7 +286,7 @@ export async function fleetFixture({ directory, results, shardSetting, resumeDir
   }
 }
 
-export const fleetStatementCases = [
+const referenceStatementCases = [
   { billerId: "121-disposal-co-d58f27", template: "utility-account" },
   { billerId: "405-express-lanes-orange-county-ca-32605e", template: "toll-account" },
   { billerId: "aberdeen-news-aberdeen-sd-newspaper-subscription-446eec", template: "newspaper" },
@@ -295,21 +295,66 @@ export const fleetStatementCases = [
   { billerId: "adventhealth-castle-rock-castle-rock-co-de3968", template: "mychart" },
   { billerId: "advance-america-82c9f5", template: "loan-servicer" },
   { billerId: "alexandria-oh-municipal-income-tax-administered--565714", template: "income-tax" },
-  { billerId: "anoka-municipal-utility-city-of-anoka-252a5c", template: "invoicecloud" },
   { billerId: "b-and-b-sanitation-waste-connections-fec9e8", template: "waste-hauler" },
   { billerId: "belton-honea-path-wa-sc0410011-66b378", template: "xpress" },
   { billerId: "colyell-community-water-6ce73c", template: "doxo" },
-  { billerId: "aflac-dental-insurance-60fdf1", template: "insurance" },
-  { billerId: "ace-cash-express-bill-payment-5a3f3c", template: "invoice-portal" },
   { billerId: "above-all-satellite-localoop-inc-a40f31", template: "telecom" },
   { billerId: "a-federal-credit-union-ede01e", template: "bank-billpay" },
   { billerId: "american-eagle-financial-credit-union-e29614", template: "paymentus" },
+  { billerId: "ameren-illinois-7add9b", template: "kubra" },
+  { billerId: "ace-cash-express-bill-payment-5a3f3c", template: "invoice-portal" },
+  { billerId: "aflac-dental-insurance-60fdf1", template: "insurance" },
 ];
 
-export const fleetStatementRefusals = [
-  { billerId: "ameren-illinois-7add9b", template: "kubra" },
+const referenceStatementRefusals = [
   { billerId: "accura-healthcare-2b95c9", template: "rent-portal" },
+  { billerId: "1-800-contacts-49fab3", template: "streaming" },
+  { billerId: "180-medical-ce4448", template: "patient-pay" },
+  { billerId: "3-rivers-communications-4be1c7", template: "smarthub" },
+  { billerId: "aarp-medicare-rx-unitedhealthcare-prescription-d-a4cd2b", template: "health-plan" },
+  { billerId: "abbeville-county-treasurer-sc-cfd70d", template: "property-tax" },
+  { billerId: "adams-county-ms-online-car-tag-renewal-county-ta-c199ba", template: "dmv" },
+  { billerId: "anoka-municipal-utility-city-of-anoka-252a5c", template: "invoicecloud" },
 ];
+
+const heldOutStatements = {
+  positive: [
+    { billerId: "whitney-bros-oil-corp-a3f7fa", template: "utility-account" },
+    { billerId: "e-zpass-maryland-driveezmd-video-tolls-pay-by-pl-367ea5", template: "toll-account" },
+    { billerId: "the-telegraph-alton-il-newspaper-subscription-7faea5", template: "newspaper" },
+    { billerId: "eddie-bauer-world-mastercard-ab5317", template: "card-servicer" },
+    { billerId: "wayland-mi-f87669", template: "municipal-portal" },
+    { billerId: "baptist-health-medical-group-oncology-llc-oncolo-66f4a0", template: "mychart" },
+    { billerId: "dyck-oneal-inc-4511b6", template: "loan-servicer" },
+    { billerId: "kansas-department-of-revenue-individual-income-t-68361f", template: "income-tax" },
+    { billerId: "wm-waste-management-mississippi-residential-serv-726d41", template: "waste-hauler" },
+    { billerId: "eagle-mountain-city-utilities-6e18b0", template: "xpress" },
+    { billerId: "athens-town-of-8a8452", template: "doxo" },
+    { billerId: "halstad-telephone-company-e677dd", template: "telecom" },
+    { billerId: "pasadena-federal-credit-union-758928", template: "bank-billpay" },
+    { billerId: "potomac-westmoreland-shores-368a42", template: "paymentus" },
+    { billerId: "cordes-lakes-water-company-37519d", template: "kubra" },
+    { billerId: "michigan-mdhhs-child-support-michigan-state-disb-22121c", template: "invoice-portal" },
+    { billerId: "west-virginia-essential-property-insurance-assoc-e535b1", template: "insurance" },
+  ],
+  refusal: [
+    { billerId: "watermark-retirement-communities-a12ce3", template: "rent-portal" },
+    { billerId: "pbs-member-station-wlrn-public-media-wlrn-c9c0d0", template: "streaming" },
+    { billerId: "north-american-partners-in-anesthesia-pennsylvan-663668", template: "patient-pay" },
+    { billerId: "panhandle-telephone-cooperative-ptci-2c9fda", template: "smarthub" },
+    { billerId: "carefirst-bluecross-blueshield-group-pdp-cms-s03-b5a01a", template: "health-plan" },
+    { billerId: "carbon-county-treasurer-tax-claim-bureau-pa-debc40", template: "property-tax" },
+    { billerId: "randall-county-tax-assessor-collector-tx-vehicle-187f5a", template: "dmv" },
+    { billerId: "city-of-marlborough-ma-water-sewer-98aefb", template: "invoicecloud" },
+  ],
+};
+
+const statementCohort = Schema.decodeUnknownSync(Schema.Literals(["reference", "held-out"]))(
+  process.env.GRACE_BILLWORLD_STATEMENT_COHORT ?? "reference",
+);
+export const { positive: fleetStatementCases, refusal: fleetStatementRefusals } = statementCohort === "held-out"
+  ? heldOutStatements
+  : { positive: referenceStatementCases, refusal: referenceStatementRefusals };
 
 const fleetStatementSelections = [
   ...fleetStatementCases.map((item) => ({ ...item, expected: "pass" as const })),
@@ -325,6 +370,7 @@ const StatementEpisode = Schema.Struct({
   credentials: Schema.Struct({ portalPassword: Schema.NonEmptyString }),
   task: Schema.Struct({ id: Schema.NonEmptyString, intent: Schema.NonEmptyString }),
 });
+const StatementStart = Schema.Struct({ start: Schema.Struct({ balanceCents: Schema.Int, dueAt: Schema.Int }) });
 const scoreFields = {
   success: Schema.Boolean,
   results: Schema.Array(Schema.Struct({
@@ -345,10 +391,22 @@ function viewBillChecks(score: typeof StatementScore.Type, billerId: string) {
     JSON.stringify(checks) === JSON.stringify(requiredStatementChecks);
 }
 
-function rejectsStatementControl(score: typeof StatementScore.Type, billerId: string, action: "none" | "wrongAnswer") {
-  const failed = score.results.filter((result) => !result.pass).map(({ type }) => type);
-  const expected = action === "none" ? ["logged_in", "answer"] : ["answer"];
-  return !score.success && viewBillChecks(score, billerId) && JSON.stringify(failed) === JSON.stringify(expected);
+const statementControls = ["no-action", "wrong-answer", "wrong-date"] as const;
+type StatementControl = (typeof statementControls)[number];
+type StatementRejection = StatementControl | "expected-refusal";
+
+const statementRejections = {
+  "no-action": { failedChecks: ["logged_in", "answer"], answerDetail: /^no answer reported$/u },
+  "wrong-answer": { failedChecks: ["answer"], answerDetail: /^amount expected .+, date expected \d{4}-\d{2}-\d{2}$/u },
+  "wrong-date": { failedChecks: ["answer"], answerDetail: /^amount ok, date expected \d{4}-\d{2}-\d{2}$/u },
+  "expected-refusal": { failedChecks: ["answer"], answerDetail: /^no answer reported$/u },
+} satisfies Record<StatementRejection, { failedChecks: string[]; answerDetail: RegExp }>;
+
+function matchesStatementRejection(score: typeof StatementScore.Type, billerId: string, kind: StatementRejection) {
+  const { failedChecks, answerDetail } = statementRejections[kind];
+  const failed = score.results.filter((result) => !result.pass);
+  return !score.success && viewBillChecks(score, billerId) && JSON.stringify(failed.map(({ type }) => type)) === JSON.stringify(failedChecks) &&
+    failed.some(({ type, detail }) => type === "answer" && answerDetail.test(detail));
 }
 
 const StatementIdentity = Schema.Struct({
@@ -405,7 +463,7 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
       };
       const receipts = new Map<string, unknown>();
       let malformed = false;
-      for (const filename of ["attempt", "no-action", "wrong-answer", "grace-answer"]) {
+      for (const filename of ["attempt", ...statementControls, "grace-answer"]) {
         try {
           const receipt = read(filename);
           if (receipt !== undefined) {
@@ -423,29 +481,30 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
       if (!identity) return result("incomplete");
       const { billerId, taskId } = identity;
       try {
-        const noAction = receipts.get("no-action");
-        const wrongAnswer = receipts.get("wrong-answer");
+        let rejectedControls = 0;
+        for (const name of statementControls) {
+          const receipt = receipts.get(name);
+          if (receipt === undefined) continue;
+          if (!matchesStatementRejection(Schema.decodeUnknownSync(StatementControlReceipt)(receipt).grade, billerId, name))
+            return result("invalid");
+          rejectedControls++;
+        }
+        const controlsComplete = rejectedControls === statementControls.length;
         const answer = receipts.get("grace-answer");
-        const noActionRejected = noAction !== undefined &&
-          rejectsStatementControl(Schema.decodeUnknownSync(StatementControlReceipt)(noAction).grade, billerId, "none");
-        const wrongAnswerRejected = wrongAnswer !== undefined &&
-          rejectsStatementControl(Schema.decodeUnknownSync(StatementControlReceipt)(wrongAnswer).grade, billerId, "wrongAnswer");
-        if ((noAction !== undefined && !noActionRejected) || (wrongAnswer !== undefined && !wrongAnswerRejected))
-          return result("invalid");
         if (answer === undefined) return result("incomplete");
         const finished = Schema.decodeUnknownSync(StatementAnswerReceipt)(answer);
         const { grade } = finished;
         if (grade.taskId !== taskId || !viewBillChecks(grade, billerId) || grade.success !== grade.results.every(({ pass }) => pass))
           return result("invalid");
         if (!grade.success) {
-          if (expected !== "refusal" || finished.answer !== "" || !rejectsStatementControl(grade, billerId, "wrongAnswer"))
+          if (expected !== "refusal" || finished.answer !== "" || !matchesStatementRejection(grade, billerId, "expected-refusal"))
             return result("official-failure", 0);
-          return result(noActionRejected && wrongAnswerRejected ? "expected-refusal" : "incomplete", 0);
+          return result(controlsComplete ? "expected-refusal" : "incomplete", 0);
         }
         if (expected === "refusal") return result("unexpected-pass", 1);
         if (!/^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u.test(finished.answer))
           return result("invalid");
-        return result(noActionRejected && wrongAnswerRejected ? "passed" : "incomplete", 1);
+        return result(controlsComplete ? "passed" : "incomplete", 1);
       } catch {
         return result("invalid");
       }
@@ -471,7 +530,7 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
   const requiredComplete = attempts.length === selected.size && metExpectation.size === selected.size && duplicateAttemptWebsites.length === 0;
   const coverageCounts = (counts: number[]) => ({ websites: counts.reduce((sum, count) => sum + count, 0), templates: counts.filter(Boolean).length });
   return {
-    productRevision, fixtureRevision: revision, catalogWebsites: billers.size, requiredComplete,
+    productRevision, fixtureRevision: revision, statementCohort, catalogWebsites: billers.size, requiredComplete,
     totals: {
       eligible: coverageCounts(templates.map((row) => row.eligibleWebsites)),
       selected: coverageCounts(templates.map((row) => row.selectedWebsites.length)),
@@ -484,7 +543,7 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
     requiredWebsitesWithUnmetExpectation: [...selected.keys()].filter((id) => !metExpectation.has(id)),
     duplicateAttemptWebsites, templates, attempts,
     cases: attempts.flatMap(({ taskId, template, status }) => status === "passed"
-      ? [{ taskId, template, checks: requiredStatementChecks.length, controlsRejected: 2 }] : []),
+      ? [{ taskId, template, checks: requiredStatementChecks.length, controlsRejected: statementControls.length }] : []),
   };
 }
 
@@ -512,7 +571,7 @@ export async function fleetStatement(directory: string, billerId: string, receip
       Schema.decodeUnknownSync(StatementScore)(await fleet.admin("/evaluate", { episodeId: episode.episodeId, answer }));
     const noAction = await grade("");
     record("no-action", { grade: noAction });
-    if (!rejectsStatementControl(noAction, billerId, "none"))
+    if (!matchesStatementRejection(noAction, billerId, "no-action"))
       throw new Error("The bound Fleet view-bill grader did not reject the control");
     return {
       taskId,
@@ -540,10 +599,18 @@ export async function fleetStatement(directory: string, billerId: string, receip
         if (!loaded?.ok() || page.url() !== url) throw new Error("The person did not open the current Fleet bill");
         const wrongAnswer = await grade("Amount due: $0.01. Due date: January 1, 2001.");
         record("wrong-answer", { grade: wrongAnswer });
-        if (!rejectsStatementControl(wrongAnswer, billerId, "wrongAnswer"))
+        if (!matchesStatementRejection(wrongAnswer, billerId, "wrong-answer"))
           throw new Error("The bound Fleet view-bill grader did not reject the control");
       },
       async finish(answer: string) {
+        const { start } = Schema.decodeUnknownSync(StatementStart)(await fleet.admin("/account", { episodeId: episode.episodeId, billerId }));
+        const nextDay = new Date(start.dueAt);
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+        const amount = (Math.max(0, start.balanceCents) / 100).toFixed(2);
+        const wrongDate = await grade(`Amount due: $${amount}. Due date: ${nextDay.toISOString().slice(0, 10)}.`);
+        record("wrong-date", { grade: wrongDate });
+        if (!matchesStatementRejection(wrongDate, billerId, "wrong-date"))
+          throw new Error("The Fleet view-bill grader did not isolate the wrong due date");
         const result = Schema.decodeUnknownSync(FinishedStatement)(await fleet.admin("/finish", { episodeId: episode.episodeId, answer }));
         if (result.taskId !== taskId || !viewBillChecks(result, billerId))
           throw new Error("Fleet graded a different view-bill task");

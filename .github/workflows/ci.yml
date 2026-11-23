@@ -23,12 +23,27 @@ on:
         description: Positive cohort number from the pinned Fleet catalog (up to 100 billers each)
         type: string
         default: '1'
+      billworld_statement_cohort:
+        description: Pinned Fleet statement cohort
+        type: choice
+        options:
+          - reference
+          - held-out
+        default: reference
       billworld_resume_run:
         description: Optional earlier CI run ID at the exact same product commit
         type: string
         required: false
       webarena:
         description: Run official WebArena Shopping tasks with hosted guidance and controls
+        type: boolean
+        default: false
+      webarena_rating_only:
+        description: Diagnose the public product rating answer on the pinned Shopping fixture
+        type: boolean
+        default: false
+      webarena_sort_only:
+        description: Run the two official Shopping category price sorts with a simulated person
         type: boolean
         default: false
       webarena_gitlab:
@@ -66,7 +81,7 @@ permissions:
 
 jobs:
   webarena:
-    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.webarena
+    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && (inputs.webarena || inputs.webarena_rating_only || inputs.webarena_sort_only)
     runs-on: ${{ vars.GRACE_WEBARENA_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 60
     defaults:
@@ -80,6 +95,7 @@ jobs:
       WEBARENA_NAVIGATION_TASKS: '[260,261,262,263,264]'
       WEBARENA_RECORD_TASKS: ${{ inputs.webarena_pending_order && '[298,299,300]' || '[298,299]' }}
       WEBARENA_REQUIRED: '[260,261,262,263]'
+      WEBARENA_SORT_TASKS: '[353,355]'
     steps:
       - &webarena_checkout
         uses: actions/checkout@v7
@@ -103,9 +119,17 @@ jobs:
           revision=$(git -C "$GRACE_WEBARENA_UPSTREAM" rev-parse HEAD)
           catalog_sha256=$(git -C "$GRACE_WEBARENA_UPSTREAM" show "$catalog_object" | sha256sum | cut -d' ' -f1)
           tasks=$(jq -cn --argjson navigation "$WEBARENA_NAVIGATION_TASKS" --argjson records "$WEBARENA_RECORD_TASKS" --argjson searches "$WEBARENA_SEARCH_TASKS" '$navigation + $records + $searches | sort')
+          required="$WEBARENA_REQUIRED"
+          if [[ "${{ inputs.webarena_rating_only }}" == true ]]; then
+            tasks='[386]'
+            required='[]'
+          elif [[ "${{ inputs.webarena_sort_only }}" == true ]]; then
+            tasks="$WEBARENA_SORT_TASKS"
+            required="$tasks"
+          fi
           git -C "$GRACE_WEBARENA_UPSTREAM" show "$catalog_object" |
             jq -e --arg revision "$revision" --arg sha256 "$catalog_sha256" \
-              --argjson configured "$tasks" --argjson required "$WEBARENA_REQUIRED" '
+              --argjson configured "$tasks" --argjson required "$required" '
               def ids: map(.task_id) | sort;
               def templates: map(.intent_template_id) | unique;
               def members($cohort): map(select(.task_id as $id | $cohort | index($id) != null));
@@ -197,7 +221,8 @@ jobs:
           CADDY
           XDG_DATA_HOME="$WEBARENA_PRIVATE/caddy-data" XDG_CONFIG_HOME="$WEBARENA_PRIVATE/caddy-config" \
             caddy start --config "$WEBARENA_PRIVATE/Caddyfile" --adapter caddyfile
-          status=$(curl --insecure --fail --silent --show-error --max-time 90 -o /dev/null -w '%{http_code}' "$SHOPPING_ORIGIN/")
+          status=$(timeout 90 curl --insecure --fail --silent --show-error --retry 5 --retry-all-errors \
+            --retry-delay 1 --max-time 15 -o /dev/null -w '%{http_code}' "$SHOPPING_ORIGIN/")
           test "$status" = 200
       - name: Verify the published synthetic Shopping sign-in
         working-directory: apps/app
@@ -228,6 +253,7 @@ jobs:
           }
           JS
       - name: Grade official Shopping navigation
+        if: ${{ !inputs.webarena_rating_only && !inputs.webarena_sort_only }}
         env:
           GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
@@ -365,8 +391,55 @@ jobs:
             all(.[] | select(.cohort == "required"); .officialScore == 1 and .hostedGuidance and .checkedPlan)
           ' "$WEBARENA_RESULTS/scorecard.json"
           test "$browser_exit" -eq 0
+      - name: Grade the public Shopping rating with independent answer controls
+        if: ${{ inputs.webarena_rating_only }}
+        env:
+          GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
+          GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
+        run: |
+          git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
+            jq -e --arg start "$SHOPPING_ORIGIN/" --arg results "$WEBARENA_RESULTS" \
+              --arg state "$WEBARENA_PRIVATE/shopping-state.json" '
+              [.[] | select(.task_id == 386) | {taskId: (.task_id | tostring), intent, startUrl: $start,
+                receipt: ($results + "/task-386.json"), siteStorageState: $state, evaluator: "webarena",
+                exploratory: true, chat: "upstream"}] | select(length == 1)
+            ' > "$GRACE_BROWSER_BENCHMARK_FILE"
+          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link 386' |
+            tee "$WEBARENA_RESULTS/grace-browser.log"
+          jq -e '. as $receipt | .webArena |
+            select(.noActionScore == 0 and .wrongAnswerScore == 0 and (.officialScore == 0 or .officialScore == 1) and
+              $receipt.outcome.graceResponded and
+              $receipt.outcome.failure == null)' "$WEBARENA_RESULTS/task-386.json" > "$WEBARENA_RESULTS/scorecard.json"
+      - name: Grade the public Shopping category sorts and controls
+        if: ${{ inputs.webarena_sort_only && !inputs.webarena_rating_only }}
+        env:
+          GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
+          GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
+        run: |
+          test -n "$GRACE_BENCHMARK_CLEF_ORIGIN" && test -n "$GRACE_BENCHMARK_CLEF_KEY"
+          git -C "$GRACE_WEBARENA_UPSTREAM" show HEAD:config_files/test.raw.json |
+            jq -e --arg start "$SHOPPING_ORIGIN/" --arg results "$WEBARENA_RESULTS" \
+              --arg state "$WEBARENA_PRIVATE/shopping-state.json" --argjson tasks "$WEBARENA_SORT_TASKS" \
+              '[.[] | select(.task_id as $id | $tasks | index($id) != null) |
+                {taskId: (.task_id | tostring), intent, startUrl: $start,
+                 receipt: ($results + "/task-" + (.task_id | tostring) + ".json"), siteStorageState: $state,
+                 evaluator: "webarena", chat: "upstream", requiredStep: "SortPublicListing"}] |
+                select(map(.taskId | tonumber) == $tasks)' > "$GRACE_BROWSER_BENCHMARK_FILE"
+          browser_exit=0
+          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' 2>&1 |
+            tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
+          jq -s 'sort_by(.taskId) | map({taskId, chatStatus, decisionProvider, decisionRequests,
+            failure: .outcome.failure, wrongDirection: .outcome.wrongDirection, landing: .outcome.destination,
+            checked: (.outcome.hops[-1].checked == true and .outcome.hops[-1].documentId == .outcome.destination.documentId),
+            completed: (.outcome.graceTerminal | type == "string"), officialScore: .webArena.officialScore,
+            noActionScore: .webArena.noActionScore})' "$WEBARENA_RESULTS"/task-*.json > "$WEBARENA_RESULTS/scorecard.json"
+          jq -e --argjson tasks "$WEBARENA_SORT_TASKS" 'map(.taskId | tonumber) == $tasks and
+            all(.[]; .chatStatus == 200 and .decisionProvider == "none" and .decisionRequests == 0 and .failure == null and
+              .wrongDirection.rejectedByGrace and .wrongDirection.documentId != .landing.documentId and
+              .checked and .completed and .officialScore == 1 and .noActionScore == 0)' "$WEBARENA_RESULTS/scorecard.json"
+          test "$browser_exit" -eq 0
       - name: Exercise the public search and its negative controls in Chromium
-        if: ${{ !cancelled() && inputs.webarena_public_search && env.WEBARENA_RESULTS != '' }}
+        if: ${{ !cancelled() && !inputs.webarena_rating_only && !inputs.webarena_sort_only && inputs.webarena_public_search && env.WEBARENA_RESULTS != '' }}
         run: |
           unset GRACE_BROWSER_BENCHMARK_FILE
           pnpm --filter @repo/app test:browser test/app.browser.test.tsx -t 'Check a public search the person performs' \
@@ -783,6 +856,7 @@ jobs:
           product_revision = os.environ["GRACE_PRODUCT_REVISION"]
           cohort_number = int(os.environ["GRACE_BILLWORLD_SELECTED_COHORT"])
           verified = {}
+          misses = {}
           documents = set()
 
           def load(path):
@@ -840,15 +914,24 @@ jobs:
               scores = load(directory / "scores.json")
               require(
                   (scores["revision"], scores["productRevision"], scores["shard"], scores["shardCount"], scores["cohortTotal"],
-                   scores["attempted"], scores["total"], scores["passed"]) == (revision, product_revision, shard, 4, cohort_total, shard_total, shard_total, shard_total),
-                  f"Incomplete or failed Fleet score for shard {shard}",
+                   scores["attempted"], scores["total"]) == (revision, product_revision, shard, 4, cohort_total, shard_total, shard_total),
+                  f"Incomplete Fleet score for shard {shard}",
               )
               require(scores.get("cohortNumber", 1) == cohort_number, f"Wrong score cohort on shard {shard}")
               require(set(scores["cases"]) == set(assigned), f"Wrong case membership on shard {shard}")
+              require(all(type(score) is bool for score in scores["cases"].values()) and
+                      scores["passed"] == sum(scores["cases"].values()), f"Inconsistent Fleet scores on shard {shard}")
               for task_id, task in assigned.items():
                   require(Path(task_id).name == task_id and task_id not in (".", ".."), "Invalid Fleet task ID")
                   receipt = load(directory / f"{task_id}.json")
                   grade = receipt["grade"]
+                  require(receipt["taskId"] == task_id and receipt["surface"] == "desktop-chromium" and
+                          loopback(receipt["startUrl"])[2:] == loopback(task["startUrl"])[2:] and
+                          loopback(grade["expected"])[2:] == loopback(task["expected"])[2:] and
+                          grade["passed"] is scores["cases"][task_id], f"Receipt disagrees with assigned case {task_id}")
+                  if not grade["passed"]:
+                      misses[task_id] = shard
+                      continue
                   outcome = receipt["outcome"]
                   opened = outcome["start"]
                   landed = outcome["destination"]
@@ -874,24 +957,29 @@ jobs:
                   verified[task_id] = shard
                   documents.update(ids)
 
-          require(len(verified) == cohort_total, f"Expected {cohort_total} distinct verified Fleet browser receipts")
-          require(os.environ["GRACE_BILLWORLD_MATRIX_RESULT"] == "success", "A Fleet shard job did not succeed")
+          checked = len(verified) + len(misses)
+          require(checked == cohort_total, f"Expected {cohort_total} distinct Fleet browser receipts")
           (root / "qualification.json").write_text(json.dumps(
-              {"revision": revision, "productRevision": product_revision, "cohortNumber": cohort_number, "checked": cohort_total, "passed": cohort_total, "shards": 4, "cases": verified}, indent=2
+              {"revision": revision, "productRevision": product_revision, "cohortNumber": cohort_number,
+               "checked": checked, "passed": len(verified), "shards": 4, "cases": verified, "misses": misses}, indent=2
           ) + "\n")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
-              summary.write(f"Verified **{cohort_total} of {cohort_total}** distinct Fleet billers in cohort {cohort_number} across four shards.\n")
+              summary.write(f"Verified **{len(verified)} of {checked}** distinct Fleet billers in cohort {cohort_number} across four shards.\n")
+          require(not misses, f"{len(misses)} Fleet browser receipts failed to reach their assigned destination")
+          require(os.environ["GRACE_BILLWORLD_MATRIX_RESULT"] == "success", "A Fleet shard job did not succeed")
           PY
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
         with:
           name: billworld-browser-qualification
           path: ${{ runner.temp }}/grace-fleet-shards/qualification.json
           if-no-files-found: error
   billworld-released:
-    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && inputs.billworld
+    if: github.event_name == 'workflow_dispatch' && !inputs.cross_app_only && (inputs.billworld || inputs.billworld_statement_cohort == 'held-out')
     runs-on: ${{ github.event_name == 'workflow_dispatch' && github.repository_id == '1457180554' && vars.GRACE_BILLWORLD_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 45
     env:
+      GRACE_BILLWORLD_STATEMENT_COHORT: ${{ inputs.billworld_statement_cohort }}
       GRACE_BILLWORLD_RELEASED_DIR: ${{ github.workspace }}/.cache/billworld
       GRACE_BILLWORLD_RESULTS: ${{ github.workspace }}/.cache/grace-released-billworld-results
     steps:
@@ -1030,7 +1118,7 @@ jobs:
           mkdirSync(results, { recursive: true });
           writeFileSync(join(results, "fleet-view-bill-qualification.json"), JSON.stringify(coverage, null, 2) + "\n");
           const summary = [
-            "### Fleet view-bill coverage",
+            `### Fleet view-bill coverage (${coverage.statementCohort})`,
             "",
             "| Status | Unique simulator websites | Portal templates |",
             "| --- | ---: | ---: |",
@@ -1055,7 +1143,7 @@ jobs:
           if-no-files-found: error
   verify:
     name: ${{ matrix.lane }}
-    if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena || inputs.webarena_gitlab)
+    if: github.event_name != 'workflow_dispatch' || inputs.cross_app_only || !inputs.benchmarks_only || !(inputs.billworld || inputs.billworld_statement_cohort == 'held-out' || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only || inputs.webarena_sort_only)
     runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
     strategy:
       fail-fast: false
@@ -1121,14 +1209,18 @@ jobs:
           mkdir -p .turbo/cache
           rm -f ".turbo/cache/$HASH-manifest.json"
           mv "$archive" "$meta" .turbo/cache/
-      - name: Verify local Gmail delivery and account isolation
+      - name: Generate the models for the offline Google journeys
+        id: cross-app-models
         if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
+        run: pnpm gen
+      - name: Verify local Gmail delivery and account isolation
+        if: ${{ !cancelled() && steps.cross-app-models.outcome == 'success' }}
         run: pnpm --filter @repo/app test --project node test/app.test.vibe -t "Google denies missing consent"
       - name: Verify the pinned Worker against synthetic Gmail history
         if: ${{ matrix.lane == 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         run: pnpm --dir vendor/eliza --filter @elizaos/cloud exec vitest run test/cloud.test.vibe -t "watch for new mail"
       - name: Exercise Google consent and guided tasks across apps with local fixtures
-        if: ${{ matrix.lane == 'product' && inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.cross-app-models.outcome == 'success' }}
         run: >-
           pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser.test.tsx
           -t "Gmail signup to Calendar|Follow one reviewed plan across apps|An authenticated restart restores the reviewed plan paused at its next outcome|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
@@ -1268,6 +1360,7 @@ jobs:
           shopt -s nullglob
           summaries=(.turbo/runs/*.json)
           if (( ${#summaries[@]} )); then
+            set +o pipefail
             jq -r '
               .tasks[] | select(.cache.status == "HIT")
               | .hash | select(type == "string" and test("^[a-f0-9]{16}$"))
@@ -1316,7 +1409,7 @@ jobs:
           include-hidden-files: true
   vibestack-fixture-selftests:
     name: ${{ matrix.lane }}
-    if: ${{ !inputs.cross_app_only && (github.event_name != 'workflow_dispatch' || !inputs.benchmarks_only || !(inputs.billworld || inputs.webarena || inputs.webarena_gitlab)) }}
+    if: ${{ !inputs.cross_app_only && (github.event_name != 'workflow_dispatch' || !inputs.benchmarks_only || !(inputs.billworld || inputs.billworld_statement_cohort == 'held-out' || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only || inputs.webarena_sort_only)) }}
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false

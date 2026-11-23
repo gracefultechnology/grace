@@ -7,7 +7,42 @@ import { join } from "node:path";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
 import { hasUserAssistedSearch, matchesPublicSearch, publicSearchQuery } from "./browser-receipt.ts";
+import { readFixtureUpstream } from "./fixture-context.ts";
 import { startWebArenaWorker } from "./webarena.ts";
+
+it('Report a stalled upstream body without losing the next browser attempt (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
+  const server = createServer((request, response) => {
+    if (request.url === "/headers") return;
+    response.writeHead(200, { "content-type": "text/event-stream" });
+    if (request.url === "/body") {
+      response.write("event: started\n");
+      response.flushHeaders();
+      return;
+    }
+    response.end("event: complete\n");
+  });
+  try {
+    await new Promise<void>((ready, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", ready);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("The upstream fixture did not bind a loopback port");
+    const send = (path: string) =>
+      readFixtureUpstream(new URL(path, `http://127.0.0.1:${address.port}`), { method: "POST" }, AbortSignal.timeout(2000));
+    expect(await send("/complete")).toEqual({ tag: "Response", status: 200, contentType: "text/event-stream", body: "event: complete\n" });
+    await expect(Promise.all([send("/headers"), send("/body")])).resolves.toEqual([
+      { tag: "Unavailable", status: 503, failure: { phase: "headers", reason: "deadline" } },
+      { tag: "Unavailable", status: 503, failure: { phase: "body", reason: "deadline", upstreamStatus: 200 } },
+    ]);
+    expect(await send("/complete")).toEqual({ tag: "Response", status: 200, contentType: "text/event-stream", body: "event: complete\n" });
+  } finally {
+    await new Promise<void>((done) => {
+      server.close(() => done());
+      server.closeAllConnections();
+    });
+  }
+});
 
 const fakeEvaluator = `
 import json
@@ -30,6 +65,13 @@ class URLEvaluator:
         assert trajectory == [] and page_client is None
         assert page.url in (task["target"], task["control"])
         return int(page.url == task["target"])
+
+class StringEvaluator:
+    def __call__(self, trajectory, config):
+        task = json.loads(config.read_text())
+        [action] = trajectory
+        assert action["action_type"] == "STOP"
+        return int(task["answer"] == action["answer"])
 `;
 
 const fakePage = `
@@ -80,10 +122,12 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     const address = server.address();
     if (address === null || typeof address === "string") throw new Error("The evaluator fixture did not bind a loopback port");
     const module = join(root, "evaluation_harness");
-    await mkdir(module);
+    const actions = join(root, "browser_env");
+    await Promise.all([mkdir(module), mkdir(actions)]);
     await Promise.all([
       writeFile(join(module, "__init__.py"), fakeEvaluator),
       writeFile(join(module, "helper_functions.py"), fakePage),
+      writeFile(join(actions, "actions.py"), 'def create_stop_action(answer): return {"action_type": "STOP", "answer": answer}\n'),
     ]);
     const gradingTimeoutMs = 1000;
     const start = (phase: Exclude<Phase, "grading">, startupTimeoutMs?: number) => {
@@ -104,6 +148,7 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     expect(await Promise.race([completion, Effect.runPromise(Effect.as(Effect.sleep(gradingTimeoutMs * 2), "importing"))])).toBe("importing");
     importGate.release();
     await expect(scores).resolves.toEqual([1, 0]);
+    await expect(worker.grade({ fixture: JSON.stringify({ answer: "four" }), answers: ["four", "", "one"] })).resolves.toEqual([1, 0, 0]);
 
     const nextImport = enter("importing");
     const gradingFailure = worker.grade({ fixture: JSON.stringify({ ...fixture, hang: true }), urls }).catch((error: unknown) => error);

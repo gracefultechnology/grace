@@ -196,7 +196,9 @@ IDs. A single result highlights the actual row and selects its tab; multiple
 matches ask which item rather than guessing from a repeated name. No match
 states that plainly. Finding does not open, share or delete content.
 Each explicit find request carries a new generation. A new query replaces the
-old request; Close cancels it. A result must match the owner, generation and
+old request, including while the open Files window waits for its catalog. A
+catalog load for an attachment on a closed library stays separate.
+Close cancels the find. A result must match the owner, generation and
 exact requested query, so stale retrieval cannot reopen Files or replace the
 current answer.
 
@@ -211,7 +213,9 @@ nothing.
 ```quint
 pure def canFindFiles(f: Files, owner: str, query: str, by: FileActor): bool =
   by == FileUser and owner != "" and (f.owner == "" or owner == f.owner) and query != "" and
-  (if (f.loaded) f.pending == NoFileOperation or f.pending == Locating else f.pending == NoFileOperation)
+  (f.pending == NoFileOperation or
+    (f.loaded and f.pending == Locating) or
+    (not(f.loaded) and f.pending == ReadingCatalog and f.opened))
 pure def findFiles(f: Files, owner: str, query: str, by: FileActor): FilesResult = {
   state: { ...f, owner: owner, opened: true, selected: "", contentReady: false, page: 0,
     pending: if (f.loaded) Locating else ReadingCatalog,
@@ -219,6 +223,10 @@ pure def findFiles(f: Files, owner: str, query: str, by: FileActor): FilesResult
   out: List(if (f.loaded) SearchFiles({ owner: owner, generation: f.generation + 1, query: query })
     else LoadLibrary({ owner: owner, generation: f.generation + 1 }))
 }
+pure def lawReplacingAColdFindRefusesItsFirstCatalog(f: Files, owner: str, query: str, catalogReport: CatalogReport): bool =
+  not(f.loaded) and f.pending == ReadingCatalog and f.query != "" and
+    canFindFiles(f, owner, query, FileUser) and canLoadCatalog(f, catalogReport, FileStore) implies
+    not(canLoadCatalog(findFiles(f, owner, query, FileUser).state, catalogReport, FileStore))
 pure def canLocate(f: Files, locateReport: LocateReport, by: FileActor): bool =
   by == FileHost and f.loaded and f.opened and f.pending == Locating and locateReport.owner == f.owner and
   locateReport.generation == f.generation and locateReport.query == f.query and

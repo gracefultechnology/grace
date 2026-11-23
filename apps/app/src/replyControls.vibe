@@ -7,10 +7,12 @@ import { ManagedReads, type ManagedSnapshot, type ProposedWork } from "./managed
 import { NativePage } from "./nativePage.vibe"
 import { withhold } from "./private.ts"
 import type { Action } from "./reply.schema.ts"
+import { FileLibrary } from "./fileLibrary.vibe"
 import { offeredPrivateSignIn } from "./requestedPrivateSignIn.vibe"
 
 type Suggested = typeof Action.Type
 type Control =
+  | { kind: "findFile"; title: string; query: string; owner: string }
   | { kind: "workspace"; title: string; event: Event }
   | { kind: "website"; title: string; url: string }
   | { kind: "cancelReview"; title: string; number: number }
@@ -18,7 +20,10 @@ type Control =
   | { kind: "managed"; title: string; proposed: ProposedWork }
   | { kind: "read"; title: string; accountId: string; grant: string; id: string }
 export type ReplyOffer = { id: number; context: ReplyControlContext; messageIndex: number; messageText: string; labels: string[]; blocked: boolean }
-type RequestScene = { context: ReplyControlContext; managed: ManagedSnapshot; signIn: ReturnType<typeof offeredPrivateSignIn> }
+type RequestScene = {
+  context: ReplyControlContext; managed: ManagedSnapshot; signIn: ReturnType<typeof offeredPrivateSignIn>
+  fileSearch?: { query: string; owner: string }
+}
 type Offer = { visible: ReplyOffer; controls: readonly Control[] }
 
 export service ReplyControls {
@@ -59,11 +64,13 @@ function safeText(text: string, max: number) {
   return text.length <= max && withhold({ text, passwords: [] }) === text
 }
 
-function plan(action: Suggested, w: Workspace, { managed, signIn }: RequestScene): Control | undefined {
+function plan(action: Suggested, w: Workspace, { managed, signIn, fileSearch }: RequestScene): Control | undefined {
   const settings = w.preferences.session
   const selected = managed.kind === "calendar" ? managed.selected : undefined
   const selectedFor = (entry: string) => selected?.externalId === entry || selected?.title.toLowerCase() === entry.toLowerCase() ? selected : undefined
   switch (action.kind) {
+    case "findFile": return fileSearch && action.query === fileSearch.query
+      ? { kind: "findFile", title: "Find in Files", query: fileSearch.query, owner: fileSearch.owner } : undefined
     case "open": return ownerControl("Open " + surfaceName[action.surface], { type: "visit", destination: action.surface })
     case "showSetting": return ownerControl("Show " + settingName[action.page], { type: "chooseSettingsPage", page: action.page })
     case "setTextSize": return ownerControl("Set text size to " + (action.size === "StandardText" ? "Normal" : action.size), { type: "changePreferences", settings: { ...settings, textSize: action.size } })
@@ -144,7 +151,6 @@ function plan(action: Suggested, w: Workspace, { managed, signIn }: RequestScene
     case "confirmProposal":
     case "confirmAppointment":
     case "dismissReminder":
-    case "findFile":
     case "beginTask":
     case "fill": return undefined
   }
@@ -171,6 +177,7 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
   const managed = try ManagedReads
   const setup = try Setup
   const page = try NativePage
+  const files = try FileLibrary
   const active = try SubscriptionRef.make<Offer | undefined>(undefined)
   const serial = try Ref.make(0)
   const gate = try Semaphore.make(1)
@@ -209,6 +216,7 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
     if (!choice) return false
     try SubscriptionRef.set(active, undefined)
     switch (choice.kind) {
+      case "findFile": return try files.findFromReply(choice.query, choice.owner)
       case "workspace":
         try desk.send(choice.event, "Person")
         return true
@@ -251,7 +259,12 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
       const w = try desk.get()
       const person = w.assistant.conversation.messages.at(-1)
       const signIn = page.privateSignIn && person?.author === "HumanMessage" ? offeredPrivateSignIn(w, person.text) : undefined
-      return { context: replyControlContext(w), managed: try managed.get(), signIn }
+      const request = w.assistant.conversation.origin === "HerRequest" && person?.author === "HumanMessage" ?
+        /^(?:please\s+)?find (?:my |the |a )?(?:saved )?file (?:called |named )?(?:"([^"\r\n]+)"|“([^”\r\n]+)”|([^"“”\r\n.!?]+))\s*[.!?]?$/iu.exec(person.text.trim()) : null
+      const query = (request?.[1] ?? request?.[2] ?? request?.[3])?.trim()
+      const owner = query && safeText(query, 120) ? try files.findOwner() : undefined
+      return { context: replyControlContext(w), managed: try managed.get(), signIn,
+        fileSearch: query && owner ? { query, owner } : undefined }
     },
     offer: (scene, response, actions) => gate.withPermit(offer(scene, response, actions)),
     choose: effect (id, index) => gate.withPermit(choose(id, index)) catch () => false

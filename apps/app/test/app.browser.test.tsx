@@ -30,7 +30,7 @@ import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, modelTurns, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
 import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
-import { actOnScreen, mount, signInToGrace, tabletView } from "./screen.tsx";
+import { actOnScreen, browserAccountResponse, mount, signInToGrace, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -114,21 +114,24 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
 async function pinnedPage(shape: string, url: string, change = (html: string) => html) {
   const html = change(await (await fetch(new URL(`/journey/shapes/${shape}.html`, inject("site")))).text())
     .replace('<meta charset="utf-8">', `<meta charset="utf-8"><base href="${url}">`);
-  const frame = document.body.appendChild(document.createElement("iframe"));
-  frame.style.cssText = "position:fixed;left:-2000px;top:0;width:800px;height:600px;border:0";
-  const loaded = new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
-  frame.srcdoc = html;
+  const website = window.open("about:blank", "_blank", "popup,width=800,height=600");
+  if (!website || website !== website.top) throw new Error("The website fixture needs a separate top-level window");
+  onTestFinished(() => website.close());
+  const pinned = website.document;
+  pinned.open();
+  const loaded = new Promise((resolve) => website.addEventListener("load", resolve, { once: true }));
+  pinned.write(html);
+  pinned.close();
   await loaded;
-  onTestFinished(() => frame.remove());
-  const run = (source: string) => (frame.contentWindow as unknown as { eval(code: string): Record<string, unknown> }).eval(source);
+  const run = (source: string) => (website as unknown as { eval(code: string): Record<string, unknown> }).eval(source);
   let snapshots = 0;
   return {
     url,
-    document: frame.contentDocument!,
+    document: pinned,
     snapshots: () => snapshots,
     route: (hash: string) => act(() => new Promise<void>((shown) => {
-      frame.contentWindow!.addEventListener("hashchange", () => shown(), { once: true });
-      frame.contentWindow!.location.hash = hash;
+      website.addEventListener("hashchange", () => shown(), { once: true });
+      website.location.hash = hash;
     })),
     snapshot: (command: unknown) => {
       const snapshotId = `${shape}-${++snapshots}`;
@@ -2016,9 +2019,16 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await tap("Move to Trash");
     await expect.element(page.getByText("Moved to Trash.")).toBeVisible();
     await expect.element(folders.getByRole("button", { name: "Inbox", exact: true })).toBeVisible();
+    await act(() => folders.getByRole("button", { name: "Sent", exact: true }).click());
+    await expect.element(page.getByText("Lunch invitation", { exact: true })).toBeVisible();
+    expect(await runtime.runPromise(managed.change(scope, {
+      kind: "undo", id: mail.externalId, version: "9", prior: "another-operation",
+    }))).toBeUndefined();
+    expect(trashRequests).toBe(1);
     await tap("Undo");
     await expect.element(page.getByText("Message restored.")).toBeVisible();
-    await expect.element(folders.getByRole("button", { name: "Inbox 1", exact: true })).toBeVisible();
+    await expect.element(page.getByText("Lunch invitation", { exact: true })).toBeVisible();
+    await act(() => folders.getByRole("button", { name: "Inbox 1", exact: true }).click());
     await tap("New email");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "To", exact: true }), "robin@example.test"));
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "Subject", exact: true }), "Hello"));
@@ -2294,6 +2304,90 @@ it('Restore saved text size (spec/app/preferences.md, "Restart restores confirme
   await mountSettings();
   await expect.element(larger).toHaveAttribute("aria-checked", "true");
   expect(stored.revision).toBe(1);
+});
+
+it('Find a saved file and replace the request before Files loads (spec/app/files.md, "Story: Find and open something I saved")', async () => {
+  const { agent, requests, answer } = deviceAgent();
+  const lease = "6809777f-9d01-4857-8b5f-5ed6d7376f62";
+  const previous = { id: "5860d0a8-b810-4c0e-ad5f-efeaf0d19f7f", kind: "pdf", name: "Lunch notes.pdf", savedAt: 1, pages: 1 };
+  const current = { id: "85b46188-fb54-4a7e-a7b8-1f706e7a3b86", kind: "pdf", name: "Garden notes.pdf", savedAt: 2, pages: 1 };
+  type Catalog = { entries: (typeof current)[] };
+  const reads: Array<{ promise: Promise<Catalog>; resolve: (catalog: Catalog) => void }> = [];
+  const releases: string[] = [];
+  let ownerScope = "a".repeat(64);
+  const runtime = ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    agent,
+    account: {
+      status: () => Promise.resolve({ kind: "signedIn", voiceDisclosureScope: ownerScope }),
+      beginSignIn: () => Promise.resolve(),
+      signOut: () => Promise.resolve(),
+      cleanupLegacySignIn: () => Promise.resolve(),
+      manageAccount: () => Promise.resolve(),
+      addListener: () => Promise.resolve({ remove: () => Promise.resolve() }),
+    },
+    files: {
+      saveAttachments: () => Promise.reject(new Error("No attachment is saved during this find")),
+      open: () => Promise.resolve({ lease }),
+      close: () => Promise.resolve(),
+      list: (request) => {
+        expect(request).toEqual({ lease });
+        let resolve!: (catalog: Catalog) => void;
+        const promise = new Promise<Catalog>((resolveCatalog) => { resolve = resolveCatalog; });
+        reads.push({ promise, resolve });
+        return promise;
+      },
+      preview: ({ id, page }) => {
+        releases.push(id);
+        return Promise.resolve({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" });
+      },
+      content: () => Promise.reject(new Error("Search does not read file bytes")),
+      remove: () => Promise.reject(new Error("Search does not remove files")),
+    },
+  }));
+  await mount(runtime);
+  const workspace = await runtime.runPromise(Workspaces);
+  await expect.poll(() => runtime.runSync(workspace.get()).device.reasoningAvailable).toBe(true);
+  const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  await tap("Ask Grace");
+  const request = 'Find the file "Lunch notes".';
+  const offer = async (index: number) => {
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Message to Grace" }), request));
+    await tap("Send");
+    await expect.poll(() => sentTurn(requests[index]?.body).said).toBe(request);
+    await answer(index, { text: "You can find it in Files.", isQuestion: false, answers: [],
+      actions: [{ kind: "findFile", tab: "Documents", query: "Lunch notes" }] });
+    await expect.element(page.getByRole("button", { name: "Find in Files", exact: true })).toBeVisible();
+  };
+  await offer(0);
+  ownerScope = "b".repeat(64);
+  await tap("Find in Files");
+  await expect.element(page.getByRole("button", { name: "Find in Files", exact: true })).not.toBeInTheDocument();
+  expect(runtime.runSync(workspace.get()).device.surface).toBe("Home");
+  expect(reads).toHaveLength(0);
+  ownerScope = "a".repeat(64);
+  await offer(1);
+  expect(reads).toHaveLength(0);
+  await tap("Find in Files");
+  await expect.poll(() => reads.length).toBe(2);
+  await act(() => userEvent.fill(page.getByRole("textbox", { name: "Find a file" }), "Garden notes"));
+  await tap("Find");
+  await expect.poll(() => reads.length).toBe(3);
+  await act(async () => {
+    reads[2].resolve({ entries: [current] });
+    await reads[2].promise;
+  });
+  const result = page.getByRole("button", { name: /Garden notes/ });
+  const resultIsSelected = () => Boolean(result.query()?.closest('[aria-current="true"]'));
+  await expect.poll(resultIsSelected).toBe(true);
+  await act(async () => {
+    reads[0].resolve({ entries: [previous] });
+    reads[1].resolve({ entries: [previous] });
+    await Promise.all(reads.map((read) => read.promise));
+  });
+  await expect.poll(resultIsSelected).toBe(true);
+  expect(page.getByRole("button", { name: /Lunch notes/ }).query()).toBeNull();
+  expect(releases).toEqual([]);
 });
 
 it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and remove the chosen file")', async () => {
@@ -2916,8 +3010,15 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let replaceDocumentDuringRead = false;
   let addChallengeDuringRead = false;
   let challengeShown: false | "code" | "captcha" = false;
-  let signInWidget: "hidden" | "idle" | "active" | "accountOnly" = "hidden";
+  let signInWidget: "hidden" | "idle" | "active" | "accountOnly" | "accountNumber" | "accountLookup" = "hidden";
+  let combinedLabel = "Account number or email";
+  let disabledLogin = false;
+  let ambiguousLogin = false;
+  const idleIdentifier = { focused: false, edited: false, hasInput: false };
+  let identifierEvidence: Partial<typeof idleIdentifier> = idleIdentifier;
   const card = { id: "card-statements", frame: await pinnedPage("statements", origin + "/topic.html?history", (html) => html
+    .replace("<dl>", '<section><h2 id="statement-heading">Current statement</h2><dl>')
+    .replace("</dl>", '</dl><p><a href="/archive">Previous statements</a></p></section>')
     .replace("<dt>New Balance</dt><dd>$1,284.56</dd>", '<dt>Current balance</dt><dd>$1,301.12</dd><dt>Last statement balance</dt><dd id="balance">$1,284<sup>56</sup></dd>')
     .replace("<dt>Previous Balance</dt><dd>$1,102.13</dd>", "<dt>Previous Balance</dt><dd>$1,102.13</dd><dt>Pending charges</dt><dd>$16.56</dd><dt>Available credit</dt><dd>$3,698.88</dd>")) };
   const counting = { id: "countdown-statement", frame: await pinnedPage("countdown", origin + "/statement", (html) => html.replace(/<script>[\s\S]*<\/script>/u, "")) };
@@ -2926,7 +3027,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     .replace("<h1>Usage</h1>", "<h1>Today's usage</h1><p>Updated <span id='clock'>10:41:07</span></p>")) };
   const guideShow = Schema.is(Schema.Struct({ subaction: Schema.Literal("guide"), guidance: Schema.Struct({ kind: Schema.Literal("show"), snapshotId: Schema.String, nodeId: Schema.String }) }));
   let pinned: (typeof card & { url: string }) | undefined;
-  let betweenReads: (() => void | Promise<void>) | undefined;
+  let betweenReads: { after: "statement" | "snapshot"; change: () => void | Promise<void> } | undefined;
   const blankNewsletterEmail = {
     id: "newsletter-email", tag: "input", type: "email", fieldName: "email", label: "Sign Up for Our Newsletter:",
     sensitive: null, form: { index: 2, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: false,
@@ -2934,15 +3035,19 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let newsletterEmail: typeof blankNewsletterEmail | null = null;
   const blankSearch = { focused: false, edited: false, hasInput: false };
   let searchEvidence: Partial<typeof blankSearch> = blankSearch;
-  const native = fakePlugin(({ command }) => {
+  const native = fakePlugin(({ command, documentId }) => {
     if (pinned && guideShow(command)) return { result: { accepted: pinned.frame.shows(command.guidance) } };
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
+      const combinedIdentifier = signInWidget === "accountNumber" || signInWidget === "accountLookup";
       if (pinned) {
+        const phase = "statementRegions" in command && command.statementRegions === true ? "statement" : "snapshot";
+        if (phase === "statement") expect(documentId).toBe(pinned.id);
         const result = { ...pinned.frame.snapshot(command), url: pinned.url };
-        const change = betweenReads;
-        betweenReads = undefined;
         const reply = { documentId: pinned.id, frameScope: "main", result };
-        return change ? Promise.resolve(change()).then(() => reply) : reply;
+        if (betweenReads?.after !== phase) return reply;
+        const { change } = betweenReads;
+        betweenReads = undefined;
+        return Promise.resolve(change()).then(() => reply);
       }
       return { documentId: currentPage.id, frameScope: "main", result: {
         snapshotId: currentPage.id, domRevision, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
@@ -2950,10 +3055,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         viewport: { width: 800, height: 600, offsetLeft: 0, offsetTop: 0, scale: 1 },
         elements: [
           ...(signInWidget === "hidden" ? [] : [
-            { id: "username", tag: "input", type: "text", fieldName: "username", label: signInWidget === "accountOnly" ? "Username" : "Private username", sensitive: null, form: { index: 0 }, focused: false, edited: false, hasInput: false, href: null, inViewport: true },
-            signInWidget === "accountOnly"
-              ? { id: "continue", tag: "button", label: "Continue ›", submits: true, form: { index: 0 }, focused: false, href: null, inViewport: true }
+            { id: "username", tag: "input", type: "text", fieldName: "username",
+              label: combinedIdentifier ? combinedLabel : signInWidget === "accountOnly" ? "Username" : "Private username",
+              sensitive: null, form: { index: 0 }, ...identifierEvidence, href: null, inViewport: true },
+            signInWidget === "accountOnly" || combinedIdentifier
+              ? { id: "continue", tag: "button", type: "submit",
+                  label: signInWidget === "accountOnly" ? "Continue ›" : signInWidget === "accountLookup" ? "Find account" : "Login",
+                  submits: true, disabled: disabledLogin, form: { index: 0 }, focused: false, href: null, inViewport: true }
               : { id: "password", tag: "input", type: "password", fieldName: "password", label: "Private password", sensitive: "password", form: { index: 0 }, focused: false, edited: signInWidget === "active", hasInput: false, href: null, inViewport: true },
+            ...(ambiguousLogin ? [{ id: "register", tag: "button", type: "submit", label: "Register", submits: true,
+              disabled: false, form: { index: 0 }, focused: false, href: null, inViewport: true }] : []),
             { id: "sign-in-link", tag: "a", label: "Private sign-in link", form: { index: 0 }, focused: false, href: "https://example.org/forgot", inViewport: true },
             { id: "credential-url", tag: "a", label: "Credential URL", form: null, href: "https://example.org/help?session=private", inViewport: true },
           ]),
@@ -3008,6 +3119,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         guideCalls++;
         expect(init?.body).not.toContain("Private sign-in link");
         expect(init?.body).not.toContain("Private username");
+        expect(init?.body).not.toContain(combinedLabel);
         expect(init?.body).not.toContain("Credential URL");
         expect(init?.body).not.toContain("Help center inside a form");
         expect(init?.body).not.toContain("Sign Up for Our Newsletter");
@@ -3158,15 +3270,41 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     } });
     await expect.element(pending).toHaveAttribute("aria-current", "step");
 
+    const beforeIdentifierGuide = guideCalls;
+    for (const [widget, evidence, disabled = false, ambiguous = false] of [
+      ["accountLookup", idleIdentifier],
+      ["accountNumber", idleIdentifier, true],
+      ["accountNumber", idleIdentifier, false, true],
+      ["accountNumber", { ...idleIdentifier, edited: true }],
+      ["accountNumber", { ...idleIdentifier, focused: true }],
+      ["accountNumber", { ...idleIdentifier, hasInput: true }],
+      ["accountNumber", { focused: false, hasInput: false }],
+    ] as const) {
+      signInWidget = widget;
+      identifierEvidence = evidence;
+      disabledLogin = disabled;
+      ambiguousLogin = ambiguous;
+      await tap(showLink);
+      await routeTo(page.getByText(/Finish the form yourself in this tab/));
+      expect(guideCalls).toBe(beforeIdentifierGuide);
+    }
+    signInWidget = "accountNumber";
+    identifierEvidence = idleIdentifier;
+    const expectHelpGuide = async (expectedCalls: number) => {
+      await tap(showLink);
+      await expect.poll(() => guideCalls).toBe(expectedCalls);
+      await routeTo(page.getByText("Look for “Help center” on example.org."));
+      expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
+        documentId: about.id, command: { guidance: { nodeId: "help" } },
+      });
+    };
+    for (const [index, label] of ["Account number or email", "Email address or account ID"].entries()) {
+      combinedLabel = label;
+      await expectHelpGuide(beforeIdentifierGuide + index + 1);
+    }
     signInWidget = "hidden";
     newsletterEmail = blankNewsletterEmail;
-    const beforeNewsletterGuide = guideCalls;
-    await tap(showLink);
-    await expect.poll(() => guideCalls).toBe(beforeNewsletterGuide + 1);
-    await routeTo(page.getByText("Look for “Help center” on example.org."));
-    expect(native.calls("controlPage").filter(Schema.is(shownGuide)).at(-1)).toMatchObject({
-      documentId: about.id, command: { guidance: { nodeId: "help" } },
-    });
+    await expectHelpGuide(guideCalls + 1);
 
     newsletterEmail = null;
     currentPage = { ...help, path: "/help/center" };
@@ -3176,10 +3314,16 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(resume);
     expect(check.query()).toBeNull();
     await tap(resume);
-    signInWidget = "idle";
-    await tap(check);
-    await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
-    await expect.element(pending).toHaveAttribute("aria-current", "step");
+    for (const widget of ["idle", "accountNumber"] as const) {
+      signInWidget = widget;
+      const beforeCheck = native.calls("controlPage").length;
+      const readsBeforeCheck = native.calls("readPage").length;
+      await tap(check);
+      await expect.poll(() => native.calls("controlPage").length).toBeGreaterThan(beforeCheck);
+      await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+      expect(native.calls("readPage")).toHaveLength(readsBeforeCheck);
+    }
     signInWidget = "hidden";
     replaceDocumentDuringRead = true;
     await tap(check);
@@ -3257,20 +3401,27 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.poll(() => result.query()?.textContent).toBe("I found more than one amount due or due date on this page.");
     second.remove();
     let reads = card.frame.snapshots();
-    betweenReads = () => { balance.innerHTML = "$1,290<sup>.00</sup>"; };
+    betweenReads = { after: "statement", change: () => { balance.innerHTML = "$1,290<sup>.00</sup>"; } };
     await tap(readStatement);
     await expect.poll(() => result.query()?.textContent).toBe("The page changed while I checked it. Check it again.");
-    expect(card.frame.snapshots() - reads).toBe(2);
+    expect(card.frame.snapshots() - reads).toBe(4);
     balance.innerHTML = "$1,284<sup>.56</sup>";
     card.frame.document.title = "Previous statement";
     await tap(readStatement);
     await expect.poll(() => result.query()?.textContent).toBe("This is an earlier statement. Open the current one.");
     card.frame.document.title = "Statements & Documents";
+    const statementHeading = card.frame.document.getElementById("statement-heading")!;
+    for (const historical of ["Previous statement", "Paid statement", "Previous installment"]) {
+      statementHeading.textContent = historical;
+      expect(await tablet.checkStep()).toBe("Past");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+    }
+    statementHeading.textContent = "Current statement";
 
     // spec/app/deviceKeys.md, "A task waits while a website's question holds me, and goes on after my answer"
     const snapshotRequested = Latch.makeUnsafe();
     const releaseSnapshot = Latch.makeUnsafe();
-    betweenReads = () => { snapshotRequested.openUnsafe(); return Effect.runPromise(releaseSnapshot.await); };
+    betweenReads = { after: "statement", change: () => { snapshotRequested.openUnsafe(); return Effect.runPromise(releaseSnapshot.await); } };
     const checking = tablet.checkStep();
     try {
       await Effect.runPromise(snapshotRequested.await);
@@ -3312,10 +3463,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const figures = [...counting.frame.document.querySelectorAll("p")].find((line) => line.textContent?.startsWith("Statement balance"))!;
     figures.textContent = "Statement balance: $612.40. Remaining statement balance: $40.00. Payment due date: 12/05/2026.";
     reads = counting.frame.snapshots();
-    betweenReads = () => { left.textContent = "4:39"; };
+    betweenReads = { after: "statement", change: () => { left.textContent = "4:39"; } };
     await tap(readStatement);
     await expect.element(pending).toHaveTextContent(`Find and check “${usage}”.`);
-    expect(counting.frame.snapshots() - reads).toBe(2);
+    expect(counting.frame.snapshots() - reads).toBe(4);
     const below = counting.frame.document.createElement("a");
     below.href = "/account#/usage";
     below.textContent = "Today's usage";
@@ -3330,7 +3481,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await visit(billing, "#/usage");
     const clock = billing.frame.document.getElementById("clock")!;
     reads = billing.frame.snapshots();
-    betweenReads = () => { clock.textContent = "10:41:08"; };
+    betweenReads = { after: "snapshot", change: () => { clock.textContent = "10:41:08"; } };
     await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
     expect(billing.frame.snapshots() - reads).toBe(4);
@@ -3437,6 +3588,31 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   }
 }, 240_000);
 
+function publicReadSession(native: ReturnType<typeof fakePlugin>, cloud: string, secret: string) {
+  localStorage.clear();
+  const network = window.fetch.bind(window);
+  const accountId = "public-site-owner";
+  const accountNetwork = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+    if (url.origin === location.origin && url.pathname === "/api/product/files/scope")
+      return Response.json({ accountId, owner: "a".repeat(64), session: "b".repeat(64) });
+    return browserAccountResponse(url, accountId) ?? network(input, init);
+  });
+  onTestFinished(() => { accountNetwork.mockRestore(); localStorage.clear(); });
+  return cloudReadPlan(native, cloud, secret);
+}
+
+async function startPublicReadPlan(native: ReturnType<typeof fakePlugin>, tap: Awaited<ReturnType<typeof cloudReadPlan>>["tap"], loadHome: () => Promise<void>, tab: 1 | 2 = 1) {
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  await tap(button("Internet"));
+  if (tab === 2) await tap(button("Open a new tab"));
+  await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
+  await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe(`tab-${tab}`);
+  await loadHome();
+  await tap(button("Ask Grace"));
+  await tap(button("Allow Grace to read this browser"));
+}
+
 it('Check a public search the person performs (spec/app/workspace.md, "The person searches the reviewed site and Grace checks that exact query")', async () => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
@@ -3457,8 +3633,8 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   let documentId = "initial";
   const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
     result: { ...frame.snapshot(command), url } }), false, ({ selector }) => ({ ...frame.read(selector), url }));
-  localStorage.clear();
-  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  let view = await publicReadSession(native, cloud, secret);
+  const { routeTo, tap } = view;
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   const review = page.getByRole("region", { name: "Review read plan" });
   const field = page.getByRole("textbox", { name: "Message to Grace" });
@@ -3468,25 +3644,23 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
     await act(() => field.fill(words));
     await act(() => userEvent.keyboard("{Enter}"));
   };
+  let activeId = "tab-2";
   const arrive = async (address: string, title: string) => {
-    await native.started("tab-1", address);
+    await native.started(activeId, address);
     url = address;
     documentId = address;
     heading.textContent = title;
     searchField.setAttribute("value", query);
-    await native.report("tab-1", url, 100, { pageError: null, securityBlocked: false });
+    await native.report(activeId, url, 100, { pageError: null, securityBlocked: false });
     await tap(button("Resume Grace"));
   };
   const unverified = page.getByRole("status", { name: "Page check result" });
   const check = button("Check search results");
   try {
-    await tap(button("Internet"));
-    await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
-    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
-    await native.started("tab-1", home);
-    await native.report("tab-1", home, 100, { pageError: null, securityBlocked: false });
-    await tap(button("Ask Grace"));
-    await tap(button("Allow Grace to read this browser"));
+    await startPublicReadPlan(native, tap, async () => {
+      await native.started(activeId, home);
+      await native.report(activeId, home, 100, { pageError: null, securityBlocked: false });
+    }, 2);
     await send(rewritten);
     await routeTo(page.getByText("I could not prepare that read plan."));
     expect(review.query()).toBeNull();
@@ -3512,13 +3686,128 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
     await tap(check);
     await routeTo(page.getByText(/^Choose Turn off browser reading\./u));
     expect(plan.getByText("Read checks complete").query()).toBeNull();
+    await view.dispose();
+    view = await cloudReadPlan(native, cloud, secret);
+    activeId = "tab-1";
+    url = home;
+    documentId = "reopened";
+    await startPublicReadPlan(native, tap, async () => {
+      await native.started(activeId, home);
+      await native.report(activeId, home, 100, { pageError: null, securityBlocked: false });
+    });
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    await tap(button("Resume Grace"));
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    expect(check.query()).toBeNull();
     privateField.remove();
+    await arrive("https://other.example/results?q=green+tea", right);
+    await routeTo(plan.getByText("Paused", { exact: true }));
+    expect(check.query()).toBeNull();
+    await arrive(result, right);
+    await routeTo(check);
+    expect(plan.getByText("Read checks complete").query()).toBeNull();
     await tap(check);
     await routeTo(plan.getByText("Read checks complete"));
     expect(plan.getByText("Search results for “green tea”.").query()).not.toBeNull();
   } finally {
-    await dispose();
-    localStorage.clear();
+    await view.dispose();
+  }
+}, 120_000);
+
+it('Check the public price direction (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async () => {
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const target = "Rain jackets";
+  const request = "List products from Rain jackets category by ascending price";
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{
+    said: request,
+    answer: JSON.stringify({ text: "Review this plan.", isQuestion: false, answers: [],
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "SortPublicListing", target, direction: "PriceAscending" }] }] }),
+  }]), client));
+  const home = "https://example.org/";
+  const frame = await pinnedPage("statements", home, (html) => html.replace(/<main>[\s\S]*<\/main>/u, () =>
+    `<script>(${String(pageCommand)})(null, "");</script><main><h1>Rain jackets</h1>
+      <div id="sort"><label for="order">Sort By</label><select id="order"><option selected>Name</option><option>Price</option></select>
+      <a href="#" id="direction" title="Set Descending Direction">Change sort direction</a></div>
+      <ul><li>Lightweight jacket</li><li>Winter jacket</li></ul></main>`));
+  const sorter = frame.document.querySelector<HTMLSelectElement>("#order")!;
+  const direction = frame.document.querySelector<HTMLAnchorElement>("#direction")!;
+  const heading = frame.document.querySelector("h1")!;
+  let address = home;
+  let documentId = "home";
+  let replaceDuringRead = false;
+  const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
+    result: { ...frame.snapshot(command), url: address } }), false, ({ selector }) => {
+    const read = frame.read(selector);
+    if (replaceDuringRead && typeof read["text"] === "string" && read["text"].includes("Sort By")) {
+      replaceDuringRead = false;
+      documentId += "-replaced";
+    }
+    return { ...read, url: address };
+  });
+  let view = await publicReadSession(native, cloud, secret);
+  const { routeTo, tap } = view;
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const complete = page.getByText("Read checks complete", { exact: true });
+  const check = button("Check price order");
+  let activeId = "tab-1";
+  const load = async (url: string) => {
+    await native.started(activeId, url);
+    address = url;
+    documentId = url;
+    await native.report(activeId, url, 100, { pageError: null, securityBlocked: false });
+  };
+  const visit = async (url: string) => {
+    await load(url);
+    await tap(button("Resume Grace"));
+  };
+  const pending = async () => {
+    await tap(check);
+    await routeTo(page.getByRole("status", { name: "Page check result" }));
+    expect(complete.query()).toBeNull();
+  };
+  try {
+    await startPublicReadPlan(native, tap, () => load(home));
+    const message = page.getByRole("textbox", { name: "Message to Grace" });
+    await routeTo(message);
+    await act(() => message.fill(request));
+    await act(() => userEvent.keyboard("{Enter}"));
+    await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(/Rain jackets.*lowest price first/u));
+    await tap(button("Collapse"));
+    await tap(button("Start read plan"));
+    await pending();
+    await visit(home + "coats?display=grid");
+    await pending();
+    sorter.selectedIndex = 1;
+    direction.title = "Set Ascending Direction";
+    await pending();
+    direction.title = "Set Descending Direction";
+    heading.textContent = "Snow jackets";
+    await pending();
+    heading.textContent = target;
+    await visit("https://other.example/coats?display=grid");
+    await pending();
+    await visit(home + "coats?display=list");
+    replaceDuringRead = true;
+    await pending();
+    expect(replaceDuringRead).toBe(false);
+    await view.dispose();
+    view = await cloudReadPlan(native, cloud, secret);
+    activeId = "tab-2";
+    direction.title = "Set Ascending Direction";
+    await startPublicReadPlan(native, tap, () => load(home), 2);
+    await routeTo(page.getByRole("region", { name: "Task plan" }).getByText("Paused"));
+    await tap(button("Resume Grace"));
+    await pending();
+    direction.title = "Set Descending Direction";
+    documentId += "-different";
+    await pending();
+    await visit(home + "coats?display=grid");
+    await tap(check);
+    await routeTo(complete);
+    expect(page.getByText("Rain jackets sorted by ascending price.", { exact: true }).query()).not.toBeNull();
+  } finally {
+    await view.dispose();
   }
 }, 120_000);
 

@@ -1,12 +1,13 @@
 // spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"
 import type { ConnectOptions, WiFiNetwork, WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
-import { Effect, ManagedRuntime } from "effect";
+import { Deferred, Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { Machine } from "../gen/app__network.effect.vibe";
 import { WifiNetworks } from "../src/Wifi.tsx";
+import type { WifiSignIn } from "../src/preferencesPlugin.ts";
 import { wifiPage } from "../src/wifi.vibe";
 import "../src/main.css";
 import { actOnScreen } from "./screen.tsx";
@@ -14,21 +15,37 @@ import { actOnScreen } from "./screen.tsx";
 const nearby = (ssid: string, rssi: number, security: NonNullable<WiFiNetwork["security"]>, bssid = "02:11:22:33:44:55"): WiFiNetwork =>
   ({ ssid, bssid, rssi, frequency: 2412, capabilities: "", secured: security !== "open" && security !== "owe", security });
 
+const guest = nearby("WeWorkGuest", -66, "open");
+
 function android() {
-  const tablet = { location: "prompt" as "prompt" | "granted" | "denied", ssid: null as string | null, joins: [] as ConnectOptions[], panels: 0, delayed: false, saved: false, validated: true, visible: true, scan: undefined as WiFiNetwork[] | undefined, currentPoint: undefined as WiFiNetwork | undefined };
+  const tablet = {
+    location: "prompt" as "prompt" | "granted" | "denied", ssid: null as string | null, joins: [] as ConnectOptions[],
+    panels: 0, signIns: 0, delayed: false, saved: false, captiveOnJoin: false, captivePortal: false, otherDefault: false, validated: true,
+    visible: true, hideAccess: false, scan: undefined as WiFiNetwork[] | undefined, currentPoint: undefined as WiFiNetwork | undefined,
+    holdScan: undefined as (() => Promise<void>) | undefined,
+  };
   const plugin: WiFiPlugin = {
     checkPermissions: () => Promise.resolve({ location: tablet.location }),
     requestPermissions: () => { tablet.location = "granted"; return Promise.resolve({ location: "granted" }); },
     getCapabilities: () => Promise.resolve({ sdk: 34, approvedJoin: true, internetPanel: true }),
     openInternetPanel: () => { tablet.panels += 1; return Promise.resolve(); },
     getWifiState: () => Promise.resolve({ enabled: true, connected: tablet.ssid !== null, rssi: null }),
-    getConnectedNetwork: () => Promise.resolve({ network: tablet.ssid === null ? null : tablet.currentPoint ?? nearby(tablet.ssid, -50, tablet.ssid === "Riverside Library Guest" ? "open" : "wpa2") }),
-    listAvailableNetworks: () => tablet.location === "granted"
-      ? Promise.resolve({ networks: tablet.visible ? tablet.scan ?? [nearby("NETGEAR-4F2", -54, "wpa2"), nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap")] : [] })
-      : Promise.reject(Object.assign(new Error("location"), { code: "LOCATION_PERMISSION_REQUIRED" })),
+    getConnectedNetwork: () => Promise.resolve({
+      network: tablet.ssid === null ? null : tablet.currentPoint ?? (tablet.ssid === guest.ssid ? guest : nearby(tablet.ssid, -50, tablet.ssid === "Riverside Library Guest" ? "open" : "wpa2")),
+    }),
+    listAvailableNetworks: async () => {
+      if (tablet.location !== "granted") throw Object.assign(new Error("location"), { code: "LOCATION_PERMISSION_REQUIRED" });
+      const hold = tablet.holdScan;
+      tablet.holdScan = undefined;
+      if (hold) await hold();
+      return { networks: tablet.visible ? tablet.scan ?? [nearby("NETGEAR-4F2", -54, "wpa2"), nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap"), guest] : [] };
+    },
     connectToNetwork: () => Promise.resolve({ success: false }),
     disconnectFromNetwork: () => Promise.resolve({ success: true }),
-    getConnectivity: () => Promise.resolve({ online: tablet.ssid !== null, validated: tablet.ssid !== null && tablet.validated, captivePortal: false, ssid: tablet.ssid }),
+    getConnectivity: () => Promise.resolve(tablet.otherDefault ? { online: true, validated: true, captivePortal: false, ssid: null } : {
+      online: tablet.ssid !== null, validated: tablet.ssid !== null && tablet.validated && !tablet.captivePortal,
+      captivePortal: tablet.captivePortal, ssid: tablet.location === "granted" ? tablet.ssid : null,
+    }),
     addNetworkWithApproval: (options) => {
       tablet.joins.push(options);
       if (options.password !== undefined && options.password.length < 8) return Promise.reject(Object.assign(new Error("short"), { code: "INVALID_ARGUMENT" }));
@@ -36,18 +53,31 @@ function android() {
       if (tablet.saved) return Promise.resolve({ status: "savedNetwork" });
       if (tablet.delayed) return Promise.resolve({ status: "notConnected" });
       tablet.ssid = options.ssid;
-      return Promise.resolve({ status: "connected" });
+      tablet.captivePortal = tablet.captiveOnJoin;
+      return Promise.resolve({ status: tablet.captivePortal ? "captivePortal" : "connected" });
     },
   };
-  return { tablet, plugin };
+  const wifiSignIn: WifiSignIn = {
+    getWifiSignIn: async () => {
+      const validated = tablet.ssid !== null && tablet.validated && !tablet.captivePortal;
+      const { network } = await plugin.getConnectedNetwork();
+      return {
+        required: tablet.captivePortal,
+        validated,
+        access: validated && !tablet.hideAccess && tablet.location === "granted" && network !== null ? [network] : [],
+      };
+    },
+    openWifiSignIn: () => { tablet.signIns += 1; return Promise.resolve(); },
+  };
+  return { tablet, plugin, wifiSignIn };
 }
 
 describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () => {
   // spec/app/network.md, "Story: See why no networks are listed"
   actOnScreen();
-  it("joins open and password networks", async () => {
-    const { tablet, plugin } = android();
-    const runtime = ManagedRuntime.make(wifiPage(plugin));
+  it("joins open, password and sign-in networks", async () => {
+    const { tablet, plugin, wifiSignIn } = android();
+    const runtime = ManagedRuntime.make(wifiPage(plugin, wifiSignIn));
     const host = document.body.appendChild(document.createElement("div"));
     const root = createRoot(host);
     onTestFinished(async () => {
@@ -61,10 +91,30 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
       await expect.element(page.getByRole("button", { name, exact: true })).not.toBeInTheDocument();
       await expect.element(page.getByRole("region", { name: "Wi-Fi" }).getByText(name, { exact: true })).toBeVisible();
     };
-    const button = (name: string) => page.getByRole("button", { name });
+    const button = (name: string | RegExp) => page.getByRole("button", { name });
     const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name })));
+    const changed = () => act(() => Promise.resolve(window.dispatchEvent(new Event("android-network-changed"))));
+    const shown = () => act(() => Promise.resolve(document.dispatchEvent(new Event("visibilitychange"))));
+    const signInLabel = "Sign in through Android Wi-Fi";
+    const signIn = button(signInLabel);
     let fixes = 0;
+    tablet.ssid = guest.ssid;
+    tablet.captivePortal = true;
+    tablet.otherDefault = true;
+    await draw(true);
+    await expect.element(signIn).toBeVisible();
+    expect(tablet.location).toBe("prompt");
+    expect(tablet.signIns).toBe(0);
+    await tap(signInLabel);
+    await expect.poll(() => tablet.signIns).toBe(1);
+    expect(tablet.panels).toBe(0);
+    tablet.ssid = null;
+    tablet.captivePortal = false;
+    tablet.otherDefault = false;
     await draw(false);
+    await shown();
+    await expect.element(signIn).not.toBeInTheDocument();
+
     await tap("Fix Wi-Fi");
     expect(fixes).toBe(1);
     await draw(true);
@@ -81,6 +131,11 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await joinedTo("Riverside Library Guest");
 
     await tap("NETGEAR-4F2");
+    await act(() => userEvent.type(page.getByLabelText("Password"), "abandoned"));
+    await tap("Cancel");
+    await expect.element(button("NETGEAR-4F2")).toBeVisible();
+    await tap("NETGEAR-4F2");
+    await expect.element(page.getByLabelText("Password")).toHaveValue("");
     for (const typed of ["abc", "wrongpass"]) {
       await act(() => userEvent.type(page.getByLabelText("Password"), typed));
       await tap("Join");
@@ -90,7 +145,6 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await act(() => userEvent.type(page.getByLabelText("Password"), "garden2024{Enter}"));
     await expect.element(page.getByLabelText("Password")).not.toBeInTheDocument();
     await expect.element(button("Try again")).toBeVisible();
-    const changed = () => act(() => Promise.resolve(window.dispatchEvent(new Event("android-network-changed"))));
     tablet.visible = false;
     await changed();
     await expect.element(page.getByRole("button", { name: "Look again" })).toBeVisible();
@@ -135,7 +189,6 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     tablet.visible = true;
     await changed();
 
-    const shown = () => act(() => Promise.resolve(document.dispatchEvent(new Event("visibilitychange"))));
     await tap("Sunrise Community Center");
     await expect.poll(() => tablet.panels).toBe(1);
     await shown();
@@ -189,9 +242,95 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await joinedTo("Internet connection");
     await expect.element(openAndroidWifi).toBeVisible();
     tablet.validated = true;
+    const legacyObservation = vi.spyOn(wifiSignIn, "getWifiSignIn").mockResolvedValue({ required: false, validated: true });
     await changed();
     await joinedTo("NETGEAR-4F2");
     await expect.element(openAndroidWifi).not.toBeInTheDocument();
+    legacyObservation.mockRestore();
     expect(tablet.joins).toHaveLength(6);
+
+    tablet.saved = false;
+    tablet.delayed = false;
+    tablet.captiveOnJoin = true;
+    await draw(false);
+    await tap(guest.ssid);
+    await expect.element(signIn).toBeVisible();
+    await expect.poll(() => tablet.signIns).toBe(2);
+    await shown();
+    await expect.element(signIn).toBeVisible();
+    await tap(signInLabel);
+    await expect.poll(() => tablet.signIns).toBe(3);
+
+    tablet.captivePortal = false;
+    tablet.validated = false;
+    tablet.visible = false;
+    await changed();
+    await expect.element(button("Look again")).toBeVisible();
+    await expect.element(signIn).toBeVisible();
+    await expect.element(page.getByText("Connected", { exact: true })).not.toBeInTheDocument();
+
+    tablet.visible = true;
+    tablet.ssid = "Sunrise Community Center";
+    tablet.validated = true;
+    await draw(true);
+    await changed();
+    await joinedTo("Sunrise Community Center");
+    await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
+    await expect.element(signIn).not.toBeInTheDocument();
+
+    const scanStarted = await Effect.runPromise(Deferred.make<void>());
+    const releaseScan = await Effect.runPromise(Deferred.make<void>());
+    const finishScan = async () => { await Effect.runPromise(Deferred.succeed(releaseScan, undefined)); };
+    onTestFinished(finishScan);
+    tablet.holdScan = async () => {
+      await Effect.runPromise(Deferred.succeed(scanStarted, undefined));
+      await Effect.runPromise(Deferred.await(releaseScan));
+    };
+    tablet.ssid = guest.ssid;
+    tablet.otherDefault = true;
+    await changed();
+    await Effect.runPromise(Deferred.await(scanStarted));
+    tablet.ssid = "NETGEAR-4F2";
+    await act(finishScan);
+    await joinedTo("NETGEAR-4F2");
+    await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
+
+    tablet.ssid = guest.ssid;
+    tablet.otherDefault = false;
+    tablet.hideAccess = true;
+    await changed();
+    await joinedTo("Internet connection");
+    await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
+
+    const previousScan = tablet.scan;
+    const pendingAfterRefresh = async (observedNetwork: string) => {
+      tablet.scan = [guest, nearby(observedNetwork, -65, "open")];
+      await changed();
+      await expect.element(button(observedNetwork)).toBeVisible();
+      await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
+    };
+    const observation = vi.spyOn(wifiSignIn, "getWifiSignIn");
+    observation.mockRejectedValue(new Error("Android Wi-Fi status unavailable"));
+    await pendingAfterRefresh("Library Guest");
+    observation.mockResolvedValue({ required: false, validated: true, access: null });
+    await pendingAfterRefresh("Community Guest");
+    observation.mockRestore();
+    tablet.scan = previousScan;
+
+    tablet.otherDefault = true;
+    tablet.hideAccess = false;
+    await changed();
+    await joinedTo(guest.ssid);
+    await expect.element(signIn).not.toBeInTheDocument();
+
+    tablet.ssid = null;
+    tablet.otherDefault = false;
+    await draw(false);
+    await changed();
+    await expect.element(page.getByRole("button", { name: guest.ssid, exact: true })).toBeVisible();
+    await expect.element(signIn).not.toBeInTheDocument();
+    expect({ panels: tablet.panels, signIns: tablet.signIns, lastJoin: tablet.joins.at(-1) }).toEqual({
+      panels: 5, signIns: 3, lastJoin: { ssid: guest.ssid, security: "open" },
+    });
   });
 });

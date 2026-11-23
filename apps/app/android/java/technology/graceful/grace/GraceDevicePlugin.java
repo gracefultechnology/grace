@@ -1,15 +1,27 @@
 package technology.graceful.grace;
 
+import android.Manifest;
+import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.location.LocationManager;
 import android.media.AudioManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.wifi.WifiInfo;
 import android.os.BatteryManager;
+import android.os.Build;
 import android.os.PowerManager;
+import android.provider.Settings;
 import android.view.Window;
 import android.view.WindowManager;
 import androidx.core.content.ContextCompat;
+import ai.eliza.plugins.wifi.WiFiStateReader;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -19,10 +31,14 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "GraceDevice")
 public class GraceDevicePlugin extends Plugin {
  private static final int MEDIA = AudioManager.STREAM_MUSIC;
+ private static final String VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION";
+ private static final String MUTE_CHANGED = "android.media.STREAM_MUTE_CHANGED_ACTION";
  private AudioManager audio;
- private final BroadcastReceiver screen = new BroadcastReceiver() {
+ private final BroadcastReceiver reports = new BroadcastReceiver() {
   @Override public void onReceive(Context context, Intent intent) {
-   notifyListeners("screen", new JSObject().put("on", Intent.ACTION_SCREEN_ON.equals(intent.getAction())));
+   String action = intent.getAction();
+   if (VOLUME_CHANGED.equals(action) || MUTE_CHANGED.equals(action)) notifyListeners("volume", volume());
+   else notifyListeners("screen", new JSObject().put("on", Intent.ACTION_SCREEN_ON.equals(action)));
   }
  };
 
@@ -30,22 +46,18 @@ public class GraceDevicePlugin extends Plugin {
   audio = getContext().getSystemService(AudioManager.class);
   IntentFilter changes = new IntentFilter(Intent.ACTION_SCREEN_ON);
   changes.addAction(Intent.ACTION_SCREEN_OFF);
-  ContextCompat.registerReceiver(getContext(), screen, changes, ContextCompat.RECEIVER_NOT_EXPORTED);
- }
-
- @Override protected void handleOnResume() {
-  super.handleOnResume();
-  notifyListeners("volume", volume());
+  changes.addAction(VOLUME_CHANGED);
+  changes.addAction(MUTE_CHANGED);
+  ContextCompat.registerReceiver(getContext(), reports, changes, ContextCompat.RECEIVER_NOT_EXPORTED);
  }
 
  @Override protected void handleOnDestroy() {
-  getContext().unregisterReceiver(screen);
+  getContext().unregisterReceiver(reports);
   super.handleOnDestroy();
  }
 
  void stepVolume(boolean up) {
   audio.adjustStreamVolume(MEDIA, up ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER, 0);
-  notifyListeners("volume", volume());
  }
 
  @PluginMethod public void getDevice(PluginCall call) {
@@ -54,6 +66,52 @@ public class GraceDevicePlugin extends Plugin {
    .put("brightness", brightness())
    .put("battery", battery())
    .put("screenOn", getContext().getSystemService(PowerManager.class).isInteractive()));
+ }
+
+ @SuppressWarnings("deprecation")
+ @PluginMethod public void getWifiSignIn(PluginCall call) {
+  ConnectivityManager connectivity = getContext().getSystemService(ConnectivityManager.class);
+  MainActivity activity = getActivity() instanceof MainActivity host ? host : null;
+  boolean hasIdentity = activity != null
+   && getContext().checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+   && getContext().getSystemService(LocationManager.class).isLocationEnabled();
+  boolean required = false;
+  boolean validated = false;
+  JSArray access = new JSArray();
+  for (Network network : connectivity.getAllNetworks()) {
+   NetworkCapabilities capabilities = connectivity.getNetworkCapabilities(network);
+   if (capabilities == null || !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+     || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
+   if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)) {
+    required = true;
+    continue;
+   }
+   if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) continue;
+   validated = true;
+   if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || activity == null || !hasIdentity) continue;
+   WifiInfo info = activity.validatedWifi(network);
+   if (info == null) continue;
+   String ssid = WiFiStateReader.Companion.disclosedSsid(info.getSSID());
+   String bssid = info.getBSSID();
+   int security = info.getCurrentSecurityType();
+   if (ssid == null || bssid == null || security == WifiInfo.SECURITY_TYPE_UNKNOWN) continue;
+   boolean secured = security != WifiInfo.SECURITY_TYPE_OPEN && security != WifiInfo.SECURITY_TYPE_OWE;
+   access.put(new JSObject().put("ssid", ssid).put("bssid", bssid).put("secured", secured));
+  }
+  JSObject status = new JSObject().put("required", required).put("validated", validated);
+  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) status.put("access", access);
+  call.resolve(status);
+ }
+
+ @PluginMethod public void openWifiSignIn(PluginCall call) {
+  getBridge().executeOnMainThread(() -> {
+   try {
+    getActivity().startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
+    call.resolve();
+   } catch (ActivityNotFoundException | SecurityException unavailable) {
+    call.reject("Android’s Wi-Fi settings could not be opened", "unavailable", unavailable);
+   }
+  });
  }
 
  @PluginMethod public void setVolume(PluginCall call) {

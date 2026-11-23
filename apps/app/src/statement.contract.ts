@@ -3,7 +3,7 @@ import { Arbitrary, Schema } from "effect";
 import { contract } from "vibestack/testing";
 import { type StatementAnswer, type StatementFact, statementAnswer } from "./statementLabels.ts";
 
-const dueLabels = ["Total amount due", "Amount due", "Total due", "Balance due", "Total Balance Due", "Current amount due", "Your amount due", "AMOUNT DUE", "Payment due", "Account balance (amount due)", "Current balance (amount due)"] as const;
+const dueLabels = ["Total amount due", "Total installment due", "Amount due", "Total due", "Balance due", "Total Balance Due", "Current amount due", "Your amount due", "AMOUNT DUE", "Payment due", "Account balance (amount due)", "Current balance (amount due)"] as const;
 const balanceLabels = ["New Balance", "Statement balance", "Last statement balance", "Your new balance", "New balance due"] as const;
 const remainingLabels = ["Remaining statement balance", "Remaining Balance Due", "REMAINING STATEMENT BALANCE"] as const;
 const dateLabels = ["Payment due date", "Due date", "Bill due date", "Payment due", "Due by", "Payment due by", "Pay by", "Due on", "PAYMENT DUE DATE",

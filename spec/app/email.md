@@ -594,7 +594,8 @@ held behind it cannot be confirmed from the list.
 Links in a flagged message never open from a single tap. The prototype draws the
 link as plain text (`prototype/Grace Prototype.html:1962`); here a tap holds it
 behind the warning, and only the person's separate confirmation of that same
-link releases it to the host, which hands it to the Browser. Cancel drops it.
+link releases it to the host, which hands it to the Browser. The mailbox must
+still be connected with read access when she confirms. Cancel drops it.
 A link in an unflagged message is released at once. Grace never taps a link
 (`prototype/Grace Prototype.html:2107`): only the person opens or confirms one.
 A flagged message cannot become a bill source, so a scam's payment request never
@@ -609,8 +610,8 @@ pure def canOpenLink(m: Mailbox, link: str, by: MailActor): bool =
 pure def openLink(m: Mailbox, link: str, by: MailActor): Mailbox =
   { ...m, link: { ref: m.messageRef, link: link, status: if (m.warning.evidence != "") LinkHeld else LinkReleased } }
 pure def canConfirmLink(m: Mailbox, link: str, confirmed: bool, by: MailActor): bool =
-  by == MailUser and confirmed and m.link.status == LinkHeld and m.link.link == link and
-  m.readStatus == ReadIdle and selectedMessageIsCurrent(m)
+  by == MailUser and m.connection == Connected and m.canRead and confirmed and
+  m.link.status == LinkHeld and m.link.link == link and m.readStatus == ReadIdle and selectedMessageIsCurrent(m)
 pure def confirmLink(m: Mailbox, link: str, confirmed: bool, by: MailActor): Mailbox =
   { ...m, link: { ...m.link, status: LinkReleased } }
 pure def canCancelLink(m: Mailbox, by: MailActor): bool = by == MailUser and m.link.status == LinkHeld
@@ -1227,11 +1228,12 @@ any picker leaves the draft unchanged. Its result must match the exact composer
 revision captured at launch, so a delayed result cannot attach to a later draft. Forwarding copies sanitized selected
 content and attachments into a new editable draft and never sends it.
 
-When adding a file and preparing the message for delivery, the connector
-checks which formats and filenames the provider accepts. The draft can
-carry up to ten attachments with different filenames, ignoring case.
-An older draft with an incompatible attachment stays editable. Its
-attachments are never renamed or converted during delivery.
+When adding a file, saving a draft to the provider, or sending, Grace checks
+the attachment formats and allows at most ten attachments with distinct
+filenames, ignoring case. A forwarded or restored draft keeps its attachments
+and stays editable. The person can remove or replace incompatible attachments
+before saving to the provider or sending. Grace keeps the original filenames
+and formats.
 
 Saving is dispatched to [Files](./files.md). `mayExportAttachments`
 is the source authorization check before the host constructs its `FileImport`;
@@ -1313,6 +1315,7 @@ pure def validMailbox(m: Mailbox): bool =
   alwaysBillProvenance(m) and alwaysScamWarningIsCurrent(m) and alwaysLinkBelongsToSelection(m) and
   alwaysFlaggedMessageIsNoBillSource(m) and alwaysResultPersistenceHasTerminal(m) and
   alwaysSendHasRecipient(m) and alwaysSendEvidence(m) and alwaysApprovalIsCurrent(m) and
+  alwaysDraftCountIsNonnegative(m) and
   alwaysDraftHasAccount(m) and alwaysDraftStoreHasRevision(m) and alwaysRetirementHasMailbox(m) and
   alwaysDraftVersions(m) and alwaysEditableDraftIsNotRetired(m) and alwaysDraftAssetsAreValid(m) and
   alwaysMessageAssetsAreBound(m) and alwaysQueuedSendsAreIssued(m) and alwaysChoosingNeedsComposer(m) and

@@ -1,13 +1,15 @@
 # What a website asks of the person
 
-A complete browser answers more than page loads. A website can show a
+On an ordinary browser tab, websites can do more than load pages. A website can show a
 message, offer a file, ask for a file, ask for the camera, microphone or
 location, link to another app, or send a sign-in that refuses to run inside
 Grace. This module holds each such request for the person until it is
-answered, cancelled or refused, and says what the page is told.
+answered, cancelled or refused, and says what the page is told. A [private
+sign-in tab](./browser.md) handles its page separately and does not relay these
+requests to Grace.
 
 Each request names the tab that raised it, as the [browser](./browser.md)
-numbers tabs. Each Grace tab has its own native browser surface, and the
+numbers tabs. Each ordinary Grace tab has its own native browser surface, and the
 shell presents the selected tab's surface while the browser is shown. A
 request belongs to the page its tab's surface started last. Whatever starts
 a surface's next page, the page's own navigation or Grace's navigation, Back,
@@ -33,11 +35,12 @@ person does from what the host reports, and the shell authenticates it. Each
 `WebsiteReply` names the request and what it asked; it is what the shell
 sends back to the surface or acts on, or, after Android answered, what the
 surface already told the page.
-Reference: `vendor/eliza/plugins/plugin-native-browser-surface/src/definitions.ts`
-and `android/.../BrowserSurfacePlugin.kt`. Every tab's surface is created
-with isolated storage, with one `profileKey` shared by every tab, so all tabs
-use one browsing profile, and with `answersRequests: true`, so its requests
-wait for Grace. The surface reports with the events `dialogRequested`,
+The adapter is in `apps/app/src/nativePage.vibe` and its native counterpart is
+`vendor/eliza/packages/os/android/browser-surface/src/main/java/ai/eliza/plugins/browsersurface/BrowserSurfacePlugin.kt`.
+Each ordinary tab's surface is created with isolated storage, the same
+`profileKey` and `answersRequests: true`, so ordinary tabs share one
+browsing profile and their requests wait for Grace. A private sign-in surface
+has its own temporary storage and leaves both options unset. The surface reports with the events `dialogRequested`,
 `downloadRequested`, `downloadFinished`, `fileChooserRequested`,
 `sitePermissionRequested`, `sitePermissionWithdrawn`,
 `externalLinkRequested`, `identityProviderRequested` and `pageStarted`, and
@@ -432,8 +435,8 @@ site permission she allowed is waiting for Android), it is hers alone to
 answer, as every rule above says, and Grace answers none of it. Holding the
 task while the page holds the person, so that nothing is prepared or done on
 that page until she has answered, is the [workspace](./workspace.md)'s to
-do, through the gate in [deviceKeys](./deviceKeys.md) ("A task waits while a
-website's question holds me, and goes on after my answer"). Answering a
+do ("No task step is taken while a website's question holds the person, and
+the task goes on after her answer"). Answering a
 website message that was the only thing the page held releases it; an
 allowed permission still holds her until Android answers.
 
@@ -858,28 +861,29 @@ pure def sometimesASignInWaitsOnAnotherTab(s: WebsiteRequests): bool =
 
 ## Story: Stay signed in to my websites
 
-> As an older adult, once I sign in to my bank or clinic website, I stay
-> signed in when I open another tab, close the browser or restart my tablet,
-> until I choose to clear my browsing data.
+> As an older adult, when I sign in to my bank or clinic on an ordinary
+> tab, I stay signed in when I open another ordinary tab, close the browser
+> or restart my tablet, until I choose to clear my browsing data.
 
 ### Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation
 
-Grace keeps one browsing profile: every tab's surface uses the same
-`profileKey`, so its cookies belong to no tab. Closing tabs, the last one
-included, Close browser and restarting Grace close pages, not sign-ins. Clear
+Grace keeps one browsing profile for ordinary tabs. Their surfaces use the
+same `profileKey`, and closing those tabs, closing the browser and restarting
+Grace retain that profile's sign-ins. A private sign-in tab keeps its sign-in
+in isolated storage for that tab's lifetime. Clear
 browsing data, in Settings, asks once for confirmation; cancelling it, or
 leaving Settings while it asks, changes nothing. The shell reports Settings
 closing (`settingsClosed`). Confirming purges the profile (`purgeProfiles`
-with that `profileKey`), which closes every tab's surface at once: as when a
-page starts, every request the pages held ends, each told Cancelled
+with that `profileKey`), which closes the surfaces using the ordinary profile.
+As when an ordinary page starts, every request those pages held ends, each told Cancelled
 (messages cancelled, file requests given no file, site permissions denied,
 whether waiting for the person or for Android, offered downloads recorded as
 not saved, questions about another app and refused sign-ins closed), and no
 tab is open here until its new surface starts a page. While the purge runs,
 no page starts: the shell creates no surface until the host reports how the
 purge ended. The purge resolves once the cookies are removed, and says
-whether the profile is left clean (`clean`). Only a clean purge signs every
-website out and forgets every site decision. A purge that is not clean, or
+whether the profile is left clean (`clean`). Only a clean purge removes the
+ordinary profile's sign-ins and forgets its site decisions. A purge that is not clean, or
 that fails, forgets nothing here, and the person sees a plain notice that
 their browsing data was not cleared until they close it or ask to clear
 again. It is a separate action from Clear recent websites in the

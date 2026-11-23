@@ -1,22 +1,70 @@
 // spec/app/workspace.md, "Story: Follow one reviewed plan across apps"; spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"
+import { provesStatementSection, type StatementAmountSource } from "../gen/app__workspace.effect.vibe"
 import { type LinkObservation } from "./nativePage.schema.ts"
-import { type Labeled, statementAnswer } from "./statementLabels.ts"
+import { type Labeled, labeledLineTotal, statementAnswer } from "./statementLabels.ts"
 
 export type StatementRead =
-  | { readonly tag: "Read"; readonly document: string; readonly text: string }
+  | { readonly tag: "Read"; readonly document: string; readonly region: string; readonly text: string }
   | { readonly tag: "Unread"; readonly reason: "NotFound" | "Several" | "Past" | "Changed" | "Covered" }
 
-const pastStatement = /\b(?:past|previous|prior)\s+(?:bills?|statements?|invoices?)\b/iu
+const pastStatement = /\b(?:(?:past|previous|prior|paid|settled|closed|archived)\s+(?:billing\s+)?(?:bills?|statements?|invoices?|installments?)|(?:bill|statement|invoice|installment|payment)\s+(?:history|archive)|(?:bill|statement|invoice|installment)\s+(?:paid|settled|closed))\b/iu
+
+type Region = NonNullable<LinkObservation["result"]["statementRegions"]>["regions"][number]
+
+const oneStatement = /^(?:(?:current|this)\s+(?:bill|invoice|statement|installment)|(?:bill|invoice|statement)\s+(?:#|no\.?\s+|number\s+)\S+)$/iu
+
+function historicalSection(region: Region) {
+  return [region.heading, region.authorLabel, ...(region.ancestorLabels ?? [])]
+    .some((label) => label !== undefined && pastStatement.test(label))
+}
+
+function currentTotal(region: Region, rows: readonly Region[]) {
+  const text = region.fragments.join("\n")
+  const own = statementAnswer(text)
+  const direct: StatementAmountSource = { tag: "SectionAmount" }
+  if (own.tag === "Read" || own.reason !== "NotFound" || ![region.heading, region.authorLabel].some((label) => label !== undefined && oneStatement.test(label.trim())))
+    return { pair: own, source: direct }
+  const totals = rows.flatMap((row) => {
+    const table = row.tableRow
+    if (table?.parentKey !== region.key) return []
+    const columns = table.columns.map((name) => name.trim().toLowerCase()).join("|")
+    if (!/^(?:description|item description|line item|charge description)\|(?:(?:qty|quantity)\|)?amount$/u.test(columns)) return []
+    const amount = labeledLineTotal(row.fragments)
+    return amount ? [{ amount, key: row.key, parentKey: table.parentKey, ordinary: !row.ambiguous && !historicalSection(row) }] : []
+  })
+  if (totals.length !== 1 || !totals[0].ordinary) return { pair: own, source: direct }
+  const total = totals[0]
+  const source: StatementAmountSource = { tag: "OwnedLineTotal", rowKey: total.key, parentKey: total.parentKey }
+  return { pair: statementAnswer(text, { amount: total.amount }), source }
+}
 
 function sentence({ label, value }: Labeled): string {
   return label.charAt(0).toUpperCase() + label.slice(1) + ": " + value + "."
 }
 
-export function statementRead(snapshot: LinkObservation, url: string): StatementRead {
+export function statementRead(snapshot: LinkObservation, scoped: LinkObservation, url: string): StatementRead {
   const { result } = snapshot
-  if (result.url !== url || result.readyState !== "complete") return { tag: "Unread", reason: "Changed" }
+  if (result.url !== url || result.readyState !== "complete" || scoped.documentId !== snapshot.documentId || scoped.result.url !== url || scoped.result.readyState !== "complete") return { tag: "Unread", reason: "Changed" }
   if (result.blockers.some((item) => item.covers !== "partial")) return { tag: "Unread", reason: "Covered" }
-  if (pastStatement.test(result.title ?? "")) return { tag: "Unread", reason: "Past" }
-  const answer = statementAnswer(result.text ?? "")
-  return answer.tag === "Unread" ? answer : { tag: "Read", document: snapshot.documentId, text: sentence(answer.amount) + " " + sentence(answer.due) }
+  if (pastStatement.test(result.title ?? "") || pastStatement.test(scoped.result.title ?? "")) return { tag: "Unread", reason: "Past" }
+  const evidence = scoped.result.statementRegions
+  if (!evidence?.complete) return { tag: "Unread", reason: "NotFound" }
+  if (pastStatement.test(evidence.primaryHeading ?? "")) return { tag: "Unread", reason: "Past" }
+  const sections = evidence.regions.flatMap((region) => {
+    const { pair, source } = currentTotal(region, evidence.regions)
+    if (pair.tag === "Unread") return []
+    const historical = historicalSection(region)
+    return [{ key: region.key, pair, source, historical, ambiguous: region.ambiguous === true }]
+  })
+  const section = sections[0]
+  if (section === undefined) return { tag: "Unread", reason: "NotFound" }
+  if (sections.length !== 1 || section.ambiguous) return { tag: "Unread", reason: "Several" }
+  if (section.historical) return { tag: "Unread", reason: "Past" }
+  const answer = statementAnswer(result.text ?? "", section.pair)
+  if (answer.tag === "Unread") return answer
+  const sources = sections.map(({ key, pair, source, historical, ambiguous }) => ({ key, source, ordinary: !historical && !ambiguous, amount: pair.amount.value, due: pair.due.value }))
+  if (!provesStatementSection(evidence.complete, sources, answer.amount.value, answer.due.value))
+    return { tag: "Unread", reason: "Several" }
+  return { tag: "Read", document: snapshot.documentId, region: JSON.stringify([section.key, section.source]),
+    text: sentence(section.pair.amount) + " " + sentence(section.pair.due) }
 }

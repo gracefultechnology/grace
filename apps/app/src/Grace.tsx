@@ -6,7 +6,7 @@ import { Effect, Exit, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { CalendarNews } from "./calendar.vibe";
-import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, nextOutcome, priorGuidedMail, type GuidedStep } from "../gen/app__workspace.ts";
+import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, resumeAvailable, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import type { GuidedCheck } from "./conversation.vibe";
@@ -37,6 +37,7 @@ function recordCriteria(step: Extract<GuidedStep, { tag: "ReadLatestRecord" }>):
 }
 
 function stepInstruction(step: GuidedStep): string {
+  if (step.tag === "SortPublicListing") return `Open “${step.subject}” and sort by ${step.direction === "PriceAscending" ? "lowest" : "highest"} price first.`;
   if (step.tag === "ReachNamedPage") return `Find and check “${step.subject}”.`;
   if (step.tag === "ReadLatestRecord") return recordCriteria(step);
   if (step.tag === "SearchPublicSite") return `Use ${step.origin}’s search for “${step.query}”.`;
@@ -47,8 +48,9 @@ const checks: Record<GuidedStep["tag"], { label: string; item: string; missing: 
   ReadMail: { label: "Check email", item: "email", missing: "I couldn’t read an open email. Open the one you want me to check." },
   ReadBrowser: { label: "Check page", item: "page", missing: "I couldn’t read the page in this tab. Wait for it to load, then check again." },
   ReadChangedBrowser: { label: "Check page", item: "page", missing: "Open the page you want me to read, then check again." },
+  SortPublicListing: { label: "Check price order", item: "page", missing: "I couldn’t verify the category and price order here. Use the site’s Sort By control, then check again." },
   ReachNamedPage: { label: "Check page", item: "page", missing: "" },
-  ReadLatestRecord: { label: "Check page", item: "page", missing: "I couldn’t verify the latest matching record on this page." },
+  ReadLatestRecord: { label: "Check page", item: "page", missing: "I couldn’t verify the latest record here. Open the website’s record history to check the status and full dates." },
   SearchPublicSite: { label: "Check search results", item: "page", missing: "I couldn’t verify these search results. Use the reviewed website’s search and try again." },
   ReadStatement: { label: "Read statement", item: "page", missing: "I couldn’t find one amount due and one due date on this page." },
   ReadCalendar: { label: "Check appointment", item: "appointment", missing: "I couldn’t read an open appointment. Open the one you want me to check." },
@@ -128,8 +130,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     ? savePlan ? "Planned checks complete" : "Read checks complete"
     : null;
   const stop = { type: "stop" } as const;
-  const resume = { type: "resume" } as const;
-  const paused = hasPlan && ownsPlan && can(resume);
+  const paused = hasPlan && ownsPlan && workspace && resumeAvailable(workspace, "Person");
   const pausable = hasPlan && ownsPlan && assistant.activity !== "Paused" && can(stop);
   const stepKind = currentStep?.tag ?? "SurfaceOutcome";
   const details = currentStep && guidedDetails(currentStep);
@@ -150,7 +151,9 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const recoveryInstruction = recoveredSave ? recoveredSave.occurrence
     ? "Open the saved appointment in Calendar to check it."
     : "The save was interrupted. Check your calendar before asking to save this appointment again."
-    : reopenMail ? "Reopen the original email and check it before reviewing the appointment." : undefined;
+    : reopenMail ? "Reopen the original email and check it before reviewing the appointment."
+    : needsRecoveredPublicTab(plan) && (currentStep?.tag === "SearchPublicSite" || currentStep?.tag === "SortPublicListing")
+      ? `Open a public page on ${currentStep.origin} in Internet. Allow Grace to read it, then choose Resume Grace.` : undefined;
   const canCheck = ownsPlan && label && (checkSurface !== "Browser" || workspace?.device.observationAllowed) &&
     checkSurface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
@@ -254,7 +257,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <p className="text-body">I can check the items you open. These checks leave any requested changes for separate review.</p>
               <ol aria-label="Read plan" className="list-decimal pl-6">
                 {keyedSteps(review.request.steps).map(({ step, key }) =>
-                  <li key={key}>{step.tag === "ReadLatestRecord" || step.tag === "SearchPublicSite" ? stepInstruction(step) : guidedDetails(step).subject}</li>)}
+                  <li key={key}>{step.tag === "SortPublicListing" || step.tag === "ReadLatestRecord" || step.tag === "SearchPublicSite" ? stepInstruction(step) : guidedDetails(step).subject}</li>)}
               </ol>
               {startFailure === review.revision && <p role="status">Grace couldn’t start this plan. Check your account and device storage, then try again.</p>}
               <AnswerChips><AnswerChip onClick={() => {

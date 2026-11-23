@@ -51,7 +51,9 @@ import handoffs as H from "./handoffs"
 
 type WorkspaceActor = Person | Host | Store | Actuator
 type StepDetails = { surface: S::Surface, subject: str, outcome: str }
+type PriceDirection = PriceAscending | PriceDescending
 type GuidedStep = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | ReadCalendar | SaveMailAppointment
+  | SortPublicListing({ subject: str, origin: str, tabId: int, direction: PriceDirection })
   | ReachNamedPage({ subject: str }) | ReadLatestRecord({ collection: str, status: str }) | SearchPublicSite({ query: str, origin: str, tabId: int })
   | SurfaceOutcome({ surface: S::Surface, subject: str, outcome: str })
 type GuidedMail = { account: int, owner: str, address: str, ref: str, generation: int, revision: int, version: str }
@@ -82,11 +84,16 @@ type GuidedRecordSelection = {
   key: str, coverage: RecordCoverage, matches: int
 }
 type GuidedRecordState = NoGuidedRecordSelection | StagedGuidedRecord({ selection: GuidedRecordSelection })
+type GuidedTabSession = ReviewedTabs | RestoredTabs | RestoredPublicTab({ stepIndex: int, tabId: int, loadVersion: int, documentId: str })
+type GuidedTabRecovery = {
+  owner: str, task: str, version: int, stepIndex: int, deviceVersion: int, browserRevision: int,
+  tabId: int, loadVersion: int, documentId: str, url: str, origin: str
+}
 type GuidedPlan = {
   owner: str, steps: List[GuidedStep], receipts: List[GuidedReceipt], openingBrowser: int, originalAsk: str, linkStep: int, linkUrl: str,
   mail: GuidedMail, calendarApproval: GuidedCalendarApproval, savedOccurrence: str, savedEvidence: str,
   nameCorrection: GuidedNameCorrectionState, nameOverride: GuidedNameOverride, saveRecovery: GuidedCheckpointSave,
-  recordSelection: GuidedRecordState
+  recordSelection: GuidedRecordState, tabSession: GuidedTabSession
 }
 type GuidedRequest = { owner: str, task: str, goal: str, steps: List[GuidedStep] }
 type GuidedObservation = {
@@ -94,6 +101,7 @@ type GuidedObservation = {
   step: GuidedStep, sourceKey: str, evidence: str
 }
 type GuidedRecordCheck = { report: GuidedObservation, key: str, tabId: int, documentId: str, loadVersion: int }
+type GuidedSortCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, tabId: int, category: str, direction: PriceDirection }
 type GuidedNamedPageCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, heading: str }
 type GuidedSearchCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, query: str }
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
@@ -118,7 +126,7 @@ pure val emptyPlan: GuidedPlan = {
   owner: "", steps: List(), receipts: List(), openingBrowser: 0, originalAsk: "", linkStep: -1, linkUrl: "",
   mail: noGuidedMail, calendarApproval: noGuidedApproval, savedOccurrence: "", savedEvidence: "",
   nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched,
-  recordSelection: NoGuidedRecordSelection
+  recordSelection: NoGuidedRecordSelection, tabSession: ReviewedTabs
 }
 pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadMail => { surface: S::Email, subject: "Open email", outcome: "Open the email you want me to read." }
@@ -128,26 +136,58 @@ pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadCalendar => { surface: S::Calendar, subject: "Saved appointment", outcome: "Open the saved appointment you want me to read." }
   | SaveMailAppointment => { surface: S::Calendar, subject: "Appointment from the email", outcome: "Ask me to prepare the appointment from the email. Approve its details separately." }
   | ReachNamedPage(target) => { surface: S::Browser, subject: target.subject, outcome: "Find and check the named page." }
+  | SortPublicListing(target) => { surface: S::Browser, subject: target.subject, outcome: "Check the requested category and price order." }
   | SearchPublicSite(target) => { surface: S::Browser, subject: target.query, outcome: "Search on the website, then check the results." }
   | ReadLatestRecord(intent) => { surface: S::Browser, subject: intent.collection, outcome: "Check the latest record matching the reviewed status." }
   | SurfaceOutcome(details) => { surface: details.surface, subject: details.subject, outcome: details.outcome }
 }
 pure val noGuidedStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "", outcome: "" })
 pure def hasNext(plan: GuidedPlan): bool = plan.receipts.length() < plan.steps.length()
+pure def publicStepOrigin(guidedStep: GuidedStep): str = match guidedStep {
+  | SearchPublicSite(target) => target.origin
+  | SortPublicListing(target) => target.origin
+  | _ => ""
+}
+pure def needsRecoveredPublicTab(plan: GuidedPlan): bool =
+  val index = plan.receipts.length()
+  val session = plan.tabSession
+  publicStepOrigin(plan.steps.nthOr(index, noGuidedStep)) != "" and (match session {
+    | ReviewedTabs => false
+    | RestoredTabs => true
+    | RestoredPublicTab(binding) => binding.stepIndex != index
+  })
+pure def publicResultLoad(plan: GuidedPlan, loadVersion: int, documentId: str): bool =
+  val session = plan.tabSession
+  match session {
+    | RestoredPublicTab(binding) => if (binding.stepIndex == plan.receipts.length())
+      loadVersion > binding.loadVersion or (loadVersion == binding.loadVersion and documentId == binding.documentId)
+      else loadVersion > plan.openingBrowser
+    | _ => loadVersion > plan.openingBrowser
+  }
 pure def nextOutcome(plan: GuidedPlan): GuidedStep = {
   val index = plan.receipts.length()
   val plannedOutcome = plan.steps.nthOr(index, noGuidedStep)
+  val session = plan.tabSession
   if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match plannedOutcome {
     | ReachNamedPage(_) => ReachNamedPage({ subject: plan.nameOverride.label })
     | _ => plannedOutcome
-  } else plannedOutcome
+  } else match session {
+      | RestoredPublicTab(binding) => if (binding.stepIndex == index) match plannedOutcome {
+        | SearchPublicSite(target) => SearchPublicSite({ query: target.query, origin: target.origin, tabId: binding.tabId })
+        | SortPublicListing(target) => SortPublicListing({ subject: target.subject, origin: target.origin, direction: target.direction, tabId: binding.tabId })
+        | _ => plannedOutcome
+      } else plannedOutcome
+      | _ => plannedOutcome
+  }
 }
 type Workspace = {
   device: S::Shell, browser: B::Browser, assistant: A::Assistant,
   execution: X::Execution, commitment: CM::Commitment, otherCommitments: List[CM::Commitment],
   preferences: R::Preferences, wake: W::Wake,
-  plan: GuidedPlan, review: GuidedReview, commitmentTask: str, observedDevice: int, observedBrowser: int
+  plan: GuidedPlan, review: GuidedReview, commitmentTask: str, observedDevice: int, observedBrowser: int,
+  websiteHold: WebsiteHold
 }
+type WebsiteHold = NoWebsiteHold | WebsiteHolds | WebsiteAnswered({ task: str, workVersion: int, observation: int })
 type WorkspaceEffect = Execute({ deviceVersion: int, browserRevision: int, effect: X::WebsiteEffect })
   | Commit({ deviceVersion: int, browserRevision: int, taskVersion: int, effect: CM::CommitmentEffect })
   | WakeFeedback({ signal: W::WakeSignal })
@@ -205,7 +245,8 @@ pure val initial: Workspace = {
   device: S::initial, browser: B::initial, assistant: A::initial,
   execution: X::initial, commitment: CM::initial, otherCommitments: List(),
   preferences: R::initial, wake: W::initial,
-  plan: emptyPlan, review: emptyReview(0), commitmentTask: "", observedDevice: 0, observedBrowser: 0
+  plan: emptyPlan, review: emptyReview(0), commitmentTask: "", observedDevice: 0, observedBrowser: 0,
+  websiteHold: NoWebsiteHold
 }
 pure def privateSignInActive(w: Workspace): bool =
   w.device.surface == S::Browser and B::activeTab(w.browser).manualSignIn
@@ -666,7 +707,7 @@ pure def guidanceVisible(w: Workspace): bool = guidanceIsCurrent(w) and w.assist
 pure def canPublishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, guidanceKind: A::GuidanceKind, guidanceTitle: str, by: WorkspaceActor): bool =
   by == Host and w.device.readiness == S::Ready and
   guidanceReport.deviceVersion == w.device.contextVersion and guidanceReport.browserRevision == w.browser.revision and
-  A::canPublishGuidanceAs(w.assistant, guidanceReport, guidanceKind, guidanceTitle, C::ConversationRuntime)
+  A::canPublishGuidanceAs(w.assistant, guidanceReport, guidanceKind, guidanceTitle, C::ConversationRuntime) and not(heldByWebsite(w))
 pure def publishGuidance(w: Workspace, guidanceReport: A::GuidanceReport, guidanceKind: A::GuidanceKind, guidanceTitle: str, by: WorkspaceActor): Workspace = {
   ...w, assistant: A::publishGuidanceAs(w.assistant, guidanceReport, guidanceKind, guidanceTitle, C::ConversationRuntime)
 }
@@ -978,7 +1019,7 @@ pure def canReceiveProgress(w: Workspace, progress: ProgressReport, by: Workspac
    (progress.kind == CommitmentProgress and w.assistant.activity == A::WebsiteWait and
     w.commitmentTask != "" and w.commitmentTask == progress.task and X::canInvalidate(w.execution, X::BrowserBridge) and
     w.commitment.stage == CM::Checking and w.commitment.dispatched and
-    progress.commitmentRevision == w.commitment.revision and progress.attempt == w.commitment.attempt))
+    progress.commitmentRevision == w.commitment.revision and progress.attempt == w.commitment.attempt)) and not(heldByWebsite(w))
 pure def receiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceActor): Workspace = {
   ...w, browser: if (progress.destination == "") B::pageChanged(w.browser) else B::pageMoved(w.browser, progress.destination),
   execution: X::invalidate(w.execution, X::BrowserBridge),
@@ -1001,11 +1042,13 @@ pure def hasRecoveredSaveReference(save: GuidedCheckpointSave): bool = match sav
   | GuidedSaveUntouched => false
   | GuidedSaveReconcile(ref) => ref.occurrence != "" and ref.detailsDigest != ""
 }
-pure def canResume(w: Workspace, by: WorkspaceActor): bool =
+pure def resumeAvailable(w: Workspace, by: WorkspaceActor): bool =
   by == Person and A::canResume(w.assistant, C::ConversationUser) and
   (if (hasNext(w.plan)) w.device.readiness == S::Ready and w.assistant.replacementId == "" and
     (w.plan.saveRecovery == GuidedSaveUntouched or hasRecoveredSaveReference(w.plan.saveRecovery))
    else mayAssist(w) and X::canResume(w.execution, X::User))
+pure def canResume(w: Workspace, by: WorkspaceActor): bool =
+  resumeAvailable(w, by) and not(needsRecoveredPublicTab(w.plan))
 pure def resume(w: Workspace, by: WorkspaceActor): Workspace = {
   ...w, assistant: A::resume(w.assistant, C::ConversationUser),
   execution: if (hasNext(w.plan)) w.execution else X::resume(w.execution, X::User),
@@ -1054,7 +1097,7 @@ pure def observationArrives(w: Workspace, currentObservation: CurrentObservation
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking or
     (w.assistant.activity == A::WebsiteWait and w.commitment.stage == CM::Checking and w.commitment.dispatched))
 pure def canObserve(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
-  observationArrives(w, currentObservation, by) and X::canObserve(w.execution, currentObservation.website, X::BrowserBridge)
+  observationArrives(w, currentObservation, by) and X::canObserve(w.execution, currentObservation.website, X::BrowserBridge) and not(heldByWebsite(w))
 pure def observe(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): Workspace =
   val observedWorkspace = {
     ...w, execution: X::observe(w.execution, currentObservation.website, X::BrowserBridge),
@@ -1069,7 +1112,7 @@ pure def canPrepare(w: Workspace, operationRequest: OperationRequest, by: Worksp
   operationRequest.deviceVersion == w.device.contextVersion and operationRequest.browserRevision == w.browser.revision and
   operationRequest.generation == w.execution.generation and operationRequest.taskVersion == w.assistant.workVersion and
   A::canStartStep(w.assistant, w.assistant.taskId, operationRequest.taskVersion, operationRequest.target, C::ConversationRuntime) and
-  X::canPrepare(w.execution, operationRequest.target, operationRequest.valueRef, operationRequest.kind, operationRequest.observation, X::BrowserBridge)
+  X::canPrepare(w.execution, operationRequest.target, operationRequest.valueRef, operationRequest.kind, operationRequest.observation, X::BrowserBridge) and not(heldByWebsite(w))
 pure def prepare(w: Workspace, operationRequest: OperationRequest, by: WorkspaceActor): Workspace = {
   ...w, assistant: A::startStep(w.assistant, w.assistant.taskId, operationRequest.taskVersion, operationRequest.target, C::ConversationRuntime),
   execution: X::prepare(w.execution, operationRequest.target, operationRequest.valueRef, operationRequest.kind, operationRequest.observation, X::BrowserBridge),
@@ -1113,6 +1156,18 @@ pure def leaveToPerson(w: Workspace, operationRequest: OperationRequest, by: Wor
 }
 pure def sometimesOtherOriginBlocksTask(w: Workspace): bool =
   w.assistant.activity == A::UserWait and X::sometimesOtherOriginRefused(w.execution)
+pure val eval_witness_sometimesOtherOriginBlocksTask = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://www.utility.example/home" }, Host),
+  ("refuseOrigin", { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://www.utility.example" },
+    checkpoint: "The website changed" }, Host)
+)
 pure def sometimesStepLeftToPerson(w: Workspace): bool =
   w.assistant.activity == A::UserWait and X::sometimesOutOfReachStepIsThePersons(w.execution)
 ```
@@ -1132,7 +1187,7 @@ pure def canDispatch(w: Workspace, tokens: OperationTokens, by: WorkspaceActor):
   by == Actuator and mayAssist(w) and observationIsCurrent(w) and
   tokens.deviceVersion == w.device.contextVersion and tokens.browserRevision == w.browser.revision and
   tokens.taskVersion == w.assistant.workVersion and
-  X::canDispatch(w.execution, tokens.generation, tokens.observation, X::Dispatcher)
+  X::canDispatch(w.execution, tokens.generation, tokens.observation, X::Dispatcher) and not(heldByWebsite(w))
 pure def dispatch(w: Workspace, tokens: OperationTokens, by: WorkspaceActor): WorkspaceResult =
   val result = X::dispatch(w.execution, tokens.generation, tokens.observation, X::Dispatcher)
   { state: { ...w, execution: result.state },
@@ -1142,7 +1197,7 @@ pure def canVerify(w: Workspace, currentVerification: CurrentVerification, by: W
   by == Host and mayAssist(w) and observationIsCurrent(w) and currentVerification.deviceVersion == w.device.contextVersion and
   currentVerification.browserRevision == w.browser.revision and currentVerification.taskVersion == w.assistant.workVersion and
   A::canReceiveStep(w.assistant, w.assistant.taskId, currentVerification.taskVersion, w.assistant.operation, currentVerification.checkpoint, C::ConversationRuntime) and
-  X::canVerify(w.execution, currentVerification.website, X::BrowserBridge)
+  X::canVerify(w.execution, currentVerification.website, X::BrowserBridge) and not(heldByWebsite(w))
 pure def verify(w: Workspace, currentVerification: CurrentVerification, by: WorkspaceActor): Workspace =
   val execution = X::verify(w.execution, currentVerification.website, X::BrowserBridge)
   if (currentVerification.website.matches) {
@@ -1202,7 +1257,7 @@ pure def canCompleteOrdinary(w: Workspace, completion: GoalCompletion, by: Works
   completion.deviceVersion == w.device.contextVersion and
   B::observationMatches(w.browser, w.browser.selected, completion.browserRevision) and
   completion.generation == w.execution.generation and completion.observation == w.execution.observation and
-  A::canFinishTask(w.assistant, completion.task, completion.taskVersion, A::Completed, completion.evidence, C::ConversationRuntime)
+  A::canFinishTask(w.assistant, completion.task, completion.taskVersion, A::Completed, completion.evidence, C::ConversationRuntime) and not(heldByWebsite(w))
 pure def completeOrdinary(w: Workspace, completion: GoalCompletion, by: WorkspaceActor): Workspace = {
   ...w, execution: X::retire(w.execution, X::BrowserBridge),
   assistant: A::finishTask(w.assistant, completion.task, completion.taskVersion, A::Completed, completion.evidence, C::ConversationRuntime)
@@ -1249,7 +1304,18 @@ owner. An account change retires a guided task only when the host names its
 current task and work version.
 
 Grace restores the next instruction with a work version newer than the saved
-one. Recovery starts closed and paused. Opening Grace waits for an explicit
+one. Recovery starts closed and paused. For a public search or price sort,
+the person opens the reviewed site in Internet and allows browser reading.
+When the person chooses Resume, Grace observes the selected secure public
+document on the reviewed origin and binds its tab to that step for this
+session. A different site, a private form or a stale observation leaves it
+paused. Binding preserves the reviewed query or category and price order and
+all prior receipts. The person checks the result separately on that same
+document or a later load in that tab. Each later
+public search or sort in the recovered plan needs its own binding. Finishing
+a step retires its binding. A pause before the next step also retires any
+live payment approval while retaining its recorded outcome.
+Opening Grace waits for an explicit
 Resume with the current authority. An observation must use the new work
 version and current app, page and permission. The checkpoint contains no
 queued work, browser session, selected private source, page observation,
@@ -1306,7 +1372,7 @@ pure def restoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActo
   val request = checkpoint.request
   val nextIndex = checkpoint.receipts.length()
   val recoveredPlan: GuidedPlan = { ...emptyPlan, owner: request.owner, steps: request.steps, receipts: checkpoint.receipts,
-    openingBrowser: w.browser.revision, originalAsk: request.goal, saveRecovery: checkpoint.save }
+    openingBrowser: w.browser.revision, originalAsk: request.goal, saveRecovery: checkpoint.save, tabSession: RestoredTabs }
   val correction = checkpoint.correction
   val plan: GuidedPlan = match correction {
     | NoGuidedCheckpointCorrection => recoveredPlan
@@ -1322,6 +1388,33 @@ pure def restoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActo
         else "Check whether the appointment was already saved before starting another plan.",
       workVersion: version },
     commitment: quietCommitment(w.commitment), wake: W::cancel(w.wake, W::WakeHost) }
+pure def canResumePublicTab(w: Workspace, tabRecovery: GuidedTabRecovery, by: WorkspaceActor): bool =
+  val tab = B::activeTab(w.browser)
+  resumeAvailable(w, by) and needsRecoveredPublicTab(w.plan) and not(heldByWebsite(w)) and
+  not(privateSurfaceActive(w)) and w.device.surface == S::Browser and w.device.observationAllowed and
+  w.execution.phase == X::Idle and w.commitmentTask == "" and
+  tab.load == B::Loaded and tab.secure and tabRecovery.owner == w.plan.owner and
+  tabRecovery.task == w.assistant.taskId and tabRecovery.version == w.assistant.workVersion and
+  tabRecovery.stepIndex == w.plan.receipts.length() and tabRecovery.deviceVersion == w.device.contextVersion and
+  tabRecovery.browserRevision == w.browser.revision and tabRecovery.tabId == tab.id and
+  tabRecovery.loadVersion == tab.loadVersion and
+  tabRecovery.documentId != "" and tabRecovery.url != "" and tabRecovery.url == B::tabUrl(tab) and
+  tabRecovery.origin == publicStepOrigin(nextOutcome(w.plan))
+pure def resumePublicTab(w: Workspace, tabRecovery: GuidedTabRecovery, by: WorkspaceActor): Workspace =
+  val active = resume(w, by)
+  { ...active, plan: { ...w.plan, tabSession: RestoredPublicTab({ stepIndex: tabRecovery.stepIndex, tabId: tabRecovery.tabId,
+      loadVersion: tabRecovery.loadVersion, documentId: tabRecovery.documentId }) } }
+pure def lawRestoredPublicTabPreservesReview(w: Workspace, tabRecovery: GuidedTabRecovery, by: WorkspaceActor): bool =
+  val after = resumePublicTab(w, tabRecovery, by)
+  canResumePublicTab(w, tabRecovery, by) implies (
+    not(canResume(w, by)) and not(needsRecoveredPublicTab(after.plan)) and
+    after.plan.steps == w.plan.steps and after.plan.receipts == w.plan.receipts and
+    publicStepOrigin(nextOutcome(after.plan)) == tabRecovery.origin)
+pure val sampleTabRecovery: GuidedTabRecovery = {
+  owner: "owner", task: "task", version: 4, stepIndex: 0, deviceVersion: 3, browserRevision: 4,
+  tabId: 1, loadVersion: 3, documentId: "public-document", url: "https://utility.example/", origin: "https://utility.example"
+}
+pure val tabRecoveryValues: Set[GuidedTabRecovery] = Set(sampleTabRecovery, { ...sampleTabRecovery, tabId: 2 })
 pure def canDiscardGuidedRecovery(w: Workspace, fence: GuidedFence, by: WorkspaceActor): bool =
   by == Host and w.plan.owner != "" and fence.task == w.assistant.taskId and fence.version == w.assistant.workVersion
 pure def discardGuidedRecovery(w: Workspace, fence: GuidedFence, by: WorkspaceActor): Workspace = {
@@ -1387,7 +1480,7 @@ name quoted from the current request. The quoted name may differ from the person
 does not finish that step. The person can ask for another highlight from
 the new page with the same step active.
 
-For a requested statement read, the host reads the current visible document locally, whatever its title, unless the title names it a past, previous or prior bill, statement or invoice. The amount due and due date each need a single distinct labeled value on the same statement, written after its label or on the next line, including an amount the page splits across text fragments. An amount whose cents the page shows apart with no decimal mark supplies no value. A labeled remaining statement balance, or remaining balance due, replaces the statement or new balance when the statement shows one; an amount due labeled beside it must agree with it. An amount the page marks CR keeps that mark, and one the page calls a credit supplies no value. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter, with or without its year. Payment due can also label a currency amount. The connective “by” may give the due date immediately after a labeled amount due on the same line. When the browser exposes it separately from that amount, the host cannot use it as the due date. The check remains open unless an independent due-date label gives the same value. A distinct competing date keeps the check open. An account or current balance labeled as the amount due counts as that amount. An unqualified account or current balance supplies a different fact, as do a previous or running balance, minimum payment, a loan's remaining balance, credit limit, pending charge and statement issue date. A label with no value beside it supplies none. The host rereads the document identity, address and values before confirming the step. Only those values are compared, so a time the page counts by itself, or any other change elsewhere in the document, may occur between the two reads. The confirmation repeats the statement's own labels. An ambiguous or incomplete statement, one whose values change between the reads, and one that is covered, still loading or no longer at its address leave the step open, and Grace says which.
+For a requested statement read, the host reads the current visible document locally, whatever its title, unless the title names it a past, previous or prior bill, statement or invoice. A heading on the page, the statement section, or an enclosing section that identifies a past, paid, archived or closed statement keeps the check open. Conflicting structural labels leave the source ambiguous. An ordinary link to earlier statements has no bearing on which statement is open. A section headed as the current statement or identifying one numbered invoice may supply its own due date and one explicitly labeled amount-due total from its own noninteractive line-items table. The browser identifies the row and the owning section. The total must agree with any labeled amount elsewhere. Two sibling rows, an account overview outside the section, and a table of separate records cannot establish this association. The amount due and due date each need a single distinct labeled value on the same statement, written after its label or on the next line, including an amount the page splits across text fragments. An amount whose cents the page shows apart with no decimal mark supplies no value. A labeled remaining statement balance, or remaining balance due, replaces the statement or new balance when the statement shows one; an amount due labeled beside it must agree with it. An amount the page marks CR keeps that mark, and one the page calls a credit supplies no value. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter, with or without its year. Payment due can also label a currency amount. The connective “by” may give the due date immediately after a labeled amount due on the same line. When the browser exposes it separately from that amount, the host cannot use it as the due date. The check remains open unless an independent due-date label gives the same value. A distinct competing date keeps the check open. An account or current balance labeled as the amount due counts as that amount. An unqualified account or current balance supplies a different fact, as do a previous or running balance, minimum payment, a loan's remaining balance, credit limit, pending charge and statement issue date. A label with no value beside it supplies none. The amount and date must also occur together in one visible statement section on that document. A date elsewhere on the page cannot supply a missing field. Grace requests section evidence locally for the reviewed statement. Missing or incomplete section evidence leaves the check open. Several independently complete sections leave it open even when their amounts and dates coincide. The host rereads the document identity, address, section and values before confirming the step. Only those values are compared, so a time the page counts by itself, or any other change elsewhere in the document, may occur between the two reads. The confirmation repeats the statement's own labels. An ambiguous or incomplete statement, one whose values change between the reads, and one that is covered, still loading or no longer at its address leave the step open, and Grace says which.
 
 ```quint
 pure def statementAmounts(due: Set[str], balances: Set[str], remaining: Set[str]): Set[str] =
@@ -1397,12 +1490,35 @@ pure def lawRemainingBalanceReplacesStatementBalance(due: Set[str], balances: Se
     not(statementAmounts(due, balances, remaining).contains(value))
 pure def hasOneStatementAnswer(amounts: Set[str], dates: Set[str]): bool =
   amounts.size() == 1 and dates.size() == 1 and not(amounts.contains("")) and not(dates.contains(""))
+type StatementAmountSource = SectionAmount | OwnedLineTotal({ rowKey: str, parentKey: str })
+type StatementSection = { key: str, ordinary: bool, source: StatementAmountSource, amount: str, due: str }
+pure val sectionsValues = Set(
+  List(),
+  List({ key: "first", ordinary: true, source: OwnedLineTotal({ rowKey: "row", parentKey: "first" }), amount: "a", due: "b" }),
+  List({ key: "first", ordinary: true, source: OwnedLineTotal({ rowKey: "row", parentKey: "other" }), amount: "a", due: "b" }),
+  List({ key: "first", ordinary: false, source: SectionAmount, amount: "a", due: "b" }),
+  List({ key: "", ordinary: true, source: SectionAmount, amount: "a", due: "b" }),
+  List({ key: "first", ordinary: true, source: SectionAmount, amount: "a", due: "b" }),
+  List({ key: "first", ordinary: true, source: SectionAmount, amount: "a", due: "b" }, { key: "second", ordinary: true, source: SectionAmount, amount: "a", due: "b" }))
+pure def statementAmountBelongsToSection(source: StatementAmountSource, sectionKey: str): bool = match source {
+  | SectionAmount => true
+  | OwnedLineTotal(row) => row.rowKey != "" and row.rowKey != sectionKey and row.parentKey == sectionKey
+}
+pure def provesStatementSection(complete: bool, sections: List[StatementSection], amount: str, due: str): bool =
+  if (sections.length() != 1) false
+  else complete and sections.head().ordinary and amount != "" and due != "" and sections.head().key != "" and
+    sections.head().amount == amount and sections.head().due == due and
+    statementAmountBelongsToSection(sections.head().source, sections.head().key)
+pure def lawAStatementRequiresItsOwnCompleteSection(complete: bool, sections: List[StatementSection], amount: str, due: str): bool =
+  provesStatementSection(complete, sections, amount, due) implies
+    (complete and sections.length() == 1 and sections.head().ordinary and amount != "" and due != "")
 pure def isNamedDestination(guidedStep: GuidedStep): bool = match guidedStep {
   | ReachNamedPage(_) => true
   | _ => false
 }
 pure def hasGuidedAdapter(guidedStep: GuidedStep): bool = match guidedStep {
   | SurfaceOutcome(_) => false
+  | SortPublicListing(target) => target.subject != "" and target.origin != "" and target.tabId > 0
   | SearchPublicSite(target) => target.query != "" and target.origin != "" and target.tabId > 0
   | ReadLatestRecord(intent) => intent.collection != "" and intent.status != ""
   | _ => true
@@ -1428,7 +1544,7 @@ pure def canSetGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): b
   link.version == w.assistant.workVersion and link.generation == w.assistant.conversation.generation and
   link.deviceVersion == w.device.contextVersion and link.browserRevision == w.browser.revision and
   link.stepIndex == w.plan.receipts.length() and
-  ((w.plan.nameOverride.stepIndex == link.stepIndex and w.plan.nameOverride.label != "") implies link.url == w.plan.linkUrl)
+  ((w.plan.nameOverride.stepIndex == link.stepIndex and w.plan.nameOverride.label != "") implies link.url == w.plan.linkUrl) and not(heldByWebsite(w))
 pure def setGuidedLink(w: Workspace, link: GuidedLink, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, linkStep: link.stepIndex, linkUrl: link.url, nameCorrection: NoGuidedNameCorrection } }
 pure def followedLink(w: Workspace, loadReport: LoadReport): GuidedPlan =
@@ -1454,7 +1570,7 @@ pure def canOfferReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor
   by == Host and w.commitmentTask == "" and
   offer.generation == w.assistant.conversation.generation and offer.workVersion == w.assistant.workVersion and
   offer.steps.length() > 0 and offer.steps.every(offeredOutcome => hasGuidedAdapter(offeredOutcome)) and
-  canBeginGuided(w, reviewedRequest(w, offer), Person)
+  canBeginGuided(w, reviewedRequest(w, offer), Person) and not(heldByWebsite(w))
 pure def offerReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): Workspace = {
   ...w, review: { revision: w.review.revision + 1, generation: offer.generation,
     workVersion: offer.workVersion, request: reviewedRequest(w, offer) }
@@ -1511,7 +1627,7 @@ pure def currentGuidedNameCorrection(w: Workspace): GuidedNameCorrectionState = 
   }
 }
 pure def canOfferGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
-  by == Host and guidedNameCorrectionCurrent(w, correction)
+  by == Host and guidedNameCorrectionCurrent(w, correction) and not(heldByWebsite(w))
 pure def offerGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): Workspace = {
   ...w, plan: { ...w.plan, nameCorrection: PendingGuidedNameCorrection({ value: correction }) }
 }
@@ -1546,9 +1662,11 @@ pure val correctionValues = Set(3, 4).map(generation =>
 
 The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Two complete main-document observations must identify the same loaded document and URL before a browser receipt can be accepted. A covering blocker, a private field or an unrecognized text input prevents a receipt. For link guidance, a page may have a witnessed idle sign-in form beside public links. Grace can highlight only same-site links that the browser identifies as outside all forms and that carry no query, fragment or connection credentials. Active, filled or edited sign-in fields, a verification challenge, or an unclassified input prevent this exception. The ranking service receives only redacted public link labels. A search field identified as such by the page can remain available for ordinary navigation. An untouched newsletter opt-in with one clearly labeled blank email input and a Subscribe button allows Grace to point to an independently observed public link outside every form, or verify the public document identity or its main heading outside forms. The address used for that evidence must have no credentials, query or fragment. This permission supplies no statement or general page-content evidence. Missing field evidence, a focused or filled text input, and an additional unrecognized control keep the opt-in private. When an observed form prevents a check, Grace explains how the person can turn browser reading off, finish the form in the same tab and decide when to allow reading and resume. If the page is still loading or Grace cannot obtain an observation, Grace offers a retry. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing or duplicate result leaves the instruction in place and gives the person a way to retry, and Grace says why the check did not count: what she could not find, that the page changed or is covered, or that the item already satisfied an earlier step. The feedback belongs to the current account and step. A named browser step only accepts a dedicated observation of the approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. When the main content has no level-one heading, it reads the first one outside navigation, sidebars, the page banner and footers. It compares the heading with the reviewed name after normalizing Unicode, spacing, letter case and apostrophes inside a word. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
 
+
+For a requested public category price order, the person reviews the category and direction, opens the category and sets the order using the website’s own controls. Grace checks the category independently of the sort state on the same ready, secure document in the reviewed tab and site. The browser observation has to identify Price as selected and the current direction unambiguously on the category’s own sort control. A control that offers to switch to descending identifies ascending only if it is the opposite action of this price sort. A wrong category, wrong direction, covering blocker, private form, stale document or missing evidence leaves the step open. A generic page check cannot finish it.
 ```quint
 type GuidedPageField = PrivatePageField | UnknownPageField | NavigationPageField | IdleOptInField | IdleLoginField
-type GuidedEvidenceUse = GuidePublicLinks | CheckPublicDocument | CheckPublicSearchResult | ReadGuidedContent
+type GuidedEvidenceUse = GuidePublicLinks | CheckPublicDocument | CheckPublicSearchResult | CheckPublicSort | ReadGuidedContent
 pure def allowsLimitedGuidedEvidence(use: GuidedEvidenceUse, controls: List[GuidedPageField]): bool =
   use != ReadGuidedContent and controls.every(controlKind =>
     controlKind == NavigationPageField or controlKind == IdleOptInField or (use == GuidePublicLinks and controlKind == IdleLoginField))
@@ -1569,8 +1687,8 @@ pure def isAppointmentSave(guidedStep: GuidedStep): bool = match guidedStep {
 }
 pure def usedSource(plan: GuidedPlan, sourceKey: str): bool = plan.receipts.some(receipt => receipt.sourceKey == sourceKey)
 pure def guidedReadContextCurrent(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  by == Host and not(privateSurfaceActive(w)) and hasNext(w.plan) and w.execution.phase == X::Idle and w.commitmentTask == "" and
-  A::isVisible(w.assistant) and w.device.readiness == S::Ready and
+  by == Host and not(heldByWebsite(w)) and not(privateSurfaceActive(w)) and hasNext(w.plan) and not(needsRecoveredPublicTab(w.plan)) and
+  w.execution.phase == X::Idle and w.commitmentTask == "" and A::isVisible(w.assistant) and w.device.readiness == S::Ready and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
   w.assistant.replacementId == "" and w.assistant.conversation.turn != C::Thinking and not(w.assistant.conversation.question) and
   report.owner == w.plan.owner and report.task == w.assistant.taskId and report.version == w.assistant.workVersion and
@@ -1583,14 +1701,16 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  not(isNamedDestination(report.step)) and not(isLatestRecord(report.step)) and not(isPublicSearch(report.step)) and guidedObservationCurrent(w, report, by)
+  not(isNamedDestination(report.step)) and not(isPublicSort(report.step)) and
+  not(isLatestRecord(report.step)) and not(isPublicSearch(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
     nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched,
-    recordSelection: NoGuidedRecordSelection }
+    recordSelection: NoGuidedRecordSelection, tabSession: if (w.plan.tabSession == ReviewedTabs) ReviewedTabs else RestoredTabs }
   val assistant = w.assistant
-  { ...w, plan: plan, assistant:
-    if (hasNext(plan)) { ...assistant, activity: A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
+  val pauses = needsRecoveredPublicTab(plan)
+  { ...w, plan: plan, commitment: if (pauses) quietCommitment(w.commitment) else w.commitment, assistant:
+    if (hasNext(plan)) { ...assistant, activity: if (pauses) A::Paused else A::ReadyForStep, checkpoint: guidedDetails(nextOutcome(plan)).outcome,
       workVersion: assistant.workVersion + 1 }
     else A::finishTask(assistant, report.task, report.version, A::Completed, report.evidence, C::ConversationRuntime) }
 pure def canConfirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): bool =
@@ -1602,6 +1722,26 @@ pure def canConfirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck
   pageCheck.heading == guidedDetails(pageCheck.report.step).subject
 pure def confirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): Workspace =
   confirmGuided(w, pageCheck.report, by)
+pure def isPublicSort(guidedStep: GuidedStep): bool = match guidedStep {
+  | SortPublicListing(_) => true
+  | _ => false
+}
+pure def canConfirmGuidedPublicSort(w: Workspace, sortCheck: GuidedSortCheck, by: WorkspaceActor): bool =
+  val tab = B::activeTab(w.browser)
+  val observedStep = sortCheck.report.step
+  guidedObservationCurrent(w, sortCheck.report, by) and sortCheck.documentId != "" and
+  tab.load == B::Loaded and tab.secure and tab.id == sortCheck.tabId and
+  sortCheck.url != "" and sortCheck.url == B::tabUrl(tab) and
+  sortCheck.loadVersion == tab.loadVersion and publicResultLoad(w.plan, sortCheck.loadVersion, sortCheck.documentId) and
+  (match observedStep {
+    | SortPublicListing(target) => target.tabId == sortCheck.tabId and target.origin == sortCheck.origin and
+      target.subject == sortCheck.category and target.direction == sortCheck.direction
+    | _ => false
+  })
+pure def confirmGuidedPublicSort(w: Workspace, sortCheck: GuidedSortCheck, by: WorkspaceActor): Workspace =
+  confirmGuided(w, sortCheck.report, by)
+pure def lawPublicSortNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  isPublicSort(report.step) implies not(canConfirmGuided(w, report, by))
 pure def lawNamedPageNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   isNamedDestination(report.step) implies not(canConfirmGuided(w, report, by))
 pure def lawWrongNamedHeadingCannotFinish(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): bool =
@@ -1635,6 +1775,31 @@ pure val pageCheckValues = Set(samplePageCheck, { ...samplePageCheck, heading: "
   { ...samplePageCheck, report: { ...namedReport, owner: "tablet", task: "read", version: 4, deviceVersion: 7,
       browserRevision: 5, step: ReachNamedPage({ subject: "Help" }), evidence: "Help" },
     loadVersion: 4, url: "https://utility.example/help", heading: "Help" })
+pure val sampleSortUrl = "https://utility.example/coats"
+pure val exampleSortLoading = B::navigate(initial.browser, sampleSortUrl)
+pure val exampleSortBrowser =
+  B::finishPageLoad(exampleSortLoading, 1, B::activeTab(exampleSortLoading).loadVersion, B::Loaded, true, sampleSortUrl)
+pure val exampleSortDevice =
+  S::setObservationPermission(S::openSurface(S::finishStartup(initial.device, true), S::Browser), true)
+pure val exampleSortAssistant =
+  A::beginTask(A::open(initial.assistant, C::ConversationUser), "task", "List products from Winter coats category by ascending price", C::ConversationUser)
+pure val sampleSortStep: GuidedStep =
+  SortPublicListing({ subject: "Winter coats", origin: "https://utility.example", tabId: 1, direction: PriceAscending })
+pure val examplePublicSort: Workspace = {
+  ...initial, assistant: exampleSortAssistant, browser: exampleSortBrowser, device: exampleSortDevice,
+  plan: { ...emptyPlan, owner: "owner", steps: List(sampleSortStep), openingBrowser: 0, originalAsk: "List products from Winter coats category by ascending price" }
+}
+pure val sampleSortCheck: GuidedSortCheck = {
+  report: { ...sampleReport, step: sampleSortStep, version: examplePublicSort.assistant.workVersion,
+    deviceVersion: examplePublicSort.device.contextVersion, browserRevision: examplePublicSort.browser.revision,
+    sourceKey: "sorted-document", evidence: "Winter coats sorted by ascending price." },
+  documentId: "sorted-document", loadVersion: B::activeTab(examplePublicSort.browser).loadVersion,
+  url: sampleSortUrl, origin: "https://utility.example", tabId: 1, category: "Winter coats", direction: PriceAscending
+}
+pure val sortCheckValues = Set(sampleSortCheck, { ...sampleSortCheck, category: "Rain coats" },
+  { ...sampleSortCheck, direction: PriceDescending }, { ...sampleSortCheck, tabId: 2 })
+pure def lawPublicSortExampleIsAdmitted(by: WorkspaceActor): bool =
+  by == Host implies canConfirmGuidedPublicSort(examplePublicSort, sampleSortCheck, by)
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
 ```
@@ -1666,7 +1831,7 @@ pure def canConfirmGuidedSearch(w: Workspace, searchCheck: GuidedSearchCheck, by
   val searchedStep = searchCheck.report.step
   guidedObservationCurrent(w, searchCheck.report, by) and searchCheck.documentId != "" and
   tab.load == B::Loaded and tab.secure and searchCheck.url != "" and searchCheck.url == B::tabUrl(tab) and
-  searchCheck.loadVersion == tab.loadVersion and searchCheck.loadVersion > w.plan.openingBrowser and
+  searchCheck.loadVersion == tab.loadVersion and publicResultLoad(w.plan, searchCheck.loadVersion, searchCheck.documentId) and
   match searchedStep {
     | SearchPublicSite(target) => target.origin == searchCheck.origin and target.query == searchCheck.query and target.tabId == tab.id
     | _ => false
@@ -1745,7 +1910,7 @@ pure def canStageGuidedRecord(w: Workspace, selection: GuidedRecordSelection, by
   selection.generation == w.assistant.conversation.generation and selection.stepIndex == w.plan.receipts.length() and
   selection.tabId == tab.id and selection.loadVersion == tab.loadVersion and tab.load == B::Loaded and tab.secure and
   selection.documentId != "" and selection.domRevision >= 0 and selection.matches == 1 and
-  selection.coverage.total > 0 and selection.coverage.observed == selection.coverage.total
+  selection.coverage.total > 0 and selection.coverage.observed == selection.coverage.total and not(heldByWebsite(w))
 pure def stageGuidedRecord(w: Workspace, selection: GuidedRecordSelection, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, recordSelection: StagedGuidedRecord({ selection: selection }) } }
 pure def guidedRecordReceipt(w: Workspace): GuidedReceipt =
@@ -1833,7 +1998,7 @@ pure def canConfirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: Work
   }
   opensMail and canConfirmGuided(w, mailCheck.report, by) and
   mailCheck.mail.account > 0 and mailCheck.mail.owner != "" and mailCheck.mail.address != "" and mailCheck.mail.ref != "" and
-  mailCheck.mail.generation >= 0 and mailCheck.mail.revision >= 0
+  mailCheck.mail.generation >= 0 and mailCheck.mail.revision >= 0 and not(heldByWebsite(w))
 pure def confirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): Workspace =
   val after = confirmGuided(w, mailCheck.report, by)
   { ...after, plan: { ...after.plan, mail: mailCheck.mail } }
@@ -1857,7 +2022,7 @@ pure def canRebindGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: Works
   report.deviceVersion == w.device.contextVersion and report.browserRevision == w.browser.revision and report.step == ReadMail and
   report.sourceKey != "" and report.sourceKey == priorGuidedMail(w.plan).digest and report.evidence != "" and
   mail.account > 0 and mail.owner != "" and mail.address != "" and mail.ref != "" and
-  mail.generation >= 0 and mail.revision >= 0
+  mail.generation >= 0 and mail.revision >= 0 and not(heldByWebsite(w))
 pure def rebindGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, mail: mailCheck.mail } }
 pure def canReconcileGuidedSave(w: Workspace, recoveryCheck: GuidedSaveRecoveryCheck, by: WorkspaceActor): bool =
@@ -1878,7 +2043,7 @@ pure def canExpectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval,
   approval.task == w.assistant.taskId and approval.account == w.plan.mail.account and approval.account > 0 and
   approval.owner == w.plan.mail.address and approval.sourceRef == w.plan.mail.ref and approval.sourceRef != "" and
   approval.calendar != "" and approval.provisional != "" and approval.proposal > w.plan.calendarApproval.proposal and
-  approval.title != "" and approval.ends > approval.starts and approval.timezone != "" and approval.detailsDigest != ""
+  approval.title != "" and approval.ends > approval.starts and approval.timezone != "" and approval.detailsDigest != "" and not(heldByWebsite(w))
 pure def expectGuidedCalendar(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, calendarApproval: approval } }
 pure def canObserveGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, by: WorkspaceActor): bool =
@@ -1886,7 +2051,7 @@ pure def canObserveGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, b
   saved.approval == w.plan.calendarApproval and saved.approval.proposal >= 0 and
   saved.approval.task == w.assistant.taskId and saved.occurrence != "" and
   ((w.plan.savedOccurrence == "" and saved.evidence == "") or
-    (w.plan.savedOccurrence == saved.occurrence and w.plan.savedEvidence == "" and saved.evidence != ""))
+    (w.plan.savedOccurrence == saved.occurrence and w.plan.savedEvidence == "" and saved.evidence != "")) and not(heldByWebsite(w))
 pure def observeGuidedCalendar(w: Workspace, saved: GuidedCalendarReadback, by: WorkspaceActor): Workspace =
   { ...w, plan: { ...w.plan, savedOccurrence: saved.occurrence, savedEvidence: saved.evidence } }
 pure def lawUncertainGuidedSaveCannotAuthorizeAnotherWrite(w: Workspace, approval: GuidedCalendarApproval, by: WorkspaceActor): bool =
@@ -1971,7 +2136,7 @@ pure def bindCommitment(w: Workspace, key: T::Subject, by: WorkspaceActor): Work
 pure def canReviewCommitment(w: Workspace, currentReview: CurrentReview, by: WorkspaceActor): bool =
   by == Host and currentCommitmentContext(w) and currentReview.deviceVersion == w.device.contextVersion and
   currentReview.browserRevision == w.browser.revision and currentReview.taskVersion == w.assistant.workVersion and
-  CM::canReview(w.commitment, currentReview.review, T::Host)
+  CM::canReview(w.commitment, currentReview.review, T::Host) and not(heldByWebsite(w))
 pure def reviewCommitment(w: Workspace, currentReview: CurrentReview, by: WorkspaceActor): Workspace = {
   ...w, commitment: CM::review(w.commitment, currentReview.review, T::Host)
 }
@@ -1992,7 +2157,7 @@ correction; it is not inferred from speech fragments or website content.
 ```quint
 pure def canReadBackCommitment(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): bool =
   by == Host and commitmentTokensMatch(w, commitmentTokens) and
-  CM::canRecordReadBack(w.commitment, commitmentTokens.revision, T::Host)
+  CM::canRecordReadBack(w.commitment, commitmentTokens.revision, T::Host) and not(heldByWebsite(w))
 pure def readBackCommitment(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): Workspace = {
   ...w, commitment: CM::recordReadBack(w.commitment, commitmentTokens.revision, T::Host)
 }
@@ -2016,6 +2181,7 @@ the generic interaction path, which invalidates the review. This distinction
 prevents a valid approval from invalidating itself and prevents a correction
 from leaving an old authorization usable. The conversation may think about
 its acknowledgment while this already classified payment decision proceeds.
+The approval waits while a website's question holds the person.
 
 ```quint
 
@@ -2024,7 +2190,7 @@ pure def canApproveSpokenCommitment(w: Workspace, commitmentTokens: CommitmentTo
   w.assistant.activity == A::ReadyForStep and w.assistant.replacementId == "" and
   commitmentTokensMatch(w, commitmentTokens) and
   A::canHear(w.assistant, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime) and
-  CM::canAuthorize(w.commitment, commitmentTokens.revision, spoken.correction, T::Person)
+  CM::canAuthorize(w.commitment, commitmentTokens.revision, spoken.correction, T::Person) and not(heldByWebsite(w))
 pure def approveSpokenCommitment(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): Workspace = {
   ...w, assistant: { ...w.assistant,
     conversation: C::hear(w.assistant.conversation, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime) },
@@ -2057,7 +2223,7 @@ A directly observed website tap is recorded without an additional effect.
 pure def canSubmitCommitment(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): bool =
   by == Actuator and commitmentTokensMatch(w, commitmentTokens) and
   A::canStartStep(w.assistant, w.assistant.taskId, commitmentTokens.taskVersion, "commitment", C::ConversationRuntime) and
-  CM::canSubmit(w.commitment, commitmentTokens.revision, commitmentTokens.attempt, T::Actuator)
+  CM::canSubmit(w.commitment, commitmentTokens.revision, commitmentTokens.attempt, T::Actuator) and not(heldByWebsite(w))
 pure def submitCommitment(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): WorkspaceResult =
   val submitted = CM::submit(w.commitment, commitmentTokens.revision, commitmentTokens.attempt, T::Actuator)
   val working = A::startStep(w.assistant, w.assistant.taskId, commitmentTokens.taskVersion, "commitment", C::ConversationRuntime)
@@ -2068,7 +2234,7 @@ pure def submitCommitment(w: Workspace, commitmentTokens: CommitmentTokens, by: 
 pure def canObserveCommitmentTap(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): bool =
   by == Host and commitmentTokensMatch(w, commitmentTokens) and
   A::canStartStep(w.assistant, w.assistant.taskId, commitmentTokens.taskVersion, "commitment", C::ConversationRuntime) and
-  CM::canObserveManualSubmit(w.commitment, commitmentTokens.attempt, T::Host)
+  CM::canObserveManualSubmit(w.commitment, commitmentTokens.attempt, T::Host) and not(heldByWebsite(w))
 pure def observeCommitmentTap(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): Workspace =
   val working = A::startStep(w.assistant, w.assistant.taskId, commitmentTokens.taskVersion, "commitment", C::ConversationRuntime)
   { ...w, commitment: CM::observeManualSubmit(w.commitment, commitmentTokens.attempt, T::Host),
@@ -2122,18 +2288,21 @@ pure def afterCommitmentEvidence(commitment: CM::Commitment, w: Workspace): Work
 pure def canRecordCommitment(w: Workspace, currentOutcome: CurrentOutcome, by: WorkspaceActor): bool =
   by == Host and currentCommitmentContext(w) and currentOutcome.deviceVersion == w.device.contextVersion and
   currentOutcome.browserRevision == w.browser.revision and currentOutcome.taskVersion == w.assistant.workVersion and
-  CM::canRecordOutcome(w.commitment, currentOutcome.report, T::Host)
+  CM::canRecordOutcome(w.commitment, currentOutcome.report, T::Host) and
+  (not(heldByWebsite(w)) or taskStandsStill(w, recordCommitment(w, currentOutcome, by)))
 pure def recordCommitment(w: Workspace, currentOutcome: CurrentOutcome, by: WorkspaceActor): Workspace =
   afterCommitmentEvidence(CM::recordOutcome(w.commitment, currentOutcome.report, T::Host), w)
 pure def canReconcilePriorCommitment(w: Workspace, currentPrior: CurrentPrior, by: WorkspaceActor): bool =
   by == Store and currentCommitmentContext(w) and currentPrior.deviceVersion == w.device.contextVersion and
   currentPrior.browserRevision == w.browser.revision and currentPrior.taskVersion == w.assistant.workVersion and
-  CM::canReconcilePrior(w.commitment, currentPrior.report, T::Store)
+  CM::canReconcilePrior(w.commitment, currentPrior.report, T::Store) and
+  (not(heldByWebsite(w)) or taskStandsStill(w, reconcilePriorCommitment(w, currentPrior, by)))
 pure def reconcilePriorCommitment(w: Workspace, currentPrior: CurrentPrior, by: WorkspaceActor): Workspace =
   afterCommitmentEvidence(CM::reconcilePrior(w.commitment, currentPrior.report, T::Store), w)
 pure def canSaveCommitment(w: Workspace, saveReport: SaveReport, by: WorkspaceActor): bool =
   by == Store and T::validKey(saveReport.key) and
-  CM::canSaveOutcome(commitmentByKey(w, saveReport.key), saveReport.revision, T::Store)
+  CM::canSaveOutcome(commitmentByKey(w, saveReport.key), saveReport.revision, T::Store) and
+  (not(heldByWebsite(w)) or taskStandsStill(w, saveCommitment(w, saveReport, by)))
 pure def saveCommitment(w: Workspace, saveReport: SaveReport, by: WorkspaceActor): Workspace =
   if (w.commitment.stage != CM::Empty and saveReport.key == w.commitment.key)
     afterCommitmentEvidence(CM::saveOutcome(w.commitment, saveReport.revision, saveReport.succeeded, T::Store), w)
@@ -2409,4 +2578,71 @@ pure def replyControlsCurrent(w: Workspace, reply: ReplyControlContext): bool =
   reply.browser == w.browser.revision and reply.preferences == w.preferences.revision
 pure def lawReplyControlStaleTurn(w: Workspace, reply: ReplyControlContext): bool =
   reply.generation != w.assistant.conversation.generation implies not(replyControlsCurrent(w, reply))
+```
+
+## Story: Wait for my answer to a website
+
+> As an older adult, when a website asks me something while Grace is working
+> on it, Grace takes no step on my task until I have answered, and then
+> carries on where she was.
+
+### No task step is taken while a website's question holds the person, and the task goes on after her answer
+
+The host tells the workspace whenever [what websites ask](./websiteRequests.md)
+starts or stops holding the person (`holdsThePerson`: a question is
+presented, or a site permission she allowed is waiting for Android). While it
+holds her, the workspace refuses every step of a task: observing, preparing,
+dispatching or verifying an operation, progress reported for one, completing
+an ordinary goal, publishing guidance, offering a read plan or a name
+correction, every step of a guided plan including its mail and calendar
+steps, and reviewing, reading back, authorizing, submitting or seeing her tap
+on a commitment. Evidence of work already sent, a commitment's outcome, prior
+result or save, is kept only where it leaves the task's activity and version
+as they were; applying it to the task waits for her answer. Her answer, Stop,
+leaving and every other event are not held. When the hold ends, the workspace
+records the current task, its work version, and its last observation. A fresh
+observation for that task and work version shows that it can continue.
+
+```quint
+pure def heldByWebsite(w: Workspace): bool = w.websiteHold == WebsiteHolds
+pure def taskStandsStill(w: Workspace, after: Workspace): bool =
+  after.assistant.activity == w.assistant.activity and after.assistant.workVersion == w.assistant.workVersion
+pure def canHoldForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): bool =
+  by == Host and holds != heldByWebsite(w)
+pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspace =
+  { ...w, websiteHold: if (holds) WebsiteHolds else WebsiteAnswered({
+    task: w.assistant.taskId, workVersion: w.assistant.workVersion, observation: w.execution.observation
+  }) }
+pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
+  "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection",
+  "confirmGuided", "confirmGuidedNamedPage", "confirmGuidedSearch", "confirmGuidedPublicSort",
+  "stageGuidedRecord", "confirmGuidedRecord", "confirmGuidedMail",
+  "rebindGuidedMail", "expectGuidedCalendar", "observeGuidedCalendar", "reconcileGuidedSave",
+  "reviewCommitment", "readBackCommitment", "approveSpokenCommitment", "submitCommitment", "observeCommitmentTap")
+pure val heldTaskEvidence = Set("recordCommitment", "reconcilePriorCommitment", "saveCommitment")
+pure def stepAHeldTaskDoesNotAdvance(before: Workspace, via: str, after: Workspace): bool =
+  heldByWebsite(before) implies
+    not(heldTaskSteps.contains(via)) and (heldTaskEvidence.contains(via) implies taskStandsStill(before, after))
+pure def sometimesAHeldTaskGoesOnAfterHerAnswer(w: Workspace): bool =
+  val hold = w.websiteHold
+  match hold {
+    | WebsiteAnswered(answered) => answered.task != "" and w.assistant.taskId == answered.task and
+      w.assistant.workVersion == answered.workVersion and w.execution.observation > answered.observation
+    | _ => false
+  }
+pure val eval_witness_sometimesAHeldTaskGoesOnAfterHerAnswer = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://www.utility.example/home" }, Host),
+  ("adjustPreferenceLevel", R::VolumeBy({ amount: 10 }), Person),
+  ("holdForWebsite", true, Host),
+  ("holdForWebsite", false, Host),
+  ("observe", { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://credit.example" } }, Host)
+)
+pure val weight_holdForWebsite = 8
 ```
