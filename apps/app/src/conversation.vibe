@@ -80,6 +80,7 @@ type GuidedReadSource =
   | { tag: "ManagedMail" | "ManagedAppointment"; grant: string; version: string }
   | ({ tag: "CurrentMessage" } & GuidedMail)
   | { tag: "CurrentDocument"; tab: number; loadVersion: number; documentId: string }
+  | { tag: "PublicCollectionDocument"; tabId: number; loadVersion: number; documentId: string; domRevision: number; url: string; origin: string; subject: string; entries: number }
   | { tag: "NamedDocument"; tab: number; loadVersion: number; documentId: string; url: string; heading: string }
   | { tag: "SearchDocument"; loadVersion: number; documentId: string; url: string; origin: string; query: string; heading: string }
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string }
@@ -89,6 +90,38 @@ type GuidedMiss = Exclude<GuidedCheck, "Confirmed">
 
 function normalizedHeading(value: string | null | undefined): string {
   return value && value.length <= 200 ? value.normalize("NFC").trim().replace(/\s+/gu, " ") : ""
+}
+
+function collectionHeading(subject: string, heading: string): boolean {
+  const requested = comparableName(subject).replace(/\s+(?:index|topics|list)$/u, "")
+  const actual = comparableName(heading).replace(/ & /gu, " and ")
+  if (actual === requested) return true
+  const help = /^(?:help|help center|frequently asked questions|faqs?|support)$/u
+  return help.test(requested) && /^(?:[\p{L}\p{N}-]+ ){0,2}(?:help|help center|help and support|support(?: center)?|faqs?|frequently asked questions)$/u.test(actual)
+}
+
+effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, url: URL, snapshot: LinkObservation, subject: string): number!! {
+  const main = ':is(main,[role="main"])'
+  const excluded = ':not(:is(nav,header,footer,aside,article,form,[role="navigation"],[role="complementary"],[aria-hidden="true"],[inert],[aria-label^="Related" i]) *)'
+  const heading = native.readRecordText(id, `${main} :is(h1,[role="heading"][aria-level="1"])${excluded}`) catch () => undefined
+  if (!heading || heading.url !== url.href || !collectionHeading(subject, normalizedHeading(heading.text))) return 0
+  const candidates = new Map<string, string>()
+  for (const item of snapshot.result.elements) {
+    if (item.tag !== "a" || !item.inViewport || item.disabled || item.sensitive || item.form !== null ||
+        !item.label || !item.href || !item.targetSelector) continue
+    const destination = URL.parse(item.href)
+    if (!destination || destination.origin !== url.origin || destination.username || destination.password ||
+        destination.search || destination.hash || destination.pathname === url.pathname) continue
+    if (!candidates.has(destination.href)) candidates.set(destination.href, item.targetSelector)
+    if (candidates.size >= 24) break
+  }
+  if (candidates.size < 2) return 0
+  const links = `:is(${[...candidates.values()].join(",")})${excluded}`
+  const entry = `:is(li,[role="listitem"]):has(${links})`
+  const list = `${main} :is(ul,ol,[role="list"])${excluded}:has(> ${entry} ~ ${entry})`
+  const first = native.readRecordText(id, `${list} > :nth-child(1 of ${entry}) ${links}`) catch () => undefined
+  const second = native.readRecordText(id, `${list} > :nth-child(2 of ${entry}) ${links}`) catch () => undefined
+  return first?.url === url.href && second?.url === url.href && comparableName(first.text) !== comparableName(second.text) ? 2 : 0
 }
 
 function routeOf(url: URL): string {
@@ -188,6 +221,26 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       return receipt({ tag: "SearchDocument", loadVersion: tab.loadVersion, documentId: after.documentId,
         url, origin: address.origin, query: step.query, heading: headingText }, [step.origin, step.query], "Search results for “" + step.query + "”.")
     }
+    case "ReachPublicCollection": {
+      const tab = activeTab(workspace.browser)
+      const url = URL.parse(tabUrl(tab))
+      if (!url || url.origin !== step.origin || tab.id !== step.tabId || !tab.secure ||
+          tab.load !== "Loaded" || tab.loadVersion <= workspace.plan.openingBrowser || !guidedLinkObserved(workspace)) return undefined
+      const id = PageId.make(`tab-${tab.id}`)
+      const before = native.observeLinks(id) catch () => undefined
+      if (!before || before.result.domRevision === undefined ||
+          (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
+      const miss = pageMiss(before, url.href, "CheckPublicDocument")
+      if (miss !== undefined) return miss
+      const entries = try visibleCollectionEntries(native, id, url, before, step.subject)
+      if (entries < 2) return undefined
+      const after = native.observeLinks(id) catch () => undefined
+      if (!after || after.documentId !== before.documentId || after.result.domRevision !== before.result.domRevision) return "Changed"
+      const afterMiss = pageMiss(after, url.href, "CheckPublicDocument")
+      if (afterMiss !== undefined) return afterMiss
+      return receipt({ tag: "PublicCollectionDocument", tabId: tab.id, loadVersion: tab.loadVersion, documentId: before.documentId,
+        domRevision: before.result.domRevision, url: url.href, origin: step.origin, subject: step.subject, entries }, [before.documentId, url.href], "Found the collection for " + step.subject + ".")
+    }
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
@@ -275,6 +328,10 @@ effect function decoded(said: string | undefined) {
 }
 
 function distinctReadConfirmation(source: GuidedReadSource, report: GuidedObservation, rebind: boolean): Event | undefined {
+  if (source.tag === "PublicCollectionDocument") {
+    const { tabId, loadVersion, documentId, url, origin, subject, entries } = source
+    return { type: "confirmGuidedCollection", check: { report, tabId, loadVersion, documentId, url, origin, subject, entries } }
+  }
   if (source.tag === "NamedDocument") {
     const { documentId, loadVersion, url, heading } = source
     return { type: "confirmGuidedNamedPage", pageCheck: { report, documentId, loadVersion, url, heading } }
@@ -493,7 +550,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const confirmed = try look()
       if (browserScope !== undefined && !(try ownsBrowserRead())) return "Refused"
       const rechecked = try guidedReceipt(confirmed, step, native, managed,
-        found.source.tag === "NamedDocument" || found.source.tag === "SearchDocument" ? found.source.documentId : undefined)
+        found.source.tag === "NamedDocument" || found.source.tag === "SearchDocument" || found.source.tag === "PublicCollectionDocument" ? found.source.documentId : undefined)
       if (rechecked === "PrivateForm") return (try ownsBrowserRead()) ? rechecked : "Refused"
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
       if (!sameRecord) return typeof rechecked === "string" ? rechecked : "Changed"

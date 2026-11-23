@@ -44,10 +44,12 @@ function context(w: Workspace, authority: GuidedAuthority) {
     stepIndex: w.plan.receipts.length, deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision }
   const key = JSON.stringify([w.plan.owner, step, tab.id, tab.loadVersion])
   const outcome = nextOutcome(w.plan)
+  if (outcome.tag === "ReachPublicCollection" && (outcome.origin !== url.origin || outcome.tabId !== tab.id)) return undefined
   const approvedHref = w.plan.nameOverride.stepIndex === step.stepIndex ? w.plan.linkUrl : undefined
   return { key, step, owner: w.plan.owner, approvedHref, loadVersion: tab.loadVersion, id: PageId.make(`tab-${tab.id}`), url,
     goal: w.plan.originalAsk, target: outcome.tag === "ReachNamedPage" ? outcome.subject : "",
-    instruction: outcome.tag === "ReadStatement" ? choiceContext + statementContext : choiceContext }
+    instruction: outcome.tag === "ReadStatement" ? choiceContext + statementContext :
+      outcome.tag === "ReachPublicCollection" ? choiceContext + " Choose the page that lists the requested topics. An individual article does not finish this request." : choiceContext }
 }
 
 type RecordContext = {

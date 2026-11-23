@@ -250,7 +250,7 @@ export async function fleetFixture({ directory, results, shardSetting, resumeDir
     }
     replaceScores();
     return {
-      definitions: assigned.filter(({ biller }) => !graded.has(biller.id)).map(({ biller, startUrl }) => ({ taskId: biller.id, startUrl, intent: Intent, receipt: join(run, biller.id + ".json") })),
+      definitions: assigned.filter(({ biller }) => !graded.has(biller.id)).map(({ biller, startUrl }) => ({ taskId: biller.id, startUrl, intent: Intent, requiredStep: "ReachPublicCollection" as const, receipt: join(run, biller.id + ".json") })),
       async grade(taskId: string, site: Page | undefined, guided: boolean) {
         const task = expected.get(taskId);
         if (!task) throw new Error("Unknown Fleet biller");

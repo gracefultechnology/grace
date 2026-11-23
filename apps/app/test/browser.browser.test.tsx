@@ -244,7 +244,7 @@ const BrowserDocument = Schema.Struct({
 const SelectorRead = Schema.Struct({
   url: Schema.String, title: Schema.String, text: Schema.String, truncated: Schema.Boolean,
 });
-async function proposeRead(said: string, text: string, step: "ReadChangedBrowser" | "ReadStatement", signal?: AbortSignal) {
+async function proposeRead(said: string, text: string, step: "ReadChangedBrowser" | "ReadStatement" | { kind: "ReachPublicCollection"; target: string }, signal?: AbortSignal) {
   localStorage.clear();
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
@@ -351,7 +351,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
     },
   });
   try {
-    const { cloud, secret } = await proposeRead(intent, "Review the browser step.", "ReadChangedBrowser");
+    const { cloud, secret } = await proposeRead(intent, "Review the browser step.", requiredStep === "ReachPublicCollection" ? { kind: "ReachPublicCollection", target: "help topics" } : "ReadChangedBrowser");
     const decisions = await Effect.runPromise(decisionCloud(cloud, secret));
     await transport({ kind: "decisionRoute", cloud, deadlineMs: decisions.deadlineMs });
     const { workspace } = await launch(native.plugin, decisions.host);
@@ -382,6 +382,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();
     const reviewed = workspace().review.request.steps;
     const named = reviewed.find(step => step.tag === "ReachNamedPage");
+    const collection = reviewed.find(step => step.tag === "ReachPublicCollection");
     const record = reviewed.find(step => step.tag === "ReadLatestRecord");
     const search = reviewed.find(step => step.tag === "SearchPublicSite");
     if (named) outcome.reviewedDestination = named.subject;
@@ -451,7 +452,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
     outcome.hops = hops;
     const menuRetries: { documentId: string; instruction: string }[] = [];
     outcome.menuRetries = menuRetries;
-    const actionLimit = named || record ? 8 : 1;
+    const actionLimit = named || record || collection ? 8 : 1;
     const actionsTaken = () => hops.length + disclosures.length + menuRetries.length + Number(outcome.nameCorrection !== undefined);
     const stopAtActionLimit = () => {
       if (!exploratory || !(named || record) || actionsTaken() !== actionLimit) return false;
@@ -647,7 +648,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
         outcome.checkedRecord = { collectionDocument: previous.documentId, detailDocument: landed.documentId };
       }
       if (checked) break;
-      expect(named ?? record).toBeDefined();
+      expect(named ?? record ?? collection).toBeDefined();
       if (named) expect([`I couldn’t verify “${named.subject}” on this page. Check the page again or try another link.`, privateFormRecovery]).toContain(reason);
       if (record) await expect.element(continuing).toBeVisible();
       expect(workspace().plan.receipts).toHaveLength(0);

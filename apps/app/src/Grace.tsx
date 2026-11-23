@@ -37,6 +37,7 @@ function recordCriteria(step: Extract<GuidedStep, { tag: "ReadLatestRecord" }>):
 }
 
 function stepInstruction(step: GuidedStep): string {
+  if (step.tag === "ReachPublicCollection") return `Find and check the collection for “${step.subject}”.`;
   if (step.tag === "ReachNamedPage") return `Find and check “${step.subject}”.`;
   if (step.tag === "ReadLatestRecord") return recordCriteria(step);
   if (step.tag === "SearchPublicSite") return `Use ${step.origin}’s search for “${step.query}”.`;
@@ -47,6 +48,7 @@ const checks: Record<GuidedStep["tag"], { label: string; item: string; missing: 
   ReadMail: { label: "Check email", item: "email", missing: "I couldn’t read an open email. Open the one you want me to check." },
   ReadBrowser: { label: "Check page", item: "page", missing: "I couldn’t read the page in this tab. Wait for it to load, then check again." },
   ReadChangedBrowser: { label: "Check page", item: "page", missing: "Open the page you want me to read, then check again." },
+  ReachPublicCollection: { label: "Check page", item: "page", missing: "I couldn’t verify a list of the requested topics here. Try the collection link, then check again." },
   ReachNamedPage: { label: "Check page", item: "page", missing: "" },
   ReadLatestRecord: { label: "Check page", item: "page", missing: "I couldn’t verify the latest matching record on this page." },
   SearchPublicSite: { label: "Check search results", item: "page", missing: "I couldn’t verify these search results. Use the reviewed website’s search and try again." },

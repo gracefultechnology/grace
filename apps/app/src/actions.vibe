@@ -293,6 +293,16 @@ export const agent = Layer.effect(Agent, effect {
     const offered = action.steps.map((step): GuidedStep | undefined => {
       if (typeof step === "string") return { tag: step }
       if (step.kind === "ReachNamedPage") return named(step.target)
+      if (step.kind === "ReachPublicCollection") {
+        const workspace = s.workspace
+        const tab = activeTab(workspace.browser)
+        const site = URL.parse(tabUrl(tab))
+        const at = quotedAt(words, step.target)
+        const personal = /\b(?:my|our)\b|\b(?:account|order|billing|payment|medical) (?:history|records)\b/iu.test(words)
+        return at >= 0 && !personal && workspace.device.surface === "Browser" && workspace.device.observationAllowed &&
+          tab.load === "Loaded" && tab.secure && site?.protocol === "https:" && !site.username && !site.password ?
+          { tag: "ReachPublicCollection", subject: words.slice(at, at + step.target.length), origin: site.origin, tabId: tab.id } : undefined
+      }
       if (step.kind === "SearchPublicSite") {
         const workspace = s.workspace
         const tab = activeTab(workspace.browser)
