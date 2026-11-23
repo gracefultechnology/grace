@@ -114,21 +114,24 @@ function fakePlugin(controlPage?: (options: Record<string, unknown>) => unknown,
 async function pinnedPage(shape: string, url: string, change = (html: string) => html) {
   const html = change(await (await fetch(new URL(`/journey/shapes/${shape}.html`, inject("site")))).text())
     .replace('<meta charset="utf-8">', `<meta charset="utf-8"><base href="${url}">`);
-  const frame = document.body.appendChild(document.createElement("iframe"));
-  frame.style.cssText = "position:fixed;left:-2000px;top:0;width:800px;height:600px;border:0";
-  const loaded = new Promise((resolve) => frame.addEventListener("load", resolve, { once: true }));
-  frame.srcdoc = html;
+  const website = window.open("about:blank", "_blank", "popup,width=800,height=600");
+  if (!website || website !== website.top) throw new Error("The website fixture needs a separate top-level window");
+  onTestFinished(() => website.close());
+  const pinned = website.document;
+  pinned.open();
+  const loaded = new Promise((resolve) => website.addEventListener("load", resolve, { once: true }));
+  pinned.write(html);
+  pinned.close();
   await loaded;
-  onTestFinished(() => frame.remove());
-  const run = (source: string) => (frame.contentWindow as unknown as { eval(code: string): Record<string, unknown> }).eval(source);
+  const run = (source: string) => (website as unknown as { eval(code: string): Record<string, unknown> }).eval(source);
   let snapshots = 0;
   return {
     url,
-    document: frame.contentDocument!,
+    document: pinned,
     snapshots: () => snapshots,
     route: (hash: string) => act(() => new Promise<void>((shown) => {
-      frame.contentWindow!.addEventListener("hashchange", () => shown(), { once: true });
-      frame.contentWindow!.location.hash = hash;
+      website.addEventListener("hashchange", () => shown(), { once: true });
+      website.location.hash = hash;
     })),
     snapshot: (command: unknown) => {
       const snapshotId = `${shape}-${++snapshots}`;
@@ -3006,6 +3009,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   const idleIdentifier = { focused: false, edited: false, hasInput: false };
   let identifierEvidence: Partial<typeof idleIdentifier> = idleIdentifier;
   const card = { id: "card-statements", frame: await pinnedPage("statements", origin + "/topic.html?history", (html) => html
+    .replace("<dl>", '<section><h2 id="statement-heading">Current statement</h2><dl>')
+    .replace("</dl>", '</dl><p><a href="/archive">Previous statements</a></p></section>')
     .replace("<dt>New Balance</dt><dd>$1,284.56</dd>", '<dt>Current balance</dt><dd>$1,301.12</dd><dt>Last statement balance</dt><dd id="balance">$1,284<sup>56</sup></dd>')
     .replace("<dt>Previous Balance</dt><dd>$1,102.13</dd>", "<dt>Previous Balance</dt><dd>$1,102.13</dd><dt>Pending charges</dt><dd>$16.56</dd><dt>Available credit</dt><dd>$3,698.88</dd>")) };
   const counting = { id: "countdown-statement", frame: await pinnedPage("countdown", origin + "/statement", (html) => html.replace(/<script>[\s\S]*<\/script>/u, "")) };
@@ -3014,7 +3019,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     .replace("<h1>Usage</h1>", "<h1>Today's usage</h1><p>Updated <span id='clock'>10:41:07</span></p>")) };
   const guideShow = Schema.is(Schema.Struct({ subaction: Schema.Literal("guide"), guidance: Schema.Struct({ kind: Schema.Literal("show"), snapshotId: Schema.String, nodeId: Schema.String }) }));
   let pinned: (typeof card & { url: string }) | undefined;
-  let betweenReads: (() => void | Promise<void>) | undefined;
+  let betweenReads: { after: "statement" | "snapshot"; change: () => void | Promise<void> } | undefined;
   const blankNewsletterEmail = {
     id: "newsletter-email", tag: "input", type: "email", fieldName: "email", label: "Sign Up for Our Newsletter:",
     sensitive: null, form: { index: 2, name: null }, focused: false, edited: false, hasInput: false, href: null, inViewport: false,
@@ -3022,16 +3027,19 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let newsletterEmail: typeof blankNewsletterEmail | null = null;
   const blankSearch = { focused: false, edited: false, hasInput: false };
   let searchEvidence: Partial<typeof blankSearch> = blankSearch;
-  const native = fakePlugin(({ command }) => {
+  const native = fakePlugin(({ command, documentId }) => {
     if (pinned && guideShow(command)) return { result: { accepted: pinned.frame.shows(command.guidance) } };
     if (typeof command === "object" && command !== null && "subaction" in command && command.subaction === "snapshot") {
       const combinedIdentifier = signInWidget === "accountNumber" || signInWidget === "accountLookup";
       if (pinned) {
+        const phase = "statementRegions" in command && command.statementRegions === true ? "statement" : "snapshot";
+        if (phase === "statement") expect(documentId).toBe(pinned.id);
         const result = { ...pinned.frame.snapshot(command), url: pinned.url };
-        const change = betweenReads;
-        betweenReads = undefined;
         const reply = { documentId: pinned.id, frameScope: "main", result };
-        return change ? Promise.resolve(change()).then(() => reply) : reply;
+        if (betweenReads?.after !== phase) return reply;
+        const { change } = betweenReads;
+        betweenReads = undefined;
+        return Promise.resolve(change()).then(() => reply);
       }
       return { documentId: currentPage.id, frameScope: "main", result: {
         snapshotId: currentPage.id, domRevision, url: origin + currentPage.path, title: currentPage.title, text: currentPage.text,
@@ -3385,20 +3393,27 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await expect.poll(() => result.query()?.textContent).toBe("I found more than one amount due or due date on this page.");
     second.remove();
     let reads = card.frame.snapshots();
-    betweenReads = () => { balance.innerHTML = "$1,290<sup>.00</sup>"; };
+    betweenReads = { after: "statement", change: () => { balance.innerHTML = "$1,290<sup>.00</sup>"; } };
     await tap(readStatement);
     await expect.poll(() => result.query()?.textContent).toBe("The page changed while I checked it. Check it again.");
-    expect(card.frame.snapshots() - reads).toBe(2);
+    expect(card.frame.snapshots() - reads).toBe(4);
     balance.innerHTML = "$1,284<sup>.56</sup>";
     card.frame.document.title = "Previous statement";
     await tap(readStatement);
     await expect.poll(() => result.query()?.textContent).toBe("This is an earlier statement. Open the current one.");
     card.frame.document.title = "Statements & Documents";
+    const statementHeading = card.frame.document.getElementById("statement-heading")!;
+    for (const historical of ["Previous statement", "Paid statement", "Previous installment"]) {
+      statementHeading.textContent = historical;
+      expect(await tablet.checkStep()).toBe("Past");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+    }
+    statementHeading.textContent = "Current statement";
 
     // spec/app/deviceKeys.md, "A task waits while a website's question holds me, and goes on after my answer"
     const snapshotRequested = Latch.makeUnsafe();
     const releaseSnapshot = Latch.makeUnsafe();
-    betweenReads = () => { snapshotRequested.openUnsafe(); return Effect.runPromise(releaseSnapshot.await); };
+    betweenReads = { after: "statement", change: () => { snapshotRequested.openUnsafe(); return Effect.runPromise(releaseSnapshot.await); } };
     const checking = tablet.checkStep();
     try {
       await Effect.runPromise(snapshotRequested.await);
@@ -3440,10 +3455,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const figures = [...counting.frame.document.querySelectorAll("p")].find((line) => line.textContent?.startsWith("Statement balance"))!;
     figures.textContent = "Statement balance: $612.40. Remaining statement balance: $40.00. Payment due date: 12/05/2026.";
     reads = counting.frame.snapshots();
-    betweenReads = () => { left.textContent = "4:39"; };
+    betweenReads = { after: "statement", change: () => { left.textContent = "4:39"; } };
     await tap(readStatement);
     await expect.element(pending).toHaveTextContent(`Find and check “${usage}”.`);
-    expect(counting.frame.snapshots() - reads).toBe(2);
+    expect(counting.frame.snapshots() - reads).toBe(4);
     const below = counting.frame.document.createElement("a");
     below.href = "/account#/usage";
     below.textContent = "Today's usage";
@@ -3458,7 +3473,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await visit(billing, "#/usage");
     const clock = billing.frame.document.getElementById("clock")!;
     reads = billing.frame.snapshots();
-    betweenReads = () => { clock.textContent = "10:41:08"; };
+    betweenReads = { after: "snapshot", change: () => { clock.textContent = "10:41:08"; } };
     await tap(check);
     await expect.element(page.getByRole("region", { name: "Task plan" }).getByText(/^Open the email you want me to read/)).toBeVisible();
     expect(billing.frame.snapshots() - reads).toBe(4);
