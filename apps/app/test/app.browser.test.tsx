@@ -3824,6 +3824,7 @@ it.each([
     await pending();
     await visit(home + "coats?display=grid");
     if (!matchesSiteName) {
+      await routeTo(button("Collapse"));
       await pending();
       await routeTo(correction);
       documentId += "-interrupted";

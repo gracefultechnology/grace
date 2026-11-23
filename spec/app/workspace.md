@@ -1535,11 +1535,10 @@ pure def isLinkGuidanceStep(guidedStep: GuidedStep): bool = match guidedStep {
   | _ => false
 }
 pure def mayGuideReadLink(w: Workspace): bool =
-  isLinkGuidanceStep(nextOutcome(w.plan)) and mayGuideOnBrowser(w)
-pure def mayGuideOnBrowser(w: Workspace): bool =
-  hasNext(w.plan) and
-  w.device.readiness == S::Ready and w.device.surface == S::Browser and mayAssist(w) and
-  w.assistant.presentation == A::Compact and B::activeTab(w.browser).load == B::Loaded and
+  isLinkGuidanceStep(nextOutcome(w.plan)) and w.assistant.presentation == A::Compact and mayAssist(w) and mayReadGuidedBrowser(w)
+pure def mayReadGuidedBrowser(w: Workspace): bool =
+  hasNext(w.plan) and S::mayObserveBrowser(w.device) and A::isVisible(w.assistant) and
+  B::activeTab(w.browser).load == B::Loaded and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
   w.assistant.replacementId == "" and w.assistant.conversation.turn == C::Ready and not(w.assistant.conversation.question) and
   w.execution.phase == X::Idle and w.commitmentTask == ""
@@ -1612,7 +1611,8 @@ When the person opens a navigation menu, Grace can point to a visible child of t
 
 On a reviewed public price sort, Grace can offer the exact visible category
 name of the securely loaded page from the reviewed tab after observing its
-price toolbar in the reviewed direction. She checks the same document,
+price toolbar in the reviewed direction. The offer is available in the same
+view as the price check, including when Grace reopens expanded. She checks the same document,
 document revision, category and toolbar again when the person accepts. The
 chosen label replaces only the category in that step. It keeps the reviewed
 tab, origin and direction. Checking again still requires the full sort
@@ -1625,9 +1625,9 @@ pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrect
   val tab = B::activeTab(w.browser)
   val witness = correction.witness
   val pendingStep = nextOutcome(w.plan)
-  mayGuideOnBrowser(w) and not(privateSurfaceActive(w)) and w.device.observationAllowed and
+  mayReadGuidedBrowser(w) and not(privateSurfaceActive(w)) and
   (match witness {
-    | PublicLinkName => isNamedDestination(pendingStep) and correction.href != correction.url
+    | PublicLinkName => mayGuideReadLink(w) and isNamedDestination(pendingStep) and correction.href != correction.url
     | LocatedSortCategory(located) => match pendingStep {
       | SortPublicListing(sort) => sort.tabId == tab.id and tab.secure and not(needsRecoveredPublicTab(w.plan)) and
           publicResultLoad(w.plan, tab.loadVersion, correction.documentId) and located.domRevision >= 0 and located.origin == sort.origin and located.direction == sort.direction and
@@ -1845,8 +1845,7 @@ pure val exampleSortName: GuidedNameCorrection = {
   witness: LocatedSortCategory({ domRevision: 1, origin: "https://utility.example", direction: PriceAscending })
 }
 pure def lawSortNameCorrectionExampleIsCurrent(by: WorkspaceActor): bool = {
-  val ready: Workspace = { ...examplePublicSort, device: exampleSortNameDevice,
-    assistant: A::resize(exampleSortAssistant, false, C::ConversationUser) }
+  val ready: Workspace = { ...examplePublicSort, device: exampleSortNameDevice }
   val offered = offerGuidedNameCorrection(ready, exampleSortName, Host)
   by == Person implies canOfferGuidedNameCorrection(ready, exampleSortName, Host) and
     canConfirmGuidedNameCorrection(offered, exampleSortName, by) and

@@ -2184,8 +2184,7 @@ lemma lawSortNameCorrectionExampleIsCurrent_ensures(by_: WorkspaceActor)
   ensures (lawSortNameCorrectionExampleIsCurrent(by_) == true)
 {
   if by_.Person? {
-    var ready := examplePublicSort.(device := exampleSortNameDevice,
-      assistant := app__assistant_resize(exampleSortAssistant, false, app__conversation_ConversationActor.ConversationUser));
+    var ready := examplePublicSort.(device := exampleSortNameDevice);
     var correction := exampleSortName;
     var loading := app__browser_navigated(app__browser_blankTab(1, 0), sampleSortUrl, 1);
     assert exampleSortLoading.tabs == [loading] && exampleSortLoading.selected == 1;
@@ -2197,9 +2196,9 @@ lemma lawSortNameCorrectionExampleIsCurrent_ensures(by_: WorkspaceActor)
     assert loading.history == ["", sampleSortUrl] && loading.cursor == 1;
     app__browser_lawALoadRecordsWhereItEnded_ensures(loading, sampleSortUrl);
     assert app__browser_tabUrl(tab) == sampleSortUrl;
-    assert ready.assistant.presentation.Compact? && ready.assistant.activity.ReadyForStep?;
-    assert !privateSurfaceActive(ready) && mayAssist(ready);
-    assert mayGuideOnBrowser(ready);
+    assert ready.assistant.presentation.Expanded? && ready.assistant.activity.ReadyForStep?;
+    assert !privateSurfaceActive(ready) && app__shell_mayObserveBrowser(ready.device);
+    assert mayReadGuidedBrowser(ready);
     assert nextOutcome(ready.plan) == sampleSortStep && !needsRecoveredPublicTab(ready.plan);
     assert correction.loadVersion == tab.loadVersion && publicResultLoad(ready.plan, tab.loadVersion, correction.documentId);
     assert guidedNameCorrectionCurrent(ready, correction);
