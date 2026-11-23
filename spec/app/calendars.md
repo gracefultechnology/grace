@@ -172,7 +172,10 @@ calendar, saved nothing and tells nothing, and an appointment the provider’s
 feed changed or removed is shown, not told. Nothing changed tells nothing.
 Being told is a turn of the host, never hers: what Grace is told is only the
 news, the calendar and the appointment, with no consent in it, so it asks
-Grace to do nothing.
+Grace to do nothing. When the store assigns a different ID to a new
+appointment, the host reports the accepted creation receipt's new ID. It
+matches the approved draft and the exact saved appointment. A feed update,
+failed write or repeated receipt cannot earn that report.
 
 What Margaret sees follows the same news. After an appointment was added or
 changed, Calendar raises the toast "Saved to your calendar"; after one was
@@ -200,6 +203,17 @@ pure def told(key: int, before: V::CalendarView, after: V::CalendarView): Calend
   else if (changed.length() > 0) { ...quiet, news: ChangedAppointment, id: changed.nthOr(0, C::initial).identity.occurrenceId }
   else if (deleted.length() > 0) { ...quiet, news: DeletedAppointment, id: deleted.nthOr(0, C::initial).identity.occurrenceId }
   else quiet
+pure def toldCreated(key: int, before: V::CalendarView, after: V::CalendarView, created: V::CreatedReceipt): CalendarTold =
+  val approved = V::entryAt(before, created.localId)
+  val saved = V::entryAt(after, created.providerId)
+  val matched = created.localId != created.providerId and created.owner == before.owner and created.calendarId == before.calendarId and
+    created.owner == after.owner and created.calendarId == after.calendarId and
+    approved.phase == C::Editing and not(approved.hasSaved) and approved.identity.kind == C::Appointment and
+    approved.approvedRevision == created.revision and approved.revision == created.revision and
+    V::unusedProviderId(before, created.localId, created.providerId) and not(before.cancelledIds.contains(created.localId)) and
+    after.cancelledIds.contains(created.localId) and saved.phase == C::Saved and saved.hasSaved and saved.revision == created.revision and
+    saved.identity == { ...approved.identity, occurrenceId: created.providerId } and saved.committed == approved.draft
+  { news: if (matched) AddedAppointment else NoCalendarNews, key: key, id: if (matched) created.providerId else "" }
 pure def lawCalendarToldIsDerived(key: int, view: V::CalendarView): bool =
   told(key, view, view).news == NoCalendarNews
 pure def lawToldNamesWhatChanged(key: int, before: V::CalendarView, after: V::CalendarView): bool =

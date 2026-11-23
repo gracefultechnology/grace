@@ -2,7 +2,7 @@
 import { WebsiteTask } from "./websiteTask.vibe"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
-import { askedDay, calendarFree, type CalendarSource, type CalRow, changeOf, confirmationOf, confirmRing, type DayToShow, deletionOf, savedDay, shownReminders, showsDay, told, type CalendarTold } from "../gen/app__calendars.effect.vibe"
+import { askedDay, calendarFree, type CalendarSource, type CalRow, changeOf, confirmationOf, confirmRing, type DayToShow, deletionOf, savedDay, shownReminders, showsDay, told, toldCreated, type CalendarTold } from "../gen/app__calendars.effect.vibe"
 import { type Machine as CalendarMachine, enabled, entryAt, keepsRepetition, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type SeriesReceipt, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { planned, repetitions as repeatsOf, shifted } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
@@ -296,13 +296,19 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
         live.plan.calendarApproval.proposal === approval.proposal && matchesGuidedApproval(key, c, live.plan.calendarApproval)
     }
     const receipt = try store.write(written(v, c), v, guidedFirstDispatch ? { website, current } : undefined)
+    const before = try box.get()
     const event: CalendarEvent = receipt.providerId !== undefined && !single(c)
-      ? { type: "storeCreatedSeries", receipt: seriesReceipt(try box.get(), c, receipt), providerId: receipt.providerId }
+      ? { type: "storeCreatedSeries", receipt: seriesReceipt(before, c, receipt), providerId: receipt.providerId }
       : receipt.providerId !== undefined
       ? { type: "storeCreated", created: { owner: c.identity.owner, calendarId: c.identity.calendarId, localId: c.identity.occurrenceId, providerId: receipt.providerId, revision: receipt.revision } }
       : single(c) ? { type: "changeOccurrence", id: c.identity.occurrenceId, command: { tag: "EntryStored", revision: receipt.revision, succeeded: receipt.succeeded } }
-      : { type: "saveSeries", receipt: seriesReceipt(try box.get(), c, receipt) }
+      : { type: "saveSeries", receipt: seriesReceipt(before, c, receipt) }
     const adopted = box.send(event, "ViewStore") catch () => undefined
+    if (adopted !== undefined && receipt.succeeded && receipt.providerId !== undefined) {
+      const news = toldCreated(key, before, adopted, { owner: c.identity.owner, calendarId: c.identity.calendarId,
+        localId: c.identity.occurrenceId, providerId: receipt.providerId, revision: receipt.revision })
+      if (news.news !== "NoCalendarNews") try publish({ told: news })
+    }
     if (guidedFirstDispatch && adopted !== undefined && receipt.succeeded && receipt.providerId !== undefined)
       try observed(try box.get(), receipt.providerId, approval)
     for (const p of receipt.published) box.send({ type: "publishOccurrence", ...p }, "ViewStore") catch () => undefined
