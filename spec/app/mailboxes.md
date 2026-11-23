@@ -347,7 +347,9 @@ An account whose Email is off, or that was removed, has no row in any
 folder, Outbox or the account rows, no unread count, no banner, no From
 choice, nothing open on screen and nothing in what Grace is shown. Its
 mailbox and its Outbox stay as they are, and turning Email back on shows
-them again.
+them again. A send that was already in flight still settles in its own
+mailbox, but an account-scoped notice shows only while that same mailbox
+belongs to a current account whose Email is on.
 
 ```quint
 pure def lawHiddenAccountShowsNothing(registry: A::Accounts, sources: List[MailSource], folder: I::Folder, online: bool, account: int): bool =

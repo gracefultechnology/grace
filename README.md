@@ -409,6 +409,14 @@ CI runs `pnpm verify` on each pull request and push with the same fixed
 profile as local checks, and a fresh nightly run with a larger fixed profile
 ([CI](CONTRIBUTING.md#ci)).
 
+For official WebArena Shopping runs, enable `webarena_public_search` to include
+tasks 274–278. The Chromium user signs in with the benchmark’s synthetic
+account, types the reviewed term, then resumes Grace and checks the new results. The scorecard
+reports user-assisted checks and official landing and no-action scores.
+Task 277 asks for “batteries for iphone 13,” while the official URL expects
+“iphone 13.” The journey keeps the full requested phrase and the evaluator
+keeps its original reference.
+
 ## Examples
 
 Each example is a whole application on the stack, standing apart from the

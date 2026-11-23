@@ -51,8 +51,10 @@ import handoffs as H from "./handoffs"
 
 type WorkspaceActor = Person | Host | Store | Actuator
 type StepDetails = { surface: S::Surface, subject: str, outcome: str }
+type PriceDirection = PriceAscending | PriceDescending
 type GuidedStep = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | ReadCalendar | SaveMailAppointment
-  | ReachNamedPage({ subject: str }) | ReadLatestRecord({ collection: str, status: str })
+  | SortPublicListing({ subject: str, origin: str, tabId: int, direction: PriceDirection })
+  | ReachNamedPage({ subject: str }) | ReadLatestRecord({ collection: str, status: str }) | SearchPublicSite({ query: str, origin: str, tabId: int })
   | SurfaceOutcome({ surface: S::Surface, subject: str, outcome: str })
 type GuidedMail = { account: int, owner: str, address: str, ref: str, generation: int, revision: int, version: str }
 type GuidedCalendarApproval = {
@@ -94,7 +96,9 @@ type GuidedObservation = {
   step: GuidedStep, sourceKey: str, evidence: str
 }
 type GuidedRecordCheck = { report: GuidedObservation, key: str, tabId: int, documentId: str, loadVersion: int }
+type GuidedSortCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, tabId: int, category: str, direction: PriceDirection }
 type GuidedNamedPageCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, heading: str }
+type GuidedSearchCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, query: str }
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
 type GuidedSaveRecoveryCheck = { report: GuidedObservation, saved: GuidedSaveReference }
 type GuidedCalendarReadback = { approval: GuidedCalendarApproval, occurrence: str, evidence: str }
@@ -127,6 +131,8 @@ pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadCalendar => { surface: S::Calendar, subject: "Saved appointment", outcome: "Open the saved appointment you want me to read." }
   | SaveMailAppointment => { surface: S::Calendar, subject: "Appointment from the email", outcome: "Ask me to prepare the appointment from the email. Approve its details separately." }
   | ReachNamedPage(target) => { surface: S::Browser, subject: target.subject, outcome: "Find and check the named page." }
+  | SortPublicListing(target) => { surface: S::Browser, subject: target.subject, outcome: "Check the requested category and price order." }
+  | SearchPublicSite(target) => { surface: S::Browser, subject: target.query, outcome: "Search on the website, then check the results." }
   | ReadLatestRecord(intent) => { surface: S::Browser, subject: intent.collection, outcome: "Check the latest record matching the reviewed status." }
   | SurfaceOutcome(details) => { surface: details.surface, subject: details.subject, outcome: details.outcome }
 }
@@ -683,6 +689,16 @@ pure def lawGuidanceControlsKeepExecution(w: Workspace, input: I::Interaction, b
       interact(w, input, by).assistant.conversation == w.assistant.conversation)
 pure def sometimesGuidanceShown(w: Workspace): bool = guidanceVisible(w)
 pure def sometimesGuidanceDismissed(w: Workspace): bool = guidanceIsCurrent(w) and not(w.assistant.guidance.shown)
+pure val eval_witness_sometimesGuidanceDismissed = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("visit", S::Browser, Person),
+  ("openGrace", Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 0 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("publishGuidance", { target: "control", revision: 0, workVersion: 1, conversationVersion: 2,
+    deviceVersion: 7, browserRevision: 1, verified: true }, A::Tap, "Read the account", Host),
+  ("interact", I::DismissGuidance({ revision: 1 }), Person))
 pure val guidanceRevisionValues = Set(0, 1, 2)
 pure val guidanceTitleValues = Set("", "Tap Send")
 pure val guidanceReportValues = Set(
@@ -947,12 +963,14 @@ pure def stayOnPage(w: Workspace, stayed: StayedLoad, by: WorkspaceActor): Works
 
 The host identifies a document change caused by the currently dispatched
 ordinary operation or payment. It records that navigation in the actual
-browser and invalidates the old target. Fresh observation follows within
-the active task. A payment result page continues its existing outcome wait;
-it never becomes another submit. An unexpected change pauses instead. A payment progress callback must belong
-to the attached task and an active execution. A proof witness showed that an
-unrelated retained payment could otherwise create ordinary website work inside
-an active guided plan.
+browser and invalidates the old target. Fresh observation follows within the
+active task. A payment result page continues its existing outcome wait; it
+never becomes another submit. An unexpected change pauses instead. When the
+page in view starts again at the address it already shows, the host names the
+load version it was running, and a report naming any other is refused. A
+payment progress callback must belong to the attached task and an active
+execution. A proof witness showed that an unrelated retained payment could
+otherwise create ordinary website work inside an active guided plan.
 
 ```quint
 pure def canReceiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceActor): bool =
@@ -1012,8 +1030,7 @@ were; the selected page's own move, while hidden, changes the revision as
 any page moving by itself does. The host names the load version of the
 load the page was running when it moved, and a report is refused once that
 tab has started another load; what happens in other tabs, or to the
-browser's revision, never makes it late. A start at a retained address also
-names the prior load version when the page is in view.
+browser's revision, never makes it late.
 
 ```quint
 pure def canUnwatchedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =
@@ -1374,7 +1391,7 @@ name quoted from the current request. The quoted name may differ from the person
 does not finish that step. The person can ask for another highlight from
 the new page with the same step active.
 
-For a requested statement read, the host reads the current visible document locally, whatever its title, unless the title names it a past, previous or prior bill, statement or invoice. The amount due and due date each need a single distinct labeled value on the same statement, written after its label or on the next line, including an amount the page splits across text fragments. An amount whose cents the page shows apart with no decimal mark supplies no value. A labeled remaining statement balance, or remaining balance due, replaces the statement or new balance when the statement shows one; an amount due labeled beside it must agree with it. An amount the page marks CR keeps that mark, and one the page calls a credit supplies no value. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter, with or without its year. A previous balance, minimum payment, current or running balance, a loan's remaining balance, credit limit, pending charge or statement issue date supplies a different fact, and a label with no value beside it supplies none. The host rereads the document identity, address and values before confirming the step. Only those values are compared, so a time the page counts by itself, or any other change elsewhere in the document, may occur between the two reads. The confirmation repeats the statement's own labels. An ambiguous or incomplete statement, one whose values change between the reads, and one that is covered, still loading or no longer at its address leave the step open, and Grace says which.
+For a requested statement read, the host reads the current visible document locally, whatever its title, unless the title names it a past, previous or prior bill, statement or invoice. The amount due and due date each need a single distinct labeled value on the same statement, written after its label or on the next line, including an amount the page splits across text fragments. An amount whose cents the page shows apart with no decimal mark supplies no value. A labeled remaining statement balance, or remaining balance due, replaces the statement or new balance when the statement shows one; an amount due labeled beside it must agree with it. An amount the page marks CR keeps that mark, and one the page calls a credit supplies no value. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter, with or without its year. Payment due can also label a currency amount. The connective “by” may give the due date immediately after a labeled amount due on the same line. When the browser exposes it separately from that amount, the host cannot use it as the due date. The check remains open unless an independent due-date label gives the same value. A distinct competing date keeps the check open. An account or current balance labeled as the amount due counts as that amount. An unqualified account or current balance supplies a different fact, as do a previous or running balance, minimum payment, a loan's remaining balance, credit limit, pending charge and statement issue date. A label with no value beside it supplies none. The host rereads the document identity, address and values before confirming the step. Only those values are compared, so a time the page counts by itself, or any other change elsewhere in the document, may occur between the two reads. The confirmation repeats the statement's own labels. An ambiguous or incomplete statement, one whose values change between the reads, and one that is covered, still loading or no longer at its address leave the step open, and Grace says which.
 
 ```quint
 pure def statementAmounts(due: Set[str], balances: Set[str], remaining: Set[str]): Set[str] =
@@ -1390,6 +1407,8 @@ pure def isNamedDestination(guidedStep: GuidedStep): bool = match guidedStep {
 }
 pure def hasGuidedAdapter(guidedStep: GuidedStep): bool = match guidedStep {
   | SurfaceOutcome(_) => false
+  | SortPublicListing(target) => target.subject != "" and target.origin != "" and target.tabId > 0
+  | SearchPublicSite(target) => target.query != "" and target.origin != "" and target.tabId > 0
   | ReadLatestRecord(intent) => intent.collection != "" and intent.status != ""
   | _ => true
 }
@@ -1532,9 +1551,11 @@ pure val correctionValues = Set(3, 4).map(generation =>
 
 The app adapter checks the actual outcome on the named subject under the authenticated account. It supplies an opaque receipt and the context captured with that observation. The host accepts it once, on the visible app, for the same task and revision. Every Browser check requires the current session’s reading permission on an ordinary tab, including checking a page the person opened manually. Two complete main-document observations must identify the same loaded document and URL before a browser receipt can be accepted. A covering blocker, a private field or an unrecognized text input prevents a receipt. For link guidance, a page may have a witnessed idle sign-in form beside public links. Grace can highlight only same-site links that the browser identifies as outside all forms and that carry no query, fragment or connection credentials. Active, filled or edited sign-in fields, a verification challenge, or an unclassified input prevent this exception. The ranking service receives only redacted public link labels. A search field identified as such by the page can remain available for ordinary navigation. An untouched newsletter opt-in with one clearly labeled blank email input and a Subscribe button allows Grace to point to an independently observed public link outside every form, or verify the public document identity or its main heading outside forms. The address used for that evidence must have no credentials, query or fragment. This permission supplies no statement or general page-content evidence. Missing field evidence, a focused or filled text input, and an additional unrecognized control keep the opt-in private. When an observed form prevents a check, Grace explains how the person can turn browser reading off, finish the form in the same tab and decide when to allow reading and resume. If the page is still loading or Grace cannot obtain an observation, Grace offers a retry. Passwords and private sign-in never provide a plan receipt. An app switch pauses guidance. If a replacement decision is pending, the person must keep the old plan before resuming it. After an explicit Resume, a fresh observation may reconcile an outcome the person achieved manually. The final observed outcome completes the task. An attached payment cannot use a plan receipt to complete, and a paused plan cannot accept one. A missing or duplicate result leaves the instruction in place and gives the person a way to retry, and Grace says why the check did not count: what she could not find, that the page changed or is covered, or that the item already satisfied an earlier step. The feedback belongs to the current account and step. A named browser step only accepts a dedicated observation of the approved name in the active page loaded during this plan. The host reads the first level-one heading in the main content through the native visible-text reader, excluding navigation and sidebars. When the main content has no level-one heading, it reads the first one outside navigation, sidebars, the page banner and footers. It compares the heading with the reviewed name after normalizing Unicode, spacing, letter case and apostrophes inside a word. It verifies the visible heading again before accepting the result. The two heading readings must agree. Current main-document observations on either side of each reading must identify the same loaded document and URL and show no covering blocker. Changes elsewhere in that document can occur while the heading is being checked. A navigation label, a browser-tab title or a generic document receipt cannot finish the named step.
 
+
+For a requested public category price order, the person reviews the category and direction, opens the category and sets the order using the website’s own controls. Grace checks the category independently of the sort state on the same ready, secure document in the reviewed tab and site. The browser observation has to identify Price as selected and the current direction unambiguously on the category’s own sort control. A control that offers to switch to descending identifies ascending only if it is the opposite action of this price sort. A wrong category, wrong direction, covering blocker, private form, stale document or missing evidence leaves the step open. A generic page check cannot finish it.
 ```quint
 type GuidedPageField = PrivatePageField | UnknownPageField | NavigationPageField | IdleOptInField | IdleLoginField
-type GuidedEvidenceUse = GuidePublicLinks | CheckPublicDocument | ReadGuidedContent
+type GuidedEvidenceUse = GuidePublicLinks | CheckPublicDocument | CheckPublicSearchResult | CheckPublicSort | ReadGuidedContent
 pure def allowsLimitedGuidedEvidence(use: GuidedEvidenceUse, controls: List[GuidedPageField]): bool =
   use != ReadGuidedContent and controls.every(controlKind =>
     controlKind == NavigationPageField or controlKind == IdleOptInField or (use == GuidePublicLinks and controlKind == IdleLoginField))
@@ -1569,7 +1590,7 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  not(isNamedDestination(report.step)) and not(isLatestRecord(report.step)) and guidedObservationCurrent(w, report, by)
+  not(isNamedDestination(report.step)) and not(isPublicSort(report.step)) and not(isLatestRecord(report.step)) and not(isPublicSearch(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
     nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched,
@@ -1588,6 +1609,26 @@ pure def canConfirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck
   pageCheck.heading == guidedDetails(pageCheck.report.step).subject
 pure def confirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): Workspace =
   confirmGuided(w, pageCheck.report, by)
+pure def isPublicSort(guidedStep: GuidedStep): bool = match guidedStep {
+  | SortPublicListing(_) => true
+  | _ => false
+}
+pure def canConfirmGuidedPublicSort(w: Workspace, sortCheck: GuidedSortCheck, by: WorkspaceActor): bool =
+  val tab = B::activeTab(w.browser)
+  val observedStep = sortCheck.report.step
+  guidedObservationCurrent(w, sortCheck.report, by) and sortCheck.documentId != "" and
+  tab.load == B::Loaded and tab.secure and tab.id == sortCheck.tabId and
+  sortCheck.url != "" and sortCheck.url == B::tabUrl(tab) and
+  sortCheck.loadVersion == tab.loadVersion and sortCheck.loadVersion > w.plan.openingBrowser and
+  (match observedStep {
+    | SortPublicListing(target) => target.tabId == sortCheck.tabId and target.origin == sortCheck.origin and
+      target.subject == sortCheck.category and target.direction == sortCheck.direction
+    | _ => false
+  })
+pure def confirmGuidedPublicSort(w: Workspace, sortCheck: GuidedSortCheck, by: WorkspaceActor): Workspace =
+  confirmGuided(w, sortCheck.report, by)
+pure def lawPublicSortNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  isPublicSort(report.step) implies not(canConfirmGuided(w, report, by))
 pure def lawNamedPageNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   isNamedDestination(report.step) implies not(canConfirmGuided(w, report, by))
 pure def lawWrongNamedHeadingCannotFinish(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): bool =
@@ -1601,9 +1642,11 @@ pure def lawPausedPlanCannotAdvance(w: Workspace, report: GuidedObservation, by:
 pure def lawCommitmentCannotUsePlanReceipt(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   w.commitmentTask != "" implies not(canConfirmGuided(w, report, by))
 pure val sampleStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "appointment", outcome: "Read the appointment" })
+pure val sampleSearchStep: GuidedStep = SearchPublicSite({ query: "green tea", origin: "https://utility.example", tabId: 1 })
 pure val requestValues = Set(
   { owner: "owner", task: "task", goal: "Read my appointment", steps: List(sampleStep) },
-  { owner: "tablet", task: "read", goal: "Find Support", steps: List(ReachNamedPage({ subject: "Support" })) })
+  { owner: "tablet", task: "read", goal: "Find Support", steps: List(ReachNamedPage({ subject: "Support" })) },
+  { owner: "owner", task: "task", goal: "Search for green tea", steps: List(sampleSearchStep) })
 pure val sampleReport: GuidedObservation = {
   owner: "owner", task: "task", version: 1, deviceVersion: 1, browserRevision: 0,
   step: sampleStep, sourceKey: "appointment-id", evidence: "appointment-receipt"
@@ -1619,8 +1662,85 @@ pure val pageCheckValues = Set(samplePageCheck, { ...samplePageCheck, heading: "
   { ...samplePageCheck, report: { ...namedReport, owner: "tablet", task: "read", version: 4, deviceVersion: 7,
       browserRevision: 5, step: ReachNamedPage({ subject: "Help" }), evidence: "Help" },
     loadVersion: 4, url: "https://utility.example/help", heading: "Help" })
+pure val sampleSortUrl = "https://utility.example/coats"
+pure val exampleSortLoading = B::navigate(initial.browser, sampleSortUrl)
+pure val exampleSortBrowser =
+  B::finishPageLoad(exampleSortLoading, 1, B::activeTab(exampleSortLoading).loadVersion, B::Loaded, true, sampleSortUrl)
+pure val exampleSortDevice =
+  S::setObservationPermission(S::openSurface(S::finishStartup(initial.device, true), S::Browser), true)
+pure val exampleSortAssistant =
+  A::beginTask(A::open(initial.assistant, C::ConversationUser), "task", "List products from Winter coats category by ascending price", C::ConversationUser)
+pure val sampleSortStep: GuidedStep =
+  SortPublicListing({ subject: "Winter coats", origin: "https://utility.example", tabId: 1, direction: PriceAscending })
+pure val examplePublicSort: Workspace = {
+  ...initial, assistant: exampleSortAssistant, browser: exampleSortBrowser, device: exampleSortDevice,
+  plan: { ...emptyPlan, owner: "owner", steps: List(sampleSortStep), openingBrowser: 0, originalAsk: "List products from Winter coats category by ascending price" }
+}
+pure val sampleSortCheck: GuidedSortCheck = {
+  report: { ...sampleReport, step: sampleSortStep, version: examplePublicSort.assistant.workVersion,
+    deviceVersion: examplePublicSort.device.contextVersion, browserRevision: examplePublicSort.browser.revision,
+    sourceKey: "sorted-document", evidence: "Winter coats sorted by ascending price." },
+  documentId: "sorted-document", loadVersion: B::activeTab(examplePublicSort.browser).loadVersion,
+  url: sampleSortUrl, origin: "https://utility.example", tabId: 1, category: "Winter coats", direction: PriceAscending
+}
+pure val sortCheckValues = Set(sampleSortCheck, { ...sampleSortCheck, category: "Rain coats" },
+  { ...sampleSortCheck, direction: PriceDescending }, { ...sampleSortCheck, tabId: 2 })
+pure def lawPublicSortExampleIsAdmitted(by: WorkspaceActor): bool =
+  by == Host implies canConfirmGuidedPublicSort(examplePublicSort, sampleSortCheck, by)
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
+```
+
+### The person searches the reviewed site and Grace checks that exact query
+
+When the person asks to search the secure site currently open, Grace can offer
+the complete query from their words. The review shows the query and site.
+Grace asks the person to use the site's own search and then choose Check search
+results. Grace does not type, submit or rank links for this step. The check
+needs a fresh loaded document in the reviewed tab on the reviewed origin. Two local readings,
+bracketed by observations of that same document and address, must find the
+same visible results heading outside forms, inputs and links. The heading must
+name the exact query after its search-results label. A private form,
+unrecognized input, covering blocker, wrong query or changed observation leaves
+the step open. An untouched newsletter opt-in and an idle recognized search
+box can remain beside the results. Grace uses only the heading as query evidence.
+The result is accepted only through this search check for the active reviewed
+step. The stored receipt describes the confirmed query and never stores the
+results address or other page content.
+
+```quint
+pure def isPublicSearch(guidedStep: GuidedStep): bool = match guidedStep {
+  | SearchPublicSite(_) => true
+  | _ => false
+}
+pure def canConfirmGuidedSearch(w: Workspace, searchCheck: GuidedSearchCheck, by: WorkspaceActor): bool =
+  val tab = B::activeTab(w.browser)
+  val searchedStep = searchCheck.report.step
+  guidedObservationCurrent(w, searchCheck.report, by) and searchCheck.documentId != "" and
+  tab.load == B::Loaded and tab.secure and searchCheck.url != "" and searchCheck.url == B::tabUrl(tab) and
+  searchCheck.loadVersion == tab.loadVersion and searchCheck.loadVersion > w.plan.openingBrowser and
+  match searchedStep {
+    | SearchPublicSite(target) => target.origin == searchCheck.origin and target.query == searchCheck.query and target.tabId == tab.id
+    | _ => false
+  }
+pure def confirmGuidedSearch(w: Workspace, searchCheck: GuidedSearchCheck, by: WorkspaceActor): Workspace =
+  confirmGuided(w, searchCheck.report, by)
+pure def lawSearchNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  isPublicSearch(report.step) implies not(canConfirmGuided(w, report, by))
+pure def lawWrongSearchCannotFinish(w: Workspace, searchCheck: GuidedSearchCheck, by: WorkspaceActor): bool =
+  val searchedStep = searchCheck.report.step
+  val mismatch = match searchedStep {
+    | SearchPublicSite(target) => target.origin != searchCheck.origin or target.query != searchCheck.query or target.tabId != B::activeTab(w.browser).id
+    | _ => true
+  }
+  mismatch implies not(canConfirmGuidedSearch(w, searchCheck, by))
+pure val sampleSearchCheck: GuidedSearchCheck = {
+  report: { ...sampleReport, step: sampleSearchStep, version: 3, deviceVersion: 3, browserRevision: 4,
+    sourceKey: "search-document", evidence: "Search results for green tea." },
+  documentId: "search-document", loadVersion: 3, url: "https://utility.example/search?q=green+tea", origin: "https://utility.example", query: "green tea"
+}
+pure val searchCheckValues = Set(sampleSearchCheck, { ...sampleSearchCheck, query: "black tea" },
+  { ...sampleSearchCheck, origin: "https://other.example" })
 ```
 
 ### The latest matching record must be selected on its collection and verified on arrival
@@ -1635,7 +1755,13 @@ Grace binds the unique latest match and the fresh collection to the active
 step. The person follows the highlight, then chooses Resume. Only that
 direct visit and its single pause and resume can carry the selection forward.
 Grace checks the new document’s address and independently visible identity.
-A regular browser check cannot confirm this step.
+A regular browser check cannot confirm this step. When Grace identifies a
+private form, a page that permits only public links, or a problem verifying
+the account, dates or completeness, she explains that limitation and gives
+the person a next step on the website. If she cannot verify the collection
+itself, she says so. On a page that permits only public links, she tells the person
+to look for the reviewed status on every page and compare the matching records’
+full dates. These refusals leave the step unfinished.
 
 The source and detail evidence stays local, including the link, dates and
 provider identifiers. The reviewed checkpoint retains the collection and
@@ -2156,7 +2282,8 @@ pure val spokenValues = Set(
 pure val taskRequestValues = Set(
   { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" },
   { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" })
-pure val browserInputValues = BC::browserInputValues.union(Set(BC::Navigate({ url: "https://utility.example/help" })))
+pure val browserInputValues = BC::browserInputValues.union(Set(
+  BC::Navigate({ url: "https://utility.example/help" }), BC::Navigate({ url: sampleSearchCheck.url })))
 pure val unexpectedValues = Set(
   { id: 1, revision: 2, loadVersion: 1, destination: "" },
   { id: 1, revision: 2, loadVersion: 1, destination: "https://utility.example/updated" },
@@ -2173,6 +2300,7 @@ pure val loadReportValues = Set(
   { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
   { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: B::redirectedTo },
   { id: 1, version: 3, result: B::Loaded, secure: true, endedAt: "https://utility.example" },
+  { id: 1, version: 3, result: B::Loaded, secure: true, endedAt: sampleSearchCheck.url },
   { id: 1, version: 4, result: B::Loaded, secure: false, endedAt: "https://utility.example" },
   { id: 1, version: 4, result: B::Loaded, secure: false, endedAt: "https://utility.example/help" })
 pure val observed: CurrentObservation = {

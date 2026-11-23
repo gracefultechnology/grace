@@ -5,6 +5,7 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Schema } from "effect";
 import type { Page } from "playwright";
+import { routeFixtureContext } from "./fixture-context.ts";
 
 const revision = "8320228bccf0759f375b9633592612e0e570a526";
 const releasedId = "task_md9";
@@ -66,13 +67,9 @@ function statementAnswer(graceText: string): StatementAnswer {
 async function openStatement(page: Page, inputs: typeof Episode.Type.agentInputs, action: (name: string) => Promise<void>) {
   const portal = new URL(inputs.startUrl);
   if (portal.protocol !== "https:" || portal.hostname !== "127.0.0.1") throw new Error("BillWorld requires its pinned loopback HTTPS episode");
-  await page.route("**/*", (route) => {
-    const request = route.request();
-    const target = new URL(request.url());
-    const read = request.method() === "GET" || request.method() === "HEAD";
-    const login = request.method() === "POST" && target.pathname === "/api/wipp/login";
-    return target.origin === portal.origin && (read || login) ? route.continue() : route.abort();
-  });
+  await routeFixtureContext(page.context(), { origin: portal.origin, permits: (request, target) =>
+    ["GET", "HEAD"].includes(request.method()) ||
+    (request.method() === "POST" && target.pathname === "/api/wipp/login") });
   await action("operator.open_portal");
   const entry = await page.goto(portal.href);
   if (!entry?.ok()) throw new Error("The released BillWorld episode did not open");
