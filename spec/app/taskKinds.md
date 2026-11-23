@@ -59,7 +59,7 @@ pure def lawUnavailableFactsHaveAReason(kind: T::TaskKind, facts: Facts): bool =
 
 ### Terms fit facts only of their own kind, and terms that fit whole facts are valid for the task and leave it actionable
 
-A payment fits a bill as the bill kind judges it, and a booking fits a visit as the booking kind judges it. A booking's terms say whether she accepted a clash with her calendar; no other terms do.
+A payment fits a bill as the bill kind judges it, and a booking fits a visit as the booking kind judges it. A booking's terms say whether she accepted a clash with her calendar; no other terms do. A clash answer identifies the offered slot and the calendar reading that witnessed the clash.
 
 ```quint
 pure def payTermsFit(bill: BK::BillFacts, terms: T::Terms): bool = match terms {
@@ -81,6 +81,14 @@ pure def acceptsClash(terms: T::Terms): bool = match terms {
   | NoTerms => false
   | PayTerms(x) => false
   | BookTerms(x) => x.book.acceptsClash
+}
+pure def matchesClash(facts: Facts, terms: T::Terms, slot: T::Slot, diaryRef: str): bool = match facts {
+  | VisitRead(reading) => match terms {
+    | BookTerms(booking) => booking.book.acceptsClash and booking.book.slot == slot and
+        reading.visit.diaryRead and diaryRef != "" and diaryRef == reading.visit.diaryRef and reading.visit.busy.includes(slot)
+    | _ => false
+  }
+  | _ => false
 }
 pure val sampleClashTerms: T::Terms = T::BookTerms({ book: {
   ...VK::suggestedBooking(VK::sampleVisit), slot: VK::sampleClashSlot, acceptsClash: true } })

@@ -77,6 +77,8 @@ pure def lawOnlyAskedDetailsAreShared(facts: VisitFacts, book: T::Booking): bool
 
 ### A time that clashes with her calendar is booked only with her word that the clash is fine
 
+Her [preparation](./prep.md) accepts a clash only from her explicit answer for the offered slot, current visit version and the calendar read that identified it. The choice carries that approval forward to review.
+
 ```quint
 pure def lawAClashNeedsHerWord(facts: VisitFacts, book: T::Booking): bool =
   (bookingFits(facts, book) and facts.busy.includes(book.slot)) implies book.acceptsClash
