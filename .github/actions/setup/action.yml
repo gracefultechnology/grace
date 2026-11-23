@@ -247,17 +247,19 @@ runs:
       shell: bash
       env:
         PREFIX: ${{ steps.gen-seed.outputs.prefix }}
+        ANDROID: ${{ inputs.job == 'android' }}
       run: |
         shopt -s nullglob
         reports=(.turbo/runs/*.json)
         (( ${#reports[@]} )) || exit 0
-        seed=$(jq -sr '
-          map(select(.version == "1" and .execution.command == "turbo run //#gen" and .execution.exitCode == 0))
-          | select(length == 1) | .[0].tasks
-          | map(select(.taskId | test("#gen($|:)")))
+        seed=$(jq -sr --argjson android "$ANDROID" '
+          map(select(.version == "1" and .execution.exitCode == 0 and
+            (.execution.command == "turbo run //#gen" or ($android and .execution.command == "turbo run //#build //#gen:eliza"))))
+          | select(map(select(.execution.command == "turbo run //#gen")) | length == 1)
+          | [.[].tasks[] | select($android or (.taskId | test("#gen($|:)")))]
           | select(any(.[]; .taskId == "//#gen") and any(.[]; .cache.status == "MISS"))
           | select(all(.[]; .execution.exitCode == 0 and (.cache.status == "HIT" or .cache.status == "MISS")))
-          | sort_by(.taskId != "//#gen", .taskId) | map(.hash) | join("-")
+          | unique_by(.hash) | sort_by(.taskId != "//#gen", .taskId) | map(.hash) | join("-")
         ' "${reports[@]}") || exit 0
         [[ $seed =~ ^[0-9a-f]{16}(-[0-9a-f]{16})*$ ]] || exit 0
         key="$PREFIX$GITHUB_SHA-"
