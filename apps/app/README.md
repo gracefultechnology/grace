@@ -79,9 +79,18 @@ checks on the completed trial, including unchanged protected state and
 credentials. CI uploads asset provenance and both grader receipts as
 `billworld-released-task-md9`.
 
-The same CI job also runs the separate Fleet `view-bill` cases listed in
-`test/fleet.fixture.ts`. For a Fleet-only local run, set
-`GRACE_BILLWORLD_RELEASED_DIR` to the pinned checkout and use:
+The same CI job runs the Fleet `view-bill` cases listed in
+`test/fleet.fixture.ts`. Manual CI defaults to the `reference` cohort. Select
+`held-out` in `billworld_statement_cohort` to run the 25 disjoint assignments
+from the [preregistered run](https://github.com/gracefultechnology/grace/actions/runs/45240036784).
+That assignment takes the lowest SHA-256 of `Grace held-out statement 1/`
+plus the eligible catalog ID per family, excluding all reference sites. Both
+cohorts apply the same grader and controls. Set `billworld=false` with
+`held-out` to run the statement job without the navigation cohort. The
+qualification inventory records the selected cohort and exact billers.
+
+For a Fleet-only local run, set `GRACE_BILLWORLD_RELEASED_DIR` to the pinned
+checkout and optionally set `GRACE_BILLWORLD_STATEMENT_COHORT=held-out`:
 
 ```sh
 pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the Fleet .* BillWorld statement'
