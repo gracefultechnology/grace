@@ -120,6 +120,7 @@ runs:
         key: ${{ steps.turbo-cache.outputs.key }}
         restore-keys: turbo-${{ runner.os }}-${{ runner.arch }}-${{ inputs.job }}-
     - name: Install pinned Eliza backend workspaces
+      if: github.job != 'vibestack-fixture-selftests'
       run: pnpm --dir vendor/eliza --filter @elizaos/cloud... --filter @elizaos/agent... --filter @elizaos/os... install --frozen-lockfile --ignore-scripts
       shell: bash
     - id: gen-seed
