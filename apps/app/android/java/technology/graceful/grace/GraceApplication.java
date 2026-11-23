@@ -8,5 +8,6 @@ public final class GraceApplication extends Application {
   super.onCreate();
   PasswordVaultAccess.setAdmission(GracePasswordsOwner::admitted);
   PasswordVaultAccess.installDeviceUnlockedCustody(this);
+  GraceDeviceLeaseJob.schedule(this);
  }
 }

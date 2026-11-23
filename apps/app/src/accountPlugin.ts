@@ -1,11 +1,18 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
 import { Capacitor, type PluginListenerHandle, registerPlugin } from "@capacitor/core";
+import type { TabletMailAuthority } from "../gen/app__setup.ts";
+import type { TabletGoogleRead } from "./cloudRequests.vibe";
 
-type AccountStatus = { kind: "signedIn"; voiceDisclosureScope: string } | { kind: "signedOut"; legacySignInNeedsCleanup?: true };
+type AccountStatus =
+  | { kind: "signedIn"; voiceDisclosureScope: string; mailLease?: TabletMailAuthority; mailLeaseUpgrade?: "required" | "signInPending" | "acknowledgmentPending" }
+  | { kind: "signedOut"; legacySignInNeedsCleanup?: true };
 
 interface AccountPlugin {
   status(): Promise<AccountStatus>;
   beginSignIn(options?: { method: "browser" }): Promise<void>;
+  beginLeaseUpgrade?(): Promise<void>;
+  cancelLeaseUpgrade?(): Promise<void>;
+  readGoogle?(input: TabletMailAuthority & { route: TabletGoogleRead; query: Record<string, string> }): Promise<unknown>;
   signOut(): Promise<void>;
   cleanupLegacySignIn(): Promise<void>;
   passwordRecoveryStatus(): Promise<unknown>;
@@ -21,7 +28,7 @@ interface AccountPlugin {
   addListener(event: "sessionChanged", listener: (status: AccountStatus) => void): Promise<PluginListenerHandle>;
 }
 
-export type AccountBridge = Pick<AccountPlugin, "status" | "beginSignIn" | "signOut" | "cleanupLegacySignIn" | "manageAccount" | "addListener">;
+export type AccountBridge = Pick<AccountPlugin, "status" | "beginSignIn" | "beginLeaseUpgrade" | "cancelLeaseUpgrade" | "readGoogle" | "signOut" | "cleanupLegacySignIn" | "manageAccount" | "addListener">;
 
 export const accountPlugin = Capacitor.isPluginAvailable("GraceAccount") ? registerPlugin<AccountPlugin>("GraceAccount") : undefined;
 
@@ -35,3 +42,7 @@ export interface ReminderPlugin {
 
 export const reminderPlugin = Capacitor.isPluginAvailable("GraceReminders")
   ? registerPlugin<ReminderPlugin>("GraceReminders") : undefined;
+
+export function accountReadResponse(status: number, body: string) {
+  return new Response(status === 204 || status === 205 || status === 304 ? null : body, { status });
+}

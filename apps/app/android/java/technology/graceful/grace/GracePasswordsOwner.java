@@ -11,7 +11,6 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
 import java.util.Locale;
 import org.json.JSONObject;
 
@@ -94,14 +93,15 @@ final class GracePasswordsOwner {
    && session.accountId().equals(owner.getString("accountId")) && session.organizationId().equals(owner.getString("organizationId"));
  }
 
- private static String credentialId(CloudDeviceAccount.Session session) throws NoSuchAlgorithmException {
-  byte[] fingerprint = MessageDigest.getInstance("SHA-256").digest(session.token().getBytes(StandardCharsets.UTF_8));
-  return Base64.getUrlEncoder().withoutPadding().encodeToString(fingerprint);
+ private static String credentialId(Context context, CloudDeviceAccount.Session current) throws Exception {
+  String binding = GraceAccount.vaultCredentialBinding(context, current);
+  if (binding == null) throw new IllegalStateException("The device account changed");
+  return binding;
  }
 
- private static JSONObject ownerRecord(CloudDeviceAccount.Session current) throws Exception {
+ private static JSONObject ownerRecord(Context context, CloudDeviceAccount.Session current) throws Exception {
   return new JSONObject().put("profile", BuildConfig.CLOUD_PROFILE).put("issuer", BuildConfig.CLOUD_API_ORIGIN).put("accountId", current.accountId())
-    .put("organizationId", current.organizationId()).put("credentialId", credentialId(current));
+    .put("organizationId", current.organizationId()).put("credentialId", credentialId(context, current));
  }
 
  static synchronized long generation() { return generation; }
@@ -118,7 +118,7 @@ final class GracePasswordsOwner {
    if (stored == null) return current == null && GraceAccount.deviceOnly(context) && !changingAccount;
    var owner = new JSONObject(stored);
    return current != null && sameOwner(owner, current)
-    && credentialId(current).equals(owner.optString("credentialId")) && !changingAccount;
+    && credentialId(context, current).equals(owner.optString("credentialId")) && !changingAccount;
   } catch (Exception unavailable) {
    return false;
   }
@@ -140,7 +140,7 @@ final class GracePasswordsOwner {
    throw new IllegalStateException("Confirm linking the saved passwords");
   }
   if (changingAccount || !approval.current()) throw new IllegalStateException("Account verification changed");
-  store.write(OWNER, ownerRecord(current).put("scope", approval.scope()).toString());
+  store.write(OWNER, ownerRecord(context, current).put("scope", approval.scope()).toString());
  }
 
  static void enteringAccountChange(Context context) throws Exception {
@@ -162,12 +162,12 @@ final class GracePasswordsOwner {
   var store = custody(context);
   String stored = store.read(OWNER);
   if (stored == null) {
-   if (!PasswordVaultAccess.get(context).exists()) store.write(OWNER, ownerRecord(verified).toString());
+   if (!PasswordVaultAccess.get(context).exists()) store.write(OWNER, ownerRecord(context, verified).toString());
    return;
   }
   var owner = new JSONObject(stored);
   if (sameOwner(owner, verified)) {
-   store.write(OWNER, owner.put("credentialId", credentialId(verified)).put("issuer", BuildConfig.CLOUD_API_ORIGIN).toString());
+   store.write(OWNER, owner.put("credentialId", credentialId(context, verified)).put("issuer", BuildConfig.CLOUD_API_ORIGIN).toString());
   }
  }
 }
