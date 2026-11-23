@@ -2618,8 +2618,7 @@ pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspac
   if (holds) { ...w, websiteHold: WebsiteHolds }
   else { ...w, assistant: assistant,
     execution: if (X::canInvalidate(w.execution, X::BrowserBridge)) X::invalidate(w.execution, X::BrowserBridge) else w.execution,
-    commitment: if (w.commitment.live and CM::canInvalidate(w.commitment, T::Host))
-      CM::invalidate(w.commitment, T::Host) else w.commitment,
+    commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment,
     websiteHold: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
 }
 pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
