@@ -104,7 +104,7 @@ describe("the documents name what exists", () => {
       [["selftest:tools:a", "selftest:tools:b", "selftest:tools:rest"], selftests.map((task) => `//#${task}`), selftests.map((task) => `//#${task}`)], "pnpm selftest and pnpm verify run every selftest task");
     const ci = read(".github/workflows/ci.yml");
     const lanes = [...ci.matchAll(/^ +(?:- )?lane: (.+)$/gm)].flatMap(([, lane]) => lane.startsWith("[") ? lane.slice(1, -1).split(", ") : [lane]);
-    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --summarize(?: --log-order=stream)?$/m)?.[1].split(" ").filter((task) => !task.startsWith("--")) ?? [];
+    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --summarize --log-order=stream$/m)?.[1].split(" ").filter((task) => !task.startsWith("--")) ?? [];
     assert.deepEqual(lanes.sort(), ["product", ...shards.map((task) => `selftest-${task.split(":")[2]}`)].sort(), "each hosted tool shard has its own runner");
     assert.deepEqual([...product, ...shards.map((task) => `//#${task}`)].sort(), listed("verify").sort(), "the hosted jobs run each task of pnpm verify once");
     const each = "the tools each check catches its own kind of mistake";
