@@ -369,7 +369,8 @@ yes or by her own Save, the day it starts on is selected and its row has
 Grace’s confirm ring if the saved appointment is still the current selection.
 The first successful provider receipt for an approved appointment from email
 keeps that appointment’s detail open under the provider’s ID. Returning to
-the week shows its ring on the day it starts. A late report for an appointment
+the week shows its ring on the day it starts while the save confirmation is
+still active. A late report for an appointment
 that is no longer selected cannot turn the day. A change she saved herself
 leaves Calendar where it is, on that appointment’s detail. An appointment being edited, a "Delete?"
 awaiting her answer and a failed deletion are never discarded for this: while
