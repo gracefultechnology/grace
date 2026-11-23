@@ -1261,7 +1261,7 @@ pure val amountValues = Set(0, 1)`;
     const workspace = scratch({ "tsconfig.json": "{}", "package.json": JSON.stringify({ devDependencies: { kit: "workspace:*" } }),
       ...Object.fromEntries(["src/a.ts", "test/a.test.ts", "test/drivers/a.ts", "test/traces/a.jsonl", "test/counterexamples/a.json", "test/bombadil.ts", "test/fixtures/p/package.json",
         "test/fixtures/p/a.ts", "apps/other/package.json", "apps/other/a.ts", "kit/package.json", "kit/a.ts", "kit/spec/a.md", "kit/nested/package.json", "kit/nested/a.ts", "kit/README.md", "kit/fixtures/a.md", "kit/test/a.test.ts", "kit/gen/a.ts", "notes.md", "README.md", "AGENTS.md", "style.css", "gen/a.qnt", "gen/traces/a.b.0/0.itf.json",
-        "generated/stories/.cache/manifest.json", "spec/a.md"].map((f) => [f, "{}"])) });
+        "generated/stories/.cache/manifest.json", "spec/a.md", "spec/lock.json", "spec/a.proof.dfy", "src/a.proof.dfy"].map((f) => [f, "{}"])) });
     fs.mkdirSync(path.join(workspace, "node_modules"));
     fs.symlinkSync("../kit", path.join(workspace, "node_modules/kit"), "dir");
     const inputs = () => (["tests", "types"] as const).map((read) => testInputs(workspace, "normal", read));
@@ -1272,13 +1272,14 @@ pure val amountValues = Set(0, 1)`;
     };
     assert.deepEqual(Object.fromEntries(["src/a.ts", "test/a.test.ts", "test/drivers/a.ts", "test/traces/a.jsonl", "test/counterexamples/a.json", "test/bombadil.ts",
       "test/fixtures/p/a.ts", "apps/other/a.ts", "kit/a.ts", "kit/package.json", "kit/spec/a.md", "kit/nested/a.ts", "kit/README.md", "kit/fixtures/a.md", "kit/test/a.test.ts", "kit/gen/a.ts",
-      ".DS_Store", "notes.md", "README.md", "AGENTS.md", "style.css", "gen/a.qnt", "gen/traces/a.b.0/0.itf.json", "generated/stories/.cache/manifest.json", "spec/a.md"].map((f) => [f, changed(f)])), {
+      ".DS_Store", "notes.md", "README.md", "AGENTS.md", "style.css", "gen/a.qnt", "gen/traces/a.b.0/0.itf.json", "generated/stories/.cache/manifest.json", "spec/a.md", "spec/lock.json", "spec/a.proof.dfy", "src/a.proof.dfy"].map((f) => [f, changed(f)])), {
       "src/a.ts": [true, true], "test/a.test.ts": [true, true], "test/drivers/a.ts": [true, true], "test/traces/a.jsonl": [true, false],
       "test/counterexamples/a.json": [true, false], "test/bombadil.ts": [true, true], "test/fixtures/p/a.ts": [true, true], "apps/other/a.ts": [false, false],
       "kit/a.ts": [true, true], "kit/package.json": [true, true], "kit/spec/a.md": [false, false], "kit/nested/a.ts": [false, false],
       "kit/README.md": [false, false], "kit/fixtures/a.md": [true, false], "kit/test/a.test.ts": [false, false], "kit/gen/a.ts": [false, false], ".DS_Store": [false, false],
       "notes.md": [true, false], "README.md": [false, false], "AGENTS.md": [false, false], "style.css": [true, false], "gen/a.qnt": [false, false],
-      "gen/traces/a.b.0/0.itf.json": [false, false], "generated/stories/.cache/manifest.json": [false, false], "spec/a.md": [false, false],
+      "gen/traces/a.b.0/0.itf.json": [false, false], "generated/stories/.cache/manifest.json": [false, false], "spec/a.md": [false, false], "spec/lock.json": [false, false],
+      "spec/a.proof.dfy": [false, false], "src/a.proof.dfy": [false, false],
     }, "the tests read the package, its test fixtures, what its workspace dependencies ship to it and the fixtures they keep; the typecheck reads only scripts and JSON, and no traces or counterexamples; neither reads a spec's prose or its Quint copy, the prose kept for people and agents, the simulations' traces or the stories' bookkeeping");
     fs.writeFileSync(path.join(workspace, "kit/a.ts"), 'export * from "./gen/a.ts";\n');
     assert.deepEqual(changed("kit/gen/a.ts"), [true, true], "a dependency's gen/ is read once its code imports it");
@@ -3369,6 +3370,18 @@ function eachCheck() {
     assert.equal(invalid.status, 1, invalid.stdout + invalid.stderr);
     assert.match(invalid.stderr, /spec\/target\/invalid\.md/);
     assert.deepEqual(outputs(), expected);
+
+    const mapped = toolchain(scratch({
+      "package.json": JSON.stringify({ ...JSON.parse(PACKAGE["package.json"]), specOwners: { target: "packages/plugin-target" } }),
+      "packages/plugin-target/package.json": JSON.stringify({ name: "@repo/target" }),
+      "packages/target/package.json": JSON.stringify({ name: "@repo/conventional" }),
+      "spec/index.md": "# Project",
+      "spec/target/index.md": ruleSpec("pure val targetValue = 1"),
+    }), "quint", "lsc");
+    const mappedGen = await runCli(path.join(mapped, "vibestack/spec.ts"), mapped, "gen", "--owner", "target");
+    assert.equal(mappedGen.status, 0, mappedGen.stdout + mappedGen.stderr);
+    assert.ok(fs.existsSync(path.join(mapped, "packages/plugin-target/gen/target.ts")));
+    assert.ok(!fs.existsSync(path.join(mapped, "packages/target/gen")));
   });
 
   test("the command line checks, generates and watches a project directory from its parent", async () => {
