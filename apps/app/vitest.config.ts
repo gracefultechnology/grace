@@ -6,7 +6,7 @@ import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Schema } from "effect";
-import type { BrowserContext, CDPSession, Page } from "playwright";
+import type { BrowserContext, CDPSession, Page, Route } from "playwright";
 import { defineConfig } from "vitest/config";
 import type { BrowserCommandContext } from "vitest/node";
 import { project } from "vibestack/testing/vitest";
@@ -108,8 +108,23 @@ const DecisionResult = Schema.Struct({ status: Schema.String, model: Schema.opti
 type PublicSearchSubmission =
   | { state: "submitting"; search: typeof PublicSearch.Type }
   | ({ state: "completed" } & CompletedPublicSearch);
-type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; ratingProduct?: { url: string; documentId: string }; ratingListings?: { visible: number; matching: number; cables: number; labels: string[] }; noAction?: { url: string; documentId: string }; site?: Site };
+type Run = { fixture: BenchmarkDefinition; pendingRoutes: Set<Promise<void>>; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; ratingProduct?: { url: string; documentId: string }; ratingListings?: { visible: number; matching: number; cables: number; labels: string[] }; noAction?: { url: string; documentId: string }; site?: Site };
 const activeRuns = new WeakMap<Page, Run>();
+
+function trackBenchmarkRoute(run: Run, handler: (route: Route) => Promise<void>) {
+  return (route: Route) => {
+    const pending = handler(route);
+    const settled = () => run.pendingRoutes.delete(pending);
+    run.pendingRoutes.add(pending);
+    void pending.then(settled, settled);
+    return pending;
+  };
+}
+
+async function drainBenchmarkRoutes(run: Run) {
+  while (run.pendingRoutes.size) await Promise.allSettled(run.pendingRoutes);
+}
+
 const Choices = Schema.Struct({ kind: Schema.Literal("choice"), goal: Schema.NonEmptyString, candidates: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, label: Schema.NonEmptyString })) });
 const PageText = Schema.Struct({ title: Schema.String, text: Schema.String, truncated: Schema.Boolean, readyState: Schema.Literals(["loading", "interactive", "complete"]) });
 const SiteState = Schema.Struct({
@@ -236,7 +251,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     const fixture = byId.get(action.taskId);
     if (!fixture || activeRuns.has(context.page)) throw new Error("The Chromium benchmark case is not available");
     if (fixture.evaluator === "webarena" && official) context.project.vitest.onCancel(official.close);
-    activeRuns.set(context.page, { fixture, decisions: 0, decisionResults: [] });
+    activeRuns.set(context.page, { fixture, pendingRoutes: new Set(), decisions: 0, decisionResults: [] });
     return {};
   }
   const run = activeRuns.get(context.page);
@@ -309,7 +324,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const key = process.env.GRACE_BENCHMARK_CLEF_KEY;
       if (!origin || !key || new URL(origin).protocol !== "https:") throw new Error("The upstream chat endpoint requires a test credential");
       run.chatRoute = new URL("/api/v1/chat/completions", action.cloud).href;
-      await context.page.route(run.chatRoute, async (route) => {
+      await context.page.route(run.chatRoute, trackBenchmarkRoute(run, async (route) => {
         const request = route.request();
         const headers = { "access-control-allow-origin": request.headers().origin ?? "*", "access-control-allow-methods": "POST, OPTIONS", "access-control-allow-headers": "Authorization, Content-Type" };
         if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
@@ -319,9 +334,9 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         }).catch(() => new Response(null, { status: 503 }));
         run.chatStatus = response.status;
         return route.fulfill({ status: response.status, headers, contentType: response.headers.get("content-type") ?? "application/json", body: await response.text() });
-      });
+      }));
     }
-    await context.page.route(endpoint.href, async (route) => {
+    await context.page.route(endpoint.href, trackBenchmarkRoute(run, async (route) => {
       const request = route.request();
       const headers = {
         "access-control-allow-origin": request.headers().origin ?? "*",
@@ -348,11 +363,12 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(DecisionResult))(body);
       run.decisionResults.push({ http: response.status, candidates: choice.candidates.length, result: decoded._tag === "Some" ? decoded.value : undefined });
       return route.fulfill({ headers, status: response.status, contentType: "application/json", body });
-    });
+    }));
     return {};
   }
   if (action.kind === "receipt") {
     try {
+      await drainBenchmarkRoutes(run);
       const decisionProvider = publicSearch || publicSort || product !== undefined ? "none" : definition.fixtureChoice === undefined ? "hosted" : "fixture";
       const { answer, ...visibleOutcome } = action.outcome;
       const observation = {
@@ -404,6 +420,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         }
       }
     } finally {
+      await drainBenchmarkRoutes(run);
       activeRuns.delete(context.page);
       if (run.decisionRoute) await context.page.unroute(run.decisionRoute);
       if (run.chatRoute) await context.page.unroute(run.chatRoute);
