@@ -206,7 +206,8 @@ to an Other email uses the same form and renews that account.
 The name she gives on that form is the account’s From name: her email from
 that account goes out under it, and signing in again changes it to the name
 she gives then. The form starts with the From name of the account she is
-signing in to again, otherwise with the name of her Grace account. An Other
+signing in to again, otherwise with the name of her Grace account when it is
+available. A later name leaves what she has already typed in place. An Other
 email is never added without a From name; a company’s account has none here,
 because the company’s own page keeps her name. A previously saved Other
 account without a From name stays on the tablet with its existing email and

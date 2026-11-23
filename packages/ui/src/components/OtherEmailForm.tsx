@@ -53,7 +53,8 @@ export type OtherEmailFormProps = Omit<ComponentProps<"form">, "onSubmit"> & {
  * @design packages/design-system/design.md#windows
  */
 export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem, checking = false, onNext, accepts = () => true, onCancel, className, ...props }: OtherEmailFormProps) {
-  const [name, setName] = useState(defaultName);
+  const [typedName, setTypedName] = useState<string>();
+  const name = typedName ?? defaultName;
   const [address, setAddress] = useState(defaultAddress);
   const [filled, setFilled] = useState(false);
   const secretRef = useRef<SecretFieldHandle>(null);
@@ -70,7 +71,7 @@ export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem,
           {problemText(problem)}
         </Alert>
       ) : null}
-      <TextField label="Your name" placeholder="Your name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" className="mt-3.5 max-w-[620px]" />
+      <TextField label="Your name" placeholder="Your name" value={name} onChange={(event) => setTypedName(event.target.value)} autoComplete="off" className="mt-3.5 max-w-[620px]" />
       <PageText tone="secondary" className="mt-1.5 ml-1.5">This is the name people see on your emails.</PageText>
       <TextField
         label="Email address"

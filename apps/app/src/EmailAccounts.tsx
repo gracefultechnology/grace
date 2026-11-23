@@ -99,7 +99,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
         return (
           <>
             {problem === "SignInUnfinished" && alert}
-            <OtherEmailForm key={`${renewing?.address ?? ""}|${fromName}`} defaultAddress={renewing?.address} defaultName={fromName} problem={otherProblem(registry)}
+            <OtherEmailForm key={renewing?.id ?? 0} defaultAddress={renewing?.address} defaultName={fromName} problem={otherProblem(registry)}
               checking={signIn.stage === "CheckingOther"} accepts={(address) => can({ type: "submitOther", domain: domainOf(address) })}
               onNext={({ name, address, password }) => void flows.other({ name, address, password: secretPassword(password) })}
               onCancel={offer({ type: "goBack" })} />
