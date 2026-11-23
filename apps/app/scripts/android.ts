@@ -8,12 +8,13 @@ import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { createInterface } from "node:readline/promises";
 import { isDeepStrictEqual, parseArgs, promisify } from "node:util";
-import { Schema } from "effect";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { Effect, Schema } from "effect";
 import { parseAst } from "vite";
 import { stageRuntimePayload } from "@elizaos/os/android/android-runtime-inventory.mjs";
 import { buildAndroidConsumer } from "@elizaos/os/android/build-consumer.mjs";
 import { generateAndroidConsumerHost } from "@elizaos/os/android/consumer-host.mjs";
-import { readApkSignerDigest } from "@elizaos/os/android/apk-distribution.mjs";
+import { readApkSignerDigest } from "@elizaos/os/image";
 import { resolveAndroidSdkRoot, resolveJavaHome } from "@elizaos/os/android/toolchain.ts";
 import config, { androidPaths, CloudProfile, cloudProfiles, standaloneProfile } from "../capacitor.config.ts";
 
@@ -138,6 +139,10 @@ export function buildTool(name: string): string {
   const tool = path.join(androidHome(), "build-tools", "36.0.0", name);
   if (!existsSync(tool)) throw new Error(`Missing ${name}: install Android SDK build-tools;36.0.0`);
   return tool;
+}
+
+export function apkSignerDigest(apk: string, apksigner: string) {
+  return Effect.runPromise(Effect.provide(readApkSignerDigest(apk, { apksigner }), NodeServices.layer));
 }
 
 const environment = () => ({
@@ -382,14 +387,15 @@ function checkPolicy(bundle: string) {
   return declared.size;
 }
 
-function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app, apkOutput(cloudProfile)), episodeCertificate = false) {
+async function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app, apkOutput(cloudProfile)), episodeCertificate = false) {
   const apksigner = buildTool("apksigner");
   const aapt = buildTool("aapt");
   const selected = cloudProfiles[cloudProfile];
   const callbackHost = new URL(selected.webOrigin).hostname;
   const apks = readdirSync(directory).filter((name) => flavors.some((flavor) => name.startsWith(`${flavor}-`)) && name.endsWith(".apk"));
   if (!apks.length) throw new Error("No Grace APK was produced for verification");
-  const manifest = apks.map((name) => {
+  const manifest = [];
+  for (const name of apks) {
     const file = path.join(directory, name);
     const contents = readFileSync(file);
     const entries = execFileSync(aapt, ["list", file], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\n");
@@ -449,9 +455,9 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
     if (name.includes("-release") && debuggable) throw new Error(`${name} is debuggable, so any computer on USB could read and drive Grace's page`);
     if (cloudProfile === "shared-staging" && !debuggable) throw new Error(`${name} ships staging in a production build`);
     process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, the cloud speech bridge and no inference class; its ${actions} actions declared by name are each allowed or refused\n`);
-    return { name, cloudProfile, abi: abis[0], bytes: contents.byteLength, debuggable, sha256: createHash("sha256").update(contents).digest("hex"),
-      signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };
-  });
+    const signer = name.endsWith("-unsigned.apk") ? null : await apkSignerDigest(file, apksigner);
+    manifest.push({ name, cloudProfile, abi: abis[0], bytes: contents.byteLength, debuggable, sha256: createHash("sha256").update(contents).digest("hex"), signer });
+  }
   writeFileSync(path.join(directory, "apk-manifest.json"), JSON.stringify(manifest, null, 2));
 }
 
@@ -992,7 +998,7 @@ type DeviceNode = ReturnType<typeof deviceNodes>[number];
 const editorFixturePackage = "technology.graceful.fixture";
 const editorFixtureRunner = `${editorFixturePackage}/.BillWorldPasswordEditor`;
 
-function buildPasswordEditorFixture(directory: string, login: typeof LoginFixture.Type["login"], hostApk: string) {
+async function buildPasswordEditorFixture(directory: string, login: typeof LoginFixture.Type["login"], hostApk: string) {
   const work = path.join(directory, "native-editor-test");
   const assets = path.join(work, "assets");
   const classes = path.join(work, "classes");
@@ -1015,7 +1021,7 @@ function buildPasswordEditorFixture(directory: string, login: typeof LoginFixtur
   const apksigner = buildTool("apksigner");
   compile(apksigner, ["sign", "--ks", path.join(app, "android/debug.keystore"), "--ks-key-alias", "androiddebugkey",
     "--ks-pass", "pass:android", "--out", apk, aligned]);
-  if (readApkSignerDigest(apk, { apksigner }) !== readApkSignerDigest(hostApk, { apksigner })) {
+  if (await apkSignerDigest(apk, apksigner) !== await apkSignerDigest(hostApk, apksigner)) {
     throw new Error("The native editor fixture must have the same signer as the episode APK");
   }
   return apk;
@@ -1146,7 +1152,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
         }
         step = "build the signed native editor instrumentation";
         const apk = path.join(app, output, "standalone-debug.apk");
-        const editorApk = buildPasswordEditorFixture(path.join(app, output), login, apk);
+        const editorApk = await buildPasswordEditorFixture(path.join(app, output), login, apk);
         signal.throwIfAborted();
         step = "install the test APK and transport";
         for (const port of deviceTrust.reversePorts) {
@@ -1362,8 +1368,8 @@ if (import.meta.main) {
       process.off("SIGTERM", cancel);
       target.stop();
     }
-  } else if (fixtureRun) writeApkManifest(cloudProfile, path.join(artifacts, "billworld-passwords", fixtureRun), true);
-  else if (verify) writeApkManifest(cloudProfile);
+  } else if (fixtureRun) await writeApkManifest(cloudProfile, path.join(artifacts, "billworld-passwords", fixtureRun), true);
+  else if (verify) await writeApkManifest(cloudProfile);
   else {
     buildAndroid({ release, abi, cloudProfile });
     const target = install ? attached(install) : emulator && await emulatorTarget(emulator);

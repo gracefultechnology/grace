@@ -4,11 +4,12 @@ import {createHash} from "node:crypto";
 import {execFileSync} from "node:child_process";
 import os from "node:os";
 import {parseArgs} from "node:util";
-import {Schema} from "effect";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import {Effect, Schema} from "effect";
 import {isAndroidExecutableForAbi} from "@elizaos/os/android/android-runtime-inventory.mjs";
-import {readApkEntries, readApkSignerDigest} from "@elizaos/os/android/apk-distribution.mjs";
+import {listAndroidArtifactEntries} from "@elizaos/os/image";
 import {createDevelopmentLauncherDescriptor, stageLauncher, validateDescriptor} from "@elizaos/os/aosp/stage-launcher-overlay.ts";
-import {buildTool as tool, identity as capacitor} from "./android.ts";
+import {apkSignerDigest, buildTool as tool, identity as capacitor} from "./android.ts";
 
 const {appId, appName} = capacitor;
 const identity = {brand: appName.toLowerCase(), moduleName: appName, packageName: appId};
@@ -27,7 +28,8 @@ const {apk, browser, development} = args;
 
 const targetAbi = "x86_64";
 const requiredRuntime = `lib/${targetAbi}/libeliza_node.so`;
-const nodeRuntimes = readApkEntries(apk).filter((entry: string) => /^lib\/[^/]+\/libeliza_node\.so$/.test(entry));
+const entries = await Effect.runPromise(Effect.provide(listAndroidArtifactEntries(apk), NodeServices.layer));
+const nodeRuntimes = entries.filter((entry) => /^lib\/[^/]+\/libeliza_node\.so$/.test(entry));
 if (nodeRuntimes.length !== 1 || nodeRuntimes[0] !== requiredRuntime) {
   throw new Error(`The x86_64 Cuttlefish launcher requires one x86_64 Eliza Node runtime, found ${nodeRuntimes.join(", ") || "none"}`);
 }
@@ -64,7 +66,7 @@ try {
     throw new Error("The Chromium APK differs from the reviewed x86_64 build");
   const badging = execFileSync(tool("aapt"), ["dump", "badging", browserApk], {encoding: "utf8"});
   const expected = `package: name='${chromium.packageName}' versionCode='${chromium.versionCode}' versionName='${chromium.versionName}'`;
-  if (!badging.startsWith(expected) || readApkSignerDigest(browserApk, {apksigner: tool("apksigner")}) !== chromium.signerSha256)
+  if (!badging.startsWith(expected) || await apkSignerDigest(browserApk, tool("apksigner")) !== chromium.signerSha256)
     throw new Error("The browser package, version or signer differs from the reviewed Chromium build");
   fs.writeFileSync(path.join(browserDir, "Android.bp"), `android_app_import {
     name: "GraceChromium",
