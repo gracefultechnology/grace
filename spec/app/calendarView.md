@@ -195,18 +195,23 @@ These calendar calculations arrive as validated reports; the host derives
 entries, reminders, bill identity or payment state, except that opening an
 occurrence clears its note that its company had changed it (Calendar,
 `ChangedElsewhere`), so the note shows only on the detail she was taken back
-to when her change was not made.
+to when her change was not made. A store-verified save can align the day
+without clearing a selected appointment. This report is only a Week day
+selection and cannot change a form or a deletion in progress.
 
 ```quint
 pure def canNavigate(v: CalendarView, report: NavigationReport, by: ViewActor): bool =
-  by == ViewUser and v.opened and v.deletion != DeletionPending and not(hasEditing(v)) and report.verified and validWindow(report.window) and
+  (by == ViewUser or (by == ViewStore and v.deletion == NoDeletion and report.kind == SelectDay)) and
+  v.opened and v.deletion != DeletionPending and not(hasEditing(v)) and report.verified and validWindow(report.window) and
   ((report.kind == Earlier and report.window.mode == v.window.mode and report.window.anchorDay < v.window.anchorDay) or
     (report.kind == Later and report.window.mode == v.window.mode and report.window.anchorDay > v.window.anchorDay) or
     (report.kind == SelectDay and report.window.mode == WeekView and report.window.anchorDay == report.window.selectedDay) or
     (report.kind == Today and report.window.anchorDay == report.window.selectedDay) or
     (report.kind == SwitchMode and report.window.mode != v.window.mode and report.window.selectedDay == v.window.selectedDay))
 pure def navigate(v: CalendarView, report: NavigationReport, by: ViewActor): CalendarView =
-  { ...v, window: report.window, selectedId: "", deletion: NoDeletion }
+  { ...v, window: report.window, selectedId: if (by == ViewStore) v.selectedId else "", deletion: NoDeletion }
+pure def lawStoreDayKeepsSelection(v: CalendarView, report: NavigationReport): bool =
+  navigate(v, report, ViewStore).selectedId == v.selectedId
 pure def canOpenOccurrence(v: CalendarView, id: str, by: ViewActor): bool =
   by == ViewUser and v.opened and v.deletion != DeletionPending and not(hasEditing(v)) and entryAt(v, id).hasSaved
 pure def openOccurrence(v: CalendarView, id: str, by: ViewActor): CalendarView =

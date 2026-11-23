@@ -1,36 +1,13 @@
-// spec/app/deviceKeys.md, "Story: Answer a website before Grace goes on"
+// spec/app/deviceKeys.md, "Story: Answer a website before Grace goes on"; spec/app/workspace.md, "Story: Wait for my answer to a website"
 import { taskMayAdvance } from "../gen/app__deviceKeys.effect.vibe"
-import { decodeEvent as websiteEvent, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe"
-import { decodeEvent as workspaceEvent, enabled, step, Machine as Workspaces, Rejected, type Event } from "../gen/app__workspace.effect.vibe"
+import { decodeEvent as websiteEvent, holdsThePerson, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe"
+import { decodeEvent as workspaceEvent, enabled, step, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 
 export service WebsiteTask {
   readonly clear: boolean!!
   readonly released: void!!
   start<A, E>(current: boolean!!, issue: A!E): (Fiber.Fiber<A, E> | "Held" | "Stale")!!
 }
-
-const progress = {
-  observe: "Step", prepare: "Step", dispatch: "Step", verify: "Step", completeOrdinary: "Step",
-  publishGuidance: "Step", setGuidedLink: "Step", offerReadReview: "Step", offerGuidedNameCorrection: "Step",
-  confirmGuided: "Step", confirmGuidedNamedPage: "Step", confirmGuidedSearch: "Step", confirmGuidedPublicSort: "Step",
-  stageGuidedRecord: "Step", confirmGuidedRecord: "Step",
-  confirmGuidedMail: "Step", rebindGuidedMail: "Step",
-  expectGuidedCalendar: "Step", reconcileGuidedSave: "Step", reviewCommitment: "Step", readBackCommitment: "Step", submitCommitment: "Step",
-  receiveProgress: "Step", journalCommitment: "Independent", observeCommitmentTap: "Step", observeGuidedCalendar: "Receipt",
-  recordCommitment: "Evidence", reconcilePriorCommitment: "Evidence",
-  setAvailability: "Independent", changeLifecycle: "Independent", setBrowserObservation: "Independent", closeGrace: "Independent",
-  abandonTask: "Independent", purgePrivate: "Independent", visit: "Independent", returnToApplication: "Independent", closeBrowser: "Independent", openReleasedEmailLink: "Independent",
-  openGrace: "Independent", stop: "Independent", talk: "Independent", newConversation: "Independent", requestReplacement: "Independent",
-  keepTask: "Independent", replaceTask: "Independent", continueTask: "Independent", interact: "Independent", invalidateGuidance: "Independent",
-  chooseHomePage: "Independent", chooseSettingsPage: "Independent", togglePopover: "Independent", dismissPopover: "Independent",
-  wakeReturn: "Independent", detectWake: "Independent", wakeNoSpeech: "Independent", cancelWake: "Independent", savePreferences: "Independent",
-  preferencesSaved: "Independent", samplePreferences: "Independent", changePreferences: "Independent", undoPreferences: "Independent",
-  adjustPreferenceLevel: "Independent", begin: "Independent", stayOnPage: "Independent", receiveLoad: "Independent", changePage: "Independent",
-  resume: "Independent", unexpectedPage: "Independent", unwatchedPage: "Independent", refuseOrigin: "Independent", leaveToPerson: "Independent",
-  beginGuided: "Independent", discardGuidedRecovery: "Independent", restoreGuided: "Independent", startReadReview: "Independent",
-  confirmGuidedNameCorrection: "Independent", bindCommitment: "Independent", approveSpokenCommitment: "Independent",
-  retryCommitment: "Independent", saveCommitment: "Evidence"
-} satisfies Record<Event["type"], "Step" | "Receipt" | "Evidence" | "Independent">
 
 export const websiteTask = Layer.unwrap(effect {
   const workspace = try Workspaces
@@ -44,26 +21,28 @@ export const websiteTask = Layer.unwrap(effect {
     if (!(try clear)) return "Held" as const
     return try Effect.forkChild(run, { startImmediately: true })
   })
+  const follow = effect {
+    const hold = { type: "holdForWebsite", holds: holdsThePerson(try requests.get()) } as const
+    if (enabled(try workspace.get(), hold, "Host")) try Effect.orDie(workspace.send(hold, "Host"))
+  }
   const send: Workspaces.Shape["send"] = effect (event, by, isCurrent) => {
-    const kind = progress[event.type]
-    if (kind === "Independent") return try serial(workspace.send(event, by, isCurrent))
     while (true) {
-      const result = try serial(effect {
+      const sent = try serial(effect {
         const state = try workspace.get()
-        const admitted = enabled(state, event, by)
-        if (taskMayAdvance(try requests.get(), admitted)) return try workspace.send(event, by, isCurrent)
-        if (admitted && kind === "Evidence") {
-          const after = step(state, event, by).state.assistant
-          if (after.activity === state.assistant.activity && after.workVersion === state.assistant.workVersion) return try workspace.send(event, by, isCurrent)
-        }
-        if (!admitted || kind === "Step" || (kind === "Evidence" && by !== "Store")) throw new Rejected({ state, event, by })
+        const answered = step(state, { type: "holdForWebsite", holds: false }, "Host").state
+        if (enabled(state, event, by) || !enabled(answered, event, by)) return { result: try workspace.send(event, by, isCurrent) }
         return undefined
       })
-      if (result !== undefined) return result
+      if (sent !== undefined) return sent.result
       try Effect.interruptible(released)
     }
   }
-  const answer: WebsiteRequests.Shape["send"] = (event, by, isCurrent) => serial(requests.send(event, by, isCurrent))
+  const answer: WebsiteRequests.Shape["send"] = (event, by, isCurrent) => serial(Effect.uninterruptible(effect {
+    const result = try requests.send(event, by, isCurrent)
+    try follow
+    return result
+  }))
+  try serial(follow)
   return Layer.mergeAll(
     Layer.succeed(Workspaces, { ...workspace, send, receive: effect (input, by) => try send(try workspaceEvent(input), by) }),
     Layer.succeed(WebsiteRequests, { ...requests, send: answer, receive: effect (input, by) => try answer(try websiteEvent(input), by) }),

@@ -239,6 +239,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await toEyeWeek();
   await expect.poll(async () => (await run(selectedGmailCalendar)).entries.some((e) => e.identity.occurrenceId === replacement.externalId && e.phase === "Saved"), atCloud).toBe(true);
   await expect.element(ringed("Doctor’s appointment", "Done")).not.toBeInTheDocument();
+  await expect.element(page.getByRole("heading", { name: "Doctor’s appointment", exact: true })).not.toBeInTheDocument();
   await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("West clinic")).toBeVisible();
   await expect.element(page.getByText("No reminder")).toBeVisible();
@@ -479,7 +480,8 @@ it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: De
   await expect.element(row("Physio with Sam")).not.toBeInTheDocument();
 }, journey);
 
-it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event"; spec/app/notices.md, "Story: See what needs me on Home")', async () => {
+it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event")', async () => {
+  // spec/app/notices.md, "Story: See what needs me on Home"
   const now = Date.now();
   const { card, run } = await start({ clockAt: now });
   const network = { online: true };

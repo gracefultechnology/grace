@@ -364,8 +364,13 @@ deletion asked about, being stored or failed, a new question from Grace to
 add an appointment selects the day it starts on, in Week, so its draft row is
 in view. Once a calendar has saved an added appointment, whether after her
 yes or by her own Save, the day it starts on is selected and its row has
-Grace’s confirm ring. A change she saved herself leaves Calendar where it is,
-on that appointment’s detail. An appointment being edited, a "Delete?"
+Grace’s confirm ring if the saved appointment is still the current selection.
+The first successful provider receipt for an approved appointment from email
+keeps that appointment’s detail open under the provider’s ID. Returning to
+the week shows its ring on the day it starts while the save confirmation is
+still active. A late report for an appointment
+that is no longer selected cannot turn the day. A change she saved herself
+leaves Calendar where it is, on that appointment’s detail. An appointment being edited, a "Delete?"
 awaiting her answer and a failed deletion are never discarded for this: while
 one is, Calendar stays where it is, and the question turns it once Calendar is
 free, if Grace is still asking it. The host remembers the last question that
@@ -391,10 +396,15 @@ pure def askedDay(registry: A::Accounts, calendars: List[CalendarSource], earlie
     | _ => stayOnDay
   }
 pure def savedDay(registry: A::Accounts, calendars: List[CalendarSource], news: CalendarTold): DayToShow =
-  val saved = V::entryAt(sourceAt(calendars, news.key).view, news.id)
-  if (news.news == AddedAppointment and calendarFree(calendars) and showsCalendar(registry, news.key) and saved.phase == C::Saved)
+  val source = sourceAt(calendars, news.key).view
+  val saved = V::entryAt(source, news.id)
+  if (news.news == AddedAppointment and calendarFree(calendars) and showsCalendar(registry, news.key) and
+      openSelected(registry, calendars) == news.key and source.selectedId == news.id and saved.phase == C::Saved)
     { show: true, startAt: saved.committed.startAt }
   else stayOnDay
+pure def preservesCreatedEmailDetail(before: V::CalendarView, after: V::CalendarView, created: V::CreatedReceipt): bool =
+  before.opened and before.selectedId == created.localId and after.selectedId == created.providerId and
+    created.revision == C::initial.revision + 1 and V::entryAt(before, created.localId).identity.sourceRef != ""
 pure def showsDay(report: V::NavigationReport, start: StartDay, day: DayToShow): bool =
   day.show and start.verified and start.startAt == day.startAt and
     start.fromTime <= day.startAt and day.startAt < start.untilTime and
@@ -413,6 +423,9 @@ pure def lawAnEditIsNeverDiscarded(registry: A::Accounts, calendars: List[Calend
     (not(askedDay(registry, calendars, earlier, pending).show) and not(savedDay(registry, calendars, news).show))
 pure def lawOnlyAnAdditionTurnsTheDay(registry: A::Accounts, calendars: List[CalendarSource], news: CalendarTold): bool =
   news.news != AddedAppointment implies not(savedDay(registry, calendars, news).show)
+pure def lawOnlyTheSelectedSaveTurnsTheDay(registry: A::Accounts, calendars: List[CalendarSource], news: CalendarTold): bool =
+  (openSelected(registry, calendars) != news.key or sourceAt(calendars, news.key).view.selectedId != news.id) implies
+    not(savedDay(registry, calendars, news).show)
 pure def lawSavedDayIsTheRingedAppointment(registry: A::Accounts, calendars: List[CalendarSource], news: CalendarTold): bool =
   val day = savedDay(registry, calendars, news)
   day.show implies (confirmRing(news).shown and confirmRing(news).key == news.key and
