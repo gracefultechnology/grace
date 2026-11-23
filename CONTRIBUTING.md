@@ -92,6 +92,9 @@ The pinned LemmaScript compiler includes the upstream fix for tagged union compa
 It preserves the union type when Dafny checks a record literal against a value of that type.
 [LemmaScript change 8c2a339](https://github.com/lalalune/LemmaScript/commit/8c2a33990bd55f63daa643a7be708db579541884).
 
+The same pin carries the additions-only comparison from [LemmaScript PR #374](https://github.com/midspiral/LemmaScript/pull/374/commits/2a9525199ed1fe00e054553720092eb70ab89761).
+Git counts inserted and deleted lines with `--numstat -z`. A large proof can add lines without filling a process output buffer. A deleted line or an incomplete comparison still fails the check.
+
 `check(root)` returns `{ ok, results, next }`, and `spec check --json` prints each result as one line of JSON as soon as
 it is reported, then that object as its last line. Each result has `ok`, `stage` (a stage, or `skipped`), `summary`,
 `detail` and, when it concerns them, `where` and `rules` (each rule as `{ file, key }`); `next` is the line the command
