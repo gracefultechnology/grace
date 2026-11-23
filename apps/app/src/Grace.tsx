@@ -62,6 +62,7 @@ const notCounted = (check: Exclude<GuidedCheck, "Confirmed">, step: GuidedStep |
   const { item, missing } = checks[step?.tag ?? "SurfaceOutcome"];
   switch (check) {
     case "NotFound": return step?.tag === "ReachNamedPage" ? `I couldn’t verify “${step.subject}” on this page. Check the page again or try another link.` : missing;
+    case "CollectionNeedsReview": return "I couldn’t confirm this is the list you asked for. Look through the topics on this page.";
     case "Several": return "I found more than one amount due or due date on this page.";
     case "Past": return "This is an earlier statement. Open the current one.";
     case "Changed": return `The ${item} changed while I checked it. Check it again.`;
@@ -171,8 +172,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     };
     void finish().catch(() => setEndFailure(scopeKey));
   };
-  const guideKey = ownsPlan && workspace && mayGuideReadLink(workspace) ? scopeKey : "";
   const checked = canCheck && stepCheck?.key === scopeKey ? stepCheck : undefined;
+  const guideKey = checked?.result !== "CollectionNeedsReview" && ownsPlan && workspace && mayGuideReadLink(workspace) ? scopeKey : "";
   const checking = checked !== undefined && checked.result === undefined;
   const failed = checked?.result === undefined || checked.result === "Confirmed" ? undefined
     : reopenMail ? "Open the same email you checked for this task and try again." : notCounted(checked.result, currentStep);

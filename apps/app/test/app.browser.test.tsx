@@ -3740,6 +3740,8 @@ it.each(["simple index", "sectioned index", "wrapped directory"] as const)('Chec
     await tap(check);
     await routeTo(status);
     expectOpen();
+    await expect.element(status).toHaveTextContent("I couldn’t confirm this is the list you asked for. Look through the topics on this page.");
+    expect(button("Show me the link").query()).toBeNull();
 
     const privateField = collection.document.createElement("input");
     privateField.type = "password";

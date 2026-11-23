@@ -30,7 +30,7 @@ import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { statementRead } from "./statement.vibe"
 
 export type CloudLink = { readonly url: string; readonly key: string }
-export type GuidedCheck = "Confirmed" | "NotFound" | "Several" | "Past" | "Changed" | "Covered" | "Used" | "PrivateForm" | "Refused"
+export type GuidedCheck = "Confirmed" | "NotFound" | "CollectionNeedsReview" | "Several" | "Past" | "Changed" | "Covered" | "Used" | "PrivateForm" | "Refused"
 export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer" }>
 
 type TurnSource = { readonly origin: Exclude<Origin, "AskedForHelp"> } | { readonly origin: "AskedForHelp"; readonly context: string }
@@ -261,11 +261,18 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const miss = pageMiss(before, url.href, "ReadGuidedContent")
       if (miss !== undefined) return miss
       const entries = try visibleCollectionEntries(native, id, url, before, step.subject)
-      if (entries < 2) return undefined
+      const followedLink = workspace.plan.linkStep === workspace.plan.receipts.length && workspace.plan.linkUrl === url.href
+      const heading = entries < 2 && !followedLink
+        ? (native.readPrimaryHeading(id, true) catch () => undefined)
+        : undefined
       const after = native.observeLinks(id) catch () => undefined
       if (!after || after.documentId !== before.documentId || after.result.domRevision !== before.result.domRevision) return "Changed"
       const afterMiss = pageMiss(after, url.href, "ReadGuidedContent")
       if (afterMiss !== undefined) return afterMiss
+      if (entries < 2) {
+        return followedLink || (heading?.url === url.href && collectionHeading(step.subject, normalizedHeading(heading.text)))
+          ? "CollectionNeedsReview" : undefined
+      }
       return receipt({ tag: "PublicCollectionDocument", tabId: tab.id, loadVersion: tab.loadVersion, documentId: before.documentId,
         domRevision: before.result.domRevision, url: url.href, origin: step.origin, subject: step.subject, entries }, [before.documentId, url.href], "Found the collection for " + step.subject + ".")
     }

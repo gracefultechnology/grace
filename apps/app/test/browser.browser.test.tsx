@@ -671,6 +671,11 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
       if (named) expect([`I couldn’t verify “${named.subject}” on this page. Check the page again or try another link.`, privateFormRecovery]).toContain(reason);
       if (record) await expect.element(continuing).toBeVisible();
       expect(workspace().plan.receipts).toHaveLength(0);
+      if (collection && reason === "I couldn’t confirm this is the list you asked for. Look through the topics on this page.") {
+        expect(showLink.query()).toBeNull();
+        outcome.miss = "collection-needs-review";
+        return;
+      }
       previous = landed;
     }
     if (!hops.at(-1)?.checked && stopAtActionLimit()) return;
