@@ -2072,6 +2072,7 @@ the generic interaction path, which invalidates the review. This distinction
 prevents a valid approval from invalidating itself and prevents a correction
 from leaving an old authorization usable. The conversation may think about
 its acknowledgment while this already classified payment decision proceeds.
+The approval waits while a website's question holds the person.
 
 ```quint
 
@@ -2080,7 +2081,7 @@ pure def canApproveSpokenCommitment(w: Workspace, commitmentTokens: CommitmentTo
   w.assistant.activity == A::ReadyForStep and w.assistant.replacementId == "" and
   commitmentTokensMatch(w, commitmentTokens) and
   A::canHear(w.assistant, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime) and
-  CM::canAuthorize(w.commitment, commitmentTokens.revision, spoken.correction, T::Person)
+  CM::canAuthorize(w.commitment, commitmentTokens.revision, spoken.correction, T::Person) and not(heldByWebsite(w))
 pure def approveSpokenCommitment(w: Workspace, commitmentTokens: CommitmentTokens, spoken: SpokenApproval, by: WorkspaceActor): Workspace = {
   ...w, assistant: { ...w.assistant,
     conversation: C::hear(w.assistant.conversation, spoken.token, spoken.text, spoken.owner, C::ConversationRuntime) },
@@ -2485,8 +2486,8 @@ holds her, the workspace refuses every step of a task: observing, preparing,
 dispatching or verifying an operation, progress reported for one, completing
 an ordinary goal, publishing guidance, offering a read plan or a name
 correction, every step of a guided plan including its mail and calendar
-steps, and reviewing, reading back, submitting or seeing her tap on a
-commitment. Evidence of work already sent, a commitment's outcome, prior
+steps, and reviewing, reading back, authorizing, submitting or seeing her tap
+on a commitment. Evidence of work already sent, a commitment's outcome, prior
 result or save, is kept only where it leaves the task's activity and version
 as they were; applying it to the task waits for her answer. Her answer, Stop,
 leaving and every other event are not held. When the hold ends, the workspace
@@ -2508,7 +2509,7 @@ pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiv
   "confirmGuided", "confirmGuidedNamedPage", "confirmGuidedSearch", "confirmGuidedPublicSort",
   "stageGuidedRecord", "confirmGuidedRecord", "confirmGuidedMail",
   "rebindGuidedMail", "expectGuidedCalendar", "observeGuidedCalendar", "reconcileGuidedSave",
-  "reviewCommitment", "readBackCommitment", "submitCommitment", "observeCommitmentTap")
+  "reviewCommitment", "readBackCommitment", "approveSpokenCommitment", "submitCommitment", "observeCommitmentTap")
 pure val heldTaskEvidence = Set("recordCommitment", "reconcilePriorCommitment", "saveCommitment")
 pure def stepAHeldTaskDoesNotAdvance(before: Workspace, via: str, after: Workspace): bool =
   heldByWebsite(before) implies
