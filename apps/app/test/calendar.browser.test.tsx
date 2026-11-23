@@ -5,6 +5,7 @@ import { act } from "react";
 import { expect, inject, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import type { Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
+import { approveSave, create, initial as newEntry, save } from "../gen/app__calendar.ts";
 import { lifetimeMs, type Offer } from "../gen/app__notices.ts";
 import { type Ask, type Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { proposalOf } from "../gen/app__proposal.ts";
@@ -185,6 +186,12 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await expect.element(page.getByText("This wasn’t saved. Press Save to try again.")).toBeVisible();
   await click("Save");
   await expect.poll(async () => (await company(secret)).map((e) => e.title), atCloud).toEqual(["Eye check with Dr. Patel", "Joan’s birthday", "Doctor’s appointment"]);
+  await expect.element(page.getByText("Saved to your calendar", { exact: true })).toBeVisible();
+  await expect.element(ringed("Doctor’s appointment", "Done")).toBeVisible();
+  const [stored] = (await run(selectedGmailCalendar)).entries.filter((e) => e.committed.title === entry.details.title && e.phase === "Saved");
+  expect(stored?.identity.occurrenceId).toBe((await company(secret)).find((e) => e.title === entry.details.title)?.externalId);
+  expect(stored?.identity.occurrenceId).not.toBe(entry.identity.occurrenceId);
+  await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("From the clinic’s email · Visit form attached")).toBeVisible();
   await click("Back to Calendar");
   await expect.element(row("Doctor’s appointment", "Gmail")).toBeVisible();
@@ -215,6 +222,8 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   expect(replacement.externalId).not.toBe(original.identity.occurrenceId);
   await toEyeWeek();
   await expect.poll(async () => (await run(selectedGmailCalendar)).entries.some((e) => e.identity.occurrenceId === replacement.externalId && e.phase === "Saved"), atCloud).toBe(true);
+  await expect.element(ringed("Doctor’s appointment", "Done")).not.toBeInTheDocument();
+  await expect.element(page.getByRole("heading", { name: "Doctor’s appointment", exact: true })).not.toBeInTheDocument();
   await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("West clinic")).toBeVisible();
   await expect.element(page.getByText("No reminder")).toBeVisible();
@@ -344,6 +353,41 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
   await click("Delete it");
   await expect.element(page.getByText("Deleted Bridge night")).toBeVisible();
   await expect.element(row("Bridge night")).not.toBeInTheDocument();
+
+  await click("Today");
+  await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
+  const { owner, calendarId, timezone, window } = await tablet();
+  const firstDay = dayOf(window.fromTime);
+  const seriesId = "tablet-standing-visit";
+  const startAt = midnight(firstDay - 1 - 1001 * 7) + 10 * hour;
+  const incoming = save(approveSave(create(newEntry, {
+    owner, calendarId, occurrenceId: seriesId, sourceRef: "", sourceAccount: 0,
+    kind: "Appointment", billRef: "", billOrigin: "", billAccount: "",
+  }, {
+    title: "Standing visit", location: "", participant: "", notes: "", startAt, endAt: startAt + 2 * day,
+    timezone, allDay: false, seriesId, recurrence: "Weekly", reminderEnabled: false, leadTime: 0, important: false,
+  }, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore");
+  await run(Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(0)), (calendar) => calendar.send({
+    type: "publishOccurrence", incoming, seriesVersion: 0, scheduleVerified: true,
+  }, "ViewStore")));
+  await act(() => userEvent.click(page.getByRole("button", { name: tile(firstDay) })));
+  await act(() => userEvent.click(row("Standing visit", "On this tablet").first()));
+  const firstOccurrence = `${seriesId}@1001`;
+  await expect.poll(async () => {
+    const view = await tablet();
+    const selected = view.entries.find((entry) => entry.identity.occurrenceId === view.selectedId);
+    return [view.selectedId, dayOf(selected?.committed.startAt ?? 0), (selected?.committed.endAt ?? 0) > midnight(firstDay)];
+  }).toEqual([firstOccurrence, firstDay - 1, true]);
+  await click("Delete");
+  await click("Delete only this one");
+  await expect.poll(async () => (await tablet()).entries.find((entry) => entry.identity.occurrenceId === firstOccurrence)?.phase).toBe("Deleted");
+  await click("Next week");
+  await act(() => userEvent.click(page.getByRole("button", { name: tile(firstDay + 7) })));
+  await act(() => userEvent.click(row("Standing visit", "On this tablet").first()));
+  await expect.poll(async () => (await tablet()).selectedId).toBe(`${seriesId}@1002`);
+  await click("Back to Calendar");
+  await click("Previous week");
+  expect((await tablet()).entries.some((entry) => entry.identity.occurrenceId === firstOccurrence && entry.phase !== "Deleted")).toBe(false);
 }, journey);
 
 it('Change and delete an appointment from email (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {
@@ -441,7 +485,8 @@ it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: De
   await expect.element(row("Physio with Sam")).not.toBeInTheDocument();
 }, journey);
 
-it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event"; spec/app/notices.md, "Story: See what needs me on Home")', async () => {
+it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event")', async () => {
+  // spec/app/notices.md, "Story: See what needs me on Home"
   const now = Date.now();
   const { card, run } = await start({ clockAt: now });
   const network = { online: true };

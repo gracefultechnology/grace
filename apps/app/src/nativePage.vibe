@@ -46,8 +46,14 @@ function idleAccountForm(group: readonly PageElement[]): boolean {
   if (account.length !== 1 || !fields.every((field) => field.edited === false && field.hasInput === false)) return false
   if (password.length === 1 && fields.length === 2) return true
   const identifier = account[0]
-  return fields.length === 1 && identifier?.fieldName === "username" &&
-    /^(?:username(?: or email)?|email(?: address)?|phone number)$/iu.test(identifier.label?.trim() ?? "") &&
+  if (fields.length !== 1 || identifier?.fieldName !== "username") return false
+  const label = identifier.label?.trim() ?? ""
+  if (/^(?:account (?:number|id|identifier) or email(?: address)?|email(?: address)? or account (?:number|id|identifier))$/iu.test(label)) {
+    const submits = group.filter((element) => element.inViewport && element.disabled === false && element.submits === true &&
+      (element.tag === "button" || element.tag === "input"))
+    return submits.length === 1 && /^(?:sign in|log[ -]?in)$/iu.test(submits[0]?.label?.trim() ?? "")
+  }
+  return /^(?:username(?: or email)?|email(?: address)?|phone number)$/iu.test(label) &&
     group.some((element) => /\b(?:sign[ -]?in|log[ -]?in)\b/iu.test(element.form?.name ?? "") ||
       (element.submits === true && /^(?:sign in|log in|login|continue)$/iu.test(element.label?.trim().replace(/[\s\p{P}\p{S}]+$/gu, "") ?? "")))
 }
@@ -65,12 +71,12 @@ export function guidedPageState(observation: LinkObservation | undefined, url: s
   const { blockers, elements } = observation.result
   if (blockers.some((blocker) => blocker.kind === "captcha")) return "PrivateForm"
   if (blockers.some((blocker) => blocker.covers !== "partial")) return "Unavailable"
-  if (use !== "CheckPublicSearchResult" && ordinaryGuidedPage(true, true, false, elements.map((element) => pageField(element)))) return "Ordinary"
+  if (use !== "CheckPublicSearchResult" && use !== "CheckPublicSort" && ordinaryGuidedPage(true, true, false, elements.map((element) => pageField(element)))) return "Ordinary"
   if (use === "ReadGuidedContent") return "PrivateForm"
   const address = URL.parse(url)
   if (!address || address.username || address.password ||
       (use === "CheckPublicDocument" && (address.search || address.hash)) ||
-      (use === "CheckPublicSearchResult" && address.hash)) return "PrivateForm"
+      ((use === "CheckPublicSearchResult" || use === "CheckPublicSort") && address.hash)) return "PrivateForm"
   const witnessed = elements.map((element): GuidedPageField => {
     const kind = pageField(element, use)
     if (kind === "NavigationPageField") {
@@ -118,6 +124,7 @@ export service NativePage {
   readonly privateSignIn: boolean
   readonly opensWebsites: boolean
   observeLinks(id: PageId): LinkObservation!PageFailed
+  observeStatement(id: PageId, documentId: string): LinkObservation!PageFailed
   readRecordText(id: PageId, selector: string): (typeof VisibleTextRead.Type)!PageFailed
   readPrimaryHeading(id: PageId, outsideLink?: boolean): (typeof VisibleTextRead.Type)!PageFailed
   hasNavigationMenu(id: PageId, selector: string, url: string): boolean!!
@@ -238,6 +245,8 @@ function devicePage(plugin: SurfacePlugin) {
     privateSignIn: true,
     opensWebsites: true,
     observeLinks: (id) => observe(id, () => ask(LinkObservation, (p) => p.controlPage({ ...own(id), command: { subaction: "snapshot" } }))),
+    observeStatement: (id, documentId) => observe(id, () => ask(LinkObservation, (p) =>
+      p.controlPage({ ...own(id), documentId, command: { subaction: "snapshot", statementRegions: true } }))),
     readRecordText: (id, selector) => observe(id, () => ask(VisibleTextRead, (p) => p.readPage({ ...own(id), selector }))),
     readPrimaryHeading: (id, outsideLink) => observe(id, () => {
       const heading = (selector: string) => ask(VisibleTextRead, (p) => p.readPage({ ...own(id), selector: outsideLink ? selector + outsideLinks : selector }))
