@@ -3643,11 +3643,11 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   }
 }, 120_000);
 
-it('Check a public collection (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async () => {
+it.each(["simple index", "sectioned index", "wrapped directory"] as const)('Check a public collection ($0) (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async (layout) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-  const target = "Club events";
-  const request = 'Find the public index of "Club events".';
+  const target = layout === "sectioned index" ? "help topics" : "Club events";
+  const request = 'Find the public index of "' + target + '".';
   const articleName = target;
   const articleRequest = 'Open the page named "Club events".';
   await Effect.runPromise(Effect.provide(script(cloud, secret, [
@@ -3662,12 +3662,19 @@ it('Check a public collection (spec/app/workspace.md, "A read plan offered in ch
   const entries = '<ul><li><a href="/events/saturday">Saturday hike</a></li><li><a href="/events/sunday">Sunday picnic</a></li></ul>';
   const fixture = (url: string, content: string) => pinnedPage("statements", url, (html) =>
     html.replace(/<main>[\s\S]*<\/main>/u, () => `<script>(${String(pageCommand)})(null, "");</script><main>${content}</main>`));
-  const indexContent = '<h1>Club events</h1>' + entries;
+  const heading = '<h1>' + target + '</h1>';
+  const indexContent = heading + entries;
+  const publicSearch = '<form role="search" method="get"><input type="search" name="q" aria-label="Search"><button type="submit">Search</button></form>';
+  const collectionContent = layout === "sectioned index"
+    ? '<div><h1>Help &amp; Support</h1></div><section>' + publicSearch + '<h2>Frequently asked questions</h2>' + entries + '</section>'
+    : layout === "wrapped directory"
+      ? '<div>' + heading + '<p>See upcoming outings and gatherings.</p><section><h2>Browse Club events</h2>' + entries + '</section></div>'
+      : indexContent;
   const opening = await fixture(home, indexContent);
-  const collection = await fixture(index, indexContent);
+  const collection = await fixture(index, collectionContent);
   const detail = await fixture(article, '<nav aria-label="Breadcrumb"><a href="/events">Club events</a></nav>' +
-    '<article><h1>Club events</h1><p>Saturday’s hike starts at the east gate.</p></article>' +
-    '<aside aria-label="Related club events"><h2>Club events</h2>' + entries + '</aside>');
+    '<article>' + heading + '<p>Saturday’s hike starts at the east gate.</p></article>' +
+    '<aside aria-label="Related club events"><h2>' + target + '</h2>' + entries + '</aside>');
   let current = opening;
   let documentId = "opening";
   let replaceDuringRead = false;
@@ -3742,6 +3749,24 @@ it('Check a public collection (spec/app/workspace.md, "A read plan offered in ch
     await routeTo(page.getByText(/^Choose Turn off browser reading\./u));
     expectOpen();
     privateField.remove();
+
+    if (layout === "wrapped directory") {
+      const main = collection.document.querySelector("main")!;
+      const original = main.innerHTML;
+      for (const misleading of [
+        heading + '<p>Saturday’s hike starts at the east gate.</p><h2>Related club events</h2>' + entries,
+        heading + '<section><h2>Club events</h2><ul><li><a href="/events/saturday">First label</a></li><li><a href="/events/saturday">Different label</a></li></ul></section>',
+        heading + '<h1>Another title</h1>' + entries,
+      ]) {
+        main.innerHTML = misleading;
+        const beforeCheck = native.calls("controlPage").length;
+        await tap(check);
+        await expect.poll(() => native.calls("controlPage").length).toBeGreaterThan(beforeCheck);
+        await routeTo(status);
+        expectOpen();
+      }
+      main.innerHTML = original;
+    }
 
     replaceDuringRead = true;
     await tap(check);

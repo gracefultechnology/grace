@@ -103,11 +103,15 @@ function collectionHeading(subject: string, heading: string): boolean {
 effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, url: URL, snapshot: LinkObservation, subject: string): number!! {
   const main = ':is(main,[role="main"]):not(:is(main,[role="main"]) *)'
   const top = ':is(h1,[role="heading"][aria-level="1"])'
-  const excluded = ':not(:is(nav,header,footer,aside,article,form,[role="navigation"],[role="complementary"],[aria-hidden="true"],[inert]) *)'
-  const headingSelector = `${main} > ${top}${excluded}`
+  const topic = ':is(h2,[role="heading"][aria-level="2"])'
+  const excluded = ':not(:is(nav,header,footer,aside,article,form,[role="navigation"],[role="complementary"],[role="article"],[aria-hidden="true"],[inert]) *)'
+  const region = ':is(section,div):not([role],[aria-label],[aria-labelledby])'
+  const directHeading = `${main} > ${top}${excluded}`
+  const wrappedHeading = `${main} > ${region}:first-child > ${top}:first-child${excluded}`
+  const headingSelector = `:is(${directHeading}, ${wrappedHeading})`
   const heading = native.readRecordText(id, headingSelector) catch () => undefined
   if (!heading || heading.url !== url.href || !collectionHeading(subject, normalizedHeading(heading.text))) return 0
-  const competing = native.readRecordText(id, `${headingSelector} ~ ${top}${excluded}`) catch () => undefined
+  const competing = native.readRecordText(id, `:is(${directHeading} ~ ${top}, ${wrappedHeading} ~ ${top}, ${main}:has(> ${top}) > ${region}:first-child > ${top})${excluded}`) catch () => undefined
   if (competing?.url === url.href) return 0
   const candidates = new Map<string, string>()
   for (const item of snapshot.result.elements) {
@@ -123,7 +127,26 @@ effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, u
   const links = `:is(${[...candidates.values()].join(",")})${excluded}`
   const entry = `:is(li,[role="listitem"]):has(${links})`
   const list = ':is(ul,ol,[role="list"])'
-  const collection = `:is(${headingSelector} + ${list}, ${headingSelector} + section > ${list}:only-child, ${headingSelector} + form[role="search"][method="get" i] + ${list}, ${headingSelector} + form[role="search"][method="get" i] + section > ${list}:only-child)${excluded}`
+  const titleBlock = `${main} > ${region}:first-child:has(> ${top}:only-child)${excluded}`
+  const anchor = `:is(${headingSelector}, ${titleBlock})`
+  const search = 'form[role="search"][method="get" i]'
+  const spine = `:is(${anchor}, ${anchor} + ${search})`
+  const withIntro = `:is(${anchor} + p, ${anchor} + p + ${search})`
+  const afterSearch = `:is(${topic}:first-child, ${search}:first-child + ${topic})`
+  const afterIntro = `:is(p:first-child + ${topic}, p:first-child + ${search} + ${topic})`
+  const plainTopic = `:is(${spine} + ${topic}, ${spine} + ${region} > ${afterSearch}):has(+ ${list})${excluded}`
+  const introTopic = `:is(${withIntro} + ${region} > ${afterSearch}, ${spine} + ${region} > ${afterIntro}):has(+ ${list})${excluded}`
+  const direct = `:is(${anchor} + ${list}, ${anchor} + ${region} > ${list}:only-child, ${anchor} + ${search} + ${list}, ${anchor} + ${search} + ${region} > ${list}:only-child)`
+  const observedTopic = native.readRecordText(id, plainTopic) catch () => undefined
+  const observedIntroTopic = native.readRecordText(id, introTopic) catch () => undefined
+  const topicText = observedTopic?.url === url.href ? normalizedHeading(observedTopic.text) : ""
+  const introText = observedIntroTopic?.url === url.href ? normalizedHeading(observedIntroTopic.text) : ""
+  if (topicText && introText) return 0
+  if (topicText && !collectionHeading(subject, topicText)) return 0
+  if (introText && (!/^(?:all|browse)\s+/iu.test(introText) ||
+      !collectionHeading(subject, introText.replace(/^(?:all|browse)\s+/iu, "")))) return 0
+  const selected = topicText ? plainTopic : introText ? introTopic : undefined
+  const collection = selected === undefined ? `${direct}${excluded}` : `${selected} + ${list}${excluded}`
   const first = native.readRecordText(id, `${collection} > :nth-child(1 of ${entry}) ${links}`) catch () => undefined
   const second = native.readRecordText(id, `${collection} > :nth-child(2 of ${entry}) ${links}`) catch () => undefined
   return first?.url === url.href && second?.url === url.href && comparableName(first.text) !== comparableName(second.text) ? 2 : 0
