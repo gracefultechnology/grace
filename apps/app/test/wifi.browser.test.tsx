@@ -1,6 +1,6 @@
 // spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"
 import type { ConnectOptions, WiFiNetwork, WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
-import { Effect, ManagedRuntime } from "effect";
+import { Deferred, Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, onTestFinished } from "vitest";
@@ -270,19 +270,20 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
     await expect.element(signIn).not.toBeInTheDocument();
 
-    const scanStarted = Promise.withResolvers<void>();
-    const releaseScan = Promise.withResolvers<void>();
-    onTestFinished(() => releaseScan.resolve());
-    tablet.holdScan = () => {
-      scanStarted.resolve();
-      return releaseScan.promise;
+    const scanStarted = await Effect.runPromise(Deferred.make<void>());
+    const releaseScan = await Effect.runPromise(Deferred.make<void>());
+    const finishScan = async () => { await Effect.runPromise(Deferred.succeed(releaseScan, undefined)); };
+    onTestFinished(finishScan);
+    tablet.holdScan = async () => {
+      await Effect.runPromise(Deferred.succeed(scanStarted, undefined));
+      await Effect.runPromise(Deferred.await(releaseScan));
     };
     tablet.ssid = guest.ssid;
     tablet.otherDefault = true;
     await changed();
-    await scanStarted.promise;
+    await Effect.runPromise(Deferred.await(scanStarted));
     tablet.ssid = "NETGEAR-4F2";
-    await act(() => Promise.resolve(releaseScan.resolve()));
+    await act(finishScan);
     await joinedTo("NETGEAR-4F2");
     await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
 
