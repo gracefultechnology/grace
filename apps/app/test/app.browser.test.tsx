@@ -30,7 +30,7 @@ import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, modelTurns, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
 import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
-import { actOnScreen, mount, signInToGrace, tabletView } from "./screen.tsx";
+import { actOnScreen, browserAccountResponse, mount, signInToGrace, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -3580,6 +3580,17 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   }
 }, 240_000);
 
+function signedInPublicSiteOwner() {
+  const network = window.fetch.bind(window);
+  const accountId = "public-site-owner";
+  return vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+    if (url.origin === location.origin && url.pathname === "/api/product/files/scope")
+      return Response.json({ accountId, owner: "a".repeat(64), session: "b".repeat(64) });
+    return browserAccountResponse(url, accountId) ?? network(input, init);
+  });
+}
+
 async function startPublicReadPlan(native: ReturnType<typeof fakePlugin>, tap: Awaited<ReturnType<typeof cloudReadPlan>>["tap"], loadHome: () => Promise<void>, tab: 1 | 2 = 1) {
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   await tap(button("Internet"));
@@ -3612,6 +3623,7 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
     result: { ...frame.snapshot(command), url } }), false, ({ selector }) => ({ ...frame.read(selector), url }));
   localStorage.clear();
+  const accountNetwork = signedInPublicSiteOwner();
   let view = await cloudReadPlan(native, cloud, secret);
   const { routeTo, tap } = view;
   const button = (name: string) => page.getByRole("button", { name, exact: true });
@@ -3690,6 +3702,7 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
     expect(plan.getByText("Search results for “green tea”.").query()).not.toBeNull();
   } finally {
     await view.dispose();
+    accountNetwork.mockRestore();
     localStorage.clear();
   }
 }, 120_000);
@@ -3726,6 +3739,7 @@ it('Check the price direction in the reviewed public category (spec/app/workspac
     return { ...read, url: address };
   });
   localStorage.clear();
+  const accountNetwork = signedInPublicSiteOwner();
   let view = await cloudReadPlan(native, cloud, secret);
   const { routeTo, tap } = view;
   const button = (name: string) => page.getByRole("button", { name, exact: true });
@@ -3789,6 +3803,7 @@ it('Check the price direction in the reviewed public category (spec/app/workspac
     expect(page.getByText("Rain jackets sorted by ascending price.", { exact: true }).query()).not.toBeNull();
   } finally {
     await view.dispose();
+    accountNetwork.mockRestore();
     localStorage.clear();
   }
 }, 120_000);
