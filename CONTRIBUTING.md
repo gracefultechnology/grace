@@ -443,7 +443,7 @@ the shared task cache is unavailable. Closed pull requests skip late cache
 uploads on their first attempt; an explicit rerun keeps its normal publication.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
-The product and nightly runners install full Chromium and its headless shell. Tool shard A installs full Chromium when its Bombadil journey runs. Shards B and rest run without a browser.
+The product runner installs the Playwright headless shell. A Bombadil exploration or saved replay installs full Chromium on first use. The nightly and cross-app runners install both browsers during setup. Tool shard A installs full Chromium when its Bombadil journey runs. Shards B and rest run without a browser.
 Pull requests read shared results; only branch pushes receive the publishing
 credential, protected by the `turbo-cache-publish` environment's branch
 policy. A pull request keeps its own Turborepo results in the GitHub cache
