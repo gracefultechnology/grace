@@ -386,7 +386,6 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(page.getByRole("button", { name: "Send" }));
   await expect.element(page.getByRole("navigation", { name: "Folders" }).getByRole("button", { name: /^Outbox 1/ })).toBeVisible();
 
-  await mounted.dispose();
   const saved = parseAccounts(JSON.parse(localStorage.getItem("accounts") ?? "null"));
   assert(saved);
   const legacy = {
@@ -396,15 +395,11 @@ it("Choose what each email brings and take it off the tablet", async () => {
     accounts: saved.accounts.map((account) => ({ ...account, fromName: undefined })),
   };
   const outlookId = saved.accounts.find((account) => account.address === outlook)?.id;
-  expect(localStorage.getItem(`mail/${outlookId}`)).toContain("Thank you, I’ll be there.");
-  localStorage.setItem("accounts", JSON.stringify(legacy));
-  mounted = connectTablet();
-  await mounted.render();
+  const outboxKey = `mail/${outlookId}`;
+  const waitingMail = localStorage.getItem(outboxKey);
+  expect(waitingMail).toContain("Thank you, I’ll be there.");
+  await tap(page.getByRole("button", { name: "Close Email" }));
   await openEmailSettings();
-  await expect.element(row(riverview)).toBeVisible();
-  const upgraded = parseAccounts(JSON.parse(localStorage.getItem("accounts") ?? "null"));
-  expect(upgraded?.accounts).toEqual(saved.accounts.map((account) => ({ ...account, fromName: "" })));
-  expect(upgraded?.signIn).toMatchObject({ lookup: "NotLookedUp", incoming: "", outgoing: "" });
   await tap(row(outlook));
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
   const question = page.getByRole("dialog", { name: "Remove Outlook from this tablet?" });
@@ -447,7 +442,9 @@ it("Choose what each email brings and take it off the tablet", async () => {
 
   // spec/app/accounts.md, "Signing in again renews the same account"
   await Effect.runPromise(Effect.provide(expire(cloud, secret, riverview), client));
-  await tap(page.getByRole("button", { name: /Riverview Internet/ }));
+  const oldProviderMessage = page.getByRole("button", { name: /Riverview Internet/ });
+  await expect.element(oldProviderMessage).toBeVisible({ timeout: 12_000 });
+  await tap(oldProviderMessage);
   await expect.element(page.getByRole("alert")).toBeVisible();
   await tap(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Riverview needs you to sign in again")).toBeVisible();
@@ -469,4 +466,21 @@ it("Choose what each email brings and take it off the tablet", async () => {
   expect(told()).toContain("The person signed in to Riverview again.");
   expect(told()).toContain("The person chose Yahoo.");
   expect(told()).not.toContain(otherPassword);
+
+  await mounted.dispose();
+  localStorage.clear();
+  localStorage.setItem("accounts", JSON.stringify(legacy));
+  assert(waitingMail !== null);
+  localStorage.setItem(outboxKey, waitingMail);
+  mounted = connectTablet();
+  await mounted.render();
+  await host(false);
+  await openEmailSettings();
+  await expect.element(row(riverview)).toBeVisible();
+  const upgraded = parseAccounts(JSON.parse(localStorage.getItem("accounts") ?? "null"));
+  expect(upgraded?.accounts).toEqual(saved.accounts.map((account) => ({ ...account, fromName: "" })));
+  expect(upgraded?.signIn).toMatchObject({ lookup: "NotLookedUp", incoming: "", outgoing: "" });
+  await tap(row(outlook));
+  await tap(page.getByRole("button", { name: "Remove from this tablet" }));
+  await expect.element(question.getByText(/^An email is waiting in Outbox to go from Outlook\./)).toBeVisible();
 }, 600_000);
