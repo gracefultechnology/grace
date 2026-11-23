@@ -13,7 +13,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { canConfirmGuidedNameCorrection, guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedNameCorrection, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type GraceAction } from "./agent.vibe"
 import { BrowserGuide } from "./browserGuide.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
@@ -30,7 +30,7 @@ import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { statementRead } from "./statement.vibe"
 
 export type CloudLink = { readonly url: string; readonly key: string }
-export type GuidedCheck = "Confirmed" | "NotFound" | "Several" | "Past" | "Changed" | "Covered" | "Used" | "PrivateForm" | "Refused"
+export type GuidedCheck = "Confirmed" | "NotFound" | "Several" | "Past" | "Changed" | "Covered" | "Used" | "PrivateForm" | "Refused" | "CategoryOffered"
 export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer" }>
 
 type TurnSource = { readonly origin: Exclude<Origin, "AskedForHelp"> } | { readonly origin: "AskedForHelp"; readonly context: string }
@@ -39,6 +39,7 @@ export service Conversation {
   say(input: PersonTurn): boolean!!
   turnSource(generation: number): TurnSource!!
   checkGuidedRead(): GuidedCheck!!
+  confirmSortName(correction: GuidedNameCorrection): boolean!!
   help(need: Help): void!!
   startReadReview(revision: number): boolean!!
   resumeReadPlan(): boolean!!
@@ -86,7 +87,7 @@ type GuidedReadSource =
   | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string; region: string }
   | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
 type GuidedReadReceipt = { source: GuidedReadSource; identity: readonly string[]; text: string }
-type GuidedMiss = Exclude<GuidedCheck, "Confirmed">
+type GuidedMiss = Exclude<GuidedCheck, "Confirmed" | "CategoryOffered">
 
 function normalizedHeading(value: string | null | undefined): string {
   return value && value.length <= 200 ? value.normalize("NFC").trim().replace(/\s+/gu, " ") : ""
@@ -241,7 +242,11 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const miss = pageMiss(before, url.href, "CheckPublicSort")
       if (miss !== undefined) return miss
       const heading = native.readPrimaryHeading(id, true) catch () => undefined
-      if (heading?.url !== url.href || sortCategory(normalizedHeading(heading.text)) !== sortCategory(step.subject)) return undefined
+      if (heading?.url !== url.href) return undefined
+      const observedLabel = normalizedHeading(heading.text)
+      const publicLabel = try Effect.orDie(Effect.try(() => withhold({ text: observedLabel, passwords: [] })))
+      if (observedLabel === "" || publicLabel !== observedLabel) return undefined
+      const category = sortCategory(observedLabel) === sortCategory(step.subject) ? step.subject : observedLabel
       const toolbar = priceToolbar(before)
       if (toolbar?.direction !== step.direction) return undefined
       const text = native.readRecordText(id, toolbar.selector) catch () => undefined
@@ -255,8 +260,8 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       if (afterMiss !== undefined) return afterMiss
       const order = direction === "PriceAscending" ? "ascending" : "descending"
       return receipt({ tag: "PublicSortDocument", tabId: tab.id, loadVersion: tab.loadVersion, documentId: before.documentId,
-        domRevision: before.result.domRevision, url: url.href, origin: step.origin, category: step.subject, direction },
-      [before.documentId, step.subject, direction], step.subject + " sorted by " + order + " price.")
+        domRevision: before.result.domRevision, url: url.href, origin: step.origin, category, direction },
+      [before.documentId, category, direction], category + " sorted by " + order + " price.")
     }
     case "ReachNamedPage": {
       const tab = activeTab(workspace.browser)
@@ -342,6 +347,16 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
 
 effect function decoded(said: string | undefined) {
   return said === undefined ? undefined : Schema.decodeUnknownEffect(Reply)(said) catch () => undefined
+}
+
+function observedSortName(w: Scene["workspace"], step: GuidedStep, source: GuidedReadSource): GuidedNameCorrection | undefined {
+  if (step.tag !== "SortPublicListing" || source.tag !== "PublicSortDocument" || source.category === step.subject) return undefined
+  return {
+    owner: w.plan.owner, task: w.assistant.taskId, version: w.assistant.workVersion, generation: w.assistant.conversation.generation,
+    deviceVersion: w.device.contextVersion, browserRevision: w.browser.revision, stepIndex: w.plan.receipts.length,
+    loadVersion: source.loadVersion, documentId: source.documentId, url: source.url, href: source.url,
+    original: step.subject, label: source.category, witness: { tag: "LocatedSortCategory", domRevision: source.domRevision }
+  }
 }
 
 function distinctReadConfirmation(source: GuidedReadSource, report: GuidedObservation, rebind: boolean): Event | undefined {
@@ -516,6 +531,23 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       if (!hasNext(state.plan) || !(try recovery.canAccess(state))) return false
       return (workspace.send({ type: "resume" }, "Person") catch () => undefined) !== undefined
     },
+    confirmSortName: effect (correction) => {
+      const scene = try look()
+      const current = scene.workspace
+      if (correction.witness.tag !== "LocatedSortCategory" || !canConfirmGuidedNameCorrection(current, correction, "Person") ||
+          !(try website.clear) || !(try recovery.canAccess(current))) return false
+      const account = try browserReadAccount()
+      if (account === undefined) return false
+      const step = nextOutcome(current.plan)
+      const checked = try guidedReceipt(scene, step, native, managed, correction.documentId)
+      if (checked === undefined || typeof checked === "string") return false
+      const again = observedSortName(current, step, checked.source)
+      if (again?.witness.tag !== "LocatedSortCategory" || again.witness.domRevision !== correction.witness.domRevision ||
+          again.label !== correction.label || again.url !== correction.url || (try browserReadAccount()) !== account || !(try website.clear)) return false
+      const accepted = workspace.send({ type: "confirmGuidedNameCorrection", correction }, "Person") catch () => undefined
+      if (accepted !== undefined) try recovery.keepProgress()
+      return accepted !== undefined
+    },
     checkGuidedRead: effect () => {
       if (!(try website.clear)) return "Refused"
       const scene = try look()
@@ -572,6 +604,11 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       const sameRecord = try Effect.orDie(Effect.try(() => JSON.stringify(found) === JSON.stringify(rechecked)))
       if (!sameRecord) return typeof rechecked === "string" ? rechecked : "Changed"
       if (browserScope !== undefined && !(try ownsBrowserRead())) return "Refused"
+      const correction = observedSortName(current, step, found.source)
+      if (correction !== undefined) {
+        const offered = workspace.send({ type: "offerGuidedNameCorrection", correction }, "Host") catch () => undefined
+        return offered === undefined ? "Refused" : "CategoryOffered"
+      }
       const evidence = try Effect.orDie(Effect.try(() => withhold({ text: found.text, passwords: [] })))
       const report = {
         owner: current.plan.owner,

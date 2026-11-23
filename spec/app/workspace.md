@@ -62,9 +62,10 @@ type GuidedCalendarApproval = {
   title: str, starts: int, ends: int, timezone: str, location: str, notes: str, detailsDigest: str
 }
 type GuidedReceipt = { sourceKey: str, evidence: str }
+type GuidedNameWitness = PublicLinkName | LocatedSortCategory({ domRevision: int })
 type GuidedNameCorrection = {
   owner: str, task: str, version: int, generation: int, deviceVersion: int, browserRevision: int,
-  stepIndex: int, loadVersion: int, documentId: str, url: str, href: str, original: str, label: str
+  stepIndex: int, loadVersion: int, documentId: str, url: str, href: str, original: str, label: str, witness: GuidedNameWitness
 }
 type GuidedNameCorrectionState = NoGuidedNameCorrection | PendingGuidedNameCorrection({ value: GuidedNameCorrection })
 type GuidedNameOverride = { stepIndex: int, label: str }
@@ -143,6 +144,7 @@ pure def nextOutcome(plan: GuidedPlan): GuidedStep = {
   val plannedOutcome = plan.steps.nthOr(index, noGuidedStep)
   if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match plannedOutcome {
     | ReachNamedPage(_) => ReachNamedPage({ subject: plan.nameOverride.label })
+    | SortPublicListing(sort) => SortPublicListing({ subject: plan.nameOverride.label, origin: sort.origin, tabId: sort.tabId, direction: sort.direction })
     | _ => plannedOutcome
   } else plannedOutcome
 }
@@ -1289,7 +1291,7 @@ fresh observation of the original mail receipt and its own separate approval.
 pure def guidedCheckpoint(w: Workspace): GuidedCheckpoint = {
   request: { owner: w.plan.owner, task: w.assistant.taskId, goal: w.plan.originalAsk, steps: w.plan.steps },
   receipts: w.plan.receipts, workVersion: w.assistant.workVersion,
-  correction: if (w.plan.nameOverride.stepIndex == w.plan.receipts.length() and w.plan.nameOverride.label != "" and w.plan.linkUrl != "")
+  correction: if (isNamedDestination(nextOutcome(w.plan)) and w.plan.nameOverride.stepIndex == w.plan.receipts.length() and w.plan.nameOverride.label != "" and w.plan.linkUrl != "")
     GuidedCheckpointCorrectionBound({ label: w.plan.nameOverride.label, url: w.plan.linkUrl }) else NoGuidedCheckpointCorrection,
   save: if (w.plan.calendarApproval.proposal >= 0 and isAppointmentSave(nextOutcome(w.plan)))
     GuidedSaveReconcile({ occurrence: w.plan.savedOccurrence, owner: w.plan.calendarApproval.owner,
@@ -1458,7 +1460,9 @@ pure def isLinkGuidanceStep(guidedStep: GuidedStep): bool = match guidedStep {
   | _ => false
 }
 pure def mayGuideReadLink(w: Workspace): bool =
-  hasNext(w.plan) and isLinkGuidanceStep(nextOutcome(w.plan)) and
+  isLinkGuidanceStep(nextOutcome(w.plan)) and mayGuideOnBrowser(w)
+pure def mayGuideOnBrowser(w: Workspace): bool =
+  hasNext(w.plan) and
   w.device.readiness == S::Ready and w.device.surface == S::Browser and mayAssist(w) and
   w.assistant.presentation == A::Compact and B::activeTab(w.browser).load == B::Loaded and
   (w.assistant.activity == A::ReadyForStep or w.assistant.activity == A::Rechecking) and
@@ -1525,23 +1529,42 @@ pure val linkValues = Set({ task: "read", version: 1, generation: 2, deviceVersi
 pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
 ```
 
-### Only the person can revise the next named page to an observed public link label
+### Only the person can revise the next public page or category to its observed label
 
 While a named page is the next check, Grace can offer the visible label of a different public link in the current loaded document. The browser adapter witnesses one pointable same-site anchor outside every form. It checks the same document, address, link and label again when the person approves. A private page or a changed account, task, step, permission, browser or conversation makes the offer unavailable. The person can ignore it and keep asking for the original name. Approval replaces only the exact name to check for this step and binds the approved link. A later hint can use that approved link. Binding a different link needs another approval. The original request, plan owner, remaining steps and all receipts stay in place. Approval does not navigate, record a receipt or authorize a write. Grace checks that the active tab has reached the approved address before requesting an observation of the destination. It then verifies the exact approved heading.
 
 When the person opens a navigation menu, Grace can point to a visible child of that menu and guide the person through further nested menus. Each choice stays in the observed branch of the current document. When the open branch has no matching link, the person can ask Grace to try another menu on the same document. If the destination uses a different label, Grace shows its parent menus and asks the person to approve that particular link. The final check requires the approved address and the visible primary heading.
 
+On a reviewed public price sort, Grace can offer the exact visible category
+name of the securely loaded page from the reviewed tab after observing its
+price toolbar in the reviewed direction. She checks the same document,
+document revision, category and toolbar again when the person accepts. The
+chosen label replaces only the category in that step. It keeps the reviewed
+tab, origin and direction. Checking again still requires the full sort
+observation and does not reuse this offer as the result. This correction
+belongs to the current browser session. After restart, the original category
+can be checked or corrected again on a freshly reviewed page.
+
 ```quint
 pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrection): bool = {
   val tab = B::activeTab(w.browser)
-  mayGuideReadLink(w) and not(privateSurfaceActive(w)) and w.device.observationAllowed and
-  isNamedDestination(nextOutcome(w.plan)) and correction.original == guidedDetails(nextOutcome(w.plan)).subject and
+  val witness = correction.witness
+  val outcome = nextOutcome(w.plan)
+  mayGuideOnBrowser(w) and not(privateSurfaceActive(w)) and w.device.observationAllowed and
+  (match witness {
+    | PublicLinkName => isNamedDestination(outcome) and correction.href != correction.url
+    | LocatedSortCategory(located) => match outcome {
+      | SortPublicListing(sort) => sort.tabId == tab.id and tab.secure and tab.loadVersion > w.plan.openingBrowser and
+          located.domRevision >= 0 and correction.href == correction.url
+      | _ => false
+    }
+  }) and correction.original == guidedDetails(outcome).subject and
   correction.owner != "" and correction.owner == w.plan.owner and correction.task == w.assistant.taskId and
   correction.version == w.assistant.workVersion and correction.generation == w.assistant.conversation.generation and
   correction.deviceVersion == w.device.contextVersion and correction.browserRevision == w.browser.revision and
   correction.stepIndex == w.plan.receipts.length() and correction.loadVersion == tab.loadVersion and
   correction.documentId != "" and correction.url != "" and correction.url == B::tabUrl(tab) and
-  correction.href != "" and correction.href != correction.url and correction.label != "" and
+  correction.href != "" and correction.label != "" and
   correction.label != correction.original
 }
 pure def currentGuidedNameCorrection(w: Workspace): GuidedNameCorrectionState = {
@@ -1558,11 +1581,12 @@ pure def offerGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrectio
   ...w, plan: { ...w.plan, nameCorrection: PendingGuidedNameCorrection({ value: correction }) }
 }
 pure def canConfirmGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
-  by == Person and currentGuidedNameCorrection(w) == PendingGuidedNameCorrection({ value: correction })
+  by == Person and not(heldByWebsite(w)) and currentGuidedNameCorrection(w) == PendingGuidedNameCorrection({ value: correction })
 pure def confirmGuidedNameCorrection(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): Workspace = {
   ...w, plan: { ...w.plan, nameCorrection: NoGuidedNameCorrection,
     nameOverride: { stepIndex: correction.stepIndex, label: correction.label },
-    linkStep: correction.stepIndex, linkUrl: correction.href },
+    linkStep: if (correction.witness == PublicLinkName) correction.stepIndex else w.plan.linkStep,
+    linkUrl: if (correction.witness == PublicLinkName) correction.href else w.plan.linkUrl },
   assistant: { ...w.assistant, workVersion: w.assistant.workVersion + 1 }
 }
 pure def lawNameCorrectionRetainsTheReviewedPlan(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool = {
@@ -1570,8 +1594,18 @@ pure def lawNameCorrectionRetainsTheReviewedPlan(w: Workspace, correction: Guide
   canConfirmGuidedNameCorrection(w, correction, by) implies
     after.plan.owner == w.plan.owner and after.plan.originalAsk == w.plan.originalAsk and
     after.plan.steps == w.plan.steps and after.plan.receipts == w.plan.receipts and
-    after.browser == w.browser and nextOutcome(after.plan) == ReachNamedPage({ subject: correction.label }) and
+    after.browser == w.browser and guidedDetails(nextOutcome(after.plan)).subject == correction.label and
     after.assistant.workVersion > correction.version
+}
+pure def lawNameCorrectionKeepsTheSortScope(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool = {
+  val outcome = nextOutcome(w.plan)
+  val after = confirmGuidedNameCorrection(w, correction, by)
+  (canConfirmGuidedNameCorrection(w, correction, by) and isPublicSort(outcome)) implies (match outcome {
+    | SortPublicListing(sort) => nextOutcome(after.plan) == SortPublicListing({
+        subject: correction.label, origin: sort.origin, tabId: sort.tabId, direction: sort.direction }) and
+        after.plan.linkUrl == w.plan.linkUrl and after.plan.linkStep == w.plan.linkStep
+    | _ => false
+  })
 }
 pure def lawANameCorrectionNeedsItsCurrentPersonOffer(w: Workspace, correction: GuidedNameCorrection, by: WorkspaceActor): bool =
   (by != Person or not(guidedNameCorrectionCurrent(w, correction))) implies not(canConfirmGuidedNameCorrection(w, correction, by))
@@ -1581,7 +1615,7 @@ pure def lawGuidanceKeepsTheApprovedLink(w: Workspace, link: GuidedLink, by: Wor
 pure val correctionValues = Set(3, 4).map(generation =>
   { owner: "tablet", task: "read", version: 1, generation: generation, deviceVersion: 7, browserRevision: 3,
     stepIndex: 0, loadVersion: 1, documentId: "browser-document", url: "https://utility.example",
-    href: "https://utility.example/help", original: "Support", label: "Help" })
+    href: "https://utility.example/help", original: "Support", label: "Help", witness: PublicLinkName })
 ```
 
 ### Only a current observation of the next outcome advances the plan

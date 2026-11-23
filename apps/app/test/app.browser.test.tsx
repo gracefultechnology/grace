@@ -3758,12 +3758,16 @@ it.each([
       await routeTo(correction);
       documentId += "-interrupted";
       await tap(correction);
+      await routeTo(page.getByRole("status", { name: "Page check result" }).getByText("The page changed while I checked it. Check it again."));
       await routeTo(page.getByText(`Open “${target}” and sort by ${priceDirection} price first.`));
       expect(complete.query()).toBeNull();
       await pending();
       await tap(correction);
       await routeTo(page.getByText(`Open “${siteLabel}” and sort by ${priceDirection} price first.`));
       expect(complete.query()).toBeNull();
+      direction.title = "Set Descending Direction";
+      await pending();
+      direction.title = "Set Ascending Direction";
     }
     await tap(check);
     await routeTo(complete);

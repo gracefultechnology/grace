@@ -68,6 +68,7 @@ const notCounted = (check: Exclude<GuidedCheck, "Confirmed">, step: GuidedStep |
     case "Covered": return "Something on the website covers the page. Close it or answer it there, then check again.";
     case "Used": return `You already used this ${item} for an earlier step. Open the next one.`;
     case "PrivateForm": return privateFormRecovery;
+    case "CategoryOffered": return "Use the category name shown on this website, then check the price order again.";
     case "Refused": return "I couldn’t confirm this step yet.";
   }
 };
@@ -185,12 +186,20 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   };
   const feedback = guideKey && linkFeedback?.key === guideKey ? linkFeedback : undefined;
   const alternateHref = feedback?.result && "alternateHref" in feedback.result ? feedback.result.alternateHref : undefined;
-  const nameOffer = workspace && alternateHref ? currentGuidedNameCorrection(workspace) : undefined;
-  const correction = nameOffer?.tag === "PendingGuidedNameCorrection" && alternateHref === nameOffer.value.href ? nameOffer.value : undefined;
+  const nameOffer = workspace ? currentGuidedNameCorrection(workspace) : undefined;
+  const correction = nameOffer?.tag === "PendingGuidedNameCorrection" &&
+    (nameOffer.value.witness.tag === "LocatedSortCategory" ? checked?.result === "CategoryOffered" : alternateHref === nameOffer.value.href)
+    ? nameOffer.value : undefined;
   const chooseSiteName = () => {
     if (!correction) return;
-    const refused = () => setLinkFeedback((current) => current === feedback
-      ? { key: guideKey, attempt: Symbol(), result: { kind: "Unavailable", words: "The page or task changed. Ask me again on the page you want." } } : current);
+    const refused = () => {
+      if (correction.witness.tag === "LocatedSortCategory") {
+        setStepCheck((current) => current === checked ? { key: scopeKey, result: "Changed" } : current);
+      } else {
+        setLinkFeedback((current) => current === feedback
+          ? { key: guideKey, attempt: Symbol(), result: { kind: "Unavailable", words: "The page or task changed. Ask me again on the page you want." } } : current);
+      }
+    };
     void confirmGuidedName(correction).then((accepted) => { if (!accepted) refused(); }, refused);
   };
   const showLink = () => {
