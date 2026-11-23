@@ -8,6 +8,7 @@ import { Schema } from "effect";
 import type { Page } from "playwright";
 import { selfSigned } from "./tls.ts";
 import { hasHostedNavigation } from "./browser-receipt.ts";
+import { routeFixtureContext } from "./fixture-context.ts";
 
 const revision = "8320228bccf0759f375b9633592612e0e570a526";
 const Biller = Schema.Struct({ id: Schema.NonEmptyString, template: Schema.NonEmptyString, signal: Schema.String, brand: Schema.Struct({ shortName: Schema.NonEmptyString }) });
@@ -518,13 +519,9 @@ export async function fleetStatement(directory: string, billerId: string, receip
       startUrl: url,
       question: "Report the current amount due and its due date. Do not make any payment.",
       async prepareStatement(page: Page) {
-        await page.route("**/*", (route) => {
-          const request = route.request();
-          const target = new URL(request.url());
-          const read = request.method() === "GET" || request.method() === "HEAD";
-          const login = request.method() === "POST" && loginPaths.has(target.pathname) && !target.search;
-          return target.origin === origin && (read || login) ? route.continue() : route.abort();
-        });
+        await routeFixtureContext(page.context(), { origin, permits: (request, target) =>
+          ["GET", "HEAD"].includes(request.method()) ||
+          (request.method() === "POST" && loginPaths.has(target.pathname) && !target.search) });
         const entry = new URL(episode.entryUrl);
         if (entry.origin !== new URL(fleet.baseUrl).origin || !entry.pathname.startsWith("/enter/"))
           throw new Error("Fleet gave an unexpected entry address");

@@ -14,6 +14,7 @@ import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
 import { type CompletedPublicSearch, hasHostedNavigation, hasUserAssistedSearch, matchesPublicSearch, PublicSearch, publicSearchQuery } from "./test/browser-receipt.ts";
 import { fleetFixture, fleetStatement, fleetStatementCases, fleetStatementRefusals } from "./test/fleet.fixture.ts";
+import { fixtureContextOptions, routeFixtureContext } from "./test/fixture-context.ts";
 import { webArena, webArenaPluginName, WebArenaEvaluatorError } from "./test/webarena.ts";
 
 const base = project({ root: import.meta.dirname, plugins: [tailwindcss()] });
@@ -299,28 +300,22 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     if (storage && (!storage.cookies.length || storage.cookies.some(({ domain }) => domain.replace(/^\./u, "") !== start.hostname) || storage.origins.some((stored) => stored.origin !== origin)))
       throw new Error("Benchmark storage state must belong only to the declared synthetic website");
     const browser = await context.context.browser()?.newContext({
+      ...fixtureContextOptions,
       ignoreHTTPSErrors: true,
       ...(storage && { storageState: { cookies: [...storage.cookies], origins: storage.origins.map(({ origin, localStorage }) => ({ origin, localStorage: [...localStorage] })) } }),
     });
     if (!browser) throw new Error("The benchmark needs a Chromium browser context");
     try {
+      await routeFixtureContext(browser, { origin, permits: (request, url) => {
+        const read = ["GET", "HEAD"].includes(request.method());
+        if (publicSearch) return read && (!request.isNavigationRequest() || url.href === start.href ||
+          (run.publicSearch !== undefined && request.method() === "GET" && matchesPublicSearch(url, run.publicSearch.search)));
+        if (definition.evaluator === "webarena" && definition.taskId === "157")
+          return read && (!request.isNavigationRequest() || url.pathname.startsWith("/admin/"));
+        return definition.evaluator !== "webarena" || definition.taskId !== "258" || read;
+      } });
       const website = await browser.newPage();
       const session = await observeFromDocumentStart(website);
-      await website.route("**/*", (route) => {
-        const request = route.request();
-        const url = new URL(request.url());
-        if (url.origin !== origin) return route.abort();
-        if (publicSearch && (!["GET", "HEAD"].includes(request.method()) ||
-          (request.isNavigationRequest() && url.href !== start.href &&
-            (!run.publicSearch || request.method() !== "GET" || !matchesPublicSearch(url, run.publicSearch.search)))))
-          return route.abort();
-        if (definition.evaluator === "webarena" && definition.taskId === "157" &&
-          (!["GET", "HEAD"].includes(request.method()) || request.isNavigationRequest() && !url.pathname.startsWith("/admin/")))
-          return route.abort();
-        if (definition.evaluator === "webarena" && definition.taskId === "258" && !["GET", "HEAD"].includes(request.method()))
-          return route.abort();
-        return route.continue();
-      });
       const response = await website.goto(action.url, { waitUntil: "load" });
       if (!response?.ok()) throw new Error("The benchmark site did not load");
       if (activeRuns.get(context.page) !== run || run.site) throw new Error("The benchmark instance changed while opening the site");
@@ -516,7 +511,7 @@ async function releasedStatement(context: BrowserCommandContext, attempt: string
       episode = action.billerId === undefined ? await startReleasedStatement(releasedDirectory, directory)
         : await fleetStatement(releasedDirectory, action.billerId, directory);
       if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
-      browser = await context.context.browser()?.newContext({ ignoreHTTPSErrors: true });
+      browser = await context.context.browser()?.newContext({ ...fixtureContextOptions, ignoreHTTPSErrors: true });
       if (!browser) throw new Error("The statement trial needs an isolated Chromium context");
       const page = await browser.newPage();
       const site = { page, origin: new URL(episode.startUrl).origin, browser, session: await observeFromDocumentStart(page) };
