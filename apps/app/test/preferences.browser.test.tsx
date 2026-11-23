@@ -66,6 +66,7 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
   const stored: { revision: number; value: string | null } = { revision: 0, value: null };
   let acceptsWrites = false;
   let refused = 0;
+  const clock = Layer.effectDiscard(TestClock.setTime(new Date(2026, 10, 20, 12).getTime())).pipe(Layer.provideMerge(TestClock.layer()));
   const audio = { step: 9, min: 0, max: 15, muted: false };
   let brightness = 100;
   const device = () => ({ volume: { ...audio }, brightness: { percent: brightness } });
@@ -94,7 +95,7 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
         return Promise.resolve({ revision: stored.revision });
       },
     },
-  }).pipe(Layer.provideMerge(TestClock.layer())));
+  }).pipe(Layer.provideMerge(clock)));
   const runtime = start();
   const first = tabletView(runtime);
   try {
