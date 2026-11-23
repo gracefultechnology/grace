@@ -296,7 +296,9 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await host(false);
   await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
   await tap(page.getByRole("button", { name: "Reply" }));
-  await act(() => userEvent.fill(page.getByRole("textbox", { name: "Write your message, or ask Grace to help" }), "Thank you, I’ll be there."));
+  const message = page.getByRole("textbox", { name: "Write your message, or ask Grace to help" });
+  await expect.element(message).toBeVisible();
+  await act(() => userEvent.fill(message, "Thank you, I’ll be there."));
   await tap(page.getByRole("button", { name: "Send" }));
   await expect.element(page.getByRole("navigation", { name: "Folders" }).getByRole("button", { name: /^Outbox 1/ })).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Email" }));
