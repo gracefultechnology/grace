@@ -1,5 +1,5 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
-import { type Setup as SetupState, Machine as Setup, isSelectedVersion, isTheSelectedSeries, isTheReviewedAppointment, trashableVersion, changeReceiptMatches, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
+import { type Setup as SetupState, Machine as Setup, isSelectedVersion, isTheSelectedSeries, isAReviewableAppointment, isTheReviewedAppointment, trashableVersion, undoesTheTrashReceipt, changeReceiptMatches, managedReadMatches, mayReadManaged, maySendManagedMail, mayChangeManaged } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, Machine as Workspaces, type GuidedStep, type ReleasedEmailLink } from "../gen/app__workspace.effect.vibe"
 import { initial as initialCalendarView, type Navigation, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { dayOf, midnight, navigation } from "./calendarWindow.vibe"
@@ -105,7 +105,7 @@ type Scope =
   | { kind: "waiting"; view: ReadView; reason: Waiting }
   | { kind: "ready"; view: ReadView; accountId: string; grant: string }
 type ReadyScope = Extract<Scope, { kind: "ready" }>
-type Mail = { linkReview?: ReleasedEmailLink; replying?: boolean; folder: ManagedFolder; search: string; counts?: typeof MailCounts.Type; proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment }
+type Mail = { linkReview?: ReleasedEmailLink; replying?: boolean; folder: ManagedFolder; search: string; counts?: typeof MailCounts.Type; proposed?: StagedWork; kind: "mail"; accountId: string; grant: string; rows: readonly MailRow[]; next: string | null; selected?: typeof MailBody.Type; photosSaved?: number; attachment?: OriginalAttachment; trashed?: WriteReceipt }
 export function inboxTrashVersion(mail: Mail) {
   const row = mail.selected?.message
   return trashableVersion(mail.folder === "trash", row?.labels?.includes("INBOX") === true, row?.labels?.includes("TRASH") === true, row?.metadata?.historyId ?? "")
@@ -179,11 +179,11 @@ export service ManagedReads {
 error ManagedReadFailed
 
 function appointmentTarget(shown: Calendar, action: AppointmentChange) {
-  if (action.action === "create") return isTheReviewedAppointment(reviewOf(action), reviewOf(action))
+  if (action.action === "create") return isAReviewableAppointment(reviewOf(action))
   const target = action.seriesFor === undefined ? shown.selected
     : isTheSelectedSeries(shown.selected?.externalId ?? "", shown.selected?.seriesId ?? "", action.seriesFor, action.id) ? shown.series : undefined
   return target !== undefined && isSelectedVersion(target.externalId, target.etag ?? "", action.id, action.version) &&
-    isTheReviewedAppointment(reviewOf(action), reviewOf(action))
+    isAReviewableAppointment(reviewOf(action))
 }
 
 function viewOf(hash: string): ReadView | undefined {
@@ -539,6 +539,8 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     if ((shown.kind !== "mail" && shown.kind !== "calendar") || shown.grant !== grant || shown.accountId !== accountId) return undefined
     if (action.kind === "trash" && (shown.kind !== "mail" || !shown.selected ||
       !isSelectedVersion(shown.selected.message.externalId, inboxTrashVersion(shown), action.id, action.version))) return undefined
+    if (action.kind === "undo" && (shown.kind !== "mail" || !shown.trashed ||
+      !undoesTheTrashReceipt(shown.trashed.itemId, shown.trashed.version ?? "", shown.trashed.operationId, action.id, action.version, action.prior))) return undefined
     if (action.kind === "appointment") {
       if (shown.kind !== "calendar" || shown.proposed?.number !== expectedProposal || !shown.reviewing ||
         !isTheReviewedAppointment(reviewOf(shown.reviewing), reviewOf(action)) || !appointmentTarget(shown, action) ||
@@ -555,7 +557,7 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     if (!changeReceiptMatches(accountId, receipt.accountId, expected, receipt.itemId, operationId, receipt.operationId) ||
       !(try still(scope))) return undefined
     if (action.kind === "trash" && shown.kind === "mail") {
-      const remaining = { ...shown, counts: undefined, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined, attachment: undefined, proposed: undefined }
+      const remaining = { ...shown, counts: undefined, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined, attachment: undefined, proposed: undefined, trashed: receipt }
       try publish(remaining)
       if (shown.counts !== undefined) {
         const refreshed = fetchPage(authorization, scope, remaining) catch () => undefined

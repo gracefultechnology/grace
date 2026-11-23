@@ -775,7 +775,9 @@ existing item, and its receipt must name the item this operation made.
 Before showing success, Grace checks that the provider receipt names the
 same account, item and operation. Undo is built only from a Trash receipt
 that passed that check, and it names that receipt's operation as the one it
-reverses.
+reverses: the managed Google shell keeps the receipt with the mailbox it shows
+and sends an Undo only for the message, the version and the operation that
+receipt names, so without a confirmed move to Trash there is nothing to undo.
 
 An appointment change is read back before it is sent: the review the person
 sees is the change itself, held by the managed Google shell, and Grace sends
@@ -830,11 +832,12 @@ pure def lawASeriesChangeNeedsItsOccurrenceStillSelected(selectedId: str, select
   isTheSelectedSeries(selectedId, selectedSeriesId, seriesFor, seriesId) implies
     (seriesFor != "" and seriesFor == selectedId and seriesId != "" and seriesId == selectedSeriesId)
 type AppointmentReview = { id: str, version: str, seriesFor: str, frequency: str, timeZone: str, details: str }
+pure def isAReviewableAppointment(review: AppointmentReview): bool =
+  review.details != "" and (review.frequency == "" or (review.id == "" and review.timeZone != ""))
 pure def isTheReviewedAppointment(reviewed: AppointmentReview, sent: AppointmentReview): bool =
   reviewed.id == sent.id and reviewed.version == sent.version and reviewed.seriesFor == sent.seriesFor and
   reviewed.frequency == sent.frequency and reviewed.timeZone == sent.timeZone and
-  reviewed.details != "" and reviewed.details == sent.details and
-  (reviewed.frequency == "" or (reviewed.id == "" and reviewed.timeZone != ""))
+  reviewed.details == sent.details and isAReviewableAppointment(reviewed)
 pure val appointmentReviewSample: AppointmentReview = { id: "", version: "", seriesFor: "", frequency: "Weekly", timeZone: "Europe/Paris", details: "Lunch" }
 pure val reviewedValues: Set[AppointmentReview] = Set(appointmentReviewSample)
   .union(Set({ ...appointmentReviewSample, timeZone: "" }))
@@ -863,6 +866,12 @@ pure def changeReceiptMatches(accountId: str, receiptAccountId: str, itemId: str
 pure def lawAChangeReceiptNamesTheSameAccountItemAndOperation(accountId: str, receiptAccountId: str, itemId: str, receiptItemId: str, operation: str, receiptOperation: str): bool =
   changeReceiptMatches(accountId, receiptAccountId, itemId, receiptItemId, operation, receiptOperation) implies
     (accountId != "" and accountId == receiptAccountId and itemId == receiptItemId and operation != "" and operation == receiptOperation)
+pure def undoesTheTrashReceipt(trashedId: str, trashedVersion: str, trashOperation: str, id: str, version: str, prior: str): bool =
+  trashOperation != "" and prior == trashOperation and isSelectedVersion(trashedId, trashedVersion, id, version)
+pure def lawUndoReversesOnlyTheConfirmedMoveToTrash(trashedId: str, trashedVersion: str, trashOperation: str, id: str, version: str, prior: str): bool =
+  not(undoesTheTrashReceipt(trashedId, trashedVersion, "", id, version, prior)) and
+  ((prior != trashOperation or id != trashedId or version != trashedVersion) implies
+    not(undoesTheTrashReceipt(trashedId, trashedVersion, trashOperation, id, version, prior)))
 pure def grantOf(link: GoogleLink): str = match link {
   | GoogleLinkConnected(g) => g.grant
   | _ => ""
@@ -900,7 +909,10 @@ the match to the shown account as inputs. All three must hold to offer
 Approve. Counting the action as approved also requires the person's explicit
 confirmation, which is her tap on Approve. A request is registered only when
 it names the registered page and carries no field beyond the registered
-ones, so a request cannot add a field for the recovery key or a password.
+ones, so a request cannot add a field for the recovery key or a password:
+the browser counts the fields the registered request does not have, and
+isARegisteredRequest admits a request only when that count is zero and the
+request names the registered page.
 The page does not inspect the values of the registered fields. The service
 reports a stale sign-in or a changed account when it receives the action and
 shown account together.
@@ -916,6 +928,11 @@ request". That only a completed, verified and unexpired exchange yields an
 approval the native operation can use is exchangedApprovalIsUsable there.
 
 ```quint
+pure def isARegisteredRequest(namesTheRegisteredPage: bool, unregisteredFields: int): bool =
+  namesTheRegisteredPage and unregisteredFields == 0
+pure def lawARequestWithAnUnregisteredFieldIsNotRegistered(namesTheRegisteredPage: bool, unregisteredFields: int): bool =
+  not(isARegisteredRequest(false, unregisteredFields)) and
+  (unregisteredFields != 0 implies not(isARegisteredRequest(namesTheRegisteredPage, unregisteredFields)))
 pure def mayOfferBackupApproval(registered: bool, recentSignIn: bool, sameAccount: bool): bool =
   registered and recentSignIn and sameAccount
 pure def mayApprovePasswordBackup(registered: bool, recentSignIn: bool, sameAccount: bool, confirmed: bool): bool =
