@@ -191,7 +191,11 @@ remembers under the programs installed now. Each tool runs in a process group
 of its own, and a check that is interrupted, or that exits, ends each group
 still running and the group of each process a tool started outside its own, as
 a browser is: no verifier, simulation or browser outlives it. A tool stopped
-for its time or its output is ended the same way. A run
+for its time or its output is ended the same way. An unreached simulation goal
+or an event its guard never allows cancels the queued proofs started alongside
+the simulations. On systems with process groups, it also stops their running
+tools. The check reports every simulation and waits for the tools to close
+before it releases the project lock. A run
 of a tool is remembered when it reached its answer, a refusal of its input
 included, never when it was stopped, timed out or failed for want of a file or
 program: an unchanged unit whose proof failed runs neither again, and an edit
@@ -331,6 +335,10 @@ to tasks so they use the selected evaluator. Its bytes determine the fingerprint
 In CI, a Turborepo cache entry is
 kept for seven days after its last hit, which the run summary names.
 
+The shared Dafny library is a direct input of the tool package build and the
+Studio tests that run proofs. An edit to that library leaves the application
+build keys unchanged.
+
 ### Seeds and budgets
 
 `vibestack/testing/profile.ts` is the one source of the fixed profiles:
@@ -429,6 +437,9 @@ The default branch’s product job publishes the pnpm store after the frozen ins
 All jobs restore it under Grace, Eliza and example lockfiles. This cache holds public
 packages only because fork pull requests can read it.
 Turborepo shares task results through the private Cloudflare/R2 cache.
+The fixture jobs can restore a successful exact-task archive from GitHub when
+the shared task cache is unavailable. Closed pull requests skip late cache
+uploads on their first attempt; an explicit rerun keeps its normal publication.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
 The product and nightly runners install full Chromium and its headless shell. Tool shard A installs full Chromium when its Bombadil journey runs. Shards B and rest run without a browser.
