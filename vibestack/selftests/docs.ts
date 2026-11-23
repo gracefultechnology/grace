@@ -34,8 +34,9 @@ describe("the documents name what exists", () => {
   };
 
   test("every repository path, pnpm script and link in the documents and skills leads somewhere", () => {
+    const workspace = ["packages", "apps"].flatMap(within).filter((dir) => fs.existsSync(path.join(project, dir, "package.json")));
     // What pnpm itself provides, and what a document proposes rather than names.
-    const scripts = new Set(["install", "exec", "add", "pack", ...["", "vibestack/studio", ...["packages", "apps", "vibestack/examples"].flatMap(within)].flatMap((dir) => Object.keys(manifest(dir).scripts ?? {}))]);
+    const scripts = new Set(["install", "exec", "add", "pack", ...["", "vibestack/studio", ...workspace, ...within("vibestack/examples")].flatMap((dir) => Object.keys(manifest(dir).scripts ?? {}))]);
     const proposed = ["apps/billing", "packages/billing", "vibestack/README.md", "vibestack/LICENSE"];
     // A heading as GitHub links to it.
     const anchors = (file: string) => read(file).split("\n").flatMap((line) => /^#{1,6} /.test(line) ? [line.replace(/^#+ /, "").toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, "").trim().replace(/\s/g, "-")] : []);
@@ -102,8 +103,8 @@ describe("the documents name what exists", () => {
     assert.deepEqual([shards, listed("selftest").sort(), listed("verify").filter((task) => task.includes("selftest")).sort()],
       [["selftest:tools:a", "selftest:tools:b", "selftest:tools:rest"], selftests.map((task) => `//#${task}`), selftests.map((task) => `//#${task}`)], "pnpm selftest and pnpm verify run every selftest task");
     const ci = read(".github/workflows/ci.yml");
-    const lanes = [...ci.matchAll(/^ +lane: \[(.+)\]$/gm)].flatMap(([, lane]) => lane.split(", "));
-    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --summarize$/m)?.[1].split(" ").filter((task) => !task.startsWith("--")) ?? [];
+    const lanes = [...ci.matchAll(/^ +(?:- )?lane: (.+)$/gm)].flatMap(([, lane]) => lane.startsWith("[") ? lane.slice(1, -1).split(", ") : [lane]);
+    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --summarize(?: --log-order=stream)?$/m)?.[1].split(" ").filter((task) => !task.startsWith("--")) ?? [];
     assert.deepEqual(lanes.sort(), ["product", ...shards.map((task) => `selftest-${task.split(":")[2]}`)].sort(), "each hosted tool shard has its own runner");
     assert.deepEqual([...product, ...shards.map((task) => `//#${task}`)].sort(), listed("verify").sort(), "the hosted jobs run each task of pnpm verify once");
     const each = "the tools each check catches its own kind of mistake";
@@ -133,7 +134,10 @@ describe("the documents name what exists", () => {
     assert.deepEqual(ranBy(examplesSource, examplesTitle), ["selftest:examples"]);
     assert.deepEqual(toolTitles.map((title) => [title, ranBy(toolSource, title)]),
       toolTitles.map((title) => [title, [inShards[title] ?? "selftest:tools:rest"]]));
-    assert.match(ci, /pnpm all "\/\/#selftest:tools:.*?--only --continue=dependencies-successful --summarize/, "a dedicated runner executes only its shard after setup");
+    const fixtureTasks = [...ci.matchAll(/^ +- lane: (selftest-\w+)\r?\n +tasks: "([^"\r\n]+)"$/gm)].map(([, lane, task]) => [lane, task]);
+    assert.deepEqual(fixtureTasks.sort(), shards.map((task) => [`selftest-${task.split(":")[2]}`, `//#${task}`]).sort(), "each fixture runner owns its exact task");
+    assert.match(ci, /TASK: \$\{\{ matrix\.tasks \}\}/, "the fixture command reads its matrix task");
+    assert.match(ci, /pnpm all "\$TASK" --only --continue=dependencies-successful --summarize/, "a dedicated runner executes only its shard after setup");
     assert.match(scripts.prepare, /^node vibestack\/spec\.ts gen --install --skip-gen-on-pack \/\/#build(?: |$)/);
     const [first, ...others] = shards.map((task) => JSON.parse(read("turbo.json")).tasks[`//#${task}`].dependsOn);
     assert.deepEqual(others, others.map(() => first), "the shards wait for the same integration prerequisites");
