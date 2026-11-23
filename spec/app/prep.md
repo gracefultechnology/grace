@@ -174,6 +174,12 @@ pure def alwaysChoiceFitsTheFacts(b: Prep): bool =
   (b.phase == Preparing or b.phase == ReadyForReview or b.phase == HandedOff) implies
     T::validTerms(b.key.kind, b.choice) and K::termsFit(b.facts, b.choice)
 pure def sometimesAClashIsAccepted(b: Prep): bool = b.phase == Preparing and K::acceptsClash(b.choice)
+pure val eval_witness_sometimesAClashIsAccepted = (
+  ("begin", K::sampleVisitKey, "source", T::Person),
+  ("inspectAccess", { key: K::sampleVisitKey, version: 1, access: SignedIn }, T::Host),
+  ("readFacts", { key: K::sampleVisitKey, facts: K::sampleVisitFacts, evidence: "source", version: 2 }, T::Host),
+  ("confirmFacts", T::Person),
+  ("choose", K::sampleClashTerms, T::Person))
 ```
 
 ### The person's answer to the fill offer decides whether Grace may fill the task's form
@@ -197,6 +203,13 @@ pure def stepGraceFillsOnlyAfterTheirYes(before: Prep, via: str, after: Prep): b
   (after.fillBy == GraceFills and before.fillBy != GraceFills) implies via == "decideFill"
 pure def sometimesGraceFills(b: Prep): bool = graceMayFill(b, K::fillOf(b.choice))
 pure def sometimesPersonFills(b: Prep): bool = b.phase == Preparing and b.fillBy == PersonFills
+pure val eval_witness_sometimesGraceFills = (
+  ("begin", K::sampleBillKey, "source", T::Person),
+  ("inspectAccess", { key: K::sampleBillKey, version: 1, access: SignedIn }, T::Host),
+  ("readFacts", { key: K::sampleBillKey, facts: K::sampleBillFacts, evidence: "source", version: 2 }, T::Host),
+  ("confirmFacts", T::Person),
+  ("choose", K::samplePayTerms, T::Person),
+  ("decideFill", GraceFills, 4, T::Person))
 ```
 
 ## Story: Correct the website form and review consequences
@@ -224,6 +237,21 @@ pure def sometimesReviewReady(b: Prep): bool = b.phase == ReadyForReview
 pure def sometimesReviewHandedOff(b: Prep): bool = b.phase == HandedOff
 pure def sometimesBookingReadyForReview(b: Prep): bool = b.key.kind == T::AppointmentBooking and b.phase == ReadyForReview
 pure def sometimesBookingHandedOff(b: Prep): bool = b.key.kind == T::AppointmentBooking and b.phase == HandedOff
+pure val eval_witness_sometimesBookingReadyForReview = (
+  ("begin", K::sampleVisitKey, "source", T::Person),
+  ("inspectAccess", { key: K::sampleVisitKey, version: 1, access: SignedIn }, T::Host),
+  ("readFacts", { key: K::sampleVisitKey, facts: K::sampleVisitFacts, evidence: "source", version: 2 }, T::Host),
+  ("confirmFacts", T::Person),
+  ("choose", K::sampleBookTerms, T::Person),
+  ("verifyForm", { key: K::sampleVisitKey, proposal: K::sampleBookTerms, revision: 4, evidence: "portal" }, T::Host))
+pure val eval_witness_sometimesBookingHandedOff = (
+  ("begin", K::sampleVisitKey, "source", T::Person),
+  ("inspectAccess", { key: K::sampleVisitKey, version: 1, access: SignedIn }, T::Host),
+  ("readFacts", { key: K::sampleVisitKey, facts: K::sampleVisitFacts, evidence: "source", version: 2 }, T::Host),
+  ("confirmFacts", T::Person),
+  ("choose", K::sampleBookTerms, T::Person),
+  ("verifyForm", { key: K::sampleVisitKey, proposal: K::sampleBookTerms, revision: 4, evidence: "portal" }, T::Host),
+  ("handOff", T::Actuator))
 ```
 
 ### A choice the person makes on the page itself becomes the choice to check
