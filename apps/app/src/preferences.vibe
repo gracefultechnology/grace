@@ -13,6 +13,7 @@ const Options = Schema.fromJsonString(Schema.Struct({
   volume: Schema.Int, muted: Schema.Boolean, brightness: Schema.Int,
   nightDimming: Schema.Boolean, wakeEnabled: Schema.Boolean,
 }))
+const sameSettings = Schema.toEquivalence(Options)
 
 effect function record(port: PreferenceRecords) {
   return try Schema.decodeUnknownEffect(StoredOptions)(try timeout(tryPromise(() => port.read({ name: "preferences" })), "2 seconds"))
@@ -86,7 +87,7 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
     if (device.readiness !== "Ready" || confirmed === undefined || !sameVolume(confirmed, preferences.session)) return
     const { volume } = try deviceSettings(port)
     const current = try workspace.get()
-    const { session, revision } = current.preferences
+    const { session } = current.preferences
     if (current.device.contextVersion !== device.contextVersion || !sameVolume(preferences.session, session)) return
     const { step, min, max, muted } = volume
     if (min < 0 || max <= min || step < min || step > max ||
@@ -94,7 +95,7 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
     const settings = muted ? muteChoice(session, true) : volumeChoice(session, Math.round((step - min) / (max - min) * 100))
     if (sameVolume(settings, session)) return
     try workspace.send({ type: "changePreferences", settings }, "Person", (current) =>
-      current.device.contextVersion === device.contextVersion && current.preferences.revision === revision)
+      current.device.contextVersion === device.contextVersion && sameSettings(current.preferences.session, session))
     confirmed = { ...confirmed, volume: settings.volume, muted: settings.muted }
   }
   try fork.scoped Stream.runForEach(requests, effect (requested) => {
