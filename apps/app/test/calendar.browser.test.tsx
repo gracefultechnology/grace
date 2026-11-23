@@ -5,6 +5,7 @@ import { act } from "react";
 import { expect, inject, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import type { Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
+import { approveSave, create, initial as newEntry, save } from "../gen/app__calendar.ts";
 import { lifetimeMs, type Offer } from "../gen/app__notices.ts";
 import { type Ask, type Event as ProposalEvent, Machine as Proposal } from "../gen/app__proposal.effect.vibe";
 import { proposalOf } from "../gen/app__proposal.ts";
@@ -352,6 +353,41 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
   await click("Delete it");
   await expect.element(page.getByText("Deleted Bridge night")).toBeVisible();
   await expect.element(row("Bridge night")).not.toBeInTheDocument();
+
+  await click("Today");
+  await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
+  const { owner, calendarId, timezone, window } = await tablet();
+  const firstDay = dayOf(window.fromTime);
+  const seriesId = "tablet-standing-visit";
+  const startAt = midnight(firstDay - 1 - 1001 * 7) + 10 * hour;
+  const incoming = save(approveSave(create(newEntry, {
+    owner, calendarId, occurrenceId: seriesId, sourceRef: "", sourceAccount: 0,
+    kind: "Appointment", billRef: "", billOrigin: "", billAccount: "",
+  }, {
+    title: "Standing visit", location: "", participant: "", notes: "", startAt, endAt: startAt + 2 * day,
+    timezone, allDay: false, seriesId, recurrence: "Weekly", reminderEnabled: false, leadTime: 0, important: false,
+  }, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore");
+  await run(Effect.flatMap(Effect.flatMap(Effect.service(Instances), (s) => s.calendar(0)), (calendar) => calendar.send({
+    type: "publishOccurrence", incoming, seriesVersion: 0, scheduleVerified: true,
+  }, "ViewStore")));
+  await act(() => userEvent.click(page.getByRole("button", { name: tile(firstDay) })));
+  await act(() => userEvent.click(row("Standing visit", "On this tablet").first()));
+  const firstOccurrence = `${seriesId}@1001`;
+  await expect.poll(async () => {
+    const view = await tablet();
+    const selected = view.entries.find((entry) => entry.identity.occurrenceId === view.selectedId);
+    return [view.selectedId, dayOf(selected?.committed.startAt ?? 0), (selected?.committed.endAt ?? 0) > midnight(firstDay)];
+  }).toEqual([firstOccurrence, firstDay - 1, true]);
+  await click("Delete");
+  await click("Delete only this one");
+  await expect.poll(async () => (await tablet()).entries.find((entry) => entry.identity.occurrenceId === firstOccurrence)?.phase).toBe("Deleted");
+  await click("Next week");
+  await act(() => userEvent.click(page.getByRole("button", { name: tile(firstDay + 7) })));
+  await act(() => userEvent.click(row("Standing visit", "On this tablet").first()));
+  await expect.poll(async () => (await tablet()).selectedId).toBe(`${seriesId}@1002`);
+  await click("Back to Calendar");
+  await click("Previous week");
+  expect((await tablet()).entries.some((entry) => entry.identity.occurrenceId === firstOccurrence && entry.phase !== "Deleted")).toBe(false);
 }, journey);
 
 it('Change and delete an appointment from email (spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event")', async () => {

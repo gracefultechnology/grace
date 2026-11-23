@@ -100,12 +100,12 @@ const kept = (v: CalendarView, id: string) => v.entries.find((m) => m.identity.o
 
 const idAt = (v: CalendarView, seriesId: string, place: number) => place === 0 ? rootOf(v, seriesId) : `${seriesId}@${place}`
 
-const gone = (v: CalendarView, id: string) => v.cancelledIds.includes(id) || v.entries.some((m) => m.identity.occurrenceId === id && m.phase === "Deleted")
+const seriesAnchor = (v: CalendarView, d: EntryDetails) => ({ repeat: d.recurrence, day: dayOf(d.startAt), place: placeOf(v, d) ?? 0 })
 
 function liveFrom(v: CalendarView, seriesId: string, from: number) {
   const { details: d } = seriesAt(v, seriesId)
-  const until = dayOf(d.startAt) + 31 * (from + v.entries.length + v.cancelledIds.length + 24)
-  return repeatsOf(d.recurrence, dayOf(d.startAt), placeOf(v, d) ?? 0, until).find(({ place }) => place >= from && !gone(v, idAt(v, seriesId, place)))
+  const gone = new Set([...v.cancelledIds, ...v.entries.filter((m) => m.phase === "Deleted").map((m) => m.identity.occurrenceId)])
+  return repeatsOf(seriesAnchor(v, d), { kind: "FromPlace", first: from, blocked: gone.size }).find(({ place }) => !gone.has(idAt(v, seriesId, place)))
 }
 
 function written(v: CalendarView, c: Calendar): Calendar {
@@ -142,7 +142,10 @@ const savedEntry = (v: CalendarView, id: string, details: EntryDetails) => save(
 function repetitions(v: CalendarView, span: Reach): Published[] {
   return v.series.flatMap(({ version, details: d }) => {
     if (d.recurrence === "Once" || v.deletedSeries.includes(d.seriesId)) return []
-    return repeatsOf(d.recurrence, dayOf(d.startAt), placeOf(v, d) ?? 0, dayOf(span.untilTime) + 1).flatMap(({ place, day: n }) => {
+    const duration = d.endAt - d.startAt
+    const first = dayOf(Math.max(midnight(0), span.fromTime - duration))
+    const until = dayOf(span.untilTime) + 1
+    return repeatsOf(seriesAnchor(v, d), { kind: "DateRange", first, until }).flatMap(({ place, day: n }) => {
       const id = place === 0 ? d.seriesId : `${d.seriesId}@${place}`
       const { startAt, endAt } = repeatedOn(d, n)
       if (startAt >= span.untilTime || endAt <= span.fromTime || v.cancelledIds.includes(id) || v.entries.some((m) => m.identity.occurrenceId === id)) return []

@@ -1120,6 +1120,18 @@ pure def leaveToPerson(w: Workspace, operationRequest: OperationRequest, by: Wor
 }
 pure def sometimesOtherOriginBlocksTask(w: Workspace): bool =
   w.assistant.activity == A::UserWait and X::sometimesOtherOriginRefused(w.execution)
+pure val eval_witness_sometimesOtherOriginBlocksTask = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://www.utility.example/home" }, Host),
+  ("refuseOrigin", { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://www.utility.example" },
+    checkpoint: "The website changed" }, Host)
+)
 pure def sometimesStepLeftToPerson(w: Workspace): bool =
   w.assistant.activity == A::UserWait and X::sometimesOutOfReachStepIsThePersons(w.execution)
 ```
