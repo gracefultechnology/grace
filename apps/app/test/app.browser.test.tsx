@@ -2361,14 +2361,14 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
   await expect.poll(() => reads.length).toBe(3);
   await act(() => { reads[2].resolve({ entries: [current] }); });
   const result = page.getByRole("button", { name: /Garden notes/ });
-  const selectedRow = page.locator('[aria-current="true"]').filter({ has: result });
-  await expect.element(selectedRow).toBeVisible();
+  const resultIsSelected = () => Boolean(result.query()?.closest('[aria-current="true"]'));
+  await expect.poll(resultIsSelected).toBe(true);
   await act(async () => {
     reads[0].resolve({ entries: [previous] });
     reads[1].resolve({ entries: [previous] });
     await Promise.all(reads.map((read) => read.promise));
   });
-  await expect.element(selectedRow).toBeVisible();
+  await expect.poll(resultIsSelected).toBe(true);
   expect(page.getByRole("button", { name: /Lunch notes/ }).query()).toBeNull();
   expect(releases).toEqual([]);
 });
