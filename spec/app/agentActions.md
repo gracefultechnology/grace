@@ -61,7 +61,7 @@ type AgentAction =
   | CancelProposal
   | ShowSetting({ page: S::SettingsPage })
   | Guide({ target: str, kind: G::GuidanceKind, title: str })
-type Refusal = NotHerTurn | NotShown | OwnerRefused | AlreadyInCalendar | NothingAsked | NotOnScreen
+type Refusal = NotHerTurn | NotShown | OwnerRefused | AlreadyInCalendar | NothingAsked | NotTheirAnswer | NotOnScreen
 type Route =
   ToMail({ account: int, assist: E::MailAssist })
   | ToFolders({ folder: I::Folder })
@@ -90,10 +90,12 @@ pure def route(w: World, request: R::Request, command: AgentAction): Route =
     | ProposeChange(x) => routeChange(w, request, x.key, x.id, x.details)
     | ProposeDeletion(x) => routeDeletion(w, request, x.key, x.id, x.scope)
     | ConfirmProposal =>
-        if (P::canAgree(w.pending, answerOf(w, request), w.now, P::Person)) ToAnswer({ consent: answerOf(w, request) })
+        if (awaitsTheirAnswer(w, request)) Refused({ why: NotTheirAnswer })
+        else if (P::canAgree(w.pending, answerOf(w, request), w.now, P::Person)) ToAnswer({ consent: answerOf(w, request) })
         else Refused({ why: NothingAsked })
     | CancelProposal =>
-        if (P::turnDrops(w.pending, R::Cancellation, request, w.now, P::Grace)) ToWithdraw else Refused({ why: NothingAsked })
+        if (awaitsTheirAnswer(w, request)) Refused({ why: NotTheirAnswer })
+        else if (P::turnDrops(w.pending, R::Cancellation, request, w.now, P::Grace)) ToWithdraw else Refused({ why: NothingAsked })
     | ShowSetting(x) => ToSetting({ page: x.page })
     | Guide(x) =>
         if (w.targets.contains(x.target)) ToGuide({ target: x.target, kind: x.kind, title: x.title })
@@ -301,15 +303,19 @@ pure def lawEmailAppointmentFollowsTheCalendarRules(w: World, request: R::Reques
 A yes is routed only while Grace is asking and nothing is agreed yet, as the
 consent `R::consent` builds from Margaret's own turn, the host's new answer
 stamp and the question as it is held now, and only when the proposal would
-take it: a turn after the one that asked, in the current generation. Any
-other yes is refused as nothing asked, and so is a yes in Grace's reply to
-an Ask Grace tap: that tap asked for help and agreed to nothing. Her No or a
-cancellation in answer to her own typed, said or tapped turn drops a question
-she has not agreed to; Grace's reply to an Ask Grace tap drops none, so the
-question waits for her answer.
+take it: a turn after the one that asked, in the current generation. A yes
+or a cancellation in Grace's reply to an Ask Grace tap, while a question
+waits on Margaret and nothing is agreed, is refused as not her answer: that
+tap asked for help and agreed to nothing, so Grace is told the question still
+waits for Margaret's own answer. Any other yes is refused as nothing asked.
+Her No or a cancellation in answer to her own typed, said or tapped turn drops
+a question she has not agreed to; Grace's reply to an Ask Grace tap drops
+none, so the question waits for her answer.
 
 ```quint
 pure def answerOf(w: World, request: R::Request): R::Consent = R::consent(request, w.stamp, P::proposalOf(w.pending))
+pure def awaitsTheirAnswer(w: World, request: R::Request): bool =
+  request.origin == R::AskedForHelp and P::asking(w.pending) and w.pending.agreed == 0
 
 pure def lawConsentNeedsAWaitingQuestion(w: World, request: R::Request, command: AgentAction): bool =
   val routed = route(w, request, command)
@@ -326,6 +332,10 @@ pure def lawAskingForHelpNeverAnswers(w: World, request: R::Request, command: Ag
     | ToWithdraw => false
     | _ => true
   }
+pure def lawAskingForHelpIsToldTheQuestionWaits(w: World, request: R::Request, command: AgentAction): bool =
+  val routed = route(w, request, command)
+  val answering = match command { | ConfirmProposal => true | CancelProposal => true | _ => false }
+  refusedFor(routed, NotTheirAnswer) iff (answering and R::mayAct(request, w.now) and awaitsTheirAnswer(w, request))
 ```
 
 ### Samples are the tablet as Margaret reads, asks, agrees and switches a calendar off

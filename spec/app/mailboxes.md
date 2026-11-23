@@ -228,13 +228,17 @@ the list shows the folder the mailboxes have chosen again and the Outbox row
 disappears (the prototype leaves an empty Outbox list on screen instead). The
 mail choices keep that she chose Outbox until she chooses a folder or an
 account’s inbox, so an email that waits again later shows in Outbox once
-more; what it shows is decided here.
+more, or until Email closes (`leaveEmail`): Email opens again on the folder,
+as the prototype starts each opening of Email afresh. What it shows is
+decided here. While Outbox shows, Grace can point at each waiting email, as
+at the rows of a folder.
 
 ```quint
 type MailChoices = { outboxChosen: bool }
 pure val initial: MailChoices = { outboxChosen: false }
 pure def chooseOutbox(choices: MailChoices): MailChoices = { ...choices, outboxChosen: true }
 pure def chooseFolderList(choices: MailChoices): MailChoices = { ...choices, outboxChosen: false }
+pure def leaveEmail(choices: MailChoices): MailChoices = { ...choices, outboxChosen: false }
 pure def showsOutbox(registry: A::Accounts, sources: List[MailSource], choices: MailChoices): bool =
   choices.outboxChosen and outboxCount(registry, sources) > 0
 pure def sentEverywhere(sources: List[MailSource], account: int, operationId: str): List[MailSource] =
