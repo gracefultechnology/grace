@@ -34,7 +34,7 @@ import { nativePage } from "./nativePage.vibe"
 import { type SurfacePlugin, type WiFiPlugin, type PasswordBackupPlugin, type OpenPrivateVerificationApp, webView } from "./surfacePlugin.ts"
 import { websiteTask } from "./websiteTask.vibe"
 import { pageHost } from "./page.vibe"
-import { reminderPlugin, type AccountBridge, type ReminderPlugin } from "./accountPlugin.ts"
+import { accountPlugin, reminderPlugin, type AccountBridge, type ReminderPlugin } from "./accountPlugin.ts"
 import { notices } from "./notices.vibe"
 
 // spec/app/shell.md, "Startup distinguishes a usable shell from a recoverable startup failure": the interface is up.
@@ -123,7 +123,7 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const voice = Layer.provideMerge(graceSpeech(platform.native), passwords(platform.vault ?? vault, platform.backup ?? backup))
   const noticed = Layer.provideMerge(notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), recoverable)
   const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateVerificationApp), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native, cloud !== undefined, platform.account), voice), noticed)
-  const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary), shell)
+  const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary(platform.account ?? accountPlugin)), shell)
   const controlled = Layer.provideMerge(Layer.mergeAll(replyControls(platform.native), conversation(cloud)), managed)
   return Layer.provideMerge(graceTurns(platform.agent), controlled)
 }

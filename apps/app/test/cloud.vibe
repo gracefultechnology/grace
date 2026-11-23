@@ -162,7 +162,7 @@ schema PageChoice { address: string; choice: "allow" | "cancel" | "unfinished" }
 schema OtherConnect { address: string; password: string; incoming?: string; outgoing?: string }
 schema IncomingMail { to: Mailbox; from: Filled; fromEmail: Mailbox; subject: string; body: string }
 schema Expiry { address: string }
-schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing" | "deleteDraft"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" | "reauthCreate" | "conflictCreate" }
+schema Outage { down: boolean; mailFault?: "dispatch" | "lookupMissing" | "deleteDraft" | "sendResponse"; calendarFault?: "createResponse" | "beforeCreate" | "refuseCreate" | "reauthCreate" | "conflictCreate" }
 schema ChatContext { includes: string[]; excludes: string[] }
 schema Scripted { said?: string; context?: ChatContext; responseFormat?: "json_object"; answer: string }
 schema ScriptedDecision { goalIncludes: Filled; labels: Filled[] }
@@ -778,6 +778,7 @@ effect function store(site: string) {
     const at = try now()
     const receipt: Receipt = { ...prepared.receipt, state: "succeeded", dispatchedAt: at, finishedAt: at, providerResult }
     try change(key, (a) => ({ ...a, changes: a.changes.map((c) => c.receipt.requestId === requestId && c.grantId === grantId ? { ...c, receipt } : c) }))
+    if (proposal.kind === "send" && account.mailFault === "sendResponse") throw new Unavailable()
     return try HttpServerResponse.json({ version: 1, receipt, providerExactlyOnce: false })
   }
 
@@ -786,9 +787,10 @@ effect function store(site: string) {
     const { grantId } = try HttpServerRequest.schemaSearchParams(Selected)
     const { account } = try connection(fixed, grantId, true)
     const known = account.changes.find((c) => c.receipt.requestId === requestId && c.grantId === grantId)
-    if (known?.receipt.kind === "send" && (account.mailFault === "dispatch" || account.mailFault === "lookupMissing"))
-      try change(account.key, (a) => ({ ...a, sendLookups: [...a.sendLookups, account.mailFault === "lookupMissing" ? "missing" : known.receipt.state] }))
-    if (!known || (known.receipt.kind === "send" && account.mailFault === "lookupMissing")) throw new NoOperation()
+    const missing = account.mailFault === "lookupMissing" || account.mailFault === "sendResponse"
+    if (known?.receipt.kind === "send" && (account.mailFault === "dispatch" || missing))
+      try change(account.key, (a) => ({ ...a, sendLookups: [...a.sendLookups, missing ? "missing" : known.receipt.state] }))
+    if (!known || (known.receipt.kind === "send" && missing)) throw new NoOperation()
     return try HttpServerResponse.json({ version: 1, receipt: known.receipt, providerExactlyOnce: false })
   }
 
@@ -1401,7 +1403,7 @@ export effect function expire(cloud: string, key: string, address: string) {
 }
 
 export effect function outage(cloud: string, key: string, down: boolean, fault?: Outage["mailFault"] | Outage["calendarFault"]) {
-  try post(cloud, "/fake/outage", fault === "dispatch" || fault === "lookupMissing" || fault === "deleteDraft" ? { down, mailFault: fault } : { down, calendarFault: fault }, key)
+  try post(cloud, "/fake/outage", fault === "dispatch" || fault === "lookupMissing" || fault === "deleteDraft" || fault === "sendResponse" ? { down, mailFault: fault } : { down, calendarFault: fault }, key)
 }
 
 export effect function sentMail(cloud: string, key: string) {

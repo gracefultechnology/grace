@@ -3,6 +3,7 @@ import { type Files, type FileActor, type Event, enabled, fileAt, initial, step 
 import { enabled as deskEnabled, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Mail } from "./mail.vibe"
+import { type AccountBridge } from "./accountPlugin.ts"
 import { completion, FileCatalog as Catalog, FileEntry as Entry, fileId, FileLease as Lease, FileStorage, filesAccount, accountRefreshes, Preview, savedFile, type Origin } from "./files.vibe"
 
 const importId = fileId
@@ -10,7 +11,7 @@ schema AttachmentImport { id?: importId }
 
 type Closed = { kind: "out" | "signedOut" | "opening" | "unavailable" | "unsupported" }
 type Ready = {
-  kind: "ready"; owner: string; importer: boolean; lease: string; model: Files; thumbs: Readonly<Record<string, string>>
+  kind: "ready"; owner: string; findAuthority?: string; importer: boolean; lease: string; model: Files; thumbs: Readonly<Record<string, string>>
   origins: Readonly<Record<string, Partial<Origin>>>; listedAt: number; attachmentImport?: string; image?: string; busy: boolean; issue: boolean
 }
 export type FileSnapshot = Closed | Ready
@@ -33,11 +34,13 @@ export service FileLibrary {
   get(): FileSnapshot!!
   getHome(): (FileHome | undefined)!!
   run(command: Command): boolean!!
+  findOwner(): (string | undefined)!!
+  findFromReply(query: string, expectedOwner: string): boolean!!
 }
 
 error FilesRejected
 
-export const fileLibrary = Layer.effect(FileLibrary, effect {
+export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(FileLibrary, effect {
   const { port } = try FileStorage
   const desk = try Workspaces
   const setup = try Setup
@@ -45,6 +48,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
   const latest = try SubscriptionRef.make<FileSnapshot>({ kind: "out" })
   const home = try SubscriptionRef.make<FileHome | undefined>(undefined)
   const serial = try Semaphore.make(1)
+  const scope = try Scope.Scope
 
   effect function admitted() {
     const w = try desk.get()
@@ -85,18 +89,51 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     try SubscriptionRef.set(home, { photos: projected, document: document ? { name: document.name } : undefined })
   }
 
-  effect function load(ready: Ready) {
+  effect function locate(finding: Ready) {
+    const { model } = finding
+    if (model.pending !== "Locating") return false
+    const query = model.query
+    try advance(finding, { type: "locate", locateReport: {
+      owner: finding.lease, generation: model.generation, query,
+      ids: model.entries.filter((entry) => entry.name.toLowerCase().includes(query.toLowerCase())).map((entry) => entry.id),
+    } }, "FileHost")
+    return true
+  }
+
+  effect function readCatalog(loading: Ready) {
     if (!port) throw new FilesRejected()
-    const loading = (try advance(ready, { type: "openFiles", owner: ready.lease }, "FileUser")).ready
-    if (loading.model.pending !== "ReadingCatalog") return
-    const catalog = Effect.flatMap(tryPromise(() => port.list({ lease: ready.lease })), Schema.decodeUnknownEffect(Catalog)) catch () => undefined
+    const catalog = Effect.flatMap(tryPromise(() => port.list({ lease: loading.lease })), Schema.decodeUnknownEffect(Catalog)) catch () => undefined
     const listed = catalog?.entries.slice(0, 250) ?? []
-    const entries = listed.map((entry) => savedFile(entry, ready.owner, ready.lease))
+    const entries = listed.map((entry) => savedFile(entry, loading.owner, loading.lease))
     const origins = Object.fromEntries(listed.map(({ id, from, subject }) => [id, { from, subject }]))
-    const { ready: loaded } = try advance({ ...loading, origins, listedAt: Date.now() }, { type: "loadCatalog", catalogReport: {
-      owner: ready.lease, generation: loading.model.generation, entries, succeeded: catalog !== undefined, evidence: "device-library",
-    } }, "FileStore")
-    if (loaded.model.loaded) try exposeCatalog(loaded)
+    try serial.withPermit(effect {
+      const current = try SubscriptionRef.get(latest)
+      if (current.kind !== "ready" || current.lease !== loading.lease || current.model.generation !== loading.model.generation ||
+          (try admitted()) !== loading.owner ||
+          (loading.findAuthority !== undefined && (try findOwner()) !== loading.findAuthority)) return
+      const { ready: loaded } = try advance({ ...current, origins, listedAt: Date.now() }, { type: "loadCatalog", catalogReport: {
+        owner: loading.lease, generation: loading.model.generation, entries, succeeded: catalog !== undefined, evidence: "device-library",
+      } }, "FileStore")
+      if (!loaded.model.loaded) return
+      try locate(loaded)
+      const latestLoaded = try SubscriptionRef.get(latest)
+      if (latestLoaded.kind === "ready" && latestLoaded.lease === loading.lease) try exposeCatalog(latestLoaded)
+    })
+  }
+
+  effect function load(ready: Ready) {
+    const loading = (try advance(ready, { type: "openFiles", owner: ready.lease }, "FileUser")).ready
+    if (loading.model.pending === "ReadingCatalog") try fork.in(scope) Effect.ignore(readCatalog(loading))
+  }
+
+  effect function findOwner() {
+    if (!port) return undefined
+    const owner = filesAccount((try setup.get()).graceAccount)
+    if (owner !== "device") return owner
+    if (!account) return undefined
+    const current = tryPromise(() => account.status()) catch () => undefined
+    return current?.kind === "signedIn" && /^[a-f0-9]{64}$/u.test(current.voiceDisclosureScope)
+      ? "device/" + current.voiceDisclosureScope : undefined
   }
 
   effect function readAttachmentImport() {
@@ -118,7 +155,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
       return
     }
     const attachmentImport = try readAttachmentImport()
-    const ready: Ready = { kind: "ready", owner, importer: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: initial, thumbs: {}, origins: {}, listedAt: 0, attachmentImport, busy: false, issue: false }
+    const ready: Ready = { kind: "ready", owner, findAuthority: try findOwner(), importer: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: initial, thumbs: {}, origins: {}, listedAt: 0, attachmentImport, busy: false, issue: false }
     try SubscriptionRef.set(latest, ready)
     load(ready) catch effect () => {
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
@@ -248,15 +285,29 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
         if (!query || query.length > 120) return false
         const { ready: finding } = try advance({ ...current, image: undefined, issue: false },
           { type: "findFiles", owner: current.lease, query }, "FileUser")
-        if (finding.model.pending !== "Locating") return false
-        try advance(finding, { type: "locate", locateReport: {
-          owner: current.lease, generation: finding.model.generation, query,
-          ids: finding.model.entries.filter((entry) => entry.name.toLowerCase().includes(query.toLowerCase())).map((entry) => entry.id),
-        } }, "FileHost")
-        return true
+        if (finding.model.pending === "ReadingCatalog") {
+          try fork.in(scope) Effect.ignore(readCatalog(finding))
+          return true
+        }
+        return try locate(finding)
       }
     }
     return false
+  }
+
+  effect function findFromReply(query: string, expectedOwner: string) {
+    if ((try findOwner()) !== expectedOwner) return false
+    if ((try desk.get()).device.surface !== "Files") try desk.send({ type: "visit", destination: "Files" }, "Person")
+    const context = (try desk.get()).device.contextVersion
+    const entered = try Stream.runHead(Stream.filter(Stream.zipLatest(desk.changes, SubscriptionRef.changes(latest)), ([state, snapshot]) =>
+      state.device.contextVersion !== context || !["out", "opening"].includes(snapshot.kind)))
+    if (Option.isNone(entered)) return false
+    return try serial.withPermit(effect {
+      const current = try SubscriptionRef.get(latest)
+      if (current.kind !== "ready" || current.findAuthority !== expectedOwner ||
+          (try desk.get()).device.contextVersion !== context || (try findOwner()) !== expectedOwner) return false
+      return try run({ kind: "search", query })
+    })
   }
 
   if (port?.addListener) {
@@ -298,5 +349,7 @@ export const fileLibrary = Layer.effect(FileLibrary, effect {
     get: () => SubscriptionRef.get(latest),
     getHome: () => SubscriptionRef.get(home),
     run: effect (command) => serial.withPermit(run(command)) catch () => false,
+    findOwner,
+    findFromReply: effect (query, owner) => findFromReply(query, owner) catch () => false,
   }
 })
