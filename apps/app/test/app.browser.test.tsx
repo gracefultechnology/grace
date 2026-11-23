@@ -3729,19 +3729,21 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   }
 }, 120_000);
 
-it('Check the public price direction (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async () => {
+it.each([
+  { target: "Rain jackets", siteLabel: "Rain jackets", order: "ascending", directionRequested: "PriceAscending" },
+  { target: "living room furtniture", siteLabel: "Living Room Furniture", order: "descending", directionRequested: "PriceDescending" },
+])('Check the price direction in the reviewed public category $target (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async ({ target, siteLabel, order, directionRequested }) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-  const target = "Rain jackets";
-  const request = "List products from Rain jackets category by ascending price";
+  const request = `List products from ${target} category by ${order} price`;
   await Effect.runPromise(Effect.provide(script(cloud, secret, [{
     said: request,
     answer: JSON.stringify({ text: "Review this plan.", isQuestion: false, answers: [],
-      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "SortPublicListing", target, direction: "PriceAscending" }] }] }),
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "SortPublicListing", target, direction: directionRequested }] }] }),
   }]), client));
   const home = "https://example.org/";
   const frame = await pinnedPage("statements", home, (html) => html.replace(/<main>[\s\S]*<\/main>/u, () =>
-    `<script>(${String(pageCommand)})(null, "");</script><main><h1>Rain jackets</h1>
+    `<script>(${String(pageCommand)})(null, "");</script><main><h1>${siteLabel}</h1>
       <div id="sort"><label for="order">Sort By</label><select id="order"><option selected>Name</option><option>Price</option></select>
       <a href="#" id="direction" title="Set Descending Direction">Change sort direction</a></div>
       <ul><li>Lightweight jacket</li><li>Winter jacket</li></ul></main>`));
@@ -3763,6 +3765,9 @@ it('Check the public price direction (spec/app/workspace.md, "Only a current obs
   let view = await publicReadSession(native, cloud, secret);
   const { routeTo, tap } = view;
   const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const matchesSiteName = target === siteLabel;
+  const correction = button(`Use “${siteLabel}” for this step`);
+  const priceDirection = order === "ascending" ? "lowest" : "highest";
   const complete = page.getByText("Read checks complete", { exact: true });
   const check = button("Check price order");
   let activeId = "tab-1";
@@ -3787,19 +3792,19 @@ it('Check the public price direction (spec/app/workspace.md, "Only a current obs
     await routeTo(message);
     await act(() => message.fill(request));
     await act(() => userEvent.keyboard("{Enter}"));
-    await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(/Rain jackets.*lowest price first/u));
+    await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(`Open “${target}” and sort by ${priceDirection} price first.`));
     await tap(button("Collapse"));
     await tap(button("Start read plan"));
     await pending();
     await visit(home + "coats?display=grid");
     await pending();
     sorter.selectedIndex = 1;
-    direction.title = "Set Ascending Direction";
+    direction.title = order === "ascending" ? "Set Ascending Direction" : "Set Descending Direction";
     await pending();
-    direction.title = "Set Descending Direction";
+    direction.title = order === "ascending" ? "Set Descending Direction" : "Set Ascending Direction";
     heading.textContent = "Snow jackets";
     await pending();
-    heading.textContent = target;
+    heading.textContent = siteLabel;
     await visit("https://other.example/coats?display=grid");
     await pending();
     await visit(home + "coats?display=list");
@@ -3809,18 +3814,35 @@ it('Check the public price direction (spec/app/workspace.md, "Only a current obs
     await view.dispose();
     view = await cloudReadPlan(native, cloud, secret);
     activeId = "tab-2";
-    direction.title = "Set Ascending Direction";
+    direction.title = order === "ascending" ? "Set Ascending Direction" : "Set Descending Direction";
     await startPublicReadPlan(native, tap, () => load(home), 2);
     await routeTo(page.getByRole("region", { name: "Task plan" }).getByText("Paused"));
     await tap(button("Resume Grace"));
     await pending();
-    direction.title = "Set Descending Direction";
+    direction.title = order === "ascending" ? "Set Descending Direction" : "Set Ascending Direction";
     documentId += "-different";
     await pending();
     await visit(home + "coats?display=grid");
+    if (!matchesSiteName) {
+      await routeTo(button("Collapse"));
+      await pending();
+      await routeTo(correction);
+      documentId += "-interrupted";
+      await tap(correction);
+      await routeTo(page.getByRole("status", { name: "Page check result" }).getByText("The page changed while I checked it. Check it again."));
+      await routeTo(page.getByText(`Open “${target}” and sort by ${priceDirection} price first.`));
+      expect(complete.query()).toBeNull();
+      await pending();
+      await tap(correction);
+      await routeTo(page.getByText(`Open “${siteLabel}” and sort by ${priceDirection} price first.`));
+      expect(complete.query()).toBeNull();
+      direction.title = "Set Descending Direction";
+      await pending();
+      direction.title = "Set Ascending Direction";
+    }
     await tap(check);
     await routeTo(complete);
-    expect(page.getByText("Rain jackets sorted by ascending price.", { exact: true }).query()).not.toBeNull();
+    expect(page.getByText(`${siteLabel} sorted by ${order} price.`, { exact: true }).query()).not.toBeNull();
   } finally {
     await view.dispose();
   }
