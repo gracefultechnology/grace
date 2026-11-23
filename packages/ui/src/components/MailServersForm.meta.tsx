@@ -18,6 +18,7 @@ export const meta: ComponentMeta<MailServersFormProps> = {
     Connecting: { domain: "riverview.net", connecting: true },
     Refused: { domain: "riverview.net", refused: true },
     Looking: { domain: "riverview.net", lookup: "looking" },
+    "Found, then refused": { domain: "riverview.net", lookup: "found", refused: true, defaultServers: { incoming: "imap.riverview.net", outgoing: "smtp.riverview.net" } },
   },
   decorator: settingsPage,
   play: {
@@ -45,6 +46,8 @@ export const meta: ComponentMeta<MailServersFormProps> = {
     },
     "Not found": ({ canvasElement }: { canvasElement: HTMLElement }) =>
       expect(within(canvasElement).getByRole("alert")).toHaveTextContent("Grace couldn’t find the mail settings for riverview.net. Your email company lists them on its help page."),
+    "Found, then refused": ({ canvasElement }: { canvasElement: HTMLElement }) =>
+      expect(within(canvasElement).queryByText(/Grace found the mail settings/)).toBeNull(),
     "Ask Grace refused": ({ canvasElement }: { canvasElement: HTMLElement }) => expect(within(canvasElement).queryByRole("button", { name: "Ask Grace" })).toBeNull(),
   },
 };

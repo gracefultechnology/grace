@@ -68,11 +68,15 @@ export function MailServersForm({
   );
   return (
     <form aria-label="Mail settings" onSubmit={submit} className={cn("font-sans", className)} {...props}>
-      <PageText tone="secondary" role={lookup === "found" ? "status" : undefined}>
-        {lookup === "found"
-          ? `Grace found the mail settings for ${domain}. Check them, then tap Connect.`
-          : `The tablet couldn’t find the mail settings for ${domain} by itself. Your email company lists them on its help page, or Grace can look them up.`}
-      </PageText>
+      {lookup !== "found" ? (
+        <PageText tone="secondary">
+          The tablet couldn’t find the mail settings for {domain} by itself. Your email company lists them on its help page, or Grace can look them up.
+        </PageText>
+      ) : !refused && (
+        <PageText tone="secondary" role="status">
+          Grace found the mail settings for {domain}. Check them, then tap Connect.
+        </PageText>
+      )}
       {lookup === "missing" && (
         <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mt-4 max-w-[620px]">
           Grace couldn’t find the mail settings for {domain}. Your email company lists them on its help page.

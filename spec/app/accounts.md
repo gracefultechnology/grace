@@ -260,8 +260,9 @@ incoming (IMAP) and the first outgoing (SMTP) server that is reached over a
 secure connection, a direct secure one before one that turns secure, and
 with nothing when either is missing; then the page says the settings
 weren’t found. Nothing is saved or sent to the email company: she checks the
-filled form and taps Connect, as with servers she typed. Connect while
-looking ignores the answer, and leaving Mail settings forgets what was found.
+filled form and taps Connect, as with servers she typed. Looking them up
+again forgets what the last lookup found, Connect while looking ignores the
+answer, and leaving Mail settings forgets what was found.
 
 ```quint
 type ServerKind = ImapServer | SmtpServer | PopServer
@@ -279,7 +280,7 @@ pure def lookupFinds(found: List[FoundServer]): bool =
 pure def canLookUpServers(a: Accounts, by: AccountActor): bool =
   by == AccountPerson and a.page == MailServersPage and a.signIn.stage == NotSigningIn and a.signIn.lookup != LookingUp
 pure def lookUpServers(a: Accounts, by: AccountActor): Accounts =
-  { ...a, problem: NoProblem, signIn: { ...a.signIn, lookup: LookingUp, attempt: a.signIn.attempt + 1 } }
+  { ...a, problem: NoProblem, signIn: { ...offServers(a.signIn), lookup: LookingUp, attempt: a.signIn.attempt + 1 } }
 pure def canServersLookedUp(a: Accounts, report: LookupReport, by: AccountActor): bool =
   by == AccountConnector and a.page == MailServersPage and a.signIn.lookup == LookingUp and report.attempt == a.signIn.attempt
 pure def serversLookedUp(a: Accounts, report: LookupReport, by: AccountActor): Accounts =
