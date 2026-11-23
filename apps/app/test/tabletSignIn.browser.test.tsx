@@ -202,10 +202,14 @@ it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.m
 it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access")', async () => {
   let phase: "hosted" | "required" | "signInPending" | "acknowledgmentPending" | undefined = "hosted";
   const accountId = "enrolled-tablet";
-  const leaseVersion = "acknowledged";
+  let leaseVersion = "acknowledged";
   const grantId = "connected-google";
+  const destination = "https://mail-link.example.test/appointment";
+  let returnedGrant = grantId;
+  let historyId = "preview-revision";
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  let labels: string[] | undefined = ["SPAM"];
   const mail = { externalId: "welcome", from: "Ana", subject: "Mail kept after sign-in", receivedAt: now.toISOString(), isUnread: true };
   const appointment = { externalId: "checkup", title: "Calendar kept after sign-in", description: "Bring your notes.",
     location: "Clinic", startAt: start.toISOString(), endAt: new Date(start.getTime() + 3600000).toISOString(), isAllDay: false, editable: true, etag: "confirmed" };
@@ -242,14 +246,14 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
         reads.push(input.route);
         if (input.route === "status") return result({
           accountId, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
-          identity: { email: "reader@example.test" }, connectionId: grantId,
+          identity: { email: "reader@example.test" }, connectionId: returnedGrant,
           grantedCapabilities: ["google.gmail.triage", "google.calendar.read", "google.gmail.send", "google.gmail.trash", "google.calendar.write"],
         });
         expect(input.query.grantId).toBe(grantId);
         if (input.route === "gmail/triage") return result({ accountId, messages: [mail], nextPageToken: null });
         if (input.route === "gmail/read") {
           expect(input.query.messageId).toBe(mail.externalId);
-          return result({ accountId, message: mail, historyId: null, attachments: [], bodyTextAvailable: true, bodyText: "The original message stayed linked." });
+          return result({ accountId, message: { ...mail, labels }, historyId, attachments: [], bodyTextAvailable: true, bodyText: `The original message stayed linked. ${destination}` });
         }
         return result({ accountId, events: [appointment], nextPageToken: null });
       },
@@ -315,12 +319,60 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   await expect.element(button("Sign in again")).not.toBeInTheDocument();
   await click("Close Settings");
   await act(() => userEvent.click(page.getByRole("button", { name: /Mail kept after sign-in/ })));
-  await expect.element(page.getByText("The original message stayed linked.")).toBeVisible();
+  await expect.element(page.getByText(/The original message stayed linked/)).toBeVisible();
   await expect.element(button("Move to Trash")).not.toBeInTheDocument();
   await click("Home");
   await open("Calendar");
   await act(() => userEvent.click(page.getByRole("button", { name: /Calendar kept after sign-in/ })));
   await expect.element(page.getByText("Bring your notes.")).toBeVisible();
   await expect.element(button("Change appointment")).not.toBeInTheDocument();
+  await click("Home");
+  await open("Email");
+  await act(() => userEvent.click(page.getByRole("button", { name: /Mail kept after sign-in/ })));
+  const link = page.getByRole("link", { name: destination, exact: true });
+  const warning = page.getByRole("dialog", { name: "Open this link?" });
+  const address = page.getByRole("textbox", { name: "Address", exact: true });
+  await expect.element(link).toBeVisible();
+  historyId = "changed-revision";
+  await act(() => userEvent.click(link));
+  await expect.element(page.getByText(/This link couldn’t open/)).toBeVisible();
+  await expect.element(warning).not.toBeInTheDocument();
+  await expect.element(address).not.toBeInTheDocument();
+
+  historyId = "preview-revision";
+  await act(() => userEvent.click(link));
+  await expect.element(warning.getByText(destination)).toBeVisible();
+  await click("Stay in email");
+  await expect.element(warning).not.toBeInTheDocument();
+  await expect.element(address).not.toBeInTheDocument();
+
+  await act(() => userEvent.click(link));
+  await expect.element(warning).toBeVisible();
+  returnedGrant = "replaced-google";
+  await click("Open in Browser");
+  await expect.element(page.getByText(/This link couldn’t open/)).toBeVisible();
+  await expect.element(address).not.toBeInTheDocument();
+
+  returnedGrant = grantId;
+  await act(() => userEvent.click(link));
+  await expect.element(warning).toBeVisible();
+  await click("Open in Browser");
+  await expect.element(address).toHaveValue(destination);
+  await click("Home");
+  await open("Email");
+  await act(() => userEvent.click(page.getByRole("button", { name: /Mail kept after sign-in/ })));
+  await act(() => userEvent.click(link));
+  await expect.element(warning).toBeVisible();
+  await act(() => {
+    labels = undefined;
+    leaseVersion = "renewed-acknowledgment";
+    notify?.(status());
+    return Promise.resolve();
+  });
+  await expect.element(warning).not.toBeInTheDocument();
+  await expect.element(address).not.toBeInTheDocument();
+  await act(() => userEvent.click(page.getByRole("button", { name: /Mail kept after sign-in/ })));
+  await act(() => userEvent.click(link));
+  await expect.element(address).toHaveValue(destination);
   expect(new Set(reads)).toEqual(new Set(["status", "gmail/triage", "gmail/read", "calendar/feed"]));
 });
