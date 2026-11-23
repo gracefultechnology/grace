@@ -3544,12 +3544,12 @@ it('Check the public events collection after following its breadcrumb (spec/app/
   let replaceDuringRead = false;
   const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
     result: { ...current.snapshot(command), url: current.url } }), false, ({ selector }) => {
-    const read = { ...current.read(selector), url: current.url };
-    if (replaceDuringRead && read.text === "Sunday picnic") {
+    const read = current.read(selector);
+    if (replaceDuringRead && read["text"] === "Sunday picnic") {
       replaceDuringRead = false;
       documentId = "replaced-index";
     }
-    return read;
+    return { ...read, url: current.url };
   });
   localStorage.clear();
   const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
