@@ -1,7 +1,7 @@
 // spec/app/files.md, "Story: Find and open something I saved"; spec/app/files.md, "Story: Save, share and remove the chosen file"; spec/app/files.md, "Delete is the explicit local action and does not delete its source email"; spec/app/files.md, "Sharing a photo opens a draft without sending it"
-import { AppWindow, Button, EmptyState, FilePhotoViewer, FilesApp, type FilesPhotoGroup, Input, PageText, PdfViewer, RetryNotice } from "@repo/ui";
+import { AppWindow, Button, EmptyState, FilePhotoViewer, FilesApp, type FilesPhotoGroup, Input, PageText, PdfViewer, RetryNotice, Toast } from "@repo/ui";
 import { Effect, Stream } from "effect";
-import { Folder } from "lucide-react";
+import { Camera, Folder, Search, Upload } from "lucide-react";
 import { type ComponentProps, useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { deviceOrigin, enabled, type Event, fileAt, type Files as Library, highlightedFile, type SavedFile } from "../gen/app__files.ts";
 import { useMachine } from "../gen/app__setup.react.ts";
@@ -146,30 +146,46 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
   const pick = importing ? () => run({ kind: "pick", file: model.tab === "Photos" ? "photo" : "pdf" }) : undefined;
   const capture = importing && model.tab === "Photos" ? () => run({ kind: "capture" }) : undefined;
   const tab = (next: "Photos" | "Documents") => idle({ type: "chooseTab", tab: next }, () => run({ kind: "tab", tab: next }));
+  const statusNote = failed || model.feedback === "WriteFailed" ? "The file wasn’t saved or opened." :
+    model.feedback === "FilesSaved" ? "Saved in Files." : undefined;
   const browse = (model.loaded || model.pending === "ReadingCatalog") && (
-    <div className="flex flex-wrap items-end gap-3">
-      <form className="flex items-end gap-2" onSubmit={(event) => { event.preventDefault(); find?.(); }}>
-        <label>Find a file<Input value={query} maxLength={120} onChange={(event) => setQuery(event.currentTarget.value)} /></label>
-        <Button type="submit" variant="capsule" size="pill" disabled={!find}>Find</Button>
+    <>
+      <form className="flex items-center gap-0.5 pl-2.5" onSubmit={(event) => { event.preventDefault(); find?.(); }}>
+        <Search size={20} strokeWidth={2.2} className="shrink-0 text-muted-foreground" aria-hidden />
+        <Input aria-label="Find a file" placeholder="Find a file" value={query} maxLength={120}
+          className="h-12 w-40 bg-transparent px-2.5 shadow-none focus:shadow-none"
+          onChange={(event) => setQuery(event.currentTarget.value)} />
+        <Button type="submit" variant="plain" size="compact" disabled={!find}>Find</Button>
       </form>
-      {snapshot.importer && <Button variant="capsule" size="pill" disabled={!pick} onClick={pick}>
-        {model.tab === "Photos" ? "Import photo" : "Import PDF"}
-      </Button>}
-      {snapshot.importer && model.tab === "Photos" && <Button variant="capsule" size="pill" disabled={!capture} onClick={capture}>Take photo</Button>}
-      {failed || model.feedback === "WriteFailed" ? <PageText role="status">The file wasn’t saved or opened.</PageText> :
-        model.feedback === "FilesSaved" && <PageText role="status">Saved in Files.</PageText>}
-    </div>
+      {snapshot.importer && (
+        <Button variant="plain" size="compact" disabled={!pick} onClick={pick}>
+          <Upload size={20} strokeWidth={2.2} aria-hidden />
+          {model.tab === "Photos" ? "Import photo" : "Import PDF"}
+        </Button>
+      )}
+      {snapshot.importer && model.tab === "Photos" && (
+        <Button variant="plain" size="compact" disabled={!capture} onClick={capture}>
+          <Camera size={20} strokeWidth={2.2} aria-hidden />
+          Take photo
+        </Button>
+      )}
+    </>
   );
-  return <FilesApp {...window} actions={browse} status={model.loaded ? "ready" : model.feedback === "CatalogFailed" ? "failed" : "loading"}
-    onRetry={retry} tab={model.tab === "Photos" ? "photos" : "documents"} highlightId={highlightedFile(model)}
-    matches={model.matches.map((id) => ({ id, label: fileAt(model, id).name }))} onPickMatch={open}
-    noMatch={model.feedback === "NothingFound" ? model.query : undefined}
-    onTabChange={tab(model.tab) && ((next) => tab(next === "photos" ? "Photos" : "Documents")?.())}
-    photoGroups={photoGroups(photos, snapshot.thumbs, snapshot.origins, now)}
-    documents={documents.map((entry) => {
-      const { from } = snapshot.origins[entry.id] ?? {};
-      const { detail } = savedWhen(entry.savedAt, now);
-      return { id: entry.id, name: entry.name, detail: from ? `From ${from} · ${detail}` : detail };
-    })}
-    onOpenPhoto={open} onOpenDocument={open} />;
+  return (
+    <>
+      <FilesApp {...window} actions={browse} status={model.loaded ? "ready" : model.feedback === "CatalogFailed" ? "failed" : "loading"}
+        onRetry={retry} tab={model.tab === "Photos" ? "photos" : "documents"} highlightId={highlightedFile(model)}
+        matches={model.matches.map((id) => ({ id, label: fileAt(model, id).name }))} onPickMatch={open}
+        noMatch={model.feedback === "NothingFound" ? model.query : undefined}
+        onTabChange={tab(model.tab) && ((next) => tab(next === "photos" ? "Photos" : "Documents")?.())}
+        photoGroups={photoGroups(photos, snapshot.thumbs, snapshot.origins, now)}
+        documents={documents.map((entry) => {
+          const { from } = snapshot.origins[entry.id] ?? {};
+          const { detail } = savedWhen(entry.savedAt, now);
+          return { id: entry.id, name: entry.name, detail: from ? `From ${from} · ${detail}` : detail };
+        })}
+        onOpenPhoto={open} onOpenDocument={open} />
+      {statusNote && <Toast placement="screen">{statusNote}</Toast>}
+    </>
+  );
 }

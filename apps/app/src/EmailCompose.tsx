@@ -28,6 +28,8 @@ const sending: Record<SendStatus, MailSendStatus> = {
 const anAddress = /^[^@\s,;]+@[^@\s,;]+$/;
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 const escaped = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const tones = [1, 2, 3, 4, 5, 6] as const;
+const toneOf = (key: string) => tones[[...key.trim().toLowerCase()].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 0) % tones.length];
 
 export function thumbnail(file: Mailbox["draftAttachments"][number]): MailPhoto {
   const label = file.kind === "Pdf" ? "PDF" : "Photo";
@@ -108,7 +110,7 @@ function RecipientChoice({ field, people, backLabel, onBack, onPick, frame }: Pi
   const sought = query.trim();
   const found = people.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(sought.toLowerCase()));
   const shown = anAddress.test(sought) && !found.some((p) => same(p.address, sought)) ? [...found, { name: sought, address: sought }] : found;
-  const tiles: MailContact[] = shown.map((p) => ({ name: p.name }));
+  const tiles: MailContact[] = shown.map((p) => ({ name: p.name, tone: toneOf(p.address || p.name) }));
   return (
     <MailRecipientPicker question={questions[field]} people={tiles} query={query} onQueryChange={setQuery}
       onPick={(person) => { const chosen = shown[tiles.indexOf(person)]; if (chosen) onPick(chosen.address); }}
@@ -126,7 +128,10 @@ export function EmailCompose({ registry, boxes, box, mail, sender, frame }: Emai
   const m = box.state;
   const source = sources[m.choosing];
   const boxSources: MailSource[] = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
-  const contactOf = (address: string): MailContact => ({ name: people.find((p) => same(p.address, address))?.name ?? address });
+  const contactOf = (address: string): MailContact => {
+    const name = people.find((p) => same(p.address, address))?.name ?? address;
+    return { name, tone: toneOf(address || name) };
+  };
   const close = frame.onClose && (() => { void leave(box, mail.hush); frame.onClose?.(); });
 
   const edit = (content: DraftContent, field?: Field, text?: string) => {
