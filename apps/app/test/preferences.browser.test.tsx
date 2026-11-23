@@ -1,4 +1,4 @@
-import { Effect, Latch, Layer, ManagedRuntime } from "effect";
+import { Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { act } from "react";
 import { expect, it, onTestFinished } from "vitest";
@@ -62,40 +62,55 @@ it('Dim the tablet at night (spec/app/preferences.md, "Night dimming and sound s
   await expect.poll(() => brightness).toBe(30);
 });
 
-it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence")', async () => {
-  const stored: { revision: number; value: string | null } = { revision: 0, value: null };
-  let acceptsWrites = false;
-  let refused = 0;
-  const clock = Layer.effectDiscard(TestClock.setTime(new Date(2026, 10, 20, 12).getTime())).pipe(Layer.provideMerge(TestClock.layer()));
+function tablet(stored: { revision: number; value: string | null }) {
+  const store = { acceptsWrites: true, refused: 0 };
   const audio = { step: 9, min: 0, max: 15, muted: false };
-  let brightness = 100;
-  const device = () => ({ volume: { ...audio }, brightness: { percent: brightness } });
-  let reportVolume: (() => void) | undefined;
-  let nextRead: Promise<ReturnType<typeof device>> | undefined;
+  const screen = { brightness: 100 };
+  const device = () => ({ volume: { ...audio }, brightness: { percent: screen.brightness } });
+  const listening = Promise.withResolvers<void>();
+  let report = () => {};
+  let nextRead: (() => Promise<ReturnType<typeof device>>) | undefined;
+  const clock = Layer.effectDiscard(TestClock.setTime(new Date(2026, 10, 20, 12).getTime())).pipe(Layer.provideMerge(TestClock.layer()));
   const start = () => ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     display: {
       getDevice: () => {
         const pending = nextRead;
         nextRead = undefined;
-        return pending ?? Promise.resolve(device());
+        return pending ? pending() : Promise.resolve(device());
       },
-      setBrightness: ({ percent }) => { brightness = percent; return Promise.resolve(); },
+      setBrightness: ({ percent }) => { screen.brightness = percent; return Promise.resolve(); },
       setVolume: (choice) => { Object.assign(audio, choice); return Promise.resolve(); },
       addListener: (_, listener) => {
-        reportVolume = listener;
-        return Promise.resolve({ remove: () => { reportVolume = undefined; return Promise.resolve(); } });
+        report = listener;
+        listening.resolve();
+        return Promise.resolve({ remove: () => Promise.resolve() });
       },
     },
     preferences: {
       read: () => Promise.resolve({ ...stored }),
       write: ({ revision, value }) => {
-        if (!acceptsWrites || revision !== stored.revision) return Promise.reject(new Error(`refused ${++refused}`));
+        if (!store.acceptsWrites || revision !== stored.revision) return Promise.reject(new Error(`refused ${++store.refused}`));
         Object.assign(stored, { revision: revision + 1, value });
         return Promise.resolve({ revision: stored.revision });
       },
     },
   }).pipe(Layer.provideMerge(clock)));
+  const holdRead = (reading: ReturnType<typeof device>) => {
+    const taken = Promise.withResolvers<void>();
+    const released = Promise.withResolvers<void>();
+    nextRead = () => { taken.resolve(); return released.promise.then(() => reading); };
+    onTestFinished(() => released.resolve());
+    return { taken: taken.promise, release: () => released.resolve() };
+  };
+  const saved = (): unknown => JSON.parse(stored.value ?? "{}");
+  return { store, audio, screen, device, listening: listening.promise, report: () => report(), holdRead, start, saved };
+}
+
+it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence")', async () => {
+  const stored: { revision: number; value: string | null } = { revision: 0, value: null };
+  const { store, audio, start, saved } = tablet(stored);
+  store.acceptsWrites = false;
   const runtime = start();
   const first = tabletView(runtime);
   try {
@@ -103,8 +118,8 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
     await act(() => userEvent.click(page.getByRole("button", { name: "Volume", exact: true })));
     await act(() => userEvent.click(page.getByRole("button", { name: "Mute", exact: true })));
     await expect.element(page.getByText("Muted")).toBeVisible();
-    await expect.poll(() => refused).toBe(1);
-    acceptsWrites = true;
+    await expect.poll(() => store.refused).toBe(1);
+    store.acceptsWrites = true;
     await act(() => runtime.runPromise(TestClock.adjust("1 minute")));
     await expect.poll(() => stored.revision).toBe(1);
   } finally {
@@ -116,41 +131,46 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
   const louder = page.getByRole("button", { name: "Louder", exact: true }).element();
   await act(() => Promise.resolve().then(() => { tap(louder); tap(louder); }));
   await expect.element(page.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuenow", "20");
-  await expect.poll((): unknown => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 20 });
+  await expect.poll(saved).toMatchObject({ muted: false, volume: 20 });
   await expect.poll(() => audio.step).toBe(3);
-  await expect.poll(() => reportVolume).toBeTypeOf("function");
-  const delayed = Latch.makeUnsafe();
-  const concurrent = Latch.makeUnsafe();
-  onTestFinished(() => { delayed.openUnsafe(); concurrent.openUnsafe(); });
+});
+
+it('Follow the tablet\'s volume keys (spec/app/preferences.md, "Story: Adjust Grace without losing my choices")', async () => {
+  const value = JSON.stringify({ voiceOutput: true, pace: "Normal", textSize: "StandardText", volume: 20, muted: false, brightness: 100, nightDimming: false, wakeEnabled: true });
+  const { audio, screen, device, listening, report, holdRead, start, saved } = tablet({ revision: 1, value });
+  await mount(start());
+  await act(() => userEvent.click(page.getByRole("button", { name: "Volume", exact: true })));
+  const slider = page.getByRole("slider", { name: "Volume" });
+  await expect.element(slider).toHaveAttribute("aria-valuenow", "20");
+  await expect.poll(() => audio.step).toBe(3);
+  await listening;
   audio.step = 6;
-  const stale = device();
-  nextRead = Effect.runPromise(delayed.await).then(() => stale);
-  reportVolume?.();
-  await expect.poll(() => nextRead === undefined).toBe(true);
+  const stale = holdRead(device());
+  report();
+  await stale.taken;
   await act(() => userEvent.click(page.getByRole("button", { name: "Louder", exact: true })));
-  delayed.openUnsafe();
+  stale.release();
   await expect.poll(() => audio.step).toBe(5);
-  await expect.poll((): unknown => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 30 });
+  await expect.poll(saved).toMatchObject({ muted: false, volume: 30 });
   await act(() => userEvent.click(page.getByRole("button", { name: "Close", exact: true })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Settings", exact: true })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Brightness", exact: true })));
   audio.step = 9;
-  const raised = device();
-  nextRead = Effect.runPromise(concurrent.await).then(() => raised);
-  reportVolume?.();
-  await expect.poll(() => nextRead === undefined).toBe(true);
+  const raised = holdRead(device());
+  report();
+  await raised.taken;
   await act(() => userEvent.click(page.getByRole("button", { name: "Dimmer", exact: true })));
-  concurrent.openUnsafe();
-  await expect.poll(() => brightness).toBe(90);
-  await expect.poll((): unknown => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 60, brightness: 90 });
+  raised.release();
+  await expect.poll(() => screen.brightness).toBe(90);
+  await expect.poll(saved).toMatchObject({ muted: false, volume: 60, brightness: 90 });
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Settings", exact: true })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Volume", exact: true })));
-  await expect.element(page.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuenow", "60");
-  nextRead = Promise.resolve({ ...device(), volume: { ...audio, step: 10 } });
+  await expect.element(slider).toHaveAttribute("aria-valuenow", "60");
+  holdRead({ ...device(), volume: { ...audio, step: 10 } }).release();
   audio.step = 11;
-  reportVolume?.();
-  reportVolume?.();
-  await expect.element(page.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuenow", "73");
-  await expect.poll((): unknown => JSON.parse(stored.value ?? "{}")).toMatchObject({ muted: false, volume: 73 });
+  report();
+  report();
+  await expect.element(slider).toHaveAttribute("aria-valuenow", "73");
+  await expect.poll(saved).toMatchObject({ muted: false, volume: 73 });
   expect(audio.step).toBe(11);
 });
