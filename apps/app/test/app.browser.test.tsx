@@ -310,7 +310,8 @@ it("Use the website under Grace's controls", async () => {
   expect([tab(1).history, native.calls("reloadSurface")]).toEqual([firstVisit, []]);
   await native.started("tab-1");
   await native.report("tab-1", "https://example.com/", 100, { pageError: null, securityBlocked: false });
-  await expect.poll(async () => { await native.route(); return tab(1).secure; }).toBe(true);
+  await expect.poll(() => tab(1).secure).toBe(true);
+  await expect.poll(native.unanswered).toBe(1);
   await expect.element(siteAddress).toHaveAccessibleDescription("Encrypted connection");
   // spec/app/surface.md, "The page fills the rect the interface measured for it"
   const pageArea = document.querySelector("section[aria-label='Internet'] div[aria-hidden='true']")!;
@@ -321,6 +322,8 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("presentSurface").at(-1)).toMatchObject({ id: null });
   // spec/app/surface.md, "The page is paused while Grace's window is in the background"
   expect(native.calls("pauseSurface").at(-1)).toMatchObject({ id: "tab-1" });
+  expect(native.unanswered()).toBe(1);
+  await native.route();
   // What expanded Grace covers is out of reach.
   expect(page.getByRole("textbox", { name: "Address" }).query()).toBeNull();
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": expanded Grace
