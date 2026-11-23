@@ -120,6 +120,9 @@ establishes a readable connection; send permission is separate.
 Discovered by the proof: the selected account identity must already exist while
 authorization is pending, not only after the connection succeeds. Otherwise a
 successful callback could establish a connection without an owner or account.
+Discovered by the proof: an account identity stays bound while any Outbox entry
+remains, even if the connection ends. Otherwise a connector result could mark a
+draft for deletion without knowing which mailbox holds it.
 
 ```quint
 pure def canConnect(m: Mailbox, owner: str, provider: str, account: str, by: MailActor): bool =
@@ -147,7 +150,8 @@ pure def alwaysConnectedIdentity(m: Mailbox): bool =
     (m.owner != "" and m.provider != "" and m.account != "" and m.canRead)) and
   (m.connection != Connected implies (not(m.canRead) and not(m.canSend)))
 pure def alwaysAccountIdentityIsBound(m: Mailbox): bool =
-  m.connection != Disconnected implies (m.owner != "" and m.provider != "" and m.account != "")
+  (m.connection != Disconnected or m.outbox.length() > 0) implies
+    (m.owner != "" and m.provider != "" and m.account != "")
 pure def alwaysGenerationAndRevision(m: Mailbox): bool =
   m.generation >= 0 and m.revision >= 0 and m.approvedRevision >= -1 and m.draftRequest >= 0
 pure def sometimesConnected(m: Mailbox): bool = m.connection == Connected

@@ -1398,6 +1398,9 @@ lemma queuedResult_ensures(m: Mailbox, operationId: string, resultStatus: SendSt
     var after := queuedResult(m, operationId, resultStatus, evidence, persisted, by_);
     if resultStatus.Sent? && persisted {
       OutboxRemoved(m, after, operationId);
+      assert |m.outbox| > 0;
+      assert alwaysAccountIdentityIsBound(m);
+      EmailAppendSentDraft(m, after, queuedIn(m.outbox, operationId).snapshot.id);
     } else if resultStatus.SendFailed? && persisted {
       OutboxStatusChanged(m, after, operationId, OutboxStatus.DispatchFailed, evidence);
     } else {
@@ -1585,5 +1588,179 @@ lemma assistMail_ensures(m: Mailbox, assist: MailAssist, asked: bool, by_: MailA
       undoMessageTrash_ensures(m, target, MailActor.MailUser);
     case AssistMarkUnread(target) =>
       changeSelectedMessage_ensures(m, target, app__emailItem_MessageChange.UnreadMessage, MailActor.MailUser);
+  }
+}
+
+lemma EmailAppendSentDraft(m: Mailbox, after: Mailbox, draftId: string)
+  requires alwaysSentDraftsHaveMailbox(m)
+  requires m.owner != "" && m.provider != "" && m.account != ""
+  requires after.owner == m.owner && after.provider == m.provider && after.account == m.account
+  requires after.sentDrafts ==
+    (if draftId == "" then m.sentDrafts
+     else m.sentDrafts + ProofLib.Filter((set_x: string) => !((set_x in m.sentDrafts)), [draftId]))
+  ensures alwaysSentDraftsHaveMailbox(after)
+{
+  if draftId != "" {
+    ProofLib.FilterSubset((set_x: string) => !((set_x in m.sentDrafts)), [draftId]);
+    if "" in after.sentDrafts {
+      assert "" in m.sentDrafts || "" in ProofLib.Filter((set_x: string) => !((set_x in m.sentDrafts)), [draftId]);
+      assert false;
+    }
+  }
+}
+
+lemma sendResult_ensures(m: Mailbox, operationId: string, resultStatus: SendStatus, evidence: string, persisted: bool, by_: MailActor)
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysConnectedIdentity(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysAccountIdentityIsBound(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysGenerationAndRevision(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSelectedContent(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysReadAccess(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysReadSelectionIsBound(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysFolderIsVisible(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSearchMatchesQuery(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysMessageRegistry(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysListedMessagesAreCurrent(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSelectionUsesCanonicalMessage(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysDraftCountIsNonnegative(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysBillProvenance(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysScamWarningIsCurrent(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysLinkBelongsToSelection(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysFlaggedMessageIsNoBillSource(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysChoosingNeedsComposer(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysResultPersistenceHasTerminal(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysApprovalIsCurrent(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSendHasRecipient(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSendEvidence(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysQueuedSendsAreIssued(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysDraftHasAccount(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysDraftStoreHasRevision(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysRetirementHasMailbox(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysDraftVersions(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysEditableDraftIsNotRetired(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysSentDraftsHaveMailbox(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysDraftAssetsAreValid(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> alwaysMessageAssetsAreBound(sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepMessageRecordsAreRetained(m, sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepOnlyThePersonOpensAChooser(m, "sendResult", sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepOnlyThePersonApproves(m, "sendResult", sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepSendingNeedsCurrentApproval(m, "sendResult", sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepUnresolvedDraftIsFixed(m, sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepQueueNeedsCurrentApproval(m, "sendResult", sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepQueuedSendGoesOnce(m, sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepWorthyComposerIsNotDropped(m, "sendResult", sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepMailboxIdentityIsFixed(m, sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepRetirementRequiresCompletion(m, "sendResult", sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+  ensures (inv(m) ==> canSendResult(m, operationId, resultStatus, evidence, persisted, by_) ==> stepDraftIsRemovedOnlyOnceItsEmailWent(m, "sendResult", sendResult(m, operationId, resultStatus, evidence, persisted, by_)))
+{
+  if inv(m) && canSendResult(m, operationId, resultStatus, evidence, persisted, by_) && resultStatus.Sent? && persisted {
+    assert alwaysDraftHasAccount(m);
+    EmailAppendSentDraft(m, sendResult(m, operationId, resultStatus, evidence, persisted, by_), m.draftId);
+  }
+}
+
+lemma persistSendResult_ensures(m: Mailbox, operationId: string, persisted: bool, by_: MailActor)
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysConnectedIdentity(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysAccountIdentityIsBound(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysGenerationAndRevision(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysSelectedContent(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysReadAccess(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysReadSelectionIsBound(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysFolderIsVisible(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysSearchMatchesQuery(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysMessageRegistry(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysListedMessagesAreCurrent(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysSelectionUsesCanonicalMessage(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysDraftCountIsNonnegative(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysBillProvenance(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysScamWarningIsCurrent(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysLinkBelongsToSelection(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysFlaggedMessageIsNoBillSource(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysChoosingNeedsComposer(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysResultPersistenceHasTerminal(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysApprovalIsCurrent(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysSendHasRecipient(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysSendEvidence(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysQueuedSendsAreIssued(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysDraftHasAccount(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysDraftStoreHasRevision(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysRetirementHasMailbox(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysDraftVersions(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysEditableDraftIsNotRetired(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysSentDraftsHaveMailbox(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysDraftAssetsAreValid(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> alwaysMessageAssetsAreBound(persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepMessageRecordsAreRetained(m, persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepOnlyThePersonOpensAChooser(m, "persistSendResult", persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepOnlyThePersonApproves(m, "persistSendResult", persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepSendingNeedsCurrentApproval(m, "persistSendResult", persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepUnresolvedDraftIsFixed(m, persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepQueueNeedsCurrentApproval(m, "persistSendResult", persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepQueuedSendGoesOnce(m, persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepWorthyComposerIsNotDropped(m, "persistSendResult", persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepMailboxIdentityIsFixed(m, persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepRetirementRequiresCompletion(m, "persistSendResult", persistSendResult(m, operationId, persisted, by_)))
+  ensures (inv(m) ==> canPersistSendResult(m, operationId, by_) ==> stepDraftIsRemovedOnlyOnceItsEmailWent(m, "persistSendResult", persistSendResult(m, operationId, persisted, by_)))
+{
+  if inv(m) && canPersistSendResult(m, operationId, by_) && persisted && m.sendStatus.Sent? {
+    assert alwaysDraftHasAccount(m);
+    EmailAppendSentDraft(m, persistSendResult(m, operationId, persisted, by_), m.draftId);
+  }
+}
+
+lemma forgetSentDraft_ensures(m: Mailbox, draftId: string, by_: MailActor)
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysConnectedIdentity(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysAccountIdentityIsBound(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysGenerationAndRevision(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysSelectedContent(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysReadAccess(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysReadSelectionIsBound(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysFolderIsVisible(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysSearchMatchesQuery(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysMessageRegistry(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysListedMessagesAreCurrent(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysSelectionUsesCanonicalMessage(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysDraftCountIsNonnegative(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysBillProvenance(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysScamWarningIsCurrent(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysLinkBelongsToSelection(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysFlaggedMessageIsNoBillSource(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysChoosingNeedsComposer(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysResultPersistenceHasTerminal(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysApprovalIsCurrent(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysSendHasRecipient(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysSendEvidence(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysQueuedSendsAreIssued(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysDraftHasAccount(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysDraftStoreHasRevision(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysRetirementHasMailbox(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysDraftVersions(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysEditableDraftIsNotRetired(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysSentDraftsHaveMailbox(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysDraftAssetsAreValid(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> alwaysMessageAssetsAreBound(forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepMessageRecordsAreRetained(m, forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepFlaggedLinkWaitsForConfirmation(m, forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepOnlyThePersonOpensAChooser(m, "forgetSentDraft", forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepOnlyThePersonApproves(m, "forgetSentDraft", forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepSendingNeedsCurrentApproval(m, "forgetSentDraft", forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepUnresolvedDraftIsFixed(m, forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepQueueNeedsCurrentApproval(m, "forgetSentDraft", forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepQueuedSendGoesOnce(m, forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepWorthyComposerIsNotDropped(m, "forgetSentDraft", forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepMailboxIdentityIsFixed(m, forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepRetirementRequiresCompletion(m, "forgetSentDraft", forgetSentDraft(m, draftId, by_)))
+  ensures (inv(m) ==> canForgetSentDraft(m, draftId, by_) ==> stepDraftIsRemovedOnlyOnceItsEmailWent(m, "forgetSentDraft", forgetSentDraft(m, draftId, by_)))
+{
+  if inv(m) && canForgetSentDraft(m, draftId, by_) {
+    var after := forgetSentDraft(m, draftId, by_);
+    assert after.sentDrafts == ProofLib.Filter((set_x: string) => !((set_x in [draftId])), m.sentDrafts);
+    ProofLib.FilterSubset((set_x: string) => !((set_x in [draftId])), m.sentDrafts);
+    if |after.sentDrafts| > 0 {
+      var id := after.sentDrafts[0];
+      assert id in m.sentDrafts;
+      assert |m.sentDrafts| > 0;
+    }
   }
 }
