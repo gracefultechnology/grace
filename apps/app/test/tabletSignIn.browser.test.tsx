@@ -279,6 +279,7 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   await act(() => {
     phase = "required";
     notify?.(status());
+    return Promise.resolve();
   });
   await expect.element(button("Go to Account")).toBeEnabled();
   await click("Go to Account");
@@ -300,6 +301,7 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   await act(() => {
     phase = "acknowledgmentPending";
     notify?.(status());
+    return Promise.resolve();
   });
   await expect.element(button("Cancel")).not.toBeInTheDocument();
   await expect.element(button("Sign in again")).not.toBeInTheDocument();
@@ -307,6 +309,7 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
     phase = undefined;
     notify?.(status());
     browserAttempt.openUnsafe();
+    return Promise.resolve();
   });
   await expect.element(button("Manage Grace account")).toBeEnabled();
   await expect.element(button("Sign in again")).not.toBeInTheDocument();
