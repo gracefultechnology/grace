@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ComponentProps, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, type ComponentProps, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { KeyRound } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { play } from "../lib/motion.ts";
@@ -130,8 +130,7 @@ const keyArt = <KeyRound aria-hidden className="m-auto size-24 text-primary" str
  * page after Files. Above Grace's compact window the cards stand in narrow columns that slide flat, with Passwords
  * centered on the last page. With the keyboard up as well, only the greeting
  * stays. It lies under the rail, which is glass, so a card rolling off the left shows through it. Place it on the
- * `TabletScreen` beside the `Rail`. A swipe moves the cards by their transforms alone and tells React only when the
- * frame in view changes.
+ * `TabletScreen` beside the `Rail`. A swipe moves the cards by their transforms until it settles on a page.
  * The prototype's `#home[data-hmode]` control-panel modes A–F and H are experiments; only mode G, progressive blur and
  * its default, is the design.
  * @model spec/app/shell.md
@@ -153,9 +152,6 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
   const stop = (of: HomePage) => compact ? columnShifts[of] * columnStep : shifts[of];
   const nearestTo = (at: number) => shown.reduce((best, next) => Math.abs(stop(next) - at) < Math.abs(stop(best) - at) ? next : best);
   const committed = shown.includes(page) ? page : "MainCards";
-  const [view, setView] = useState({ of: committed, at: committed });
-  if (view.of !== committed) setView({ of: committed, at: committed });
-  const nearest = view.of === committed ? view.at : committed;
   const rest = stop(committed);
   const railRef = useRef<Rail | null>(null);
   const swipeRef = useRef<Swipe | null>(null);
@@ -189,8 +185,6 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     }
     swipe.shift = Math.max(stop("MainCards") - SWIPE.overscroll, Math.min(stop(lastPage) + SWIPE.overscroll, swipe.from - dx));
     paint(rail, full, swipe.shift);
-    const over = nearestTo(swipe.shift);
-    if (over !== nearest) setView({ of: committed, at: over });
   };
   const release = (event: PointerEvent<HTMLDivElement>, cancelled = false) => {
     const swipe = swipeRef.current;
@@ -203,7 +197,6 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     const over = cancelled ? committed : nearestTo(swipe.shift);
     const to = over === committed || onPageChange?.(over) !== false ? over : committed;
     paint(rail, full, stop(to));
-    if (to !== nearest) setView({ of: committed, at: to });
   };
   const swallowSwipeClick = (event: MouseEvent) => {
     if (!swipedRef.current) return;
@@ -250,7 +243,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
             {passwords && place("passwords")}
           </div>
         )}
-        <HomePager data-home-pager page={shown.indexOf(nearest)} count={shown.length} compact={compact} arrows={layout !== "greeting"} onPageChange={(i) => onPageChange?.(shown[i] ?? "MainCards")} {...pager} />
+        <HomePager data-home-pager page={shown.indexOf(committed)} count={shown.length} compact={compact} arrows={layout !== "greeting"} onPageChange={(i) => onPageChange?.(shown[i] ?? "MainCards")} {...pager} />
       </div>
     </div>
   );
