@@ -95,8 +95,11 @@ public final class GraceAccount extends ElizaSignInPlugin {
   speech = new GraceSharedSpeech(getContext());
   super.load();
   custodySubscription = DeviceCustody.reader(getContext(), API.toString()).listen(notice -> {
-   if (!GracePasswordsOwner.accountChanging() && (notice instanceof Notice.SignedOutNotice || notice instanceof Notice.ExpiredNotice)) {
+   if (GracePasswordsOwner.accountChanging()) return;
+   if (notice instanceof Notice.SignedOutNotice || notice instanceof Notice.ExpiredNotice) {
     ACCOUNT.execute(this::retireUnconfirmedOwner);
+   } else if (notice instanceof Notice.Announce) {
+    ACCOUNT.execute(() -> GraceAgentService.deviceCredentialChanged(getContext()));
    }
   });
  }
