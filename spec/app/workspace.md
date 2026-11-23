@@ -1603,10 +1603,11 @@ pure def isPublicCollection(guidedStep: GuidedStep): bool = match guidedStep {
 }
 pure def canConfirmGuidedCollection(w: Workspace, check: GuidedCollectionCheck, by: WorkspaceActor): bool =
   val tab = B::activeTab(w.browser)
+  val observedStep = check.report.step
   guidedObservationCurrent(w, check.report, by) and check.documentId != "" and check.entries >= 2 and
   tab.load == B::Loaded and tab.secure and tab.id == check.tabId and check.url != "" and check.url == B::tabUrl(tab) and
   check.loadVersion == tab.loadVersion and check.loadVersion > w.plan.openingBrowser and
-  (match check.report.step {
+  (match observedStep {
     | ReachPublicCollection(target) => target.tabId == check.tabId and target.origin == check.origin and target.subject == check.subject
     | _ => false
   })
