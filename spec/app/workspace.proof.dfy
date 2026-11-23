@@ -1979,6 +1979,35 @@ lemma confirmGuidedNamedPage_ensures(w: Workspace, pageCheck: GuidedNamedPageChe
   GuidedReceiptPreserves(w, pageCheck.report, by_);
 }
 
+lemma confirmGuidedCollection_ensures(w: Workspace, check: GuidedCollectionCheck, by_: WorkspaceActor)
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysDeviceRules(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysBrowserRules(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysAssistantRules(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysExecutionRules(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysCommitmentRules(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysCommitmentRegistryIsCanonical(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysCommitmentAssociation(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysPausedCommitmentCannotSubmit(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysOneTask(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysPausedTogether(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysRecordingHasPermission(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysOperationHasVisibleTask(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysEvidenceVersionsAreNonnegative(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysWakeRules(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysActiveWakePausesWebsiteWork(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysPreferencesRules(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysCommitmentUsesCanonicalIdentity(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysCurrentBeforeAction(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> alwaysCommitmentReviewUsesCurrentContext(confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> stepInterruptionsKeepTask(w, "confirmGuidedCollection", confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> stepWakeNeverDispatchesWebsite(w, "confirmGuidedCollection", confirmGuidedCollection(w, check, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuidedCollection(w, check, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "confirmGuidedCollection", confirmGuidedCollection(w, check, by_)))
+  ensures (inv(w) ==> canConfirmGuidedCollection(w, check, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuidedCollection", confirmGuidedCollection(w, check, by_)))
+{
+  GuidedReceiptPreserves(w, check.report, by_);
+}
+
 lemma confirmGuidedSearch_ensures(w: Workspace, searchCheck: GuidedSearchCheck, by_: WorkspaceActor)
   ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysDeviceRules(confirmGuidedSearch(w, searchCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysBrowserRules(confirmGuidedSearch(w, searchCheck, by_)))
