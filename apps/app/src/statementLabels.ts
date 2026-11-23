@@ -35,10 +35,10 @@ function joinedFragments(lines: readonly string[]): string[] {
   }, []);
 }
 
-function statementLabels(text: string): Labeled[] {
+function statementLabels(text: string) {
   const lines = joinedFragments(text.split(/\r?\n|[^\S\r\n]+·[^\S\r\n]+/u).map((line) => line.trim()).filter(Boolean));
   const detachedDates = new Set<string>();
-  const labels = lines.flatMap((line, index) => [...line.matchAll(label)].flatMap((match) => {
+  const labels = lines.flatMap((line, index) => [...line.matchAll(label)].flatMap<Labeled>((match) => {
     const fact = facts.find((name) => match.groups?.[name] !== undefined);
     const words = fact === undefined ? undefined : match.groups?.[fact];
     if (fact === undefined || words === undefined) return [];
