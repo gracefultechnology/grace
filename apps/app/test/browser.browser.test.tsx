@@ -259,6 +259,15 @@ const BrowserControl = Schema.Struct({
   frameScope: Schema.Literal("main"),
   result: Schema.Record(Schema.String, Schema.Unknown),
 });
+function guidanceRecovery(instruction: string) {
+  return instruction === privateFormRecovery ? "private-form" :
+    instruction.startsWith("I couldn’t read this page.") ? "unobservable" :
+    instruction.startsWith("The page or task changed.") ? "changed" :
+    instruction === "I couldn't find a link to point to on this page." ? "no-link" :
+    instruction === "I could not highlight a link on this page." ? "guide-exception" :
+    /^I (couldn’t reach Grace|need you to sign in)|^Sign in to Grace/u.test(instruction) ? "guide-account" : "other";
+}
+
 type BrowserJourneyStage = "prepare-journey" | "follow-guidance" | "submit-public-search" | "observe-search-landing" |
   "tap-guide-ring" | "observe-link-landing" | "bind-native-landing" |
   "wait-for-check-controls" | "check-page" | "observe-check-result" | "confirm-completion";
@@ -523,12 +532,7 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
                   outcome.guideResult = instruction;
                   return;
                 }
-                outcome.guidanceRecovery = instruction === privateFormRecovery ? "private-form" :
-                  instruction.startsWith("I couldn’t read this page.") ? "unobservable" :
-                  instruction.startsWith("The page or task changed.") ? "changed" :
-                  instruction === "I couldn't find a link to point to on this page." ? "no-link" :
-                  instruction === "I could not highlight a link on this page." ? "guide-exception" :
-                  /^I (couldn’t reach Grace|need you to sign in)|^Sign in to Grace/u.test(instruction) ? "guide-account" : "other";
+                outcome.guidanceRecovery = guidanceRecovery(instruction);
                 throw new Error(instruction);
               }
               await userEvent.click(nextMenu);
@@ -601,7 +605,22 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
         ? selection.selection : undefined;
       const returningToRecord = record && linkGuidance.query()?.textContent?.includes("Go back one page in this list.") === true;
       failureStage = "tap-guide-ring";
-      await expect.poll(async () => (await transport({ kind: "tapGuide" })).tapped, { timeout: 45_000 }).toBe(true);
+      let refusal: string | undefined;
+      await expect.poll(async () => {
+        const unavailable = named || record ? null : guidanceFailure.query();
+        if (unavailable) {
+          refusal = unavailable.textContent ?? "";
+          return true;
+        }
+        return (await transport({ kind: "tapGuide" })).tapped;
+      }, { timeout: 45_000 }).toBe(true);
+      if (refusal !== undefined) {
+        failureStage = "follow-guidance";
+        guidanceResult = "unavailable";
+        outcome.guidanceRecovery = guidanceRecovery(refusal);
+        outcome.linkUnavailable = true;
+        throw new Error("Grace could not offer a link");
+      }
       outcome.ringTap = true;
       failureStage = "observe-link-landing";
       await expect.poll(async () => {
