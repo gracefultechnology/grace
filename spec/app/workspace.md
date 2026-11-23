@@ -52,7 +52,7 @@ import handoffs as H from "./handoffs"
 type WorkspaceActor = Person | Host | Store | Actuator
 type StepDetails = { surface: S::Surface, subject: str, outcome: str }
 type GuidedStep = ReadMail | ReadBrowser | ReadChangedBrowser | ReadStatement | ReadCalendar | SaveMailAppointment
-  | ReachNamedPage({ subject: str }) | ReadLatestRecord({ collection: str, status: str }) | SearchPublicSite({ query: str, origin: str, tabId: int })
+  | ReachNamedPage({ subject: str }) | ReachPublicCollection({ subject: str, origin: str, tabId: int }) | ReadLatestRecord({ collection: str, status: str }) | SearchPublicSite({ query: str, origin: str, tabId: int })
   | SurfaceOutcome({ surface: S::Surface, subject: str, outcome: str })
 type GuidedMail = { account: int, owner: str, address: str, ref: str, generation: int, revision: int, version: str }
 type GuidedCalendarApproval = {
@@ -94,6 +94,7 @@ type GuidedObservation = {
   step: GuidedStep, sourceKey: str, evidence: str
 }
 type GuidedRecordCheck = { report: GuidedObservation, key: str, tabId: int, documentId: str, loadVersion: int }
+type GuidedCollectionCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, tabId: int, subject: str, entries: int }
 type GuidedNamedPageCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, heading: str }
 type GuidedSearchCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, query: str }
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
@@ -128,6 +129,7 @@ pure def guidedDetails(guidedStep: GuidedStep): StepDetails = match guidedStep {
   | ReadCalendar => { surface: S::Calendar, subject: "Saved appointment", outcome: "Open the saved appointment you want me to read." }
   | SaveMailAppointment => { surface: S::Calendar, subject: "Appointment from the email", outcome: "Ask me to prepare the appointment from the email. Approve its details separately." }
   | ReachNamedPage(target) => { surface: S::Browser, subject: target.subject, outcome: "Find and check the named page." }
+  | ReachPublicCollection(target) => { surface: S::Browser, subject: target.subject, outcome: "Find and check the requested collection." }
   | SearchPublicSite(target) => { surface: S::Browser, subject: target.query, outcome: "Search on the website, then check the results." }
   | ReadLatestRecord(intent) => { surface: S::Browser, subject: intent.collection, outcome: "Check the latest record matching the reviewed status." }
   | SurfaceOutcome(details) => { surface: details.surface, subject: details.subject, outcome: details.outcome }
@@ -1378,6 +1380,8 @@ the new page with the same step active.
 
 For a requested statement read, the host reads the current visible document locally, whatever its title, unless the title names it a past, previous or prior bill, statement or invoice. The amount due and due date each need a single distinct labeled value on the same statement, written after its label or on the next line, including an amount the page splits across text fragments. An amount whose cents the page shows apart with no decimal mark supplies no value. A labeled remaining statement balance, or remaining balance due, replaces the statement or new balance when the statement shows one; an amount due labeled beside it must agree with it. An amount the page marks CR keeps that mark, and one the page calls a credit supplies no value. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter, with or without its year. Payment due can also label a currency amount. The connective “by” may give the due date immediately after a labeled amount due on the same line. When the browser exposes it separately from that amount, the host cannot use it as the due date. The check remains open unless an independent due-date label gives the same value. A distinct competing date keeps the check open. An account or current balance labeled as the amount due counts as that amount. An unqualified account or current balance supplies a different fact, as do a previous or running balance, minimum payment, a loan's remaining balance, credit limit, pending charge and statement issue date. A label with no value beside it supplies none. The host rereads the document identity, address and values before confirming the step. Only those values are compared, so a time the page counts by itself, or any other change elsewhere in the document, may occur between the two reads. The confirmation repeats the statement's own labels. An ambiguous or incomplete statement, one whose values change between the reads, and one that is covered, still loading or no longer at its address leave the step open, and Grace says which.
 
+A request for an index or collection keeps that outcome in the reviewed plan. A different page or an article cannot count as the collection. The host checks the current permitted document in the reviewed tab and website for distinct, visible entries in a main-content collection associated with the requested subject. A breadcrumb, site navigation, unrelated or related links beside an article, and ambiguous content leave the step open. The person can follow another link and check again.
+
 ```quint
 pure def statementAmounts(due: Set[str], balances: Set[str], remaining: Set[str]): Set[str] =
   due.union(if (remaining.size() > 0) remaining else balances)
@@ -1392,6 +1396,7 @@ pure def isNamedDestination(guidedStep: GuidedStep): bool = match guidedStep {
 }
 pure def hasGuidedAdapter(guidedStep: GuidedStep): bool = match guidedStep {
   | SurfaceOutcome(_) => false
+  | ReachPublicCollection(target) => target.subject != "" and target.origin != "" and target.tabId > 0
   | SearchPublicSite(target) => target.query != "" and target.origin != "" and target.tabId > 0
   | ReadLatestRecord(intent) => intent.collection != "" and intent.status != ""
   | _ => true
@@ -1401,6 +1406,7 @@ pure def isLinkGuidanceStep(guidedStep: GuidedStep): bool = match guidedStep {
   | ReadChangedBrowser => true
   | ReadStatement => true
   | ReachNamedPage(_) => true
+  | ReachPublicCollection(_) => true
   | ReadLatestRecord(_) => true
   | _ => false
 }
@@ -1572,7 +1578,7 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  not(isNamedDestination(report.step)) and not(isLatestRecord(report.step)) and not(isPublicSearch(report.step)) and guidedObservationCurrent(w, report, by)
+  not(isNamedDestination(report.step)) and not(isPublicCollection(report.step)) and not(isLatestRecord(report.step)) and not(isPublicSearch(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
     nameCorrection: NoGuidedNameCorrection, nameOverride: noGuidedNameOverride, saveRecovery: GuidedSaveUntouched,
@@ -1591,6 +1597,25 @@ pure def canConfirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck
   pageCheck.heading == guidedDetails(pageCheck.report.step).subject
 pure def confirmGuidedNamedPage(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): Workspace =
   confirmGuided(w, pageCheck.report, by)
+pure def isPublicCollection(step: GuidedStep): bool = match step {
+  | ReachPublicCollection(_) => true
+  | _ => false
+}
+pure def canConfirmGuidedCollection(w: Workspace, check: GuidedCollectionCheck, by: WorkspaceActor): bool =
+  val tab = B::activeTab(w.browser)
+  guidedObservationCurrent(w, check.report, by) and check.documentId != "" and check.entries >= 2 and
+  tab.load == B::Loaded and tab.secure and tab.id == check.tabId and check.url != "" and check.url == B::tabUrl(tab) and
+  check.loadVersion == tab.loadVersion and check.loadVersion > w.plan.openingBrowser and
+  (match check.report.step {
+    | ReachPublicCollection(target) => target.tabId == check.tabId and target.origin == check.origin and target.subject == check.subject
+    | _ => false
+  })
+pure def confirmGuidedCollection(w: Workspace, check: GuidedCollectionCheck, by: WorkspaceActor): Workspace =
+  confirmGuided(w, check.report, by)
+pure def lawCollectionNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  isPublicCollection(report.step) implies not(canConfirmGuided(w, report, by))
+pure def lawCollectionCannotCompleteWithoutEntries(w: Workspace, check: GuidedCollectionCheck, by: WorkspaceActor): bool =
+  check.entries < 2 implies not(canConfirmGuidedCollection(w, check, by))
 pure def lawNamedPageNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
   isNamedDestination(report.step) implies not(canConfirmGuided(w, report, by))
 pure def lawWrongNamedHeadingCannotFinish(w: Workspace, pageCheck: GuidedNamedPageCheck, by: WorkspaceActor): bool =
