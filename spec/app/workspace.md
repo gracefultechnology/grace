@@ -169,18 +169,19 @@ pure def nextOutcome(plan: GuidedPlan): GuidedStep = {
   val index = plan.receipts.length()
   val plannedOutcome = plan.steps.nthOr(index, noGuidedStep)
   val session = plan.tabSession
-  if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match plannedOutcome {
+  val boundOutcome = match session {
+    | RestoredPublicTab(binding) => if (binding.stepIndex == index) match plannedOutcome {
+      | SearchPublicSite(target) => SearchPublicSite({ query: target.query, origin: target.origin, tabId: binding.tabId })
+      | SortPublicListing(target) => SortPublicListing({ subject: target.subject, origin: target.origin, direction: target.direction, tabId: binding.tabId })
+      | _ => plannedOutcome
+    } else plannedOutcome
+    | _ => plannedOutcome
+  }
+  if (plan.nameOverride.stepIndex == index and plan.nameOverride.label != "") match boundOutcome {
     | ReachNamedPage(_) => ReachNamedPage({ subject: plan.nameOverride.label })
     | SortPublicListing(sort) => SortPublicListing({ subject: plan.nameOverride.label, origin: sort.origin, tabId: sort.tabId, direction: sort.direction })
-    | _ => plannedOutcome
-  } else match session {
-      | RestoredPublicTab(binding) => if (binding.stepIndex == index) match plannedOutcome {
-        | SearchPublicSite(target) => SearchPublicSite({ query: target.query, origin: target.origin, tabId: binding.tabId })
-        | SortPublicListing(target) => SortPublicListing({ subject: target.subject, origin: target.origin, direction: target.direction, tabId: binding.tabId })
-        | _ => plannedOutcome
-      } else plannedOutcome
-      | _ => plannedOutcome
-  }
+    | _ => boundOutcome
+  } else boundOutcome
 }
 type Workspace = {
   device: S::Shell, browser: B::Browser, assistant: A::Assistant,
@@ -1628,8 +1629,8 @@ pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrect
   (match witness {
     | PublicLinkName => isNamedDestination(pendingStep) and correction.href != correction.url
     | LocatedSortCategory(located) => match pendingStep {
-      | SortPublicListing(sort) => sort.tabId == tab.id and tab.secure and tab.loadVersion > w.plan.openingBrowser and
-          located.domRevision >= 0 and located.origin == sort.origin and located.direction == sort.direction and
+      | SortPublicListing(sort) => sort.tabId == tab.id and tab.secure and not(needsRecoveredPublicTab(w.plan)) and
+          publicResultLoad(w.plan, tab.loadVersion, correction.documentId) and located.domRevision >= 0 and located.origin == sort.origin and located.direction == sort.direction and
           correction.href == correction.url
       | _ => false
     }
