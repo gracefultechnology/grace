@@ -2,7 +2,7 @@
 import { WebsiteTask } from "./websiteTask.vibe"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
-import { askedDay, calendarFree, type CalendarSource, type CalRow, changeOf, confirmationOf, confirmRing, type DayToShow, deletionOf, savedDay, shownReminders, showsDay, told, toldCreated, type CalendarTold } from "../gen/app__calendars.effect.vibe"
+import { askedDay, calendarFree, type CalendarSource, type CalRow, changeOf, confirmationOf, confirmRing, type DayToShow, deletionOf, preservesCreatedEmailDetail, savedDay, shownReminders, showsDay, told, toldCreated, type CalendarTold } from "../gen/app__calendars.effect.vibe"
 import { type Machine as CalendarMachine, enabled, entryAt, keepsRepetition, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type SeriesReceipt, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { planned, repetitions as repeatsOf, shifted } from "./schedule.ts"
 import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/app__proposal.effect.vibe"
@@ -163,7 +163,7 @@ const device: Store = {
   removeRepetition: (series) => Effect.succeed({ succeeded: true, evidence: `tablet:${series.occurrenceId}` })
 }
 
-export type CalendarReport = { readonly told: CalendarTold } | { readonly refused: Ask }
+export type CalendarReport = { readonly told: CalendarTold; readonly keepDetail?: true } | { readonly refused: Ask }
 export type CalendarNote = { readonly id: number; readonly row: string }
 export type Opening = "Occurrence" | "Reminder"
 export type Reminded = { readonly key: number; readonly id: string }
@@ -305,9 +305,10 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
       : { type: "saveSeries", receipt: seriesReceipt(before, c, receipt) }
     const adopted = box.send(event, "ViewStore") catch () => undefined
     if (adopted !== undefined && receipt.succeeded && receipt.providerId !== undefined) {
-      const news = toldCreated(key, before, adopted, { owner: c.identity.owner, calendarId: c.identity.calendarId,
-        localId: c.identity.occurrenceId, providerId: receipt.providerId, revision: receipt.revision })
-      if (news.news !== "NoCalendarNews") try publish({ told: news })
+      const created = { owner: c.identity.owner, calendarId: c.identity.calendarId,
+        localId: c.identity.occurrenceId, providerId: receipt.providerId, revision: receipt.revision }
+      const news = toldCreated(key, before, adopted, created)
+      if (news.news !== "NoCalendarNews") try publish(preservesCreatedEmailDetail(before, adopted, created) ? { told: news, keepDetail: true } : { told: news })
     }
     if (guidedFirstDispatch && adopted !== undefined && receipt.succeeded && receipt.providerId !== undefined)
       try observed(try box.get(), receipt.providerId, approval)
@@ -444,12 +445,12 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     return sources
   }
 
-  effect function turnTo(boxes: readonly CalendarMachine.Shape[], shown: DayToShow) {
+  effect function turnTo(boxes: readonly CalendarMachine.Shape[], shown: DayToShow, by: "ViewUser" | "ViewStore") {
     if (!shown.show || (try workspace.get()).device.surface !== "Calendar") return
     const start = startDay(shown.startAt)
     for (const box of new Set(boxes)) {
       const report = navigation((try box.get()).window, "SelectDay", start.day)
-      if (showsDay(report, start, shown)) box.send({ type: "navigate", report }, "ViewUser") catch () => undefined
+      if (showsDay(report, start, shown)) box.send({ type: "navigate", report }, by) catch () => undefined
     }
   }
 
@@ -511,7 +512,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     if (!ring.shown) return undefined
     const a = try registry.get()
     const box = try boxOf(ring.key)
-    if (box !== undefined) try turnTo([lead, box], savedDay(a, try sourcesOf(a), report.told))
+    if (box !== undefined) try turnTo([lead, box], savedDay(a, try sourcesOf(a), report.told), report.keepDetail ? "ViewStore" : "ViewUser")
     return `${ring.key}/${ring.id}`
   }
 
@@ -550,7 +551,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     const a = try registry.get()
     const sources = try sourcesOf(a)
     const shown = askedDay(a, sources, try Ref.get(earlier), p)
-    try turnTo([lead], shown)
+    try turnTo([lead], shown, "ViewUser")
     if (shown.show || p.ask.tag !== "AddAsk" || !(try lead.get()).opened || calendarFree(sources)) try Ref.set(earlier, p)
   }))
   try fork.scoped followAccounts(Stream.map(registry.changes, ({ accounts }) => accounts), effect (account) => try fork.scoped Stream.runForEach((try shelf.calendar(account.id)).changes, () => Effect.andThen(noticeReminders, turnToAsk)))
