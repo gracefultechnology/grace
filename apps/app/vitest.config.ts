@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import { defaultClientConditions } from "vite";
-import { randomUUID, randomInt } from "node:crypto";
+import { createHash, randomUUID, randomInt } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -55,6 +55,18 @@ const runs = Schema.decodeUnknownSync(Schema.Array(BenchmarkDefinition), { onExc
 const byId = new Map(runs.map((item) => [item.taskId, item]));
 if (byId.size !== runs.length || new Set(runs.map(({ receipt }) => receipt)).size !== runs.length)
   throw new Error("Benchmark task IDs and receipt paths must be unique");
+function benchmarkTitleId(taskId: string): string {
+  if (/^[A-Za-z0-9-]{1,32}$/.test(taskId)) return taskId;
+  const prefix = taskId.replace(/[^A-Za-z0-9-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 23);
+  const hash = createHash("sha256").update(taskId).digest("hex").slice(0, 8);
+  return `${prefix || "task"}-${hash}`;
+}
+
+const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
+  taskId, titleId: benchmarkTitleId(taskId), intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet),
+}));
+if (new Set(browserBenchmarks.map(({ titleId }) => titleId)).size !== runs.length)
+  throw new Error("Benchmark test title IDs must be unique");
 const officialCases = runs.filter(({ evaluator }) => evaluator === "webarena");
 function prepareOfficialCases() {
   if (!officialCases.length) return;
@@ -774,7 +786,7 @@ declare module "vitest" {
     site: string;
     cloud: string;
     groundProxy: string;
-    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { exploratory: boolean; gradeWholeCohort: boolean })[];
+    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { titleId: string; exploratory: boolean; gradeWholeCohort: boolean })[];
     billworldStatements: readonly { label: string; billerId?: string; refuses?: true }[];
     realModel: boolean;
   }
@@ -791,9 +803,6 @@ export default defineConfig(async (env) => {
           test: { ...entry.test, ...(official && { globalSetup: ["test/webarena.ts"] }), browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, privateVerification, recordPage, releasedStatement, realModel } } },
         }
       : entry);
-  const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
-    taskId, intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet),
-  }));
   const billworldStatements = releasedDirectory === undefined ? [] : [
     { label: "released" },
     ...fleetStatementCases.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId })),

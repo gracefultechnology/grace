@@ -266,7 +266,7 @@ type PendingPageCheck = {
   snapshot: "not-requested" | "requested" | "returned" | "failed";
 };
 
-it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
+it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
   const publicFailure = (failure: unknown, stage: "Browser setup" | "Browser journey" | "Benchmark grading or cleanup") => {
     if (failure instanceof Error && (failure.name === "TimeoutError" ||

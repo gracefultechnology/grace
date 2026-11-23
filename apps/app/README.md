@@ -41,6 +41,10 @@ and hosted benchmark variables and use:
 GRACE_BILLWORLD_COHORT=2 pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' --passWithNoTests
 ```
 
+To select an individual case, add its displayed ID or a unique prefix to
+the `-t` pattern. Long IDs and IDs with non-ASCII characters use a short
+prefix and a hash in the Vitest title. The receipt retains the full task ID.
+
 To resume locally, set `GRACE_BILLWORLD_RESUME_DIR` to the existing
 `fleet-*` directory containing `cohort.json`. Keep the same Grace commit,
 BillWorld checkout, cohort, and shard setting. Use the browser command with
