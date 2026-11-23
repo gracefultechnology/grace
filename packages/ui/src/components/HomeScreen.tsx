@@ -240,7 +240,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
         {!compact && <HomeGreeting greeting={greeting} name={name} line={line} compact={!full} className={cn("absolute left-[182px]", full ? "top-[34px]" : "top-[22px]")} />}
         {banner ? <div className="absolute top-4 right-5 left-[614px] z-[310]">{banner}</div> : null}
         {layout !== "greeting" && (
-          <div key={passwords ? layout : `${layout}-short`} ref={settle} className={cn("group/home absolute", full ? "top-40 left-[182px] h-[560px] w-[1042px]" : "inset-y-0 right-0 left-[138px] overflow-clip")}>
+          <div key={passwords ? layout : `${layout}-short`} ref={settle} className={cn("group/home absolute", full ? "top-40 left-[182px] h-[560px] w-[1042px]" : "top-2 right-0 bottom-0 left-[138px] overflow-x-clip overflow-y-visible")}>
             {(["calendar", "email", "internet", "files"] as const).map(place)}
             {passwords && place("passwords")}
           </div>

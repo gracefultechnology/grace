@@ -1,12 +1,15 @@
 // spec/app/index.md, "Story: Manage my saved passwords privately"
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
-import { AppWindow, AskGraceButton, besideRail, Button, HomeScreen, ListRow, Rail, RailButton, RailPopover, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
+import { AppWindow, AskGraceButton, besideRail, Button, CaptionStrip, type CaptionStripProps, HomeScreen, ListRow, Rail, RailButton, RailPopover, ScreenDim, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
 import { Effect, Stream } from "effect";
-import { CalendarDays, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
+import { CalendarDays, Check, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
 import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { type Assistance, keyboardCaptionVisible } from "../gen/app__assistant.ts";
+import { activeTab, tabUrl } from "../gen/app__browser.ts";
+import type { Turn } from "../gen/app__conversation.ts";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
-import { muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
+import { effectiveBrightness, muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
 import { canChangeLifecycle, privateSurfaceActive, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
@@ -23,7 +26,9 @@ import { NoticeBanner, Notices } from "./Notices.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { PasswordsApp } from "./PasswordsApp.tsx";
 import { Settings } from "./Settings.tsx";
+import { androidHost, wifiPlugin } from "./surfacePlugin.ts";
 import { RuntimeContext, type Runtime, useAccounts, useRuntime, useKeyboardHeight, useMailContent, useWebsiteRequests, useWorkspace, WithCalendars, WithMailboxes } from "./useApp.ts";
+import { site } from "./WebsiteRequests.tsx";
 
 // spec/app/deviceKeys.md, "Each Back action is one event its guard allows": the two that end what websites ask,
 const websiteBackEvents: Record<"CancelClearData" | "DismissWebsiteRequest", (r: WebsiteRequests) => WebsiteEvent> = {
@@ -85,21 +90,63 @@ const wifiWords: Record<Connectivity, string> = {
   Online: "Connected", CaptivePortal: "Needs sign-in", WrongPassword: "Wrong password", ConnectionFailed: "Couldn't connect",
 };
 
+type BatteryManager = EventTarget & { readonly level: number };
+type BatteryNavigator = Navigator & { readonly getBattery?: () => Promise<BatteryManager> };
+
+let batteryLevel: number | undefined;
+const batteryListeners = new Set<() => void>();
+let batteryObserved = false;
+
+function subscribeBattery(listener: () => void) {
+  batteryListeners.add(listener);
+  if (!batteryObserved) {
+    batteryObserved = true;
+    const getBattery = (navigator as BatteryNavigator).getBattery;
+    if (typeof getBattery === "function") {
+      void getBattery.call(navigator).then((manager) => {
+        const update = () => {
+          const next = Math.round(manager.level * 100);
+          if (next === batteryLevel) return;
+          batteryLevel = next;
+          for (const notify of batteryListeners) notify();
+        };
+        update();
+        manager.addEventListener("levelchange", update);
+      }, () => undefined);
+    }
+  }
+  return () => { batteryListeners.delete(listener); };
+}
+
+function useBattery() {
+  return useSyncExternalStore(subscribeBattery, () => batteryLevel);
+}
+
+function captionActivity(turn: Turn, activity: Assistance): CaptionStripProps["activity"] {
+  if (turn === "Listening") return "listening";
+  if (turn === "Speaking") return "speaking";
+  if (turn === "Thinking") return "thinking";
+  if (activity === "DoingWork" || activity === "WebsiteWait" || activity === "Rechecking") return "working";
+  return undefined;
+}
+
 function Screen() {
   const runtime = useRuntime();
   const setup = useSetup(runtime).state;
   const cards = useHomeCards();
   const files = useFilesHome();
-  const { workspace, can, send, current, privateHistory, stepPrivate } = useWorkspace();
+  const { workspace, can, send, say, current, privateHistory, stepPrivate } = useWorkspace();
   const calendarActions = useCalendarActions();
   const website = useWebsiteRequests();
   const { accounts } = useAccounts();
   const read = useMailContent();
   const now = useMinute();
+  const battery = useBattery();
   // Prototype `layout()`, kbH: the keyboard covers the screen right of the rail, which keeps its full height, and the windows rise above it.
   const keyboard = useKeyboardHeight();
   // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath": each popover points at its rail button.
   const [anchor, setAnchor] = useState(0);
+  const [wifiSsid, setWifiSsid] = useState<string | null>(null);
   const [graceHeight, setGraceHeight] = useState(260);
   // The host's Back and Home keys (MainActivity). spec/app/deviceKeys.md, "Back closes the nearest open thing first and leaves only from a resting Home":
   // an unconsumed Back leaves the standalone app, and the launcher dispatches launcher-home.
@@ -135,6 +182,9 @@ function Screen() {
     onClick: (event: { currentTarget: HTMLElement }) => {
       const { top, height } = event.currentTarget.getBoundingClientRect();
       setAnchor(top + height / 2);
+      if (popover === "WifiPopover" && wifiPlugin) {
+        void wifiPlugin.getConnectivity().then((status) => setWifiSsid(status.ssid ?? null), () => setWifiSsid(null));
+      }
       void send({ type: "togglePopover", popover });
     },
   });
@@ -146,9 +196,23 @@ function Screen() {
   const choose = (settings: typeof volume) => fire({ type: "changePreferences", settings });
   // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses": what Grace's window covers.
   const privateSurface = privateSurfaceActive(workspace);
-  const covered = !privateSurface && assistant.presentation === "Expanded";
-  const docked = !privateSurface && assistant.presentation === "Compact";
-  const bottom = keyboard + (docked ? 6 + graceHeight + 6 : 6);
+  const websiteKeyboard = !privateSurface && assistant.presentation !== "Closed" && assistant.keyboard === "WebsiteKeyboard";
+  const showCaption = websiteKeyboard && (keyboardCaptionVisible(assistant) || assistant.conversation.answers.length > 0);
+  const covered = !privateSurface && !websiteKeyboard && assistant.presentation === "Expanded";
+  const docked = !privateSurface && !websiteKeyboard && assistant.presentation === "Compact";
+  const popoverOpen = device.railPopover !== "NoPopover";
+  const popoverTop = anchor > 0 ? Math.max(20, Math.min(anchor - 58, window.innerHeight - 300)) : 20;
+  const popoverArrow = anchor > 0 ? Math.max(38, anchor - popoverTop) : 58;
+  const bottom = keyboard + (docked ? 6 + graceHeight + 6 : showCaption ? 6 + 80 + 6 : 6);
+  const toastAbove = covered ? keyboard + 92 : bottom - 6;
+  const activePage = activeTab(workspace.browser);
+  const publicUrl = activePage && !activePage.manualSignIn ? tabUrl(activePage) : "";
+  const internetStatus = !online ? "Needs the internet" : publicUrl !== "" ? `${site(publicUrl)} was open` : "Open a website";
+  const lastMessage = assistant.conversation.messages.at(-1);
+  const captionAnswers = assistant.conversation.answers.filter((text) =>
+    can({ type: "interact", input: { tag: "ChooseAnswer", token: assistant.conversation.generation, text } }));
+  const showChatEvent = { type: "interact", input: { tag: "ShowChat" } } as const;
+  const showGuideEvent = { type: "interact", input: { tag: "ShowGuidance", revision: assistant.guidance.revision } } as const;
   const clock = Object.fromEntries(new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).formatToParts(now).map((p) => [p.type, p.value]));
   const hour = now.getHours();
   const sleeping = device.readiness === "Sleeping";
@@ -161,12 +225,12 @@ function Screen() {
     <TextScale percent={textScalePercent(volume)}><div data-benchmark-observable={!privateSurface && !workspace.browser.tabs.some((tab) => tab.manualSignIn)} className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
       <div className="contents" {...under(sleeping)}>
       <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
-      <Rail aria-label="Rail" time={`${clock.hour}:${clock.minute}`} period={clock.dayPeriod}
+      <Rail aria-label="Rail" battery={battery} time={`${clock.hour}:${clock.minute}`} period={clock.dayPeriod}
         date={now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
         status={<RailButton icon={online ? <Wifi {...tile} /> : <WifiSlash />} label="Wi-Fi" aria-label={online ? "Wi-Fi" : "Wi-Fi, not connected"} {...toggle("WifiPopover")} />}
-        footer={<RailButton icon={<Gear {...tile} />} label="Settings" selected={surface === "DeviceSettings"} {...visit("DeviceSettings")} />}
-        ask={privateSurface ? undefined : <AskGraceButton selected={assistant.presentation !== "Closed"} glow={assistant.presentation === "Closed" ? "rest" : "off"} onClick={() => { if (can({ type: "openGrace" })) void send({ type: "openGrace" }); }} />}>
-        <RailButton icon={<House {...tile} />} label="Home" selected={surface === "Home"} {...visit("Home")} />
+        footer={<RailButton icon={<Gear {...tile} />} label="Settings" selected={!popoverOpen && !covered && surface === "DeviceSettings"} {...visit("DeviceSettings")} />}
+        ask={privateSurface ? undefined : <AskGraceButton selected={!websiteKeyboard && assistant.presentation !== "Closed"} glow={assistant.presentation === "Closed" ? "rest" : "off"} onClick={() => { if (can({ type: "openGrace" })) void send({ type: "openGrace" }); }} />}>
+        <RailButton icon={<House {...tile} />} label="Home" selected={!popoverOpen && !covered && surface === "Home"} {...visit("Home")} />
         <RailButton icon={volume.muted ? <VolumeX {...tile} /> : <Volume2 {...tile} />} label="Volume" {...toggle("VolumePopover")} />
       </Rail>
       {surface === "Home" && (
@@ -175,7 +239,7 @@ function Screen() {
           {/* spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller": nothing here is invented. */}
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
-            <HomeScreen className="inset-0" banner={<NoticeBanner reminders={reminders(calendars)} />} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
+            <HomeScreen className="inset-0" banner={<NoticeBanner reminders={reminders(calendars)} />} layout={docked ? (keyboard > 0 ? "greeting" : "compact") : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"} line="Here’s your day"
               calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...ours && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : calendarActions) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
               const when = startOf(event);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
@@ -188,7 +252,8 @@ function Screen() {
               name: message.from || "Unknown sender", subject: message.subject || "No subject", unread: message.isUnread })),
                 ...online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." } }, ...visit("Email"),
               }}
-              internet={visit("Browser")} files={{ photos: files?.photos ?? [], document: files?.document, ...visit("Files") }} passwords={visit("Passwords")}
+              internet={{ ...visit("Browser"), "aria-label": "Internet", status: internetStatus, openLabel: online && publicUrl !== "" ? "Continue" : "Open", offline: !online }}
+              files={{ photos: files?.photos ?? [], document: files?.document, ...visit("Files") }} passwords={visit("Passwords")}
               page={device.homePage}
               onPageChange={(page) => { const event = { type: "chooseHomePage", page } as const; const allowed = can(event); if (allowed) void send(event); return allowed; }} />
             )}</WithCalendars>
@@ -219,26 +284,48 @@ function Screen() {
           </AppWindow>
         </OverPage>
       )}
-      {device.railPopover !== "NoPopover" && (
+      {popoverOpen && (
         // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath": a tap anywhere right of the rail closes it.
         <OverPage className={cn(besideRail, "inset-y-0 right-0 z-[5]")} onPointerDown={(event) => { if (event.target === event.currentTarget && can({ type: "dismissPopover" })) void send({ type: "dismissPopover" }); }}>
           {device.railPopover === "VolumePopover" ? (
-            <RailPopover className="left-3" top={Math.max(6, anchor - 58)} icon={volume.muted ? <VolumeX size={30} strokeWidth={2} /> : <Volume2 size={30} strokeWidth={2} />} title="Volume"
+            <RailPopover className="left-3" top={popoverTop} arrowTop={popoverArrow} icon={volume.muted ? <VolumeX size={30} strokeWidth={2} /> : <Volume2 size={30} strokeWidth={2} />} title="Volume"
               value={volume.muted ? "Muted" : `${volume.volume}%`} onClose={() => void send({ type: "dismissPopover" })}
-              actions={<Button variant="capsule" size="pill" {...choose(muteChoice(volume, !volume.muted))}>{volume.muted ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}{volume.muted ? "Unmute" : "Mute"}</Button>}>
-              <Slider className="mt-5 gap-4" label="Volume" decreaseLabel="Quieter" increaseLabel="Louder" step={10} value={volume.muted ? 0 : volume.volume}
+              note={volume.muted ? "Grace will show her words on screen while you’re muted." : "Grace’s voice, videos and sounds all use this volume."}
+              actions={<Button variant={volume.muted ? "prominent" : "capsule"} size="pill" {...choose(muteChoice(volume, !volume.muted))}>{volume.muted ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}{volume.muted ? "Unmute" : "Mute"}</Button>}>
+              <Slider className="mt-5 gap-4" label="Volume" decreaseLabel="Quieter" increaseLabel="Louder" step={10} value={volume.volume}
                 onStep={(amount) => void send({ type: "adjustPreferenceLevel", levelStep: { tag: "VolumeBy", amount } })}
                 onValueChange={(level) => { const { disabled, onClick } = choose(volumeChoice(volume, level)); if (!disabled) onClick(); }} />
             </RailPopover>
           ) : (
-            <RailPopover className="left-3" top={Math.max(6, anchor - 58)} icon={online ? <Wifi size={30} strokeWidth={2} /> : <WifiSlash size={30} />} title="Wi-Fi"
+            <RailPopover className="left-3" top={popoverTop} arrowTop={popoverArrow} icon={online ? <Wifi size={30} strokeWidth={2} /> : <WifiSlash size={30} />} title="Wi-Fi"
               value={wifiWords[device.connectivity]} onClose={() => void send({ type: "dismissPopover" })}
-              actions={<Button variant="capsule" size="pill" {...fire({ type: "chooseSettingsPage", page: "NetworkSettings" })}>Wi-Fi settings</Button>} />
+              note={online ? undefined : "Email and the internet need it. Grace can help you reconnect."}
+              actions={online ? (
+                <Button variant="capsule" size="pill" {...fire({ type: "chooseSettingsPage", page: "NetworkSettings" })}>Choose another network</Button>
+              ) : (
+                <Button variant="prominent" size="pill" {...fire({ type: "chooseSettingsPage", page: "NetworkSettings" })}><Wifi aria-hidden size={22} strokeWidth={2.2} />Fix Wi-Fi</Button>
+              )}>
+              {online && <ListRow className="mt-[18px] bg-glass/70" leading={<Check size={30} strokeWidth={2.6} aria-hidden className="shrink-0 text-ok" />} title={wifiSsid ?? "Internet connection"} subtitle="Strong signal" />}
+            </RailPopover>
           )}
         </OverPage>
       )}
-      {!privateSurface && <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => <Notices above={bottom - 6} reminders={reminders(calendars)} />}</WithCalendars>}
-      {!privateSurface && <Grace onHeightChange={setGraceHeight} />}
+      {!privateSurface && <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => <Notices above={toastAbove} reminders={reminders(calendars)} />}</WithCalendars>}
+      {showCaption && (
+        <OverPage className={cn(besideRail, "z-[4]")} style={{ bottom: 6 + keyboard }}>
+          <CaptionStrip
+            who={assistant.conversation.turn === "Listening" || lastMessage?.author === "HumanMessage" ? "you" : "grace"}
+            text={lastMessage?.text ?? ""}
+            activity={captionActivity(assistant.conversation.turn, assistant.activity)}
+            answers={captionAnswers.length > 0 ? captionAnswers : undefined}
+            onAnswer={(text) => void say({ tag: "ChooseAnswer", token: assistant.conversation.generation, text })}
+            onShowChat={() => { if (can(showChatEvent)) void send(showChatEvent); }}
+            showGuide={can(showGuideEvent)}
+            onShowGuide={() => { if (can(showGuideEvent)) void send(showGuideEvent); }}
+          />
+        </OverPage>
+      )}
+      {!privateSurface && !websiteKeyboard && <Grace onHeightChange={setGraceHeight} />}
       </div>
       {sleeping && <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
         <SleepScreen role="button" tabIndex={0} aria-label="Wake Grace"
@@ -249,6 +336,7 @@ function Screen() {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); wake(); }
         }} />
       )}</WithCalendars>}
+      {!androidHost && <ScreenDim brightness={effectiveBrightness(volume, hour)} />}
     </div></TextScale>
   );
 }
