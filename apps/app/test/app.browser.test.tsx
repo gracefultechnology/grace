@@ -3429,6 +3429,91 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   }
 }, 240_000);
 
+it('Check a public search the person performs (spec/app/workspace.md, "The person searches the reviewed site and Grace checks that exact query")', async () => {
+  const cloud = inject("cloud");
+  const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
+  const query = "green tea";
+  const request = `Search this website for ${query}`;
+  const rewritten = 'Search for "green tea bags"';
+  const answer = JSON.stringify({ text: "Review the search.", isQuestion: false, answers: [],
+    actions: [{ kind: "proposeReadPlan", steps: [{ kind: "SearchPublicSite", query }] }] });
+  await Effect.runPromise(Effect.provide(script(cloud, secret, [{ said: rewritten, answer }, { said: request, answer }]), client));
+  const home = "https://example.org/";
+  const result = home + "results?q=green+tea";
+  const frame = await pinnedPage("statements", home, (html) => html.replace(/<main>[\s\S]*<\/main>/u, () =>
+    `<script>(${String(pageCommand)})(null, "");</script>` +
+    '<header><form method="get"><label>&#xe615; Search<input type="text" name="q" role="combobox"></label></form></header><main><h1>Public catalogue</h1></main><form><label>Newsletter email <input type="email"></label><button type="submit">Subscribe</button></form>'));
+  const heading = frame.document.querySelector("h1")!;
+  const searchField = frame.document.querySelector('input[name="q"]')!;
+  let url = home;
+  let documentId = "initial";
+  const native = fakePlugin(({ command }) => ({ documentId, frameScope: "main",
+    result: { ...frame.snapshot(command), url } }), false, ({ selector }) => ({ ...frame.read(selector), url }));
+  localStorage.clear();
+  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const review = page.getByRole("region", { name: "Review read plan" });
+  const field = page.getByRole("textbox", { name: "Message to Grace" });
+  const plan = page.getByRole("region", { name: "Task plan" });
+  const send = async (words: string) => {
+    await routeTo(field);
+    await act(() => field.fill(words));
+    await act(() => userEvent.keyboard("{Enter}"));
+  };
+  const arrive = async (address: string, title: string) => {
+    await native.started("tab-1", address);
+    url = address;
+    documentId = address;
+    heading.textContent = title;
+    searchField.setAttribute("value", query);
+    await native.report("tab-1", url, 100, { pageError: null, securityBlocked: false });
+    await tap(button("Resume Grace"));
+  };
+  const unverified = page.getByRole("status", { name: "Page check result" });
+  const check = button("Check search results");
+  try {
+    await tap(button("Internet"));
+    await act(() => userEvent.type(page.getByRole("textbox", { name: "Address" }), "example.org{Enter}"));
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.id; }).toBe("tab-1");
+    await native.started("tab-1", home);
+    await native.report("tab-1", home, 100, { pageError: null, securityBlocked: false });
+    await tap(button("Ask Grace"));
+    await tap(button("Allow Grace to read this browser"));
+    await send(rewritten);
+    await routeTo(page.getByText("I could not prepare that read plan."));
+    expect(review.query()).toBeNull();
+    await send(request);
+    await routeTo(review.getByText("Use https://example.org’s search for “green tea”."));
+    await tap(button("Collapse"));
+    await tap(button("Start read plan"));
+    await tap(check);
+    await routeTo(unverified);
+    expect(button("Show me the link").query()).toBeNull();
+    const wrong = "Search results for: 'black tea'";
+    const right = "Search results for: 'green tea'";
+    for (const [address, title] of [["https://other.example/results?q=green+tea", right], [home + "results?q=black+tea", wrong]]) {
+      await arrive(address, title);
+      await tap(check);
+      await routeTo(unverified);
+      expect(plan.getByText("Read checks complete").query()).toBeNull();
+    }
+    const privateField = frame.document.createElement("input");
+    privateField.type = "password";
+    frame.document.querySelector("main")!.append(privateField);
+    await arrive(result, right);
+    await tap(check);
+    await routeTo(page.getByText(/^Choose Turn off browser reading\./u));
+    expect(plan.getByText("Read checks complete").query()).toBeNull();
+    privateField.remove();
+    await tap(check);
+    await routeTo(plan.getByText("Read checks complete"));
+    expect(plan.getByText("Search results for “green tea”.").query()).not.toBeNull();
+  } finally {
+    await dispose();
+    localStorage.clear();
+  }
+}, 120_000);
+
 it('Approve the website’s exact label for one step (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async () => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));

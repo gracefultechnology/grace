@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
+import { hasUserAssistedSearch, matchesPublicSearch, publicSearchQuery } from "./browser-receipt.ts";
 import { startWebArenaWorker } from "./webarena.ts";
 
 const fakeEvaluator = `
@@ -148,3 +149,46 @@ it('Wait for the evaluator and reap failed grading (spec/app/workspace.md, "Stor
     await rm(root, { recursive: true, force: true });
   }
 }, 90_000);
+
+
+it('Verify the exact user-assisted search and its newly checked result (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', () => {
+  const intent = 'Search for "batteries for iphone 13"';
+  const query = "batteries for iphone 13";
+  const start = { url: "https://shops.localhost/", documentId: "homepage" };
+  const search = { action: new URL("/find", start.url).href, field: "term", query };
+  const landed = new URL(search.action);
+  landed.searchParams.set(search.field, query);
+  const destination = { url: landed.href, documentId: "search-results" };
+  const outcome = {
+    operator: "trusted Chromium keyboard input in the website search field", chatProvider: "upstream",
+    start, destination, hops: [{ ...destination, checked: true }], publicSearch: search,
+    resumed: true, reviewedSteps: [{ kind: "SearchPublicSite", subject: query }], graceTerminal: "complete",
+  };
+  const input = {
+    intent, startUrl: start.url, decisionProvider: "none", decisionRequests: 0, decisionResults: [], chatStatus: 200, syntheticStorageState: true, outcome,
+  };
+  const completed = { start, destination, search };
+  const result = (changes: Partial<typeof outcome>) => hasUserAssistedSearch({ ...input, outcome: { ...outcome, ...changes } }, completed, destination);
+  expect({
+    query: publicSearchQuery(intent),
+    ambiguous: publicSearchQuery('Search for "usb" or "wifi"'),
+    exact: matchesPublicSearch(landed, search),
+    shortened: matchesPublicSearch(new URL("/find?term=iphone+13", start.url), search),
+    repeated: matchesPublicSearch(new URL(landed.href + "&term=other"), search),
+    differentOrigin: matchesPublicSearch(new URL(landed.pathname + landed.search, "https://other.localhost"), search),
+    checked: result({}),
+    unsubmitted: hasUserAssistedSearch(input, undefined, destination),
+    replacedResult: hasUserAssistedSearch(input, completed, { ...destination, documentId: "second-results" }),
+    forgedForm: result({ publicSearch: { ...search, action: search.action + "?invented=1" } }),
+    skippedResume: result({ resumed: false }),
+    noSyntheticLogin: hasUserAssistedSearch({ ...input, syntheticStorageState: false }, completed, destination),
+    reusedDocument: result({ destination: { ...destination, documentId: start.documentId } }),
+    changedReview: result({ reviewedSteps: [{ kind: "SearchPublicSite", subject: "iphone 13" }] }),
+    unchecked: result({ hops: [{ ...destination, checked: false }] }),
+    inventedRanking: hasUserAssistedSearch({ ...input, decisionProvider: "hosted", decisionRequests: 1 }, completed, destination),
+  }).toEqual({
+    query, ambiguous: undefined, exact: true, shortened: false, repeated: false, differentOrigin: false,
+    checked: true, unsubmitted: false, replacedResult: false, forgedForm: false,
+    skippedResume: false, noSyntheticLogin: false, reusedDocument: false, changedReview: false, unchecked: false, inventedRanking: false,
+  });
+});

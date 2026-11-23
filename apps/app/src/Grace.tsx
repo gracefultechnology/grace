@@ -39,6 +39,7 @@ function recordCriteria(step: Extract<GuidedStep, { tag: "ReadLatestRecord" }>):
 function stepInstruction(step: GuidedStep): string {
   if (step.tag === "ReachNamedPage") return `Find and check “${step.subject}”.`;
   if (step.tag === "ReadLatestRecord") return recordCriteria(step);
+  if (step.tag === "SearchPublicSite") return `Use ${step.origin}’s search for “${step.query}”.`;
   return guidedDetails(step).outcome;
 }
 
@@ -47,7 +48,8 @@ const checks: Record<GuidedStep["tag"], { label: string; item: string; missing: 
   ReadBrowser: { label: "Check page", item: "page", missing: "I couldn’t read the page in this tab. Wait for it to load, then check again." },
   ReadChangedBrowser: { label: "Check page", item: "page", missing: "Open the page you want me to read, then check again." },
   ReachNamedPage: { label: "Check page", item: "page", missing: "" },
-  ReadLatestRecord: { label: "Check page", item: "page", missing: "I couldn’t verify the latest matching record here. Open the record I pointed to, then check again." },
+  ReadLatestRecord: { label: "Check page", item: "page", missing: "I couldn’t verify the latest matching record on this page." },
+  SearchPublicSite: { label: "Check search results", item: "page", missing: "I couldn’t verify these search results. Use the reviewed website’s search and try again." },
   ReadStatement: { label: "Read statement", item: "page", missing: "I couldn’t find one amount due and one due date on this page." },
   ReadCalendar: { label: "Check appointment", item: "appointment", missing: "I couldn’t read an open appointment. Open the one you want me to check." },
   SaveMailAppointment: { label: "Check saved appointment", item: "appointment", missing: "I couldn’t verify the saved appointment. Open it on your calendar and try again." },
@@ -250,7 +252,8 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               <blockquote className="text-body">{review.request.goal}</blockquote>
               <p className="text-body">I can check the items you open. These checks leave any requested changes for separate review.</p>
               <ol aria-label="Read plan" className="list-decimal pl-6">
-                {keyedSteps(review.request.steps).map(({ step, key }) => <li key={key}>{step.tag === "ReadLatestRecord" ? recordCriteria(step) : guidedDetails(step).subject}</li>)}
+                {keyedSteps(review.request.steps).map(({ step, key }) =>
+                  <li key={key}>{step.tag === "ReadLatestRecord" || step.tag === "SearchPublicSite" ? stepInstruction(step) : guidedDetails(step).subject}</li>)}
               </ol>
               {startFailure === review.revision && <p role="status">Grace couldn’t start this plan. Check your account and device storage, then try again.</p>}
               <AnswerChips><AnswerChip onClick={() => {
@@ -285,7 +288,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
               </AnswerChips>}
             </section>
           )}
-          {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
+          {feedback?.result && <GraceBubble role="status" aria-label={feedback.result.kind === "Menu" ? "Open submenu guidance" : feedback.result.kind === "Link" ? "Link guide result" : feedback.result.kind === "RecordUnavailable" ? "Record check unavailable" : "Link unavailable"}>{feedback.result.words}</GraceBubble>}
           {failed && <GraceBubble role="status" aria-label={details?.surface === "Browser" ? "Page check result" : "Task check result"}>{failed}</GraceBubble>}
           {localCommands && guide.mic === "GuideMicUnavailable" && <PageText role="status">Cloud speech is unavailable. You can type a Passwords command.</PageText>}
           {localCommands && guide.mic === "GuideMicNoMatch" && <PageText role="status">I couldn’t recognize that Passwords command. Try typing it.</PageText>}
