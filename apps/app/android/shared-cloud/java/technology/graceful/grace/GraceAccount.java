@@ -99,7 +99,10 @@ public final class GraceAccount extends ElizaSignInPlugin {
    if (notice instanceof Notice.SignedOutNotice || notice instanceof Notice.ExpiredNotice) {
     ACCOUNT.execute(this::retireUnconfirmedOwner);
    } else if (notice instanceof Notice.Announce) {
-    ACCOUNT.execute(() -> GraceAgentService.deviceCredentialChanged(getContext()));
+    ACCOUNT.execute(() -> {
+     GraceAgentService.deviceCredentialChanged(getContext());
+     publishSession();
+    });
    }
   });
  }

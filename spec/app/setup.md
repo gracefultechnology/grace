@@ -478,15 +478,15 @@ pure def sometimesWaitsForGraceAtTheHandOver(s: Setup): bool = s.phase == Away a
 > As a person using Grace, I can sign in to my own Grace account, see my
 > subscription, manage it with the payment provider, or sign out from Settings.
 
-### A verified tablet renews its mail and calendar lease in native custody
+### Subscription actions belong to the Grace account that is signed in
 
 The acknowledged tablet can keep its delegated mail and calendar access
 without asking the person to sign in for every key rotation. The operating
 system can maintain the lease and renew the key on a connected tablet
 while Grace is closed. The selected Grace Cloud deployment issues the lease
-and acknowledges the successor key before the tablet uses it. An existing install without a
-lease can continue its hosted Email and Calendar visits. It obtains a
-lease at its next verified enrollment.
+and acknowledges the successor key before the tablet uses it. A tablet
+obtains its lease at verified enrollment. An open Grace view checks the
+current lease again when Android reports that its credential changed.
 
 The native account custodian keeps the lease secrets. The renderer, the
 assistant and browser tabs receive no lease credentials. A key renewed
@@ -494,8 +494,6 @@ through the same lease retains its binding to the same vault owner even
 after an interruption or restart. A new enrollment has its own credential
 binding and follows the existing vault ownership rules. Sign-out removes
 the lease from use and keeps any outstanding revocation in native custody.
-
-### Subscription actions belong to the Grace account that is signed in
 
 Settings opens Account even without a network connection. The device uses
 the Grace service's authenticated account and subscription response. An
@@ -1004,7 +1002,7 @@ pure def lawNewBackupCannotResumeOnOrdinaryAccountReturn(savedApproval: PendingB
 
 ### Only the device-only profile or the current verified owner can open the vault
 
-An anonymous device profile can open an unbound vault. A verified account opens a bound vault only for the same account, with the same current credential generation in the same deployment environment. A tablet with ambiguous active credentials closes the vault until it has one acknowledged account on its selected deployment. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
+An anonymous device profile can open an unbound vault. A verified account opens a bound vault only for the same account, with the same verified enrollment binding in the same deployment environment. A tablet with ambiguous active credentials closes the vault until it has one acknowledged account on its selected deployment. Pending sign-in, an expired credential, unreadable storage, and the separate legacy vault identity all close the vault. Switching accounts closes active edits, reveals and fill requests.
 
 ```quint
 type PasswordCustody = DevicePasswordCustody | BoundPasswordCustody({ scope: str, generationId: str })

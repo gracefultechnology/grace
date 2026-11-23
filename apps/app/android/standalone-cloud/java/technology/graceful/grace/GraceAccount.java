@@ -36,11 +36,21 @@ public final class GraceAccount extends Plugin {
  private CloudPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
  private GraceBrowserGuide guide;
+ private Runnable stopLeaseUpdates;
 
  @Override public void load() {
   guide = new GraceBrowserGuide(getContext());
   passwordBackup = new CloudPasswordBackup(account(getContext()), BuildConfig.APPLICATION_ID, "production");
   recovery = new GracePasswordRecovery(getActivity(), this);
+  stopLeaseUpdates = GraceDeviceLeaseJob.listen(getContext(), () -> ACCOUNT.execute(() -> {
+   try { didSignIn(); }
+   catch (Exception unavailable) { }
+  }));
+ }
+
+ @Override protected void handleOnDestroy() {
+  if (stopLeaseUpdates != null) stopLeaseUpdates.run();
+  super.handleOnDestroy();
  }
 
  @PluginMethod public void passwordRecoveryStatus(PluginCall call) {
@@ -116,7 +126,10 @@ public final class GraceAccount extends Plugin {
   var before = account.session();
   try { account.maintainLease(); }
   finally {
-   if (!java.util.Objects.equals(before, account.session())) GraceAgentService.deviceCredentialChanged(context);
+   if (!java.util.Objects.equals(before, account.session())) {
+    GraceAgentService.deviceCredentialChanged(context);
+    GraceDeviceLeaseJob.leaseChanged(context);
+   }
   }
  }
 
