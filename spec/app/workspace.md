@@ -1399,9 +1399,9 @@ pure def hasOneStatementAnswer(amounts: Set[str], dates: Set[str]): bool =
 type StatementSection = { key: str, amount: str, due: str }
 pure val sectionsValues = Set(
   List(),
-  List({ key: "", amount: "x", due: "x" }),
-  List({ key: "first", amount: "x", due: "x" }),
-  List({ key: "first", amount: "x", due: "x" }, { key: "second", amount: "x", due: "x" }))
+  List({ key: "", amount: "a", due: "b" }),
+  List({ key: "first", amount: "a", due: "b" }),
+  List({ key: "first", amount: "a", due: "b" }, { key: "second", amount: "a", due: "b" }))
 pure def provesStatementSection(complete: bool, sections: List[StatementSection], amount: str, due: str): bool =
   if (sections.length() != 1) false
   else complete and amount != "" and due != "" and sections.head().key != "" and
