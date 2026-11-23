@@ -93,12 +93,14 @@ function normalizedHeading(value: string | null | undefined): string {
   return value && value.length <= 200 ? value.normalize("NFC").trim().replace(/\s+/gu, " ") : ""
 }
 
+const collectionSubject = (subject: string) => comparableName(subject).replace(/\s+(?:index|topics|list)$/u, "")
+const helpSubject = /^(?:help|help center|frequently asked questions|faqs?|support)$/u
+
 function collectionHeading(subject: string, heading: string): boolean {
-  const requested = comparableName(subject).replace(/\s+(?:index|topics|list)$/u, "")
+  const requested = collectionSubject(subject)
   const actual = comparableName(heading).replace(/ & /gu, " and ")
   if (actual === requested) return true
-  const help = /^(?:help|help center|frequently asked questions|faqs?|support)$/u
-  return help.test(requested) && /^(?:[\p{L}\p{N}-]+ ){0,2}(?:help|help center|help and support|support(?: center)?|faqs?|frequently asked questions)$/u.test(actual)
+  return helpSubject.test(requested) && /^(?:[\p{L}\p{N}-]+ ){0,2}(?:help|help center|help and support|support(?: center)?|faqs?|frequently asked questions)$/u.test(actual)
 }
 
 effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, url: URL, snapshot: LinkObservation, subject: string): number!! {
@@ -111,7 +113,10 @@ effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, u
   const wrappedHeading = `${main} > ${region}:first-child > ${top}:first-child${excluded}`
   const headingSelector = `:is(${directHeading}, ${wrappedHeading})`
   const heading = native.readRecordText(id, headingSelector) catch () => undefined
-  if (!heading || heading.url !== url.href || !collectionHeading(subject, normalizedHeading(heading.text))) return 0
+  if (!heading || heading.url !== url.href) return 0
+  const headingText = normalizedHeading(heading.text)
+  const customerHelp = helpSubject.test(collectionSubject(subject)) && comparableName(headingText) === "customer information"
+  if (!collectionHeading(subject, headingText) && !customerHelp) return 0
   const competing = native.readRecordText(id, `:is(${directHeading} ~ ${top}, ${wrappedHeading} ~ ${top}, ${main}:has(> ${top}) > ${region}:first-child > ${top})${excluded}`) catch () => undefined
   if (competing?.url === url.href) return 0
   const candidates: { address: string; selector: string; label: string }[] = []
@@ -122,7 +127,7 @@ effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, u
     if (!destination || destination.origin !== url.origin || destination.username || destination.password ||
         destination.search || destination.hash || destination.pathname === url.pathname) continue
     candidates.push({ address: destination.href, selector: item.targetSelector, label: comparableName(item.label) })
-    if (candidates.length >= 32) break
+    if (candidates.length >= 24) break
   }
   if (new Set(candidates.map(({ address }) => address)).size < 2) return 0
   const list = ':is(ul,ol,[role="list"])'
@@ -137,6 +142,7 @@ effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, u
   const introTopic = `:is(${withIntro} + ${region} > ${afterSearch}, ${spine} + ${region} > ${afterIntro}):has(+ ${list})${excluded}`
   const indexStart = `:is(${spine}, ${withIntro})`
   const direct = `:is(${spine} + ${list}, ${indexStart} + ${region} > ${list}:only-child)`
+  const customerIndex = `:is(${anchor} + ${search}, ${anchor} + p + ${search}) + ${region} > ${list}:only-child`
   const observedTopic = native.readRecordText(id, plainTopic) catch () => undefined
   const observedIntroTopic = native.readRecordText(id, introTopic) catch () => undefined
   const topicText = observedTopic?.url === url.href ? normalizedHeading(observedTopic.text) : ""
@@ -146,8 +152,9 @@ effect function visibleCollectionEntries(native: NativePage.Shape, id: PageId, u
   if (introText && (!/^(?:all|browse)\s+/iu.test(introText) ||
       !collectionHeading(subject, introText.replace(/^(?:all|browse)\s+/iu, "")))) return 0
   const selected = topicText ? plainTopic : introText ? introTopic : undefined
-  let collection = selected === undefined ? `${direct}${excluded}` : `${selected} + ${list}${excluded}`
-  if (selected === undefined) {
+  let collection = customerHelp ? `${customerIndex}${excluded}`
+    : selected === undefined ? `${direct}${excluded}` : `${selected} + ${list}${excluded}`
+  if (selected === undefined && !customerHelp) {
     const group = `section:not([role],[aria-label],[aria-labelledby]):has(> ${topic}:first-child + ${list}:last-child)`
     const groups = `${indexStart} + ${region}:has(> ${group}:first-child + ${group})`
     const firstTopic = native.readRecordText(id, `${groups} > ${group}:first-child > ${topic}${excluded}`) catch () => undefined

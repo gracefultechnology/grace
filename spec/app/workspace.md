@@ -1416,7 +1416,9 @@ visible main-content entries with distinct destinations. The list is attached
 to the requested heading or placed in adjacent, distinctly titled topic
 sections below that heading. A breadcrumb, site navigation, links beside an
 article and ambiguous content leave the step open. The person can follow
-another link and check again.
+another link and check again. A page titled Customer information can answer
+a help-topic request when its main heading leads to a public search and then
+to a standalone topic list.
 
 ```quint
 pure def statementAmounts(due: Set[str], balances: Set[str], remaining: Set[str]): Set[str] =

@@ -3643,10 +3643,10 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   }
 }, 120_000);
 
-it.each(["simple index", "sectioned index", "wrapped directory", "grouped help"] as const)('Check a public collection ($0) (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async (layout) => {
+it.each(["simple index", "sectioned index", "wrapped directory", "grouped help", "customer information"] as const)('Check a public collection ($0) (spec/app/workspace.md, "A read plan offered in chat waits for the person to start it")', async (layout) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-  const target = layout === "sectioned index" || layout === "grouped help" ? "help topics" : "Club events";
+  const target = layout === "simple index" || layout === "wrapped directory" ? "Club events" : "help topics";
   const request = 'Find the public index of "' + target + '".';
   const articleName = target;
   const articleRequest = 'Open the page named "' + articleName + '".';
@@ -3671,6 +3671,7 @@ it.each(["simple index", "sectioned index", "wrapped directory", "grouped help"]
     "wrapped directory": '<div>' + heading + '<p>See upcoming outings and gatherings.</p><section><h2>Browse Club events</h2>' + entries + '</section></div>',
     "grouped help": '<h1>Help &amp; Support</h1><p>Browse information for customers.</p>' + publicSearch +
       '<div><section><h2>Payments</h2>' + entries + '</section><section><h2>Billing</h2><ul><li><a href="/events/monthly">Monthly bill</a></li></ul></section></div>',
+    "customer information": '<h1>Customer information</h1><p>Find practical help with payments or contacting us.</p>' + publicSearch + '<section>' + entries + '</section>',
   }[layout];
   const opening = await fixture(home, indexContent);
   const collection = await fixture(index, collectionContent);
@@ -3751,6 +3752,17 @@ it.each(["simple index", "sectioned index", "wrapped directory", "grouped help"]
     await routeTo(page.getByText(/^Choose Turn off browser reading\./u));
     expectOpen();
     privateField.remove();
+
+    if (layout === "customer information") {
+      const search = collection.document.querySelector("form[role=search]")!;
+      const parent = search.parentNode!;
+      const next = search.nextSibling;
+      search.remove();
+      await tap(check);
+      await routeTo(status);
+      expectOpen();
+      parent.insertBefore(search, next);
+    }
 
     if (layout === "wrapped directory") {
       const main = collection.document.querySelector("main")!;
