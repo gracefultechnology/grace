@@ -2162,10 +2162,14 @@ lemma OnlyBrowserTab(b: app__browser_Browser, tab: app__browser_Tab)
   requires b.tabs == [tab] && b.selected == tab.id
   ensures app__browser_activeTab(b) == tab
 {
-  var selected := (candidate: app__browser_Tab) => candidate.id == b.selected;
-  ProofLib.FilterNil(selected, []);
-  ProofLib.FilterAppend(selected, [], tab);
+  var id := b.selected;
+  var selected := (candidate: app__browser_Tab) => candidate.id == id;
+  assert selected(tab);
+  assert b.tabs[0] == tab && b.tabs[1..] == [];
+  reveal Std.Collections.Seq.Filter();
+  assert Std.Collections.Seq.Filter(selected, b.tabs[1..]) == [];
   assert Std.Collections.Seq.Filter(selected, b.tabs) == [tab];
+  assert app__browser_tabById(b, id) == tab;
 }
 
 lemma lawPublicCollectionExampleIsAdmitted_ensures(by_: WorkspaceActor)
