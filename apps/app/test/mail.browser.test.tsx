@@ -820,8 +820,10 @@ it('Settle the original send with Email switched off (spec/app/mailboxes.md, "A 
   await act(() => userEvent.fill(words(), "Use the west entrance tomorrow."));
   const received = Latch.makeUnsafe();
   const finish = Latch.makeUnsafe();
-  const fetchWas = window.fetch.bind(window);
-  const deferred = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+  const deferred = vi.mocked(window.fetch);
+  const fetchWas = deferred.getMockImplementation();
+  if (!fetchWas) throw new Error("The mail fixture has no transport");
+  deferred.mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, location.href);
     const result = await fetchWas(input, init);
     if (url.origin === new URL(cloud).origin && /\/inbox-v1\/operations\/[^/]+\/dispatch$/u.test(url.pathname) && result.ok) {
@@ -853,7 +855,7 @@ it('Settle the original send with Email switched off (spec/app/mailboxes.md, "A 
     await expect.element(notification).not.toBeInTheDocument();
   } finally {
     finish.openUnsafe();
-    deferred.mockRestore();
+    deferred.mockImplementation(fetchWas);
   }
 }, 120_000);
 
