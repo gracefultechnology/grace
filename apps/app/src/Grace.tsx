@@ -153,7 +153,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     : "The save was interrupted. Check your calendar before asking to save this appointment again."
     : reopenMail ? "Reopen the original email and check it before reviewing the appointment."
     : needsRecoveredPublicTab(plan) && (currentStep?.tag === "SearchPublicSite" || currentStep?.tag === "SortPublicListing")
-      ? `Open ${currentStep.origin} in Internet, allow Grace to read the site, then choose Resume Grace.` : undefined;
+      ? `Open a public page on ${currentStep.origin} in Internet. Allow Grace to read it, then choose Resume Grace.` : undefined;
   const canCheck = ownsPlan && label && (checkSurface !== "Browser" || workspace?.device.observationAllowed) &&
     checkSurface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&

@@ -3580,7 +3580,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   }
 }, 240_000);
 
-async function startPublicReadPlan(native: ReturnType<typeof fakePlugin>, tap: Awaited<ReturnType<typeof cloudReadPlan>>["tap"], loadHome: () => Promise<void>, tab = 1) {
+async function startPublicReadPlan(native: ReturnType<typeof fakePlugin>, tap: Awaited<ReturnType<typeof cloudReadPlan>>["tap"], loadHome: () => Promise<void>, tab: 1 | 2 = 1) {
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   await tap(button("Internet"));
   if (tab === 2) await tap(button("Open a new tab"));
@@ -3726,15 +3726,17 @@ it('Check the price direction in the reviewed public category (spec/app/workspac
     return { ...read, url: address };
   });
   localStorage.clear();
-  const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
+  let view = await cloudReadPlan(native, cloud, secret);
+  const { routeTo, tap } = view;
   const button = (name: string) => page.getByRole("button", { name, exact: true });
   const complete = page.getByText("Read checks complete", { exact: true });
   const check = button("Check price order");
+  let activeId = "tab-1";
   const load = async (url: string) => {
-    await native.started("tab-1", url);
+    await native.started(activeId, url);
     address = url;
     documentId = url;
-    await native.report("tab-1", url, 100, { pageError: null, securityBlocked: false });
+    await native.report(activeId, url, 100, { pageError: null, securityBlocked: false });
   };
   const visit = async (url: string) => {
     await load(url);
@@ -3770,11 +3772,23 @@ it('Check the price direction in the reviewed public category (spec/app/workspac
     replaceDuringRead = true;
     await pending();
     expect(replaceDuringRead).toBe(false);
+    await view.dispose();
+    view = await cloudReadPlan(native, cloud, secret);
+    activeId = "tab-2";
+    direction.title = "Set Ascending Direction";
+    await startPublicReadPlan(native, tap, () => load(home), 2);
+    await routeTo(page.getByRole("region", { name: "Task plan" }).getByText("Paused"));
+    await tap(button("Resume Grace"));
+    await pending();
+    direction.title = "Set Descending Direction";
+    documentId += "-different";
+    await pending();
+    await visit(home + "coats?display=grid");
     await tap(check);
     await routeTo(complete);
     expect(page.getByText("Rain jackets sorted by ascending price.", { exact: true }).query()).not.toBeNull();
   } finally {
-    await dispose();
+    await view.dispose();
     localStorage.clear();
   }
 }, 120_000);
