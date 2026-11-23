@@ -3016,7 +3016,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let ambiguousLogin = false;
   const idleIdentifier = { focused: false, edited: false, hasInput: false };
   let identifierEvidence: Partial<typeof idleIdentifier> = idleIdentifier;
-  const card = { id: "card-statements", frame: await pinnedPage("statements", origin + "/topic.html?history", (html) => html
+  const card = { id: "card-statements", frame: await pinnedPage("statements", origin + "/topic.html?overview", (html) => html
     .replace("<dl>", '<section><h2 id="statement-heading">Current statement</h2><dl>')
     .replace("</dl>", '</dl><p><a href="/archive">Previous statements</a></p></section>')
     .replace("<dt>New Balance</dt><dd>$1,284.56</dd>", '<dt>Current balance</dt><dd>$1,301.12</dd><dt>Last statement balance</dt><dd id="balance">$1,284<sup>56</sup></dd>')
