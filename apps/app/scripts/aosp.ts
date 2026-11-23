@@ -62,7 +62,10 @@ try {
   const reviewed = path.join(scratch, "launcher.json");
   fs.writeFileSync(reviewed, JSON.stringify(descriptor));
   await imageRuntime.runPromise(stageLauncher({descriptor: reviewed, apk: stagedApk, output: pending, aapt: tool("aapt"), apksigner,
-    development, provisioning: {assistant: false}}));
+    development, provisioning: {
+      assistant: {tag: "NoAssistant"}, requires: {autofill: false, allFilesAccess: false},
+      telephonyRoles: false, lockScreen: "LauncherMayUseLockScreen",
+    }}));
   const browserDir = path.join(pending, "browser");
   fs.mkdirSync(browserDir);
   if (!fs.lstatSync(browser).isFile()) throw new Error("The Chromium APK must be a regular file");
