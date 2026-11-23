@@ -502,7 +502,9 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("menuitem", { name: "Choose from Photos" }));
   const photoPicker = page.getByRole("dialog", { name: "Choose from Photos" });
   for (const name of ["PIANO.PNG", "Phone photo.heic"]) {
-    await click(photoPicker.getByRole("button", { name, exact: true }));
+    const photo = photoPicker.getByRole("button", { name, exact: true });
+    await expect.element(photo).toBeVisible();
+    await click(photo);
     await expect.element(photoPicker.getByRole("status")).toBeVisible();
     await expect.element(page.getByRole("button", { name: `Remove ${name}`, exact: true })).not.toBeInTheDocument();
   }
