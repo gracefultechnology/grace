@@ -80,17 +80,20 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
   ))
   const requests = Stream.merge(Stream.merge(chosen, Stream.map(Stream.tick("1 minute"), () => undefined)), reports)
   let confirmed: DeviceChoice | undefined
-  const follow = effect {
+  const follow = effect () => {
     const { preferences: { session } } = try workspace.get()
     if (confirmed === undefined || confirmed.volume !== session.volume || confirmed.muted !== session.muted) return
     const { volume } = try deviceSettings(port)
     const { step, min, max, muted } = volume
-    if (max <= min || step < min || step > max || (muted === session.muted && step === stepFor(session.volume, volume))) return
-    const level = volumeChoice(session, Math.round((step - min) / (max - min) * 100))
-    try workspace.send({ type: "changePreferences", settings: muted ? muteChoice(level, true) : level }, "Person")
-  } catch () => undefined
+    if (max <= min || step < min || step > max || (muted === session.muted && (muted || step === stepFor(session.volume, volume)))) return
+    const settings = muted ? muteChoice(session, true) : volumeChoice(session, Math.round((step - min) / (max - min) * 100))
+    try workspace.send({ type: "changePreferences", settings }, "Person")
+  }
   try fork.scoped Stream.runForEach(requests, effect (requested) => {
-    if (requested !== undefined && "reported" in requested) return try follow
+    if (requested !== undefined && "reported" in requested) {
+      follow() catch () => undefined
+      return
+    }
     const { device, preferences: { session: choice } } = try workspace.get()
     if (device.readiness !== "Ready" || (requested && !sameChoice(requested, choice))) return
     const target = { ...choice, brightness: effectiveBrightness(choice, new Date(try Clock.currentTimeMillis).getHours()) }
