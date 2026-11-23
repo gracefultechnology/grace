@@ -32,10 +32,12 @@ export function PageArea({ className }: { className?: string }) {
 }
 
 /** @model spec/app/surface.md */
-export function OverPage({ className, ...props }: ComponentProps<"div">) {
+export function OverPage({ className, children, ...props }: Omit<ComponentProps<"div">, "children"> & { children?: ReactNode | ((drawn: boolean) => ReactNode) }) {
   const [drawn, setDrawn] = useState(false);
   const ref = useWatch(useMemo(() => Part.Control({ show: setDrawn }), []));
-  return <div ref={ref} inert={!drawn} className={cn("pointer-events-auto", !drawn && "invisible", className)} {...props} />;
+  return <div ref={ref} inert={!drawn} className={cn("pointer-events-auto", !drawn && "invisible", className)} {...props}>
+    {typeof children === "function" ? children(drawn) : children}
+  </div>;
 }
 
 const r = parseFloat(tokens.rounded.window);
