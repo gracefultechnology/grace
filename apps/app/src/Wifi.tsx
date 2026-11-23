@@ -103,7 +103,7 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
         action={action !== "NoAction" && <Button variant="prominent" size="pill" onClick={act}>{actionLabels[action]}</Button>} />
       {said && <Alert variant={n.phase === "JoinFailed" ? "caution" : "info"} className="mt-4">{said}</Alert>}
       {!signIn && n.phase === "SavedNetworkPanel" && <Button variant="prominent" size="pill" className="mt-3.5" onClick={() => run(page.reopenPanel())}>{actionLabels.OpenPanel}</Button>}
-      {!online && !signIn && n.discovery.tag !== "WifiOff" && <Alert variant="info" className="mt-4">{offlineSteps}</Alert>}
+      {!connected && !signIn && n.discovery.tag !== "WifiOff" && <Alert variant="info" className="mt-4">{offlineSteps}</Alert>}
     </>
   );
 }

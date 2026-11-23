@@ -82,12 +82,17 @@ const host = (wifi: WiFiPlugin, wifiSignIn: WifiSignIn) => Layer.effect(WifiPage
     show({ ...listing, signInRequired: shown.signInRequired, wifiValidated: shown.wifiValidated })
   }
 
-  effect function list() {
-    const attempt = try networks.get()
+  effect function readSignIn() {
     const signInStatus = ask(Schema.decodeUnknownEffect(SignIn), () => wifiSignIn.getWifiSignIn()) catch () => undefined
     if (signInStatus !== undefined && (signInStatus.required !== shown.signInRequired || signInStatus.validated !== shown.wifiValidated)) {
       show({ ...shown, signInRequired: signInStatus.required, wifiValidated: signInStatus.validated })
     }
+    return signInStatus
+  }
+
+  effect function list() {
+    const attempt = try networks.get()
+    try readSignIn()
     const permission = ask(Schema.decodeUnknownEffect(Permission), () => wifi.checkPermissions()) catch () => undefined
     if (permission?.location !== "granted") return try report({ tag: "NoLocationAccess" })
     const radio = ask(Schema.decodeUnknownEffect(Radio), () => wifi.getWifiState()) catch () => undefined
@@ -96,9 +101,10 @@ const host = (wifi: WiFiPlugin, wifiSignIn: WifiSignIn) => Layer.effect(WifiPage
     if ("tag" in scan) return try report(scan)
     const foundNetworks = scan.networks
     const prior = requested?.version === attempt.version ? requested.offer : undefined
-    let access = signInStatus?.access
+    const signInStatus = try readSignIn()
+    let access = signInStatus?.access ?? []
     let defaultName: string | null = null
-    if (access === undefined) {
+    if (access.length === 0) {
       const active = ask(Schema.decodeUnknownEffect(Connectivity), () => wifi.getConnectivity()) catch () => undefined
       defaultName = active?.validated && !active.captivePortal ? active.ssid : null
       const current = defaultName ? (ask(Schema.decodeUnknownEffect(Current), () => wifi.getConnectedNetwork()) catch () => undefined)?.network : undefined

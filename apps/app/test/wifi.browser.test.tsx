@@ -21,6 +21,7 @@ function android() {
     location: "prompt" as "prompt" | "granted" | "denied", ssid: null as string | null, joins: [] as ConnectOptions[],
     panels: 0, signIns: 0, delayed: false, saved: false, captiveOnJoin: false, captivePortal: false, otherDefault: false, validated: true,
     visible: true, scan: undefined as WiFiNetwork[] | undefined, currentPoint: undefined as WiFiNetwork | undefined,
+    holdScan: undefined as (() => Promise<void>) | undefined,
   };
   const plugin: WiFiPlugin = {
     checkPermissions: () => Promise.resolve({ location: tablet.location }),
@@ -31,9 +32,13 @@ function android() {
     getConnectedNetwork: () => Promise.resolve({
       network: tablet.ssid === null ? null : tablet.currentPoint ?? (tablet.ssid === guest.ssid ? guest : nearby(tablet.ssid, -50, tablet.ssid === "Riverside Library Guest" ? "open" : "wpa2")),
     }),
-    listAvailableNetworks: () => tablet.location === "granted"
-      ? Promise.resolve({ networks: tablet.visible ? tablet.scan ?? [nearby("NETGEAR-4F2", -54, "wpa2"), nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap"), guest] : [] })
-      : Promise.reject(Object.assign(new Error("location"), { code: "LOCATION_PERMISSION_REQUIRED" })),
+    listAvailableNetworks: async () => {
+      if (tablet.location !== "granted") throw Object.assign(new Error("location"), { code: "LOCATION_PERMISSION_REQUIRED" });
+      const hold = tablet.holdScan;
+      tablet.holdScan = undefined;
+      if (hold) await hold();
+      return { networks: tablet.visible ? tablet.scan ?? [nearby("NETGEAR-4F2", -54, "wpa2"), nearby("NETGEAR-4F2", -50, "wpa2"), nearby("Riverside Library Guest", -60, "open"), nearby("Sunrise Community Center", -70, "eap"), guest] : [] };
+    },
     connectToNetwork: () => Promise.resolve({ success: false }),
     disconnectFromNetwork: () => Promise.resolve({ success: true }),
     getConnectivity: () => Promise.resolve(tablet.otherDefault ? { online: true, validated: true, captivePortal: false, ssid: null } : {
@@ -260,14 +265,28 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     tablet.ssid = "Sunrise Community Center";
     tablet.validated = true;
     await draw(true);
-    await shown();
     await changed();
     await joinedTo("Sunrise Community Center");
     await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
     await expect.element(signIn).not.toBeInTheDocument();
 
+    const scanStarted = Promise.withResolvers<void>();
+    const releaseScan = Promise.withResolvers<void>();
+    onTestFinished(() => releaseScan.resolve());
+    tablet.holdScan = () => {
+      scanStarted.resolve();
+      return releaseScan.promise;
+    };
     tablet.ssid = guest.ssid;
     tablet.otherDefault = true;
+    await changed();
+    await scanStarted.promise;
+    tablet.ssid = "NETGEAR-4F2";
+    await act(() => Promise.resolve(releaseScan.resolve()));
+    await joinedTo("NETGEAR-4F2");
+    await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
+
+    tablet.ssid = guest.ssid;
     await changed();
     await joinedTo(guest.ssid);
     await expect.element(signIn).not.toBeInTheDocument();
