@@ -1,7 +1,7 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"; spec/app/accounts.md, "An address at a listed company goes to that company’s own page"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/accounts.md, "Mail settings can be looked up from her address, and fill the form for her to check"; spec/app/accounts.md, "Remove anyway discards the waiting email only after she confirms how much"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "The settings pages go back one step at a time"; spec/app/accounts.md, "Signing in again renews the same account"; spec/app/accounts.md, "Turning a use off hides it and keeps the account"; spec/app/accounts.md, "Removing asks first and waits for unsent email"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"
 import {
   type AccountColour, Alert, Button, EmailAccountList, EmailAccountPage, EmailAccountRow, type EmailProvider, emailProviders, MailServersForm,
-  type MailServersFormProps, OtherEmailForm, type OtherEmailProblem, ProviderGrid, RemoveAccountDialog, SettingsApp, type SettingsAppProps, SignInSheet, Spinner, Toast,
+  type MailServersFormProps, OtherEmailForm, type OtherEmailProblem, PageText, ProviderGrid, RemoveAccountDialog, SettingsApp, type SettingsAppProps, SignInSheet, Spinner, Toast,
 } from "@repo/ui";
 import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
