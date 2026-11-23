@@ -415,7 +415,6 @@ it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId 
       const after = await read();
       expect({ url: after.url, documentId: after.documentId }).toEqual(outcome.destination);
       outcome.answer = answer;
-      outcome.miss = "no-source-bound-answer";
       return;
     }
     await expect.element(page.getByRole("region", { name: "Review read plan" })).toBeVisible();

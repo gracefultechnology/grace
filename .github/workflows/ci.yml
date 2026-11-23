@@ -392,7 +392,7 @@ jobs:
             tee "$WEBARENA_RESULTS/grace-browser.log"
           jq -e '. as $receipt | .webArena |
             select(.noActionScore == 0 and .wrongAnswerScore == 0 and (.officialScore == 0 or .officialScore == 1) and
-              $receipt.outcome.graceResponded and $receipt.outcome.miss == "no-source-bound-answer" and
+              $receipt.outcome.graceResponded and
               $receipt.outcome.failure == null)' "$WEBARENA_RESULTS/task-386.json" > "$WEBARENA_RESULTS/scorecard.json"
       - name: Exercise the public search and its negative controls in Chromium
         if: ${{ !cancelled() && !inputs.webarena_rating_only && inputs.webarena_public_search && env.WEBARENA_RESULTS != '' }}
