@@ -1,4 +1,5 @@
-// spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"
+// spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"; spec/app/calendars.md, "Calendar turns to the day of Grace’s question and of what was just added, but never past an edit"
+import type { StartDay } from "../gen/app__calendars.effect.vibe"
 import type { Navigation, NavigationReport, ViewMode, ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { type Days, moved, shown } from "./schedule.ts"
 
@@ -16,6 +17,13 @@ export function instant(n: number, minutes: number) {
 }
 
 export const midnight = (n: number) => instant(n, 0)
+
+export function startDay(startAt: number): StartDay {
+  const d = dayOf(startAt)
+  const fromTime = midnight(d)
+  const untilTime = midnight(d + 1)
+  return { startAt, day: d, fromTime, untilTime, verified: dayOf(fromTime) === d && dayOf(untilTime - 1) === d }
+}
 
 export function shownDays(mode: ViewMode, anchor: number) {
   const { first, until } = shown(mode, anchor)

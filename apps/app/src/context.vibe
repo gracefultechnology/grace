@@ -1,4 +1,4 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/preferences.md, "Output voice, pace and text size have one local source of truth"; spec/app/mailboxes.md, "Grace is shown only what Margaret can see"; spec/app/calendars.md, "A switched-off account’s appointments and reminders show nowhere, to her or to Grace"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"; spec/app/conversation.md, "Each turn sends a bounded window of the transcript"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/preferences.md, "Output voice, pace and text size have one local source of truth"; spec/app/mailboxes.md, "Grace is shown only what Margaret can see"; spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"; spec/app/calendars.md, "A switched-off account’s appointments and reminders show nowhere, to her or to Grace"; spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"; spec/app/conversation.md, "Detected private content is removed before the conversation continues"; spec/app/conversation.md, "Each turn sends a bounded window of the transcript"
 import { Machine as Accounts, type Accounts as Registry, mailAccounts, type Problem, type Provider, told as accountsTold } from "../gen/app__accounts.effect.vibe"
 import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
 import { calendarContext, type CalendarSource, type CalendarTold, dayRows, lead, openSelected, sourceAt } from "../gen/app__calendars.effect.vibe"
@@ -7,7 +7,7 @@ import { entryAt } from "../gen/app__calendarView.effect.vibe"
 import { sentHistory, type Conversation } from "../gen/app__conversation.effect.vibe"
 import { messageRecord, photoAssets, photoPosition, showsScamWarning, type Mailbox } from "../gen/app__email.effect.vibe"
 import type { Folder, MessageRecord } from "../gen/app__emailItem.effect.vibe"
-import { folderRows, fromChoices, mailContext, type MailTold, needsSignIn, openSource, outboxCount, showsMail, type MailSource } from "../gen/app__mailboxes.effect.vibe"
+import { folderRows, fromChoices, mailContext, type MailChoices, Machine as MailChoiceMachine, type MailTold, needsSignIn, openSource, outboxCount, showsMail, showsOutbox, type MailSource } from "../gen/app__mailboxes.effect.vibe"
 import { type Ask, Machine as Proposal, type Pending } from "../gen/app__proposal.effect.vibe"
 import type { SettingsPage, Surface } from "../gen/app__shell.effect.vibe"
 import { Machine as Workspaces, privateSurfaceActive, type Workspace } from "../gen/app__workspace.effect.vibe"
@@ -22,6 +22,7 @@ export type Scene = {
   readonly workspace: Workspace
   readonly registry: Registry
   readonly mail: MailSource[]
+  readonly choices: MailChoices
   readonly calendars: CalendarSource[]
   readonly pending: Pending
   readonly content: (account: number, ref: string) => MailContent | undefined
@@ -36,6 +37,7 @@ export effect function looker() {
   const accounts = try Accounts
   const proposals = try Proposal
   const workspace = try Workspaces
+  const chosen = try MailChoiceMachine
   return effect (): Scene!! => {
     const registry = try accounts.get()
     const mail: MailSource[] = []
@@ -46,7 +48,7 @@ export effect function looker() {
       const box = key === tablet ? undefined : shelf.mail(key) catch () => undefined
       if (box !== undefined) mail.push({ account: key, mailbox: try box.get() })
     }
-    return { workspace: try workspace.get(), registry, mail, calendars, pending: try proposals.get(), content: shelf.content }
+    return { workspace: try workspace.get(), registry, mail, choices: try chosen.get(), calendars, pending: try proposals.get(), content: shelf.content }
   }
 }
 
@@ -236,6 +238,7 @@ function emailScreen(s: Scene): Part {
   if (mailAccounts(registry).length === 0) return { lines: ["Email shows that no email is on the tablet yet; Connect your email opens Settings, Email & calendar."], targets: [] }
   const shown = mail.filter((m) => showsMail(registry, m.account))
   const writing = shown.find((m) => m.mailbox.composeVisible)
+  if (writing?.mailbox.choosing === "PickNewEmail") return { lines: ["Email: the person is choosing who to write to, from the faces of their contacts."], targets: [] }
   if (writing !== undefined) return composing(s, writing.account, writing.mailbox)
   const open = shown.find((m) => m.account === openSource(registry, mail))
   if (open !== undefined && open.mailbox.view === "Attachment") return viewing(s, open.account, open.mailbox)
@@ -244,6 +247,7 @@ function emailScreen(s: Scene): Part {
   const query = shown[0]?.mailbox.query ?? ""
   const only = registry.accounts.find((a) => a.id === registry.inboxFilter)
   const rows = folderRows(registry, mail, folder).filter((r) => !confidentialMail(s.content(r.account, r.record.identity.ref)))
+  if (showsOutbox(registry, mail, s.choices)) return { lines: [`Email is open on Outbox: ${counted(outboxCount(registry, mail), "email")} waiting to go when the tablet is back online.`], targets: [] }
   return {
     lines: [
       `Email is open on ${folders[folder]}${only === undefined ? "" : ` for ${only.name} only`}${query === "" ? "" : `, searching for ${quoted(query)}`}.`,

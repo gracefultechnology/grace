@@ -2308,6 +2308,7 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
       close: () => Promise.resolve(),
       list: () => Promise.resolve({ entries }),
       preview: ({ id, page }) => Promise.resolve({ id, page, image: "data:image/jpeg;base64,/9j/2Q==" }),
+      content: ({ id }) => Promise.resolve({ id, mimeType: "image/jpeg", data: "/9j/2Q==" }),
       pick: () => Promise.resolve(),
       capture: () => Promise.resolve(),
       addListener: (_event, listener) => {
@@ -3377,11 +3378,14 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       await expect.element(plan.getByText(receipt, { exact: true })).toBeVisible();
     await expect.poll(() => plan.getByText(`Open message: ${subject}`, { exact: true }).elements().length).toBe(2);
 
-    await tap(page.getByRole("button", { name: "Close Grace", exact: true }));
-    await tap(page.getByRole("button", { name: "Home", exact: true }));
-    await tap(mail);
-    await tap(page.getByRole("button", { name: "Back to Inbox" }));
-    await tap(page.getByRole("button", { name: /482913 is your Chase verification code/ }));
+    const reopenInboxMessage = async (name: RegExp) => {
+      await tap(page.getByRole("button", { name: "Close Grace", exact: true }));
+      await tap(page.getByRole("button", { name: "Home", exact: true }));
+      await tap(mail);
+      await tap(page.getByRole("button", { name: "Back to Inbox" }));
+      await tap(page.getByRole("button", { name }));
+    };
+    await reopenInboxMessage(/482913 is your Chase verification code/);
     await expect.element(page.getByText(/Use 482913 to finish signing in/)).toBeVisible();
     const question = "What does this email say?";
     await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
@@ -3390,11 +3394,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const opened = await shownToGrace();
     expect(opened.includes("A private sign-in email is open.")).toBe(true);
     assertMailWithheld(opened);
-    await tap(page.getByRole("button", { name: "Close Grace", exact: true }));
-    await tap(page.getByRole("button", { name: "Home", exact: true }));
-    await tap(mail);
-    await tap(page.getByRole("button", { name: "Back to Inbox" }));
-    await tap(page.getByRole("button", { name: /Westside Reception/ }));
+    await reopenInboxMessage(/Westside Reception/);
     await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
     const followUp = "What does this other email say?";
     const previousRequests = (await modelRequests()).length;

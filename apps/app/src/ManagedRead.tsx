@@ -4,8 +4,8 @@ import { Effect, Exit, Stream } from "effect";
 import { type ReactNode, useCallback, useState, useSyncExternalStore, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
 import type { Recurrence } from "../gen/app__calendar.ts";
-import { mayChangeManaged, mayReadManaged, maySendManagedMail } from "../gen/app__setup.ts";
-import { actionableMailBody, inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type ReadView, type WriteReceipt } from "./managedReads.vibe";
+import { mayChangeManaged, mayReadManaged, maySendManagedMail, skipsMonthsWithoutItsDay } from "../gen/app__setup.ts";
+import { actionableMailBody, inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type AppointmentChange, type ReadView, type WriteReceipt } from "./managedReads.vibe";
 import { messageLinkParts } from "./messageLinks.vibe";
 import { calendarGrid } from "./Calendar.tsx";
 import { dayOf, instant, midnight } from "./calendarWindow.vibe";
@@ -106,12 +106,13 @@ function dateInput(time: Date) {
   return new Date(time.getTime() - time.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }
 
-function AppointmentEditor({ event, selectedDay, seriesFor, proposal, remove, write, pending, close }: {
+function AppointmentEditor({ event, selectedDay, seriesFor, proposal, reviewing, review, write, pending, close }: {
   event?: EventRow;
   selectedDay: number;
   seriesFor?: string;
   proposal?: { title: string; start: string; location: string; repeat: Recurrence };
-  remove?: boolean;
+  reviewing?: AppointmentChange;
+  review: (change?: AppointmentChange) => void;
   write: (command: ManagedWrite) => void;
   pending: boolean;
   close: () => void;
@@ -127,7 +128,6 @@ function AppointmentEditor({ event, selectedDay, seriesFor, proposal, remove, wr
       location: proposal?.location ?? event?.location ?? "",
     };
   });
-  const [review, setReview] = useState<"save" | "delete" | undefined>(remove ? "delete" : undefined);
   const [repeat, setRepeat] = useState<Recurrence>(proposal?.repeat ?? "Once");
   const [timeZone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
   const update = (field: keyof AppointmentDraft, value: string) => setDraft((previous) => ({ ...previous, [field]: value }));
@@ -136,40 +136,41 @@ function AppointmentEditor({ event, selectedDay, seriesFor, proposal, remove, wr
   const allDay = event?.isAllDay === true;
   const shifted = !allDay && end > start && (dateInput(start) !== draft.start || dateInput(end) !== draft.end);
   const valid = draft.title.trim() !== "" && end > start && !shifted;
-  const confirm = () => {
-    if (review === "delete") {
-      if (event?.etag) write({ kind: "appointment", action: "delete", id: event.externalId, version: event.etag, seriesFor });
-      return;
-    }
-    if (!valid) return;
+  const reviewSave = () => {
     const update = { title: draft.title, location: draft.location, startAt: allDay ? draft.start : start.toISOString(),
       endAt: allDay ? draft.end : end.toISOString(), ...(allDay ? { allDay } : {}) };
-    if (event?.etag) write({ kind: "appointment", action: "update", id: event.externalId, version: event.etag, seriesFor, event: update });
-    else if (!event) write({ kind: "appointment", action: "create", event: {
+    if (event?.etag) review({ kind: "appointment", action: "update", id: event.externalId, version: event.etag, seriesFor, event: update });
+    else if (!event) review({ kind: "appointment", action: "create", event: {
       ...update, ...(repeat === "Once" ? {} : { repeat: { frequency: repeat, timeZone } }),
     } });
   };
-  if (review !== undefined) return <section className="flex flex-col items-start gap-3" aria-busy={pending || undefined}>
-    <PageHeading>{review === "delete" ? "Remove this appointment?" : "Review your appointment"}</PageHeading>
-    {seriesFor && <PageText>Entire series</PageText>}
-    {seriesFor && event?.timezone && <PageText tone="secondary">Series time zone {event.timezone}</PageText>}
-    {!event && repeat !== "Once" && <PageText>{repeatLabels[repeat]} · {timeZone}</PageText>}
-    {!event && repeat === "Monthly" && start.getDate() > 28 && <PageText>Months without day {start.getDate()} are skipped.</PageText>}
-    <PageText>{review === "delete" ? event?.title : draft.title}</PageText>
-    {review === "delete" && event ? <PageText>{day(event.startAt)} · {event.isAllDay ? "All day" : clock.format(new Date(event.startAt))}</PageText>
-      : allDay ? <PageText>{day(draft.start)} · All day, ends before {day(draft.end)}</PageText>
-        : <PageText>{day(start.toISOString())} · {reviewedClock.format(start)} to {day(end.toISOString())} · {reviewedClock.format(end)}</PageText>}
-    <PageText>{review === "delete" ? event?.location : draft.location}</PageText>
-    <div className="flex flex-wrap gap-3">
-      <Button variant="capsule" size="pill" disabled={pending} onClick={() => setReview(undefined)}>Back</Button>
-      <Button variant={review === "delete" ? "warn" : "prominent"} size="pill" loading={pending} onClick={confirm}>
-        {review === "delete" ? "Confirm removal" : "Confirm appointment"}
-      </Button>
-    </div>
-  </section>;
+  if (reviewing) {
+    const removing = reviewing.action === "delete";
+    const shown = reviewing.action === "delete" ? event : reviewing.event;
+    const repeats = reviewing.action === "create" ? reviewing.event.repeat : undefined;
+    const reviewedStart = new Date(shown?.startAt ?? "");
+    return <section className="flex flex-col items-start gap-3" aria-busy={pending || undefined}>
+      <PageHeading>{removing ? "Remove this appointment?" : "Review your appointment"}</PageHeading>
+      {reviewing.action !== "create" && reviewing.seriesFor && <PageText>Entire series</PageText>}
+      {reviewing.action !== "create" && reviewing.seriesFor && event?.timezone && <PageText tone="secondary">Series time zone {event.timezone}</PageText>}
+      {repeats && <PageText>{repeatLabels[repeats.frequency]} · {repeats.timeZone}</PageText>}
+      {repeats && skipsMonthsWithoutItsDay(repeats.frequency, reviewedStart.getDate()) && <PageText>Months without day {reviewedStart.getDate()} are skipped.</PageText>}
+      <PageText>{shown?.title}</PageText>
+      {removing && event ? <PageText>{day(event.startAt)} · {event.isAllDay ? "All day" : clock.format(new Date(event.startAt))}</PageText>
+        : reviewing.action !== "delete" && (reviewing.event.allDay ? <PageText>{day(reviewing.event.startAt)} · All day, ends before {day(reviewing.event.endAt)}</PageText>
+          : <PageText>{day(reviewing.event.startAt)} · {reviewedClock.format(reviewedStart)} to {day(reviewing.event.endAt)} · {reviewedClock.format(new Date(reviewing.event.endAt))}</PageText>)}
+      <PageText>{shown?.location}</PageText>
+      <div className="flex flex-wrap gap-3">
+        <Button variant="capsule" size="pill" disabled={pending} onClick={() => review(undefined)}>Back</Button>
+        <Button variant={removing ? "warn" : "prominent"} size="pill" loading={pending} onClick={() => write(reviewing)}>
+          {removing ? "Confirm removal" : "Confirm appointment"}
+        </Button>
+      </div>
+    </section>;
+  }
   return <form className="flex flex-col items-start gap-3" onSubmit={(event) => {
     event.preventDefault();
-    if (valid) setReview("save");
+    if (valid) reviewSave();
   }}>
     <PageHeading>{seriesFor ? "Edit entire series" : event ? "Edit appointment" : "New appointment"}</PageHeading>
     <label>Title<Input required maxLength={160} value={draft.title} onChange={(event) => update("title", event.target.value)} /></label>
@@ -181,7 +182,9 @@ function AppointmentEditor({ event, selectedDay, seriesFor, proposal, remove, wr
       onValueChange={(value) => { if (value === "Once" || value === "Weekly" || value === "Monthly") setRepeat(value); }} /></fieldset>}
     <div className="flex flex-wrap gap-3">
       <Button type="button" variant="capsule" size="pill" onClick={close}>Cancel</Button>
-      {event && <Button type="button" variant="warn" size="pill" onClick={() => setReview("delete")}>Remove appointment</Button>}
+      {event?.etag && <Button type="button" variant="warn" size="pill" onClick={() => {
+        if (event.etag) review({ kind: "appointment", action: "delete", id: event.externalId, version: event.etag, seriesFor });
+      }}>Remove appointment</Button>}
       <Button type="submit" variant="prominent" size="pill" disabled={!valid}>Review appointment</Button>
     </div>
   </form>;
@@ -301,14 +304,16 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
       setEditor({ key: projection, event: result.value, seriesFor: occurrenceId });
     } else setWriteNotice({ key: projection, text: "Grace couldn’t open the repeating appointment." });
   });
+  const proposalNumber = snapshot.kind === "calendar" ? snapshot.proposed?.number : undefined;
+  const review = (change?: AppointmentChange) => startTransition(async () => {
+    setWriteNotice(undefined);
+    await runtime.runPromise(Effect.flatMap(ManagedReads, (reads) => reads.review({ accountId, grant }, change, proposalNumber)));
+  });
   const write = (action: ManagedWrite) => startTransition(async () => {
     setWriteNotice(undefined);
-    const out = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.change({ accountId, grant }, action)));
+    const out = await runtime.runPromiseExit(Effect.flatMap(ManagedReads, (reads) => reads.change({ accountId, grant }, action, proposalNumber)));
     const receipt = Exit.isSuccess(out) ? out.value : undefined;
-    if (action.kind === "appointment") {
-      setEditor(undefined);
-      await runtime.runPromise(Effect.flatMap(ManagedReads, (reads) => reads.send({ kind: "dismissProposal" })));
-    }
+    if (action.kind === "appointment" && receipt) setEditor(undefined);
     const text = !receipt ? "Grace couldn’t confirm that change. Refresh to check what Google saved."
       : action.kind === "trash" ? "Moved to Trash."
         : action.kind === "undo" ? "Message restored."
@@ -465,13 +470,13 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
       const series = suggestion.kind === "removeAppointment" && suggestion.series ? suggestion.id : undefined;
       const target = series ? snapshot.series : suggestion.id ? snapshot.selected : undefined;
       return <section data-sensitive="true">
-        <AppointmentEditor key={staged.number} selectedDay={snapshot.window.selectedDay} event={target} seriesFor={series} remove={suggestion.kind === "removeAppointment"}
+        <AppointmentEditor key={staged.number} selectedDay={snapshot.window.selectedDay} event={target} seriesFor={series} reviewing={snapshot.reviewing} review={review}
           proposal={suggestion.kind === "appointment" ? suggestion : undefined} write={write} pending={pending} close={() => run({ kind: "dismissProposal" })} />
       </section>;
     }
   }
   if (canSchedule && exact) return <section data-sensitive="true">
-    <AppointmentEditor selectedDay={snapshot.window.selectedDay} event={exact.event} seriesFor={exact.seriesFor} write={write} pending={pending} close={() => setEditor(undefined)} />
+    <AppointmentEditor selectedDay={snapshot.window.selectedDay} event={exact.event} seriesFor={exact.seriesFor} reviewing={snapshot.reviewing} review={review} write={write} pending={pending} close={() => setEditor(undefined)} />
   </section>;
   const event = snapshot.selected;
   return event ? (

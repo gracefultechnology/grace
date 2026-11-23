@@ -17,7 +17,7 @@ const Case = Schema.Struct({
 });
 const Manifest = Schema.Struct({
   revision: Schema.String, productRevision: Schema.String, navigation: Schema.Literal("public support page"),
-  shard: Schema.NullOr(Schema.Number), shardCount: Schema.Number, cohortNumber: Schema.optional(Schema.Literal(2)), cohort: Schema.Array(Case),
+  shard: Schema.NullOr(Schema.Number), shardCount: Schema.Number, cohortNumber: Schema.optional(Schema.Int), cohort: Schema.Array(Case),
 });
 const Receipt = Schema.Struct({
   surface: Schema.Literal("desktop-chromium"), taskId: Schema.String, startUrl: Schema.String,
@@ -104,28 +104,54 @@ async function openFleetServer(tree: string, loginPaths?: Set<string>) {
   }
 }
 
-async function openFleet(tree: string, cohort: 1 | 2) {
+const helpCohortSize = 100;
+
+function helpCohortNumber(setting: string | undefined) {
+  const value = setting ?? "1";
+  const cohort = Number(value);
+  if (!/^[1-9][0-9]*$/.test(value) || !Number.isSafeInteger(cohort))
+    throw new Error("GRACE_BILLWORLD_COHORT must be a positive integer");
+  return cohort;
+}
+
+export function fleetHelpCohorts(catalog: ReadonlyMap<unknown, unknown>) {
+  const groups = new Map<string, (typeof Biller.Type)[]>();
+  const decode = Schema.decodeUnknownSync(Biller);
+  for (const raw of catalog.values()) {
+    const biller = decode(raw);
+    const group = groups.get(biller.template) ?? [];
+    group.push(biller);
+    groups.set(biller.template, group);
+  }
+  const ordered = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b, "en")).map(([, group]) =>
+    group.sort((a, b) => a.id.localeCompare(b.id, "en")));
+  const cohorts: (typeof Biller.Type)[][] = [];
+  let batch: (typeof Biller.Type)[] = [];
+  const depth = Math.max(0, ...ordered.map((group) => group.length));
+  for (let offset = 0; offset < depth; offset++) {
+    for (const billers of ordered) {
+      const biller = billers[offset];
+      if (!biller) continue;
+      batch.push(biller);
+      if (batch.length === helpCohortSize) {
+        cohorts.push(batch);
+        batch = [];
+      }
+    }
+  }
+  if (batch.length) cohorts.push(batch);
+  return cohorts;
+}
+
+async function openFleet(tree: string, cohort: number) {
   const { fleet, origin, close } = await openFleetServer(tree);
   try {
-    const groups = new Map<string, (typeof Biller.Type)[]>();
-    for (const raw of fleet.world.catalog.billers.values()) {
-      const biller = Schema.decodeUnknownSync(Biller)(raw);
-      const group = groups.get(biller.template) ?? [];
-      group.push(biller);
-      groups.set(biller.template, group);
-    }
-    const byTemplate = [...groups.entries()].sort(([a], [b]) => a.localeCompare(b, "en"));
-    for (const [, group] of byTemplate) group.sort((a, b) => a.id.localeCompare(b.id, "en"));
-    const size = 100;
-    const through = cohort * size;
-    const selected: (typeof Biller.Type)[] = [];
-    for (let offset = 0; selected.length < through; offset++) {
-      const row = byTemplate.flatMap(([, group]) => group.slice(offset, offset + 1));
-      if (row.length === 0) throw new Error(`The pinned catalog has fewer than ${through} distinct billers`);
-      selected.push(...row);
-    }
-    const cases = selected.slice(through - size, through).map((biller) => {
-      const entry = fleet.world.catalog.billers.get(biller.id);
+    const catalog = fleet.world.catalog.billers;
+    const cohorts = fleetHelpCohorts(catalog);
+    const selected = cohorts[cohort - 1];
+    if (!selected) throw new Error(`GRACE_BILLWORLD_COHORT must be between 1 and ${cohorts.length} for the pinned Fleet catalog`);
+    const cases = selected.map((biller) => {
+      const entry = catalog.get(biller.id);
       const { routes } = Schema.decodeUnknownSync(Routes)(fleet.templateFor(entry));
       const path = "/b/" + encodeURIComponent(biller.id);
       return { biller, startUrl: origin + path + routes.home, expected: origin + path + routes.help };
@@ -152,10 +178,8 @@ export async function fleetFixture({ directory, results, shardSetting, resumeDir
   resumeDirectory?: string;
   cohortSetting?: string;
 }) {
-  if (cohortSetting !== undefined && cohortSetting !== "1" && cohortSetting !== "2")
-    throw new Error("GRACE_BILLWORLD_COHORT must be 1 or 2");
-  const cohortNumber = cohortSetting === "2" ? 2 : 1;
-  const cohortMetadata = cohortNumber === 2 ? { cohortNumber } : {};
+  const cohortNumber = helpCohortNumber(cohortSetting);
+  const cohortMetadata = cohortNumber === 1 ? {} : { cohortNumber };
   const shardCount = 4;
   if (shardSetting !== undefined && !/^[1-4]$/.test(shardSetting))
     throw new Error("GRACE_BILLWORLD_SHARD must be one of 1, 2, 3 or 4");
