@@ -414,7 +414,7 @@ configured scopes are in `knip.config.js`, `.madgerc`, `.jscpd.json` and
 | When | Runs |
 |---|---|
 | Pull request or push to `develop` or `main` | All `pnpm verify` tasks on four runners. The product runner checks the application, documents and examples. Each tool shard has its own runner. After a failure, independent tasks still run and tasks with a failed prerequisite stop. The `verify` status requires all four to pass. |
-| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into the checked branch. A dispatch from a tag checks the default branch. |
+| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into the checked branch. Scheduled runs check `develop`. Manual runs check the requested branch, or the default branch for a tag. |
 | Changes to Android build inputs on a pull request or push to `develop` or `main` | `.github/workflows/android.yml` builds the APKs for each ABI and stages the x86_64 launcher and browser for Cuttlefish |
 
 Each row's budget is in [Seeds and budgets](#seeds-and-budgets). A failing
@@ -430,7 +430,7 @@ cache keys include the job, lockfile, commit and run attempt. A job tries both
 key layouts for its own name and current lockfile, then the current layout for
 another lockfile. Selftest jobs on pull requests first try an archive for that pull request and lockfile.
 A successful replay of the entire fixture task can reuse that archive when setup leaves the cached evaluator intact.
-Fixture jobs restore their pull request’s Turbo archive before the shared fallback. A full replay keeps that archive when the cached files stay unchanged and no files need pruning. Turbo refreshes its checkout-specific restore manifests locally.
+Fixture jobs retain the pinned Eliza source checkout and skip the nested dependency install. They restore their pull request’s Turbo archive before the shared fallback. A full replay keeps that archive when the cached files stay unchanged and no files need pruning. Turbo refreshes its checkout-specific restore manifests locally.
 Each entry is named by the tools and inputs that produced it.
 Nightly verification restores
 only the pinned evaluator and runs fresh checks.

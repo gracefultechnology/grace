@@ -222,6 +222,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await toEyeWeek();
   await expect.poll(async () => (await run(selectedGmailCalendar)).entries.some((e) => e.identity.occurrenceId === replacement.externalId && e.phase === "Saved"), atCloud).toBe(true);
   await expect.element(ringed("Doctor’s appointment", "Done")).not.toBeInTheDocument();
+  await expect.element(page.getByRole("heading", { name: "Doctor’s appointment", exact: true })).not.toBeInTheDocument();
   await act(() => userEvent.click(row("Doctor’s appointment", "Gmail")));
   await expect.element(page.getByText("West clinic")).toBeVisible();
   await expect.element(page.getByText("No reminder")).toBeVisible();
