@@ -69,12 +69,13 @@ function benchmarkTitleId(taskId: string): string {
 
 const publicRatingTask = "386";
 const ratingProduct = (intent: string) => /^What is the rating of (.+)\. Please round to the nearest whole number$/u.exec(intent)?.[1];
+const ratingSearchQuery = (product: string) => product.split(/\s+/u).slice(0, 2).join(" ");
 if (runs.some(({ taskId, intent, evaluator, chat, exploratory, siteStorageState, fixtureChoice, requiredStep }) =>
   taskId === publicRatingTask && (!ratingProduct(intent) || evaluator !== "webarena" || chat !== "upstream" || exploratory !== true ||
     !siteStorageState || fixtureChoice !== undefined || requiredStep !== undefined)))
   throw new Error("The public rating diagnostic requires the pinned Shopping case and synthetic login");
 const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
-  taskId, titleId: benchmarkTitleId(taskId), intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet), publicRating: taskId === publicRatingTask ? ratingProduct(intent) : undefined,
+  taskId, titleId: benchmarkTitleId(taskId), intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet), publicRating: taskId === publicRatingTask ? ratingSearchQuery(ratingProduct(intent) ?? "") : undefined,
 }));
 if (new Set(browserBenchmarks.map(({ titleId }) => titleId)).size !== runs.length)
   throw new Error("Benchmark test title IDs must be unique");
@@ -105,7 +106,7 @@ const DecisionResult = Schema.Struct({ status: Schema.String, model: Schema.opti
 type PublicSearchSubmission =
   | { state: "submitting"; search: typeof PublicSearch.Type }
   | ({ state: "completed" } & CompletedPublicSearch);
-type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; ratingProduct?: { url: string; documentId: string }; noAction?: { url: string; documentId: string }; site?: Site };
+type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; ratingProduct?: { url: string; documentId: string }; ratingListings?: { visible: number; matching: number; cables: number; labels: string[] }; noAction?: { url: string; documentId: string }; site?: Site };
 const activeRuns = new WeakMap<Page, Run>();
 const Choices = Schema.Struct({ kind: Schema.Literal("choice"), goal: Schema.NonEmptyString, candidates: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, label: Schema.NonEmptyString })) });
 const PageText = Schema.Struct({ title: Schema.String, text: Schema.String, truncated: Schema.Boolean, readyState: Schema.Literals(["loading", "interactive", "complete"]) });
@@ -158,9 +159,16 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     const { frameTree: { frame: previous } } = await site.session.send("Page.getFrameTree");
     if (previous.loaderId !== run.publicSearch.destination.documentId)
       throw new Error("The public search document changed before the product was opened");
-    const link = site.page.getByRole("main").getByRole("link", { name: /^(?=.*\bugreen\b)(?=.*\blightning\b)(?=.*3\.5\s*mm)(?=.*\bcable\b).+$/iu })
-      .filter({ visible: true });
-    if (await link.count() !== 1) throw new Error("The requested public product is not uniquely identifiable");
+    const listings = site.page.getByRole("main").locator("a.product-item-link").filter({ visible: true });
+    const productMatch = /^(?=.*\bugreen\b)(?=.*\blightning\b)(?=.*3[.\s]+5\s*mm).+$/isu;
+    const matches = listings.filter({ hasText: productMatch });
+    const cables = matches.filter({ hasText: /\bcable\b/iu });
+    const [visible, matching, cableCount, titles] = await Promise.all([
+      listings.count(), matches.count(), cables.count(), listings.allTextContents(),
+    ]);
+    run.ratingListings = { visible, matching, cables: cableCount, labels: titles.slice(0, 25).map(title => title.trim().slice(0, 180)) };
+    const link = cableCount === 1 ? cables : matching === 1 ? matches : undefined;
+    if (!link) throw new Error("The requested public product is not uniquely identifiable");
     const label = (await link.innerText()).trim();
     const href = await link.getAttribute("href");
     const address = href && URL.parse(href, previous.url);
@@ -180,7 +188,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
   if (action.kind === "submitPublicSearch") {
     const site = run.site;
     if ((!publicSearch && product === undefined) || !site || run.publicSearch || site.page.url() !== definition.startUrl ||
-        (product ?? publicSearchQuery(definition.intent)) !== action.query)
+        (product === undefined ? publicSearchQuery(definition.intent) : ratingSearchQuery(product)) !== action.query)
       throw new Error("The website search is outside its reviewed case");
     await site.page.bringToFront();
     const searchName = /^[\s\p{Co}]*Search\b/iu;
@@ -284,7 +292,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         decisionProvider, decisionRequests: run.decisions, syntheticStorageState: Boolean(run.site && definition.siteStorageState),
         decisionServiceOrigin: decisionProvider === "hosted" && process.env.GRACE_BENCHMARK_CLEF_ORIGIN
           ? new URL(process.env.GRACE_BENCHMARK_CLEF_ORIGIN).origin : undefined,
-        outcome: { ...visibleOutcome, chatProvider: definition.chat ?? "fixture" }, chatStatus: run.chatStatus,
+        outcome: { ...visibleOutcome, chatProvider: definition.chat ?? "fixture", ...(product !== undefined && { ratingListings: run.ratingListings }) }, chatStatus: run.chatStatus,
         decisionResults: run.decisionResults,
       };
       const guided = hasHostedNavigation(observation, run.site?.page.url());
