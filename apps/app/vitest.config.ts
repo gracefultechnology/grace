@@ -307,12 +307,12 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
     if (!browser) throw new Error("The benchmark needs a Chromium browser context");
     try {
       await routeFixtureContext(browser, { origin, permits: (request, url) => {
-        const read = ["GET", "HEAD"].includes(request.method());
-        if (publicSearch) return read && (!request.isNavigationRequest() || url.href === start.href ||
-          (run.publicSearch !== undefined && request.method() === "GET" && matchesPublicSearch(url, run.publicSearch.search)));
+        if (!["GET", "HEAD"].includes(request.method())) return false;
+        if (publicSearch) return !request.isNavigationRequest() || url.href === start.href ||
+          (run.publicSearch !== undefined && request.method() === "GET" && matchesPublicSearch(url, run.publicSearch.search));
         if (definition.evaluator === "webarena" && definition.taskId === "157")
-          return read && (!request.isNavigationRequest() || url.pathname.startsWith("/admin/"));
-        return definition.evaluator !== "webarena" || definition.taskId !== "258" || read;
+          return !request.isNavigationRequest() || url.pathname.startsWith("/admin/");
+        return true;
       } });
       const website = await browser.newPage();
       const session = await observeFromDocumentStart(website);
