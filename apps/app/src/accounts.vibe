@@ -1,9 +1,10 @@
-// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"; spec/app/accounts.md, "Signing in again renews the same account"; spec/app/accounts.md, "The settings pages go back one step at a time"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"
-import { accountAt, accountWith, freshName, Machine as Accounts, stored as storedAccounts, told, type Accounts as Registry, type Event, type OtherReport, type Provider, type SheetReport } from "../gen/app__accounts.effect.vibe"
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"; spec/app/accounts.md, "Signing in again renews the same account"; spec/app/accounts.md, "The settings pages go back one step at a time"; spec/app/accounts.md, "Mail settings can be looked up from her address, and fill the form for her to check"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"
+import { accountAt, accountWith, freshName, lookupFinds, Machine as Accounts, stored as storedAccounts, told, type Accounts as Registry, type Event, type FoundServer, type OtherReport, type Provider, type Security, type ServerKind, type SheetReport } from "../gen/app__accounts.effect.vibe"
 import { stored as storedProposal } from "../gen/app__proposal.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type OtherForm, type SecretPassword, type ShownPage } from "./connector.vibe"
 import { Instances } from "./instances.vibe"
+import { Resolved, serversIn, serversListed } from "./mailSettings.ts"
 
 const restarted = Layer.effectDiscard(effect {
   try Effect.orDie((try Accounts).send({ type: "restartAccounts" }, "AccountHost"))
@@ -11,7 +12,7 @@ const restarted = Layer.effectDiscard(effect {
 
 export const accounts = Layer.mergeAll(Layer.provideMerge(restarted, storedAccounts("accounts")), storedProposal("proposal"))
 
-export type OtherDetails = { readonly address: string; readonly password: SecretPassword }
+export type OtherDetails = { readonly name: string; readonly address: string; readonly password: SecretPassword }
 export type MailServers = { readonly incoming: string; readonly outgoing: string }
 
 export type Note = { readonly id: number; readonly text: string }
@@ -20,7 +21,9 @@ export type Watched<A> = { readonly subscribe: (listener: () => void) => () => v
 export service SignIns {
   other(details: OtherDetails): void!!
   servers(servers: MailServers): void!!
+  lookUp(): void!!
   readonly notes: Watched<Note | undefined>
+  readonly owner: Watched<string>
   readonly page: Watched<ShownPage | undefined>
 }
 
@@ -70,7 +73,18 @@ function noteOf(before: Registry, after: Registry): string | undefined {
   }
 }
 
-type Held = OtherForm & { readonly domain: string }
+type Held = OtherForm & { readonly name: string; readonly domain: string }
+
+const lookupWait = "8 seconds"
+const setupFiles = (domain: string) => [
+  `https://autoconfig.${domain}/mail/config-v1.1.xml`,
+  `https://${domain}/.well-known/autoconfig/mail/config-v1.1.xml`,
+  `https://autoconfig.thunderbird.net/v1.1/${encodeURIComponent(domain)}`
+]
+const records: readonly { readonly service: string; readonly kind: ServerKind; readonly security: Security }[] = [
+  { service: "_imaps._tcp", kind: "ImapServer", security: "SecureDirect" },
+  { service: "_submission._tcp", kind: "SmtpServer", security: "SecureUpgrade" }
+]
 
 const unfinished = (attempt: number): SheetReport => ({ attempt, outcome: "Refused", address: "", granted: { mail: false, calendar: false, contacts: false } })
 const refused = (attempt: number): OtherReport => ({ attempt, outcome: "OtherRefused", address: "" })
@@ -84,6 +98,8 @@ export const signIns = Layer.effect(SignIns, effect {
   const held = try Ref.make<Held | undefined>(undefined)
   const notes = watched<Note | undefined>(undefined)
   const page = watched<ShownPage | undefined>(undefined)
+  const owner = watched("")
+  const http = try HttpClient.HttpClient
   const counter = { next: 1 }
 
   effect function show(text: string) {
@@ -93,7 +109,15 @@ export const signIns = Layer.effect(SignIns, effect {
     try notes.set(undefined)
   }
 
-  if (connector !== undefined) try fork.scoped Stream.runForEach(connector.shown, page.set)
+  effect function learnOwner(cloud: Connector.Shape) {
+    const name = cloud.ownerName() catch () => ""
+    try owner.set(name)
+  }
+
+  if (connector !== undefined) {
+    try fork.scoped Stream.runForEach(connector.shown, page.set)
+    try fork.scoped learnOwner(connector)
+  }
 
   effect function renew(id: number) {
     const box = try shelf.mail(id)
@@ -131,22 +155,22 @@ export const signIns = Layer.effect(SignIns, effect {
     try answer({ type: "sheetResult", sheet, name: nameFor(try registry.get(), provider, sheet.address) }, { type: "sheetResult", sheet: unfinished(attempt), name: "" })
   }
 
-  effect function report(event: "otherResult" | "serversResult", check: OtherReport) {
-    try answer({ type: event, check, name: nameFor(try registry.get(), "OtherEmail", check.address) }, { type: event, check: refused(check.attempt), name: "" })
+  effect function report(event: "otherResult" | "serversResult", check: OtherReport, fromName: string) {
+    try answer({ type: event, check, name: nameFor(try registry.get(), "OtherEmail", check.address), fromName }, { type: event, check: refused(check.attempt), name: "", fromName: "" })
   }
 
   const attempts = Stream.changes(Stream.map(registry.changes, (a) => a.signIn.stage === "ProviderPage" ? a.signIn.attempt : -1))
   try fork.scoped Stream.runDrain(Stream.switchMap(attempts, (attempt) => attempt < 0 ? Stream.empty : Stream.fromEffect(visit(attempt))))
   try fork.scoped Stream.runForEach(registry.changes, (a) => a.page === "OtherEmailPage" || a.page === "MailServersPage" ? Effect.void : Ref.set(held, undefined))
 
-  effect function other({ address, password }: OtherDetails) {
+  effect function other({ name, address, password }: OtherDetails) {
     const domain = domainOf(address)
     const asked = registry.send({ type: "submitOther", domain }, "AccountPerson") catch () => undefined
     if (asked?.signIn.stage !== "CheckingOther") return
-    const form = { attempt: asked.signIn.attempt, address, password }
+    const form = { attempt: asked.signIn.attempt, name, address, password }
     try Ref.set(held, { ...form, domain })
     const check = connector === undefined ? refused(form.attempt) : (connector.connectOther(form) catch () => refused(form.attempt))
-    try report("otherResult", check)
+    try report("otherResult", check, name)
   }
 
   effect function servers({ incoming, outgoing }: MailServers) {
@@ -155,14 +179,49 @@ export const signIns = Layer.effect(SignIns, effect {
     const { attempt, domain } = asked.signIn
     const form = try Ref.get(held)
     const check = connector === undefined || form?.domain !== domain ? refused(attempt)
-      : (connector.connectServers({ attempt, address: form.address, password: form.password, incoming, outgoing }) catch () => refused(attempt))
-    try report("serversResult", check)
+      : (connector.connectServers({ attempt, name: form.name, address: form.address, password: form.password, incoming, outgoing }) catch () => refused(attempt))
+    try report("serversResult", check, form?.name ?? "")
+  }
+
+  effect function fetchedText(url: string) {
+    const response = try Effect.timeout(Effect.provideService(http.execute(HttpClientRequest.get(url)), HttpClient.TracerPropagationEnabled, false), lookupWait)
+    if (response.status !== 200) return ""
+    return try response.text
+  }
+
+  effect function listedIn(service: string, domain: string) {
+    const url = `https://dns.google/resolve?name=${encodeURIComponent(`${service}.${domain}`)}&type=SRV`
+    return try Schema.decodeUnknownEffect(Schema.fromJsonString(Resolved))(try fetchedText(url))
+  }
+
+  effect function serversOf(domain: string) {
+    const found: FoundServer[] = []
+    for (const url of setupFiles(domain)) {
+      const xml = fetchedText(url) catch () => ""
+      found.push(...(Effect.try(() => serversIn(xml, domain)) catch () => []))
+      if (lookupFinds(found)) return found
+    }
+    for (const { service, kind, security } of records) {
+      const answer = listedIn(service, domain) catch () => ({})
+      found.push(...(Effect.try(() => serversListed(answer, kind, security)) catch () => []))
+    }
+    return found
+  }
+
+  effect function lookUp() {
+    const asked = registry.send({ type: "lookUpServers" }, "AccountPerson") catch () => undefined
+    if (asked?.signIn.lookup !== "LookingUp") return
+    const { attempt, domain } = asked.signIn
+    const found = try serversOf(domain)
+    registry.send({ type: "serversLookedUp", report: { attempt, found } }, "AccountConnector") catch () => undefined
   }
 
   return {
     other: (details) => Effect.provideService(other(details), HttpClient.TracerPropagationEnabled, false),
     servers: (typed) => Effect.provideService(servers(typed), HttpClient.TracerPropagationEnabled, false),
+    lookUp,
     notes: notes.view,
-    page: page.view
+    page: page.view,
+    owner: owner.view
   }
-})
+}).pipe(Layer.provide(FetchHttpClient.layer))

@@ -1,11 +1,11 @@
-// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/mailboxes.md, "Story: See all my email in one place"
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"
 import { Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { afterAll, beforeAll, beforeEach, expect, inject, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import type { WiFiPlugin } from "../src/surfacePlugin.ts";
-import { client, expire, otherPassword, outage, reply, signIn } from "./cloud.vibe";
+import { client, expire, otherPassword, outage, ownerName, reply, sentMail, signIn } from "./cloud.vibe";
 import { mount, actOnScreen, captureSignedOutChat } from "./screen.tsx";
 import "../src/main.css";
 
@@ -17,6 +17,22 @@ const yahoo = "margaret@yahoo.com";
 const wrongPassword = "Not-the-password-7";
 
 const otherChecks: string[] = [];
+const lookups: string[] = [];
+const riverviewSettings = `<?xml version="1.0" encoding="UTF-8"?>
+<clientConfig version="1.1"><emailProvider id="riverview.net"><domain>riverview.net</domain>
+<incomingServer type="pop3"><hostname>pop.riverview.net</hostname><port>995</port><socketType>SSL</socketType></incomingServer>
+<incomingServer type="imap"><hostname>plain.%EMAILDOMAIN%</hostname><port>143</port><socketType>plain</socketType></incomingServer>
+<incomingServer type="imap"><hostname>mail.%EMAILDOMAIN%</hostname><port>993</port><socketType>SSL</socketType></incomingServer>
+<outgoingServer type="smtp"><hostname>smtp.%EMAILDOMAIN%</hostname><port>587</port><socketType>STARTTLS</socketType></outgoingServer>
+</emailProvider></clientConfig>`;
+const settingsSources = (domain: string) => [
+  `https://autoconfig.${domain}/mail/config-v1.1.xml`, `https://${domain}/.well-known/autoconfig/mail/config-v1.1.xml`, `https://autoconfig.thunderbird.net/v1.1/${domain}`,
+];
+const settingsWeb = (url: string) => {
+  const { hostname, pathname } = new URL(url);
+  if (hostname === "autoconfig.thunderbird.net") return pathname === "/v1.1/riverview.net" ? new Response(riverviewSettings, { headers: { "content-type": "text/xml" } }) : new Response(null, { status: 404 });
+  return hostname === "dns.google" || hostname.endsWith("riverview.net") ? new Response(null, { status: 404 }) : undefined;
+};
 const providerPages: string[] = [];
 const toasts: string[] = [];
 const seen = new WeakSet<Element>();
@@ -40,6 +56,13 @@ beforeEach(() => captureSignedOutChat(chatBodies, (url) => {
 }));
 
 beforeAll(() => {
+  globalThis.fetch = (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    const answer = settingsWeb(url);
+    if (answer === undefined) return fetched(input, init);
+    lookups.push(url);
+    return Promise.resolve(answer);
+  };
   window.open = (url, ...rest) => {
     providerPages.push(String(url));
     return opened(url, ...rest);
@@ -50,6 +73,7 @@ beforeEach(async () => {
   localStorage.clear();
   toasts.length = 0;
   otherChecks.length = 0;
+  lookups.length = 0;
   providerPages.length = 0;
   network.online = true;
   firstListing = undefined;
@@ -59,6 +83,7 @@ beforeEach(async () => {
   onTestFinished(() => { localStorage.clear(); });
 });
 afterAll(() => {
+  globalThis.fetch = fetched;
   watcher.disconnect();
   window.open = opened;
 });
@@ -111,6 +136,15 @@ async function askGrace(said: string) {
 }
 
 const told = () => chatBodies.join("\n");
+const bill = "Re: Your November bill is ready";
+const sentBills = async () => (await Effect.runPromise(Effect.provide(sentMail(cloud, secret), client))).filter((m) => m.labels.includes("SENT") && m.subject === bill);
+
+async function replyToBill(said: string) {
+  await expect.element(page.getByText(/your November bill of \$54\.99 is ready/)).toBeVisible();
+  await tap(page.getByRole("button", { name: "Reply" }));
+  await act(() => userEvent.fill(page.getByRole("textbox", { name: "Write your message, or ask Grace to help" }), said));
+  await tap(page.getByRole("button", { name: "Send" }));
+}
 const emailCard = () => page.getByRole("button", { name: /^Email/ });
 
 async function readOutlookFromHome() {
@@ -199,11 +233,16 @@ it("Connect the email I already use", async () => {
   await tap(tile("Other email"));
   await expect.element(page.getByRole("heading", { name: "Other email", level: 1 })).toBeVisible();
   const form = page.getByRole("form", { name: "Other email" });
-  await act(() => form.getByLabelText("Your name").fill("Margaret Hill"));
+  // spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"
+  await expect.element(form.getByLabelText("Your name")).toHaveValue(ownerName);
   await act(() => form.getByLabelText("Email address").fill("margaret@yahoo.com"));
   await act(() => form.getByLabelText("Password").fill(wrongPassword));
   await tap(form.getByRole("button", { name: "Next" }));
   await expect.element(caution()).toHaveTextContent("This is a Yahoo address. Go back and choose Yahoo, so you can sign in on Yahoo’s own page.");
+  await act(() => form.getByLabelText("Email address").fill("margaret@aol.com"));
+  await act(() => form.getByLabelText("Password").fill(wrongPassword));
+  await tap(form.getByRole("button", { name: "Next" }));
+  await expect.element(caution()).toHaveTextContent("This is an AOL address. Go back and choose AOL, so you can sign in on AOL’s own page.");
   expect(otherChecks).toEqual([]);
 
   // spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"
@@ -227,11 +266,25 @@ it("Connect the email I already use", async () => {
   await act(() => servers.getByLabelText("Incoming mail server").fill("mail.wrong.net"));
   await tap(servers.getByRole("button", { name: "Connect" }));
   await expect.element(caution()).toHaveTextContent("These mail settings didn’t work. Check them on your email company’s help page, or ask Grace.");
-  await act(() => servers.getByLabelText("Incoming mail server").fill("mail.riverview.net"));
+
+  // spec/app/accounts.md, "Mail settings can be looked up from her address, and fill the form for her to check"
+  await tap(servers.getByRole("button", { name: "Look them up" }));
+  await expect.element(servers.getByRole("status")).toHaveTextContent("Grace found the mail settings for riverview.net. Check them, then tap Connect.");
+  await expect.element(servers.getByLabelText("Incoming mail server")).toHaveValue("mail.riverview.net");
+  await expect.element(servers.getByLabelText("Outgoing mail server")).toHaveValue("smtp.riverview.net");
+  expect(lookups).toEqual(settingsSources("riverview.net"));
+  await expect.element(page.getByRole("heading", { name: "Mail settings", level: 1 })).toBeVisible();
   await tap(servers.getByRole("button", { name: "Connect" }));
   await expect.element(page.getByRole("heading", { name: "Riverview", level: 1 })).toBeVisible();
   await expect.element(page.getByText("Other email · Connected")).toBeVisible();
   await toasted("Riverview connected");
+
+  // spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"
+  await closeSettings();
+  await tap(emailCard());
+  await tap(page.getByRole("button", { name: /Riverview Internet/ }));
+  await replyToBill("Thank you, that’s fine.");
+  await expect.poll(async () => (await sentBills()).map((m) => m.from), { timeout: 60_000 }).toEqual([ownerName]);
 
   // spec/app/accounts.md, "Grace is told what happened to the accounts, never what was typed"
   expect(told()).toContain("The person chose Outlook. Outlook’s own sign-in page is open on the tablet; they type their own email address and password there, and you cannot see it.");
@@ -245,10 +298,35 @@ it("Connect the email I already use", async () => {
     expect(kept).not.toContain(typed);
     expect(told()).not.toContain(typed);
   }
+
+  // spec/app/accounts.md, "Remove anyway discards the waiting email only after she confirms how much"
+  await tap(page.getByRole("button", { name: /Riverview Internet/ }));
+  await expect.element(page.getByRole("button", { name: "Reply" })).toBeVisible();
+  await host(false);
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
+  await replyToBill("Please ignore my last email.");
+  await expect.element(page.getByRole("navigation", { name: "Folders" }).getByRole("button", { name: /^Outbox 1/ })).toBeVisible();
+  await tap(page.getByRole("button", { name: "Close Email" }));
+  await openEmailSettings();
+  await tap(page.getByRole("button", { name: new RegExp(riverview) }));
+  await tap(page.getByRole("button", { name: "Remove from this tablet" }));
+  const leaving = page.getByRole("dialog", { name: "Remove Riverview from this tablet?" });
+  await expect.element(leaving.getByText(/^An email is waiting in Outbox to go from Riverview\./)).toBeVisible();
+  await tap(leaving.getByRole("button", { name: "Remove anyway" }));
+  await expect.element(leaving.getByText("The email waiting in Outbox will be discarded and never sent. This can’t be undone.")).toBeVisible();
+  await tap(leaving.getByRole("button", { name: "Discard 1 email and remove" }));
+  await expect.element(page.getByRole("button", { name: new RegExp(riverview) })).not.toBeInTheDocument();
+  await toasted("Riverview removed from this tablet");
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
+  await host(true);
+  await closeSettings();
+  await askGrace("Is my email working now?");
+  expect((await sentBills()).length).toBe(1);
 }, 600_000);
 
 it("Choose what each email brings and take it off the tablet", async () => {
   const row = (address: string) => page.getByRole("button", { name: new RegExp(address) });
+  const fromName = "Peggy Hill";
   await openEmailSettings();
   await tap(tile("Outlook"));
   await answerOutlook("allow");
@@ -256,7 +334,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(page.getByRole("button", { name: "Add another email" }));
   await tap(tile("Other email"));
   const form = page.getByRole("form", { name: "Other email" });
-  await act(() => form.getByLabelText("Your name").fill("Margaret Hill"));
+  await act(() => form.getByLabelText("Your name").fill(fromName));
   await act(() => form.getByLabelText("Email address").fill(riverview));
   await act(() => form.getByLabelText("Password").fill(otherPassword));
   await tap(form.getByRole("button", { name: "Next" }));
@@ -308,6 +386,13 @@ it("Choose what each email brings and take it off the tablet", async () => {
   expect(question.getByRole("button", { name: "Remove from tablet" }).query()).toBeNull();
   await tap(question.getByRole("button", { name: "Keep it" }));
   await expect.element(question).not.toBeInTheDocument();
+
+  // spec/app/accounts.md, "Remove anyway discards the waiting email only after she confirms how much"
+  await tap(page.getByRole("button", { name: "Remove from this tablet" }));
+  await tap(question.getByRole("button", { name: "Remove anyway" }));
+  await expect.element(question.getByText("The email waiting in Outbox will be discarded and never sent. This can’t be undone.")).toBeVisible();
+  await tap(question.getByRole("button", { name: "Keep it" }));
+  await expect.element(question).not.toBeInTheDocument();
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
   await host(true);
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
@@ -344,7 +429,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   const again = page.getByRole("form", { name: "Other email" });
   await expect.element(page.getByRole("heading", { name: "Other email", level: 1 })).toBeVisible();
   await expect.element(again.getByLabelText("Email address")).toHaveValue(riverview);
-  await act(() => again.getByLabelText("Your name").fill("Margaret Hill"));
+  await expect.element(again.getByLabelText("Your name")).toHaveValue(fromName);
   await act(() => again.getByLabelText("Password").fill(otherPassword));
   await tap(again.getByRole("button", { name: "Next" }));
   await tap(page.getByRole("form", { name: "Mail settings" }).getByRole("button", { name: "Connect" }));

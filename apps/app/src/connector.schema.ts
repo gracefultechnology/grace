@@ -20,6 +20,7 @@ export const ReadResponse = Schema.Struct({ message: WireMessage, bodyText: Text
 export const Grants = Schema.Array(Schema.Struct({
   connectionId: NullableText, connected: Flag, identity: Schema.NullOr(Schema.Struct({ email: optional(NullableText) })),
 }))
+export const OwnerSession = Schema.Struct({ account: Schema.NullOr(Schema.Struct({ name: optional(NullableText) })) })
 export const ReconnectRefusal = Schema.Union([
   Schema.Struct({ code: Schema.Literal("reauth_required") }),
   Schema.Struct({ error: Schema.Literal("google_reauth_required") }),

@@ -370,7 +370,7 @@ export function helpWith(need: Help, registry: Registry): string {
   const d = registry.signIn.domain
   return match (need) {
     when "connectEmail": "The person tapped Ask Grace for help connecting their email to the tablet. They sign in themselves on their email company’s own page; you never see or type passwords or codes. Ask which email they use, with answers like Gmail, Outlook or Hotmail, Yahoo and I’m not sure. If they are not sure, ask them to read you the part of their address after the @.";
-    when "mailServers": `The person tapped Ask Grace while connecting their ${d} email: the tablet could not find its mail server settings. The page shows Incoming mail server and Outgoing mail server, filled with the usual guesses mail.${d} and smtp.${d}. Explain in plain words what they are, that they are not secret, and that their email company lists them on its help page.`;
+    when "mailServers": `The person tapped Ask Grace while connecting their ${d} email: the tablet could not find its mail server settings. The page shows Incoming mail server and Outgoing mail server, filled with the usual guesses mail.${d} and smtp.${d}. Explain in plain words what they are, that they are not secret, and that their email company lists them on its help page; Look them up on that page looks them up from their address and fills the form for them to check before they tap Connect.`;
   }
 }
 

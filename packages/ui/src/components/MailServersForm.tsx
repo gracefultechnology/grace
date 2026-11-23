@@ -14,6 +14,8 @@ export type MailServersFormProps = Omit<ComponentProps<"form">, "onSubmit"> & {
   domain: string;
   /** The servers to start with; by default `mail.` and `smtp.` before the domain. */
   defaultServers?: MailServers;
+  /** What Look them up found: `found` when the servers to start with came from it, `missing` when it found none. */
+  lookup?: "looking" | "found" | "missing";
   /** The email company is being reached with these servers: Connect waits. */
   connecting?: boolean;
   /** The last Connect did not work with these servers. */
@@ -24,6 +26,8 @@ export type MailServersFormProps = Omit<ComponentProps<"form">, "onSubmit"> & {
   onCancel?: () => void;
   /** Called by Ask Grace; without it Ask Grace is not offered. */
   onAskGrace?: () => void;
+  /** Called by Look them up; without it Look them up is not offered. */
+  onLookUp?: () => void;
 };
 
 /**
@@ -40,6 +44,8 @@ export function MailServersForm({
   onConnect,
   onCancel,
   onAskGrace,
+  onLookUp,
+  lookup,
   className,
   ...props
 }: MailServersFormProps) {
@@ -62,9 +68,16 @@ export function MailServersForm({
   );
   return (
     <form aria-label="Mail settings" onSubmit={submit} className={cn("font-sans", className)} {...props}>
-      <PageText tone="secondary">
-        The tablet couldn’t find the mail settings for {domain} by itself. Your email company lists them on its help page, or Grace can look them up.
+      <PageText tone="secondary" role={lookup === "found" ? "status" : undefined}>
+        {lookup === "found"
+          ? `Grace found the mail settings for ${domain}. Check them, then tap Connect.`
+          : `The tablet couldn’t find the mail settings for ${domain} by itself. Your email company lists them on its help page, or Grace can look them up.`}
       </PageText>
+      {lookup === "missing" && (
+        <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mt-4 max-w-[620px]">
+          Grace couldn’t find the mail settings for {domain}. Your email company lists them on its help page.
+        </Alert>
+      )}
       {refused && (
         <Alert variant="caution" icon={<TriangleAlert size={26} strokeWidth={2.2} />} className="mt-4 max-w-[620px]">
           These mail settings didn’t work. Check them on your email company’s help page, or ask Grace.
@@ -76,6 +89,11 @@ export function MailServersForm({
         <Button type="submit" variant="prominent" size="pill" loading={connecting} disabled={!ready || !onConnect}>
           {connecting ? "Connecting…" : "Connect"}
         </Button>
+        {onLookUp && (
+          <Button variant="capsule" size="pill" loading={lookup === "looking"} disabled={connecting} onClick={onLookUp}>
+            {lookup === "looking" ? "Looking them up…" : "Look them up"}
+          </Button>
+        )}
         {onCancel && <Button variant="capsule" size="pill" onClick={onCancel}>Cancel</Button>}
         {onAskGrace && <Button variant="capsule" size="pill" onClick={onAskGrace}>Ask Grace</Button>}
       </div>
