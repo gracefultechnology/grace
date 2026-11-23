@@ -232,6 +232,15 @@ fill. A missing or ambiguous mapping, account, or subject cannot produce a
 verified read. The actuator checks the result immediately before writing,
 without an intervening navigation, account change or edit.
 
+For a booking, the queued write keeps the exact field target, an opaque value
+reference and the version after the person's answer. A time field identifies
+the chosen slot. A personal detail field names one of the requested kinds,
+the person who owns it and the revision read by the saved-details store. At
+write time the actuator independently resolves the target on the current form
+and obtains the current store reference for that same owner and kind. It must
+match the queued field and answer. Neither the planner nor the queued command
+holds the saved detail itself.
+
 Only a live preparation with the person's current “Yes, fill it in” can supply
 those exact values. A changed answer, choice, pause, retirement or replacement
 withdraws the old write even if the person later chooses the same values.
@@ -245,14 +254,19 @@ import conversation as C from "./conversation"
 import preferences as R from "./preferences"
 import wake as W from "./wake"
 
-type FillSource = OutsidePreparation | TaskForm({ task: str, key: T::Subject, fill: K::Fill })
+type BookingField = NoBookingField
+  | BookingTimeField({ target: str, valueRef: str, slot: T::Slot, answerVersion: int })
+  | BookingSavedField({ target: str, valueRef: str, detail: str, owner: str, savedRevision: int, source: T::TaskActor, answerVersion: int })
+type FillSource = OutsidePreparation | TaskForm({ task: str, key: T::Subject, fill: K::Fill, field: BookingField })
 type QueuedWebsiteCommand = { command: WS::WorkspaceEffect, prepVersion: int, source: FillSource }
-type FormRead = NoTaskForm | VerifiedForm({ command: WS::WorkspaceEffect, key: T::Subject, fill: K::Fill })
+type FormRead = NoTaskForm | VerifiedForm({ command: WS::WorkspaceEffect, key: T::Subject, fill: K::Fill, field: BookingField })
 
-pure def captureWebsiteCommand(preparation: P::Prep, command: WS::WorkspaceEffect, preparedTask: str): QueuedWebsiteCommand =
+pure def captureWebsiteCommand(
+  preparation: P::Prep, command: WS::WorkspaceEffect, preparedTask: str, field: BookingField
+): QueuedWebsiteCommand =
   { command: command, prepVersion: preparation.version,
     source: if (preparation.phase == P::NoTask) OutsidePreparation
-      else TaskForm({ task: preparedTask, key: preparation.key, fill: K::fillOf(preparation.choice) }) }
+      else TaskForm({ task: preparedTask, key: preparation.key, fill: K::fillOf(preparation.choice), field: field }) }
 
 pure def writesFormField(operation: X::WebsiteEffect): bool = match operation {
   | Operate(details) => details.kind == X::FillOrdinary
@@ -260,6 +274,26 @@ pure def writesFormField(operation: X::WebsiteEffect): bool = match operation {
 pure def formFillCommand(command: WS::WorkspaceEffect): bool = match command {
   | Execute(details) => writesFormField(details.effect)
   | _ => false
+}
+pure def namesBookingField(command: WS::WorkspaceEffect, target: str, valueRef: str): bool = match command {
+  | Execute(details) => match details.effect {
+    | Operate(operation) => operation.kind == X::FillOrdinary and operation.target == target and target != "" and
+        operation.valueRef == valueRef and valueRef != ""
+  }
+  | _ => false
+}
+pure def bookingFieldMatches(
+  command: WS::WorkspaceEffect, key: T::Subject, fill: K::Fill, field: BookingField, answerVersion: int
+): bool = match fill {
+  | BookFill(booking) => match field {
+    | NoBookingField => false
+    | BookingTimeField(time) => time.slot == booking.bookForm.slot and time.answerVersion == answerVersion and
+        namesBookingField(command, time.target, time.valueRef)
+    | BookingSavedField(saved) => saved.owner == key.owner and saved.owner != "" and saved.source == T::Store and
+        saved.savedRevision >= 0 and saved.answerVersion == answerVersion and booking.bookForm.details.includes(saved.detail) and
+        namesBookingField(command, saved.target, saved.valueRef)
+  }
+  | _ => field == NoBookingField
 }
 pure def fillPermitted(
   preparation: P::Prep, fillWorkspace: WS::Workspace, queued: QueuedWebsiteCommand, read: FormRead, by: WS::WorkspaceActor
@@ -275,6 +309,7 @@ pure def fillPermitted(
               taskForm.key == preparation.key and taskForm.task == fillWorkspace.assistant.taskId and
               taskForm.key.owner == fillWorkspace.execution.owner and taskForm.key.origin == fillWorkspace.execution.origin and
               taskForm.key.account == fillWorkspace.execution.matchedAccount and verified.fill == taskForm.fill and
+              verified.field == taskForm.field and bookingFieldMatches(queued.command, taskForm.key, verified.fill, verified.field, queued.prepVersion) and
               P::graceMayFill(preparation, verified.fill)
         }
       }))
@@ -305,30 +340,37 @@ pure def lawATaskFillUsesItsOwnVerifiedForm(
       | OutsidePreparation => preparation.phase == P::NoTask and read == NoTaskForm
       | TaskForm(taskForm) => taskForm.key == preparation.key and taskForm.task == fillWorkspace.assistant.taskId and
           taskForm.key.account == fillWorkspace.execution.matchedAccount and
-          read == VerifiedForm({ command: queued.command, key: taskForm.key, fill: taskForm.fill }) and
+          read == VerifiedForm({ command: queued.command, key: taskForm.key, fill: taskForm.fill, field: taskForm.field }) and
+          bookingFieldMatches(queued.command, taskForm.key, taskForm.fill, taskForm.field, queued.prepVersion) and
           P::graceMayFill(preparation, taskForm.fill)
     }
 }
 
-pure val fillWorkspaceValues: Set[WS::Workspace] = {
+pure def exampleFillWorkspace(target: str, valueRef: str): WS::Workspace = {
   val loaded = wValues.filter(w => w.commitment.stage == CM::Empty and w.assistant.taskId == "task").getOnlyElement()
   val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion, browserRevision: loaded.browser.revision,
-    taskVersion: loaded.assistant.workVersion, checkpoint: "Read the payment form", website: { ...X::goodObservation,
-      generation: loaded.execution.generation, targets: List({ id: "bill-amount", consequence: X::AskFirst, inReach: true }) } }, WS::Host)
-  val queued = WS::prepare(observed, AC::sampleOperationRequest(observed, "bill-amount", "chosen-payment", X::FillOrdinary), WS::Host)
-  val write = WS::dispatch(queued, AC::sampleOperationTokens(queued), WS::Actuator)
-  Set(queued, write.state, WS::initial, AC::ordinarySample(AC::observedSample(WS::initial)).state)
+    taskVersion: loaded.assistant.workVersion, checkpoint: "Read the form", website: { ...X::goodObservation,
+      generation: loaded.execution.generation, targets: List({ id: target, consequence: X::AskFirst, inReach: true }) } }, WS::Host)
+  WS::prepare(observed, AC::sampleOperationRequest(observed, target, valueRef, X::FillOrdinary), WS::Host)
 }
+pure val billFill = exampleFillWorkspace("bill-amount", "chosen-payment")
+pure val bookedNameFill = exampleFillWorkspace("visit-name", "saved-name-ref")
+pure val bookedNameWrite = WS::dispatch(bookedNameFill, AC::sampleOperationTokens(bookedNameFill), WS::Actuator)
+pure val bookingNameField = BookingSavedField({ target: "visit-name", valueRef: "saved-name-ref", detail: "name", owner: K::sampleVisitKey.owner,
+  savedRevision: 2, source: T::Store, answerVersion: 5 })
+pure val fillWorkspaceValues: Set[WS::Workspace] =
+  Set(billFill, WS::dispatch(billFill, AC::sampleOperationTokens(billFill), WS::Actuator).state, bookedNameWrite.state,
+    WS::initial, AC::ordinarySample(AC::observedSample(WS::initial)).state)
 pure val queuedValues = {
-  val pending = fillWorkspaceValues.filter(w => w.execution.phase == X::Queued).getOnlyElement()
-  val write = WS::dispatch(pending, AC::sampleOperationTokens(pending), WS::Actuator)
+  val write = WS::dispatch(billFill, AC::sampleOperationTokens(billFill), WS::Actuator)
   val chosen = preparationValues.filter(p => p.key == CM::exampleKey and p.phase == P::Preparing and p.fillBy == P::NotAsked).getOnlyElement()
   val yes = P::decideFill(chosen, P::GraceFills, chosen.version, T::Person)
-  val queued = captureWebsiteCommand(yes, write.out.nth(0), "task")
-  Set(queued, captureWebsiteCommand(P::initial, queued.command, ""),
-    { ...queued, source: TaskForm({ task: "other-task", key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }) },
+  val queued = captureWebsiteCommand(yes, write.out.nth(0), "task", NoBookingField)
+  Set(queued, captureWebsiteCommand(P::initial, queued.command, "", NoBookingField),
+    { ...queued, source: TaskForm({ task: "other-task", key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms), field: NoBookingField }) },
     { ...queued, command: AC::ordinarySample(AC::observedSample(WS::initial)).out.nth(0) })
-    .union(preparationValues.filter(p => p.key == K::sampleVisitKey and p.phase == P::Preparing).map(v => captureWebsiteCommand(P::decideFill(v, P::GraceFills, v.version, T::Person), queued.command, "task")))
+    .union(preparationValues.filter(p => p.key == K::sampleVisitKey and p.phase == P::Preparing).map(v =>
+      captureWebsiteCommand(P::decideFill(v, P::GraceFills, v.version, T::Person), bookedNameWrite.out.nth(0), "task", bookingNameField)))
 }
 pure val operationValues: Set[X::WebsiteEffect] = queuedValues.map(q => {
   val command = q.command
@@ -339,11 +381,19 @@ pure val operationValues: Set[X::WebsiteEffect] = queuedValues.map(q => {
 }).flatten()
 pure val readValues = {
   val outside = queuedValues.filter(q => q.source == OutsidePreparation).getOnlyElement()
-  val original = { command: outside.command, key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms) }
+  val original = { command: outside.command, key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms), field: NoBookingField }
+  val book = { command: bookedNameWrite.out.nth(0), key: K::sampleVisitKey, fill: K::fillOf(K::sampleBookTerms), field: bookingNameField }
+  val detail = { target: "visit-name", valueRef: "saved-name-ref", detail: "name", owner: K::sampleVisitKey.owner,
+    savedRevision: 2, source: T::Store, answerVersion: 5 }
   Set(NoTaskForm, VerifiedForm(original),
     VerifiedForm({ ...original, key: { ...CM::exampleKey, account: "other-account" } }),
     VerifiedForm({ ...original, key: { ...CM::exampleKey, ref: "other-bill" } }),
-    VerifiedForm({ ...original, key: K::sampleVisitKey, fill: K::fillOf(K::sampleBookTerms) }),
+    VerifiedForm(book), VerifiedForm({ ...book, field: NoBookingField }),
+    VerifiedForm({ ...book, field: BookingSavedField({ ...detail, detail: "address" }) }),
+    VerifiedForm({ ...book, field: BookingSavedField({ ...detail, savedRevision: 3 }) }),
+    VerifiedForm({ ...book, field: BookingSavedField({ ...detail, valueRef: "replaced-name-ref" }) }),
+    VerifiedForm({ ...book, field: BookingSavedField({ ...detail, source: T::Host }) }),
+    VerifiedForm({ ...book, field: BookingSavedField({ ...detail, answerVersion: 4 }) }),
     VerifiedForm({ ...original, fill: K::fillOf(T::PayTerms({ pay: { ...CM::exampleProposal, day: 2 } })) }),
     VerifiedForm({ ...original, command: AC::ordinarySample(AC::observedSample(WS::initial)).out.nth(0) }))
 }
