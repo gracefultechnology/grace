@@ -319,7 +319,7 @@ it("Connect the email I already use", async () => {
   const leaving = page.getByRole("dialog", { name: "Remove Riverview from this tablet?" });
   await expect.element(leaving.getByText(/^An email is waiting in Outbox to go from Riverview\./)).toBeVisible();
   await tap(leaving.getByRole("button", { name: "Remove anyway" }));
-  await expect.element(leaving.getByText("The email waiting in Outbox will be discarded and never sent. This can’t be undone.")).toBeVisible();
+  await expect.element(leaving.getByText("The pending email will be removed from this tablet. This can’t be undone.")).toBeVisible();
   await tap(leaving.getByRole("button", { name: "Discard 1 email and remove" }));
   await expect.element(page.getByRole("button", { name: new RegExp(riverview) })).not.toBeInTheDocument();
   await toasted("Riverview removed from this tablet");
@@ -416,7 +416,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   // spec/app/accounts.md, "Remove anyway discards the waiting email only after she confirms how much"
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
   await tap(question.getByRole("button", { name: "Remove anyway" }));
-  await expect.element(question.getByText("The email waiting in Outbox will be discarded and never sent. This can’t be undone.")).toBeVisible();
+  await expect.element(question.getByText("The pending email will be removed from this tablet. This can’t be undone.")).toBeVisible();
   await tap(question.getByRole("button", { name: "Keep it" }));
   await expect.element(question).not.toBeInTheDocument();
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));

@@ -520,11 +520,11 @@ pure val waitingValues = Set(0, 1, 2)
 ### Remove anyway discards the waiting email only after she confirms how much
 
 While email waits, the question also offers Remove anyway. It first asks
-again, saying how many waiting emails will be discarded and never sent;
-Keep it closes both questions. Her yes there discards that account’s waiting
-email, never more than she was told about, and removes the account as
-Remove does. Only her taps remove an account or discard its email: Grace has
-no way to.
+again, saying how many pending emails will be removed from the tablet.
+An email its provider already accepted can still arrive. Keep it closes
+both questions. Her yes there discards that account’s waiting email, never
+more than she was told about, and removes the account as Remove does.
+Only her taps remove an account or discard its email: Grace has no way to.
 
 ```quint
 pure def canRemoveAnyway(a: Accounts, id: int, waiting: int, by: AccountActor): bool =
