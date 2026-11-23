@@ -3,6 +3,9 @@
   "compilerOptions": {
     "emitDeclarationOnly": true
   },
-  "files": ["../../vendor/eliza/packages/os/src/bridges/passwords.vibe"],
+  "files": [
+    "../../vendor/eliza/packages/os/src/bridges/passwords.vibe",
+    "../../vendor/eliza/packages/os/src/image/index.vibe"
+  ],
   "include": []
 }
