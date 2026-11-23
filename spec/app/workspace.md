@@ -1399,10 +1399,8 @@ pure def hasOneStatementAnswer(amounts: Set[str], dates: Set[str]): bool =
 type StatementSection = { key: str, amount: str, due: str }
 pure def provesStatementSection(complete: bool, sections: List[StatementSection], amount: str, due: str): bool =
   if (sections.length() != 1) false
-  else {
-    val section = sections.head()
-    complete and section.key != "" and amount != "" and due != "" and section.amount == amount and section.due == due
-  }
+  else complete and amount != "" and due != "" and sections.head().key != "" and
+    sections.head().amount == amount and sections.head().due == due
 pure def lawAStatementRequiresItsOwnCompleteSection(complete: bool, sections: List[StatementSection], amount: str, due: str): bool =
   provesStatementSection(complete, sections, amount, due) implies
     (complete and sections.length() == 1 and amount != "" and due != "")
