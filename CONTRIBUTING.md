@@ -399,7 +399,7 @@ Each run installs Dafny from its pinned release, checked against its SHA-256,
 and restores pnpm's store and Quint's evaluator. On ordinary CI runs, tool shards
 restore their shared fixture runs and the product runner restores verification
 results from the root, workspace packages and standalone examples. The result
-cache keys include the job, commit and run attempt. Nightly verification restores
+cache first restores the same job at its current lockfile, including results saved with the previous key layout, then tries the same job at another lockfile. Each entry checks its own tool and input fingerprint. Nightly verification restores
 only the pinned evaluator and runs fresh checks.
 The default branch's product job publishes the pnpm store after its frozen installs. All jobs can restore public dependencies with the same workspace, vendored Eliza and example lockfiles. Fork pull requests can read this cache.
 Turborepo shares task results through the private Cloudflare/R2 cache.
@@ -412,7 +412,7 @@ policy. A pull request keeps its own Turborepo results in the GitHub cache
 instead, which only that pull request reads, so its next push reuses them. Branch pushes without a remote cache token also save their local results for later runs. Newer commits replace an older run of the same pull request.
 A pull request from `develop` into `main` waits for the push of the same commit
 to `develop` and replays its published results.
-Every pushed commit can finish. Completed tasks are shared through the cache.
+Develop pushes keep their exact-commit groups for promotion. On other branches the running push can finish while the newest pending push replaces intermediate pending pushes. Explicit push retries run in their own group. Each job restores its own Turbo archive.
 Local `pnpm` task commands read the operator's cache credential from
 `~/.config/vibestack/turbo-cache.json`, outside the repository. Credentials
 are never part of a task fingerprint.
