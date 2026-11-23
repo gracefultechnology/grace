@@ -354,12 +354,20 @@ function viewBillChecks(score: typeof StatementScore.Type, billerId: string) {
 
 const statementControls = ["no-action", "wrong-answer", "wrong-date"] as const;
 type StatementControl = (typeof statementControls)[number];
+type StatementRejection = StatementControl | "expected-refusal";
 
-function rejectsStatementControl(score: typeof StatementScore.Type, billerId: string, action: StatementControl) {
+const statementRejections = {
+  "no-action": { failedChecks: ["logged_in", "answer"], answerDetail: /^no answer reported$/u },
+  "wrong-answer": { failedChecks: ["answer"], answerDetail: /^amount expected .+, date expected \d{4}-\d{2}-\d{2}$/u },
+  "wrong-date": { failedChecks: ["answer"], answerDetail: /^amount ok, date expected \d{4}-\d{2}-\d{2}$/u },
+  "expected-refusal": { failedChecks: ["answer"], answerDetail: /^no answer reported$/u },
+} satisfies Record<StatementRejection, { failedChecks: string[]; answerDetail: RegExp }>;
+
+function matchesStatementRejection(score: typeof StatementScore.Type, billerId: string, kind: StatementRejection) {
+  const { failedChecks, answerDetail } = statementRejections[kind];
   const failed = score.results.filter((result) => !result.pass);
-  const expected = action === "no-action" ? ["logged_in", "answer"] : ["answer"];
-  return !score.success && viewBillChecks(score, billerId) && JSON.stringify(failed.map(({ type }) => type)) === JSON.stringify(expected) &&
-    (action !== "wrong-date" || failed.some(({ detail }) => /^amount ok, date expected \d{4}-\d{2}-\d{2}$/u.test(detail)));
+  return !score.success && viewBillChecks(score, billerId) && JSON.stringify(failed.map(({ type }) => type)) === JSON.stringify(failedChecks) &&
+    failed.some(({ type, detail }) => type === "answer" && answerDetail.test(detail));
 }
 
 const StatementIdentity = Schema.Struct({
@@ -438,7 +446,7 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
         for (const name of statementControls) {
           const receipt = receipts.get(name);
           if (receipt === undefined) continue;
-          if (!rejectsStatementControl(Schema.decodeUnknownSync(StatementControlReceipt)(receipt).grade, billerId, name))
+          if (!matchesStatementRejection(Schema.decodeUnknownSync(StatementControlReceipt)(receipt).grade, billerId, name))
             return result("invalid");
           rejectedControls++;
         }
@@ -450,7 +458,7 @@ export async function fleetStatementCoverage({ directory, results, productRevisi
         if (grade.taskId !== taskId || !viewBillChecks(grade, billerId) || grade.success !== grade.results.every(({ pass }) => pass))
           return result("invalid");
         if (!grade.success) {
-          if (expected !== "refusal" || finished.answer !== "" || !rejectsStatementControl(grade, billerId, "wrong-answer"))
+          if (expected !== "refusal" || finished.answer !== "" || !matchesStatementRejection(grade, billerId, "expected-refusal"))
             return result("official-failure", 0);
           return result(controlsComplete ? "expected-refusal" : "incomplete", 0);
         }
@@ -524,7 +532,7 @@ export async function fleetStatement(directory: string, billerId: string, receip
       Schema.decodeUnknownSync(StatementScore)(await fleet.admin("/evaluate", { episodeId: episode.episodeId, answer }));
     const noAction = await grade("");
     record("no-action", { grade: noAction });
-    if (!rejectsStatementControl(noAction, billerId, "no-action"))
+    if (!matchesStatementRejection(noAction, billerId, "no-action"))
       throw new Error("The bound Fleet view-bill grader did not reject the control");
     return {
       taskId,
@@ -552,7 +560,7 @@ export async function fleetStatement(directory: string, billerId: string, receip
         if (!loaded?.ok() || page.url() !== url) throw new Error("The person did not open the current Fleet bill");
         const wrongAnswer = await grade("Amount due: $0.01. Due date: January 1, 2001.");
         record("wrong-answer", { grade: wrongAnswer });
-        if (!rejectsStatementControl(wrongAnswer, billerId, "wrong-answer"))
+        if (!matchesStatementRejection(wrongAnswer, billerId, "wrong-answer"))
           throw new Error("The bound Fleet view-bill grader did not reject the control");
       },
       async finish(answer: string) {
@@ -562,7 +570,7 @@ export async function fleetStatement(directory: string, billerId: string, receip
         const amount = (Math.max(0, start.balanceCents) / 100).toFixed(2);
         const wrongDate = await grade(`Amount due: $${amount}. Due date: ${nextDay.toISOString().slice(0, 10)}.`);
         record("wrong-date", { grade: wrongDate });
-        if (!rejectsStatementControl(wrongDate, billerId, "wrong-date"))
+        if (!matchesStatementRejection(wrongDate, billerId, "wrong-date"))
           throw new Error("The Fleet view-bill grader did not isolate the wrong due date");
         const result = Schema.decodeUnknownSync(FinishedStatement)(await fleet.admin("/finish", { episodeId: episode.episodeId, answer }));
         if (result.taskId !== taskId || !viewBillChecks(result, billerId))

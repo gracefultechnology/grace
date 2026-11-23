@@ -91,10 +91,11 @@ Each Fleet case signs in to an isolated local simulator and reads its
 current statement through the reviewed Grace plan. The pinned Fleet grader
 checks the amount and due date, login, unchanged account settings and zero
 payments. Each Fleet episode must reject no action, a wrong answer, and the
-correct amount with the due date one day late. After Grace submits its answer,
-the test supervisor reads the episode’s original amount and due date to build
-the third control. Only the supervisor sees those reference values. CI uploads
-these receipts and the qualification inventory as `billworld-fleet-view-bill`.
+correct amount with the due date one day late. After the journey captures
+Grace’s answer or refusal, the test supervisor reads the episode’s original
+amount and due date to build the third control. Only the supervisor sees those
+reference values. CI uploads these receipts and the qualification inventory as
+`billworld-fleet-view-bill`.
 The inventory derives eligibility from the pinned catalog and upstream task
 generator. The required cohort includes 17 official passing reads and eight
 expected refusals. The refusal journeys check in Chromium that Grace leaves
