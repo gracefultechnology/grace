@@ -4,6 +4,8 @@ import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
 import ai.eliza.plugins.securestore.nativeonly.PasswordBackupApproval;
 import ai.eliza.plugins.signin.BrowserSignIn;
+import ai.eliza.plugins.signin.CredentialPolicy;
+import ai.eliza.plugins.signin.CredentialPolicy.MailLeaseUpgrade;
 import ai.eliza.plugins.signin.CredentialPolicy.Notice;
 import ai.eliza.plugins.signin.CredentialReader;
 import ai.eliza.plugins.signin.DeviceCustody;
@@ -43,7 +45,10 @@ public final class GraceAccount extends ElizaSignInPlugin {
 
  private record BackupAttempt(GracePasswordRecovery.Operation operation, CloudDeviceAccount.Session owner,
                               long generation, CancellationSignal picker) {}
- private volatile GracePasswordsOwner.Enrollment enrollment;
+ private record Enrollment(GracePasswordsOwner.Enrollment owner, MailLeaseUpgrade upgrade) {
+  boolean mailUpgrade() { return upgrade != null; }
+ }
+ private volatile Enrollment enrollment;
  private final AtomicReference<BackupAttempt> backupAttempt = new AtomicReference<>();
  private SharedPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
@@ -105,8 +110,21 @@ public final class GraceAccount extends ElizaSignInPlugin {
   signOutCanonical = () -> delegate.signOut(expected);
   return new SignInCustody() {
    @Override public int beginSignIn(Environment environment) throws Refused {
-    if (environment != expected || enrollment == null) throw new Refused(Failure.REJECTED);
+    var work = enrollment;
+    if (environment != expected || work == null || work.mailUpgrade()) throw new Refused(Failure.REJECTED);
     return delegate.beginSignIn(environment);
+   }
+
+   @Override public MailLeaseUpgrade mailLeaseUpgrade(Environment environment) {
+    var work = enrollment;
+    if (environment != expected || work == null || !work.mailUpgrade()) return null;
+    return work.upgrade().equals(delegate.mailLeaseUpgrade(environment)) ? work.upgrade() : null;
+   }
+
+   @Override public int beginMailLeaseUpgrade(Environment environment, MailLeaseUpgrade target) throws Refused {
+    var work = enrollment;
+    if (environment != expected || work == null || !target.equals(work.upgrade())) throw new Refused(Failure.REJECTED);
+    return delegate.beginMailLeaseUpgrade(environment, target);
    }
 
    @Override public void signInEnded(Environment environment, int attempt) {
@@ -210,7 +228,19 @@ public final class GraceAccount extends ElizaSignInPlugin {
   synchronized (CREDENTIAL_CHANGE) {
    var context = getContext();
    if (new SharedGraceCredentials(context).needsCleanup()) return projection(null).put("legacySignInNeedsCleanup", true);
-   return projection(session(context));
+   var owner = session(context);
+   var account = projection(owner);
+   if (owner != null) {
+    var credentials = DeviceCustody.cloud(context, API.toString()).credentials().state();
+    var current = enrollment;
+    if (current != null && current.mailUpgrade()) {
+     var state = credentials.attempt() instanceof CredentialPolicy.Attempt.Acknowledging ? "acknowledgmentPending" : "signInPending";
+     account.put("mailLeaseUpgrade", state);
+    } else if (CredentialPolicy.mailLeaseUpgrade(credentials) != null) {
+     account.put("mailLeaseUpgrade", "required");
+    }
+   }
+   return account;
   }
  }
 
@@ -226,7 +256,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
   if (call.getData().has("method") && !"browser".equals(method)) { call.reject("Unknown sign-in method"); return; }
   ACCOUNT.execute(() -> {
    try {
-    GracePasswordsOwner.Enrollment lease;
+    Enrollment lease;
     synchronized (CREDENTIAL_CHANGE) {
      var legacy = new SharedGraceCredentials(getContext());
      legacy.recoverOwner();
@@ -237,7 +267,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
       finishEnrollment(call);
       return;
      }
-     lease = GracePasswordsOwner.beginEnrollment(getContext());
+     lease = new Enrollment(GracePasswordsOwner.beginEnrollment(getContext()), null);
      enrollment = lease;
     }
     try {
@@ -258,11 +288,56 @@ public final class GraceAccount extends ElizaSignInPlugin {
   });
  }
 
+ @PluginMethod public void beginLeaseUpgrade(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try {
+    Enrollment lease;
+    synchronized (CREDENTIAL_CHANGE) {
+     var owner = session(getContext());
+     var target = CredentialPolicy.mailLeaseUpgrade(DeviceCustody.cloud(getContext(), API.toString()).credentials().state());
+     if (enrollment != null || owner == null || target == null || !owner.accountId().equals(target.account().userId())
+         || !owner.organizationId().equals(target.account().organizationId())) {
+      call.reject("This device does not need mail sign-in");
+      return;
+     }
+     lease = new Enrollment(GracePasswordsOwner.beginEnrollment(getContext()), target);
+     enrollment = lease;
+    }
+    try {
+     publishSession();
+     super.upgradeMailLease(accountCall(call, data -> {
+      if (!"signed-in-as".equals(data.optString("verdict"))) {
+       call.reject("Mail sign-in could not complete");
+       return;
+      }
+      ACCOUNT.execute(() -> finishEnrollment(call));
+     }, lease));
+    } catch (RuntimeException refused) {
+     closeEnrollment(lease);
+     throw refused;
+    }
+   } catch (Exception unavailable) {
+    publishSession();
+    call.reject("Couldn't open mail sign-in");
+   }
+  });
+ }
+
+ @PluginMethod public void cancelLeaseUpgrade(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try {
+    if ("signInPending".equals(accountProjection().optString("mailLeaseUpgrade"))) {
+     super.cancelMailLeaseUpgrade(accountCall(call, ignored -> { publishSession(); call.resolve(); }, null));
+    } else call.resolve();
+   } catch (Exception unavailable) { call.reject("Couldn't cancel mail sign-in"); }
+  });
+ }
+
  private void finishEnrollment(PluginCall call) {
   try {
    var owner = session(getContext());
    if (owner == null) { call.reject("Sign-in could not be verified"); return; }
-   notifyListeners("sessionChanged", projection(owner), true);
+   notifyListeners("sessionChanged", accountProjection(), true);
    call.resolve();
   } catch (Exception unavailable) { call.reject("Sign-in could not be verified"); }
  }
@@ -313,12 +388,13 @@ public final class GraceAccount extends ElizaSignInPlugin {
   if (lease != null) closeEnrollment(lease);
  }
 
- private void closeEnrollment(GracePasswordsOwner.Enrollment lease) {
+ private void closeEnrollment(Enrollment lease) {
   if (enrollment == lease) enrollment = null;
-  lease.close();
+  lease.owner().close();
+  if (lease.mailUpgrade()) publishSession();
  }
 
- private PluginCall accountCall(PluginCall caller, Consumer<JSObject> resolved, GracePasswordsOwner.Enrollment lease) {
+ private PluginCall accountCall(PluginCall caller, Consumer<JSObject> resolved, Enrollment lease) {
   var input = new JSObject().put("environment", ENVIRONMENT);
   return new PluginCall(null, caller.getPluginId(), caller.getCallbackId(), caller.getMethodName(), input) {
    @Override public void resolve(JSObject data) {
