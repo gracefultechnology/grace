@@ -146,20 +146,42 @@ async function operatePublicSort(site: Site, definition: BenchmarkDefinition, ac
   await website.bringToFront();
   if (action.kind === "openPublicCategory") {
     if (website.url() !== definition.startUrl) throw new Error("The public category must start from the storefront");
-    const menu = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
+    const known = definition.taskId === "351" ? [/^Video Games$/i, /^PlayStation 4$/i, /^Accessories$/i] :
       definition.taskId === "352" ? [/^Health (&|and) Household$/i, /^Diet (&|and) Sports Nutrition$/i, /^Nutrition Bars (&|and) Drinks$/i] : [];
-    const [first, second, leafName] = menu;
-    if (!first || !second || !leafName) throw new Error("The fixture has no public category operator sequence");
-    const nav = website.getByRole("navigation").filter({ has: website.locator("a").filter({ hasText: first }) }).first();
-    const navControl = (name: RegExp) => nav.locator("a[href]").filter({ hasText: name }).filter({ visible: true }).first();
-    const leaf = navControl(leafName);
+    const leafName = definition.taskId === "353" ? /^Competitive Swimwear$/i :
+      definition.taskId === "354" ? /^Living Room Furniture$/i :
+      definition.taskId === "355" ? /^Kids(?:['’])? Bedding$/i : undefined;
+    const navName = known[0] ?? leafName;
+    if (!navName) throw new Error("The fixture has no public category operator");
+    const nav = website.getByRole("navigation").filter({
+      has: website.locator("a").filter({ hasText: navName }),
+    }).first();
     await nav.locator('ul[role="menu"]').filter({ visible: true }).first().waitFor({ timeout: 15_000 });
-    await navControl(first).hover({ timeout: 15_000 });
-    const intermediate = navControl(second);
-    await intermediate.hover({ timeout: 10_000 }).catch(async () => {
-      await intermediate.press("ArrowRight", { timeout: 5_000 });
-    });
-    if (!await leaf.isVisible()) await intermediate.press("ArrowRight", { timeout: 5_000 });
+    const disclosed = leafName ? await nav.locator("a[href]").filter({ hasText: leafName }).evaluateAll(anchors =>
+      anchors.flatMap(anchor => {
+        const labels = [];
+        for (let item = anchor.closest("li"); item; item = item.parentElement?.closest("li") ?? null) {
+          const label = item.querySelector(":scope > a")?.textContent?.trim();
+          if (!label) return [];
+          labels.unshift(label.replace(/\s+/gu, " "));
+        }
+        return [labels];
+      })) : undefined;
+    const menu = disclosed?.length === 1
+      ? (disclosed[0] ?? []).map(label => new RegExp("^" + label.replace(/[.*+?^$${}()|[\]\\]/gu, "\\$&") + "$", "iu")) : known;
+    const names = menu.slice(0, -1);
+    const final = menu.at(-1);
+    if (!names.length || names.length > 5 || !final) throw new Error("The fixture does not have one public category menu");
+    const navControl = (name: RegExp) => nav.locator("a[href]").filter({ hasText: name }).filter({ visible: true }).first();
+    const leaf = navControl(final);
+    for (const [index, name] of names.entries()) {
+      const control = navControl(name);
+      const child = navControl(names[index + 1] ?? final);
+      await control.hover({ timeout: 10_000 }).catch(async () => {
+        await control.press("ArrowRight", { timeout: 5_000 });
+      });
+      if (!await child.isVisible()) await control.press("ArrowRight", { timeout: 5_000 });
+    }
     const href = await leaf.getAttribute("href", { timeout: 15_000 });
     if (!href) throw new Error("The disclosed category does not have an address");
     const category = new URL(href, website.url());
