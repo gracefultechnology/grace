@@ -114,9 +114,10 @@ public final class GraceAccount extends Plugin {
  static void maintainDeviceLease(Context context) throws Exception {
   CloudDeviceAccount account = account(context);
   var before = account.session();
-  account.renewIfDue();
-  if (!java.util.Objects.equals(before, account.session())) GraceAgentService.deviceCredentialChanged(context);
-  account.retryRevocation();
+  try { account.maintainLease(); }
+  finally {
+   if (!java.util.Objects.equals(before, account.session())) GraceAgentService.deviceCredentialChanged(context);
+  }
  }
 
  static boolean deviceOnly(Context context) throws Exception { return account(context).isDeviceOnly(); }

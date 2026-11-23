@@ -482,9 +482,9 @@ pure def sometimesWaitsForGraceAtTheHandOver(s: Setup): bool = s.phase == Away a
 
 The acknowledged tablet can keep its delegated mail and calendar access
 without asking the person to sign in for every key rotation. The operating
-system can run renewal on a connected tablet while Grace is closed. The
-selected Grace Cloud deployment issues the lease and acknowledges the
-successor key before the tablet uses it. An existing install without a
+system can maintain the lease and renew the key on a connected tablet
+while Grace is closed. The selected Grace Cloud deployment issues the lease
+and acknowledges the successor key before the tablet uses it. An existing install without a
 lease can continue its hosted Email and Calendar visits. It obtains a
 lease at its next verified enrollment.
 
