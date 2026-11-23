@@ -258,10 +258,6 @@ function Agenda({ calendar, today, move, open, busy, children }: {
 
 type ReadCommand = Parameters<ManagedReads.Shape["send"]>[0];
 
-function retryRead(command: ReadCommand | undefined, run: (command: ReadCommand) => void) {
-  return command && (() => run(command));
-}
-
 function signedInMailLeaseVersion(account: GraceAccount | undefined) {
   return account?.tag === "GraceDeviceSignedIn" && account.mailLeaseUpgrade.tag === "LeaseMailReady"
     ? account.mailLeaseUpgrade.leaseVersion : undefined;
@@ -331,10 +327,11 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
     setWriteNotice({ key: projection, text, undoOf: action.kind === "trash" ? receipt?.operationId : undefined });
   });
   const undo = canTrash && snapshot.kind === "mail" && notice?.undoOf !== undefined && snapshot.trashed?.operationId === notice.undoOf ? snapshot.trashed : undefined;
+  const undoVersion = undo?.version;
   const showNotice = notice && <div className="flex flex-wrap items-center gap-3">
     <PageText role="status">{notice.text}</PageText>
-    {undo?.version && <Button variant="capsule" size="pill" disabled={pending}
-      onClick={() => write({ kind: "undo", id: undo.itemId, version: undo.version, prior: undo.operationId })}>Undo</Button>}
+    {undo && undoVersion && <Button variant="capsule" size="pill" disabled={pending}
+      onClick={() => write({ kind: "undo", id: undo.itemId, version: undoVersion, prior: undo.operationId })}>Undo</Button>}
     <Button variant="capsule" size="pill" disabled={pending} onClick={() => setWriteNotice(undefined)}>Dismiss</Button>
   </div>;
 
@@ -380,7 +377,8 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const back = <Button variant="capsule" size="pill" onClick={() => run({ kind: "back" })}>{snapshot.kind === "mail" ? `Back to ${folderNames[snapshot.folder]}` : "Back to calendar"}</Button>;
   const more = snapshot.next === null ? null :
     <Button variant="capsule" size="pill" loading={pending} onClick={() => run({ kind: "more" })}>Load more</Button>;
-  const problem = failed && (failed.key === projection || failed.key === mailProjection) && <RetryNotice role="alert" retrying={pending} onRetry={retryRead(failed.retry, run)}>{failed.text}</RetryNotice>;
+  const retry = failed?.retry;
+  const problem = failed && (failed.key === projection || failed.key === mailProjection) && <RetryNotice role="alert" retrying={pending} onRetry={retry && (() => run(retry))}>{failed.text}</RetryNotice>;
 
   if (snapshot.kind === "mail") {
     const selected = snapshot.selected;
