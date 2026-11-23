@@ -4450,8 +4450,10 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
     }).toBe(true);
     const changeLocation = async (location: string) => {
       const occurrence = Schema.decodeUnknownSync(Schema.NonEmptyString)(savedOccurrence());
+      const { boxes } = await (await fetch(new URL("/fake/account", cloud), { headers })).json() as { boxes: { calendar: { externalId: string; etag: string }[] }[] };
+      const etag = boxes.flatMap((b) => b.calendar).find((e) => e.externalId === occurrence)?.etag ?? "";
       const response = await fetch(new URL("/api/v1/eliza/google/calendar/events/" + encodeURIComponent(occurrence), cloud), {
-        method: "PATCH", headers, body: JSON.stringify({ calendarId: "primary", location }),
+        method: "PATCH", headers: { ...headers, "If-Match": etag }, body: JSON.stringify({ calendarId: "primary", location }),
       });
       expect(response.ok).toBe(true);
     };

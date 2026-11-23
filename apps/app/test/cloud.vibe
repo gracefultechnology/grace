@@ -206,6 +206,7 @@ error Missing
 error NoConnection
 error NoOperation
 error Stale
+error NoRevision
 error StaleRevision
 error ReviewChanged
 error DigestChanged
@@ -231,6 +232,7 @@ const refusals: Record<string, { status: number; body: object }> = {
   NoConnection: { status: 404, body: { error: "Google connection not found." } },
   NoOperation: { status: 404, body: { error: "Operation not found" } },
   Stale: { status: 412, body: { error: "The event changed since it was read. Read it again before changing it.", code: "precondition_failed" } },
+  NoRevision: { status: 400, body: { error: "invalid_request", errorDescription: "A change or deletion needs one exact If-Match revision.", outcome: "not_accepted" } },
   StaleRevision: { status: 409, body: { error: "Selected message changed; review its current labels", code: "stale_revision" } },
   ReviewChanged: { status: 409, body: { error: "Reviewed content or provider state changed", code: "stale_revision" } },
   DigestChanged: { status: 409, body: { error: "Review changed", code: "stale_revision" } },
@@ -376,8 +378,27 @@ function googleEvent(e: Appointment) {
     status: e.status, start: at(e.startAt), end: at(e.endAt), recurrence: e.recurrence, reminders: e.reminders }
 }
 
-const during = (e: Appointment, timeMin: string, timeMax: string) =>
-  Date.parse(e.startAt) < Date.parse(timeMax) && (e.recurrence !== undefined || Date.parse(e.endAt) > Date.parse(timeMin))
+const stampOf = (at: number) => new Date(at).toISOString().replace(/[-:]|\.\d+/g, "")
+
+function nthStart(start: number, freq: string, n: number) {
+  if (freq === "MONTHLY") {
+    const d = new Date(start)
+    d.setUTCMonth(d.getUTCMonth() + n)
+    return d.getTime()
+  }
+  return start + n * (freq === "DAILY" ? 1 : 7) * 24 * 60 * 60 * 1000
+}
+
+function during(e: Appointment, timeMin: string, timeMax: string) {
+  const [start, end, min, max] = [e.startAt, e.endAt, timeMin, timeMax].map(Date.parse)
+  if (e.recurrence === undefined) return start < max && end > min
+  const freq = /FREQ=(DAILY|WEEKLY|MONTHLY)/.exec(e.recurrence.join(";"))?.[1]
+  if (freq === undefined) return start < max
+  for (let n = 0, at = start; at < max; n++, at = nthStart(start, freq, n)) {
+    if (at + end - start > min && !(e.cancelled ?? []).includes(`${e.externalId}_${stampOf(at)}`)) return true
+  }
+  return false
+}
 
 function box(provider: Slug, address: string, grantId: string, at: number, site: string, visit: string): Box {
   const today = Math.floor(at / day) * day
@@ -916,9 +937,19 @@ effect function store(site: string) {
     const request = try HttpServerRequest.HttpServerRequest
     const event = found.calendar.find((e) => e.externalId === eventId && e.calendarId === (calendarId?.trim() || "primary"))
     if (!event) throw new ProviderFailed()
-    const ifMatch = request.headers["if-match"]
-    if (ifMatch !== undefined && ifMatch.trim() !== event.etag) throw new Stale()
+    const ifMatch = request.headers["if-match"]?.trim()
+    if (ifMatch === undefined || ifMatch === "" || ifMatch === "*") throw new NoRevision()
+    if (ifMatch !== event.etag) throw new Stale()
     return { key, grantId: found.grantId, found: event }
+  }
+
+  effect function readAppointment(fixed?: Slug) {
+    const query = try HttpServerRequest.schemaSearchParams(RemovalQuery)
+    const { box: found } = try connection(fixed, query.grantId)
+    const { eventId } = try HttpRouter.params
+    const event = found.calendar.find((e) => e.externalId === eventId && e.calendarId === (query.calendarId?.trim() || "primary"))
+    if (!event) throw new Missing()
+    return try HttpServerResponse.json({ event: shown(event, event.timezone ?? "UTC") }, { headers: { etag: event.etag } })
   }
 
   effect function moveAppointment(fixed?: Slug) {
@@ -937,6 +968,9 @@ effect function store(site: string) {
   effect function cancelRepetition(fixed: Slug | undefined, query: typeof RemovalQuery.Type, instance: string, seriesId: string, stamp: string) {
     const { key, box: found } = try connection(fixed, query.grantId)
     const series = found.calendar.find((e) => e.externalId === seriesId && e.calendarId === (query.calendarId?.trim() || "primary"))
+    const ifMatch = (try HttpServerRequest.HttpServerRequest).headers["if-match"]?.trim()
+    if (ifMatch === undefined || ifMatch === "" || ifMatch === "*") throw new NoRevision()
+    if (series !== undefined && ifMatch !== series.etag) throw new Stale()
     const at = Date.parse(stamp.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"))
     const from = series === undefined ? Number.NaN : Date.parse(series.startAt)
     if (series?.recurrence === undefined || !(at >= from) || (at - from) % (24 * 60 * 60 * 1000) !== 0) throw new Missing()
@@ -1306,6 +1340,7 @@ effect function store(site: string) {
     HttpRouter.route("GET", `${mail}/contacts`, answered(contacts(fixed))),
     HttpRouter.route("GET", `${calendar}/feed`, answered(calendarFeed(fixed))),
     HttpRouter.route("POST", `${calendar}/events`, answered(addAppointment(fixed), refusedAs("Invalid calendar event request."))),
+    HttpRouter.route("GET", `${calendar}/events/:eventId`, answered(readAppointment(fixed))),
     HttpRouter.route("PATCH", `${calendar}/events/:eventId`, answered(moveAppointment(fixed), refusedAs("Invalid calendar event update request."))),
     HttpRouter.route("DELETE", `${calendar}/events/:eventId`, answered(removeAppointment(fixed), { status: 400, body: { error: "Invalid calendar event delete request." } }))
   ]
@@ -1354,7 +1389,7 @@ export function cloud(site: string) {
     allowedHeaders: [
       "Content-Type", "Authorization", "X-API-Key", "X-Eliza-Dedicated-Price", "X-App-Id", "X-Request-ID", "Cookie", "X-Miniapp-Token", "X-Anonymous-Session",
       "X-Gateway-Secret", "X-Wallet-Address", "X-Timestamp", "X-Wallet-Signature", "X-Service-Key", "Cache-Control", "X-Agent-Client-Id", "X-PAYMENT",
-      "X-PAYMENT-RESPONSE", "X-PAYMENT-STATUS", "X-Steward-Tenant", "X-Eliza-CSRF", "X-Cli-Session-Verifier", "Idempotency-Key", "X-Content-SHA256",
+      "X-PAYMENT-RESPONSE", "X-PAYMENT-STATUS", "X-Steward-Tenant", "X-Eliza-CSRF", "X-Cli-Session-Verifier", "Idempotency-Key", "If-Match", "X-Content-SHA256",
       "X-Content-Length", "X-Storage-Object-Key", "X-Storage-Prefix", "X-Storage-Recursive", "X-Affiliate-Code", "X-ElizaOS-Client-Id", "X-Eliza-Client-Id",
       "X-ElizaOS-UI-Language", "X-Eliza-UI-Language", "X-ElizaOS-Turn-Correlation", "X-ElizaOS-Turn-Attempt", "Traceparent", "Tracestate", "X-Eliza-Trace-Id",
       "X-Eliza-Telemetry"

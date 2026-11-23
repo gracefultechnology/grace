@@ -502,7 +502,8 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       try outage(cloud, secret, false, "conflictCreate")
       const received = try upgraded("revision", added.providerId)
       try outage(cloud, secret, false)
-      try Effect.try(() => assert.deepStrictEqual([migrated, received], [added, added]))
+      const unversioned = ({ version: _version, ...rest }: typeof added) => rest
+      try Effect.try(() => assert.deepStrictEqual([migrated, received].map(unversioned), [added, added].map(unversioned)))
       const damaged = try upgraded("damaged-revision")
       try Effect.try(() => assert.isFalse(damaged.succeeded))
       const fromTablet = try upgraded("occurrence")
@@ -511,8 +512,9 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const pending = view([eyeCheck, reapproved])
       try Effect.try(() => assert.isTrue(canStoreCreated(pending, created, "ViewStore")))
       const settled = storeCreated(pending, created, "ViewStore")
-      const visit = settled.entries.find((e) => e.identity.occurrenceId === created.providerId) ?? noEntry
-      const providerCopies = (try feed([])).filter((p) => p.incoming.committed.title === details.title).length
+      const companyCopies = (try feed([])).filter((p) => p.incoming.committed.title === details.title)
+      const providerCopies = companyCopies.length
+      const visit = { ...settled.entries.find((e) => e.identity.occurrenceId === created.providerId) ?? noEntry, version: companyCopies[0]?.incoming.version ?? "" }
       const unchanged = (try feed([eyeCheck, visit])).map((p) => p.incoming.identity.occurrenceId)
       const elsewhere = effect {
         provide connectorAt(secret) {
@@ -520,6 +522,8 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         }
       }
       const otherTablet = try elsewhere
+      const stale = try calendar.write(edit(beginEdit(visit, "CalendarUser"), { ...visit.committed, title: "Check-up at noon" }, "CalendarUser"), view([eyeCheck, visit]))
+      const notRemoved = try calendar.remove(visit, "ThisOccurrence")
       const refreshed = (try feed([eyeCheck, visit])).find((p) => p.incoming.identity.occurrenceId === visit.identity.occurrenceId)?.incoming ?? noEntry
       const moved = edit(beginEdit(refreshed, "CalendarUser"), { ...refreshed.committed, title: "Check-up with Dr. Patel" }, "CalendarUser")
       const changed = try calendar.write(moved, view([eyeCheck, refreshed]))
@@ -531,9 +535,10 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const shifted = try calendar.write(edit(beginEdit(birthday, "CalendarUser"), { ...birthday.committed, startAt: birthday.committed.startAt + day, endAt: birthday.committed.endAt + day }, "CalendarUser"), view([birthday], "Asia/Tokyo"))
       const newAllDay = try calendar.write(approveSave(create(noEntry, { ...identity, occurrenceId: "picnic", sourceRef: "", sourceAccount: 0 }, { ...birthday.committed, title: "Picnic" }, "CalendarUser"), 1, "CalendarUser"), view([], "Asia/Tokyo"))
       const afterRename = (try birthdayIn("Asia/Tokyo", [birthday]))?.incoming.committed
-      const removed = [try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(visit.identity, "ThisOccurrence"), try calendar.remove(eyeCheck.identity, "EntireSeries")]
+      const current = { ...refreshed, version: changed.version ?? "" }
+      const removed = [try calendar.remove(current, "ThisOccurrence"), try calendar.remove(current, "ThisOccurrence"), try calendar.remove(eyeCheck, "EntireSeries")]
       const eyeInstance = `eye-check_${new Date(eyeCheck.committed.startAt).toISOString().replace(/[-:]|\.\d+/g, "")}`
-      const repetitionKeptHere = try calendar.removeRepetition(eyeCheck.identity, eyeCheck.committed)
+      const repetitionKeptHere = try calendar.removeRepetition(eyeCheck, eyeCheck.committed)
       const gone = (try feed([eyeCheck, visit])).filter((p) => p.incoming.identity.occurrenceId === visit.identity.occurrenceId).map((p) => p.incoming.phase)
       const held = approveSave(create(noEntry, { ...identity, occurrenceId: "delayed-visit" }, { ...details, title: "Second appointment" }, "CalendarUser"), 1, "CalendarUser")
       try outage(cloud, secret, false, "beforeCreate")
@@ -584,7 +589,8 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         copied: copied.map((p) => [p.incoming.identity.occurrenceId === identity.occurrenceId, p.incoming.phase, p.incoming.committed.participant, p.incoming.identity.sourceRef, p.incoming.identity.sourceAccount, p.incoming.committed.reminderEnabled, p.scheduleVerified]),
         visit: [visit.phase, visit.identity.sourceAccount, visit.identity.sourceRef, visit.committed.participant, visit.committed.reminderEnabled, visit.committed.leadTime],
         unchanged, elsewhere: otherTablet.succeeded,
-        refreshed: [r.title, r.participant, r.reminderEnabled, r.leadTime, refreshed.identity.sourceRef, refreshed.revision > visit.revision], changed,
+        outdated: [stale.succeeded, stale.outdated?.latest.title, stale.outdated?.version === refreshed.version, notRemoved.succeeded, notRemoved.evidence, notRemoved.outdated?.latest.title],
+        refreshed: [r.title, r.participant, r.reminderEnabled, r.leadTime, refreshed.identity.sourceRef, refreshed.revision > visit.revision], changed: { ...changed, version: (changed.version ?? "") !== "" },
         allDay: [seen?.incoming.committed.allDay, seen?.incoming.committed.startAt === tokyoMidnight, seen?.incoming.committed.timezone, seen?.scheduleVerified],
         floating: [elsewhereSeen?.incoming.committed.startAt === tokyoMidnight + 9 * hour, elsewhereSeen?.incoming.committed.timezone, elsewhereSeen?.scheduleVerified],
         stored: [renamed.succeeded, shifted.succeeded, newAllDay.succeeded, afterRename?.title, afterRename?.allDay, afterRename?.startAt === tokyoMidnight],
@@ -601,8 +607,9 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         visit: ["Saved", 1, "clinic", "Dr. Patel", true, day],
         unchanged: ["birthday"],
         elsewhere: true,
+        outdated: [false, "Check-up at 11", true, false, `changed:${visit.identity.occurrenceId}`, "Check-up at 11"],
         refreshed: ["Check-up at 11", "Dr. Patel", true, day, "clinic", true],
-        changed: { revision: moved.revision, succeeded: true, published: [] },
+        changed: { revision: moved.revision, succeeded: true, published: [], version: true },
         allDay: [true, true, "Asia/Tokyo", true],
         floating: [true, "UTC", true],
         stored: [true, false, false, "Joan’s 80th birthday", true, true],

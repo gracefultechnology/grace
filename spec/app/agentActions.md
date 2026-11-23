@@ -61,7 +61,7 @@ type AgentAction =
   | CancelProposal
   | ShowSetting({ page: S::SettingsPage })
   | Guide({ target: str, kind: G::GuidanceKind, title: str })
-type Refusal = NotHerTurn | NotShown | OwnerRefused | AlreadyInCalendar | NothingAsked | NotTheirAnswer | NotOnScreen
+type Refusal = NotHerTurn | NotShown | OwnerRefused | AlreadyInCalendar | NothingAsked | NotTheirAnswer | NotOnScreen | RepeatsOnlyOnTablet
 type Route =
   ToMail({ account: int, assist: E::MailAssist })
   | ToFolders({ folder: I::Folder })
@@ -210,6 +210,11 @@ and for a change or a removal the saved revision of that appointment. It is
 routed only when that calendar would take it on her yes with `ViewConsent`
 as it stands, so a yes to it is never a yes to something it would refuse. A
 new appointment Grace suggests on her own names no email as its source.
+Only the tablet's own calendar makes, changes or stops a repetition
+([calendar view](./calendarView.md), "An email account's calendar is asked to
+keep only what its company keeps"), so a question that would do so on an
+email account's calendar is refused before it is asked, with that reason
+for her to say.
 
 ```quint
 pure def viewAt(w: World, key: int): V::CalendarView = K::sourceAt(w.calendars, key).view
@@ -231,12 +236,14 @@ pure def routeAsk(w: World, request: R::Request, ask: P::Ask, taken: bool): Rout
 pure def routeAppointment(w: World, request: R::Request, key: int, seed: V::EntrySeed): Route =
   val review = appointmentReview(w, key, seed)
   if (not(calendarShows(w, key))) Refused({ why: NotShown })
+  else if (not(V::repetitionAllowed(viewAt(w, key), C::initial, seed.details))) Refused({ why: RepeatsOnlyOnTablet })
   else routeAsk(w, request, P::AddAsk({ target: key, review: review }),
     seed.identity.sourceRef == "" and
       V::canConfirmAppointment(viewAt(w, key), { entry: seed, review: review }, V::ViewConsent))
 pure def routeChange(w: World, request: R::Request, key: int, id: str, details: C::EntryDetails): Route =
   val review = changeReview(w, key, id, details)
   if (not(calendarShows(w, key))) Refused({ why: NotShown })
+  else if (not(V::repetitionAllowed(viewAt(w, key), V::entryAt(viewAt(w, key), id), details))) Refused({ why: RepeatsOnlyOnTablet })
   else routeAsk(w, request, P::ChangeAsk({ target: key, review: review }),
     V::canConfirmChange(viewAt(w, key), { id: id, details: details, review: review }, V::ViewConsent))
 pure def routeDeletion(w: World, request: R::Request, key: int, id: str, scope: V::DeleteScope): Route =
@@ -250,6 +257,15 @@ pure def lawGraceOnlyAsksAboutAShownCalendar(w: World, request: R::Request, comm
   match routed {
     | ToProposal(x) => P::canPropose(w.pending, x.ask, request, w.now, P::Grace) and
         K::showsCalendar(w.accounts, P::targetOf(x.ask)) and w.pending.agreed == 0
+    | _ => true
+  }
+pure def lawRepetitionIsAskedOnlyOnTheTablet(w: World, request: R::Request, command: AgentAction): bool =
+  val routed = route(w, request, command)
+  match command {
+    | ProposeAppointment(x) => (calendarShows(w, x.key) and R::mayAct(request, w.now) and
+        not(V::repetitionAllowed(viewAt(w, x.key), C::initial, x.seed.details))) implies refusedFor(routed, RepeatsOnlyOnTablet)
+    | ProposeChange(x) => (calendarShows(w, x.key) and R::mayAct(request, w.now) and
+        not(V::repetitionAllowed(viewAt(w, x.key), V::entryAt(viewAt(w, x.key), x.id), x.details))) implies refusedFor(routed, RepeatsOnlyOnTablet)
     | _ => true
   }
 pure def lawAskIsOneTheCalendarTakes(w: World, request: R::Request, command: AgentAction): bool =
@@ -272,7 +288,7 @@ pure def lawAskIsOneTheCalendarTakes(w: World, request: R::Request, command: Age
 Asked to put the email being read in the calendar, Grace asks about it only
 where [an appointment from an email](./calendars.md) is allowed: the email is
 open in a shown account and not flagged, the appointment names it, goes to
-that account's calendar or else the tablet's, is not important, and no
+that account's calendar or else the tablet's, and no
 calendar holds one from it and no question about it is waiting. When one is
 already there or already asked, she is told so.
 
@@ -391,6 +407,7 @@ pure val commandValues = Set(
   ProposeFromMessage({ account: 1, seed: { ...clinicSeed, details: { ...K::clinicDetails, important: true } } }),
   ProposeFromMessage({ account: 2, seed: clinicSeed }),
   ProposeChange({ key: 1, id: "garden", details: K::movedGarden }), ProposeChange({ key: 0, id: "lunch", details: K::movedGarden }),
+  ProposeChange({ key: 1, id: "garden", details: { ...K::movedGarden, recurrence: C::Weekly, seriesId: "garden" } }),
   ProposeDeletion({ key: 1, id: "garden", scope: V::ThisOccurrence }), ProposeDeletion({ key: 1, id: "garden", scope: V::EntireSeries }),
   ConfirmProposal, CancelProposal, ShowSetting({ page: S::EmailCalendarSettings }),
   Guide({ target: "mbody", kind: G::Look, title: "" }), Guide({ target: "send", kind: G::Tap, title: "Tap Send" }))

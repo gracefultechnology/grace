@@ -7,6 +7,7 @@ import { fieldCapsule } from "./Input.tsx";
 import { Label } from "./Label.tsx";
 import { menuOption, menuPanel } from "./Menu.tsx";
 import { SegmentedControl } from "./SegmentedControl.tsx";
+import { Switch } from "./Switch.tsx";
 import { TextField } from "./TextField.tsx";
 
 export interface CalendarChoice {
@@ -109,6 +110,8 @@ export type CalendarEventFormProps = Omit<ComponentProps<"div">, "title"> & {
   repeat: Choices;
   /** When to remind: "No", "Day before", "1 hour before". */
   remind: Choices;
+  /** Whether it is marked important, drawn in red on the calendar; without it the switch is not offered. */
+  important?: { checked: boolean; onCheckedChange?: (checked: boolean) => void };
   /** Every field waits, faded, while the appointment is being saved. */
   disabled?: boolean;
   /** The fields' names and the title's example. */
@@ -121,6 +124,8 @@ export type CalendarEventFormProps = Omit<ComponentProps<"div">, "title"> & {
     wherePlaceholder: string;
     repeat: string;
     remind: string;
+    important: string;
+    importantLine: string;
   };
 };
 
@@ -133,6 +138,8 @@ const defaultLabels = {
   wherePlaceholder: "Add a place",
   repeat: "Repeats",
   remind: "Remind me",
+  important: "Important",
+  importantLine: "Shows in red on your calendar",
 };
 
 function ChoiceField({ label, options, value, onChange, disabled }: Choices & { label: string; disabled: boolean }) {
@@ -154,12 +161,31 @@ function ChoiceField({ label, options, value, onChange, disabled }: Choices & { 
   );
 }
 
+function ImportantField({ label, line, checked, onCheckedChange, disabled }: NonNullable<CalendarEventFormProps["important"]> & { label: string; line: string; disabled: boolean }) {
+  const id = useId();
+  return (
+    <div role="group" aria-labelledby={id} aria-disabled={disabled || undefined} className="col-span-2 flex flex-col gap-2">
+      <Label id={id} className="pl-[26px]">
+        {label}
+      </Label>
+      <div className={cn(fieldCapsule, "justify-between pr-3", disabled && "opacity-40")}>
+        <span className="flex items-center gap-3">
+          <span aria-hidden className={cn("h-7 w-[3px] rounded-full", checked ? "bg-alert" : "bg-lavender")} />
+          {line}
+        </span>
+        <Switch aria-labelledby={id} checked={checked} onCheckedChange={onCheckedChange} disabled={disabled || !onCheckedChange} />
+      </div>
+    </div>
+  );
+}
+
 /**
- * A new or changed appointment: what, day, time, where, how it repeats and when to remind (prototype `calForm`).
+ * A new or changed appointment: what, day, time, where, how it repeats, when to remind and whether it is important
+ * (prototype `calForm`, with the owner's Important switch for the prototype's red marking).
  * @model spec/app/calendar.md
  * @design packages/design-system/design.md#windows
  */
-export function CalendarEventForm({ title, onTitleChange, where, onWhereChange, day, time, repeat, remind, disabled = false, labels = defaultLabels, className, ...props }: CalendarEventFormProps) {
+export function CalendarEventForm({ title, onTitleChange, where, onWhereChange, day, time, repeat, remind, important, disabled = false, labels = defaultLabels, className, ...props }: CalendarEventFormProps) {
   return (
     <div className={cn("grid grid-cols-2 gap-x-7 gap-y-4 font-sans", className)} {...props}>
       <TextField className="col-span-2" label={labels.title} placeholder={labels.titlePlaceholder} value={title} disabled={disabled} onChange={(e) => onTitleChange?.(e.target.value)} />
@@ -168,6 +194,7 @@ export function CalendarEventForm({ title, onTitleChange, where, onWhereChange, 
       <TextField className="col-span-2" label={labels.where} placeholder={labels.wherePlaceholder} value={where} disabled={disabled} onChange={(e) => onWhereChange?.(e.target.value)} />
       <ChoiceField label={labels.repeat} disabled={disabled} {...repeat} />
       <ChoiceField label={labels.remind} disabled={disabled} {...remind} />
+      {important && <ImportantField label={labels.important} line={labels.importantLine} disabled={disabled} {...important} />}
     </div>
   );
 }
