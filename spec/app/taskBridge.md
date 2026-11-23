@@ -154,7 +154,7 @@ pure val preparationValues = {
     .union(Set(P::pause(yes, T::Host), P::retire(handed, handed.version, T::Host)))
     .union(Set(visitChosen, P::handOff(visitVerified, T::Actuator).state))
 }
-pure val wValues = {
+pure val exampleLoadedWorkspace = {
   val started = WS::changeLifecycle(WS::initial, WS::StartupSucceeded, WS::Host)
   val opened = WS::openGrace(WS::visit(started, S::Browser, WS::Person), WS::Person)
   val allowed = WS::setBrowserObservation(opened, { allowed: true,
@@ -164,9 +164,12 @@ pure val wValues = {
   val compact = WS::interact(available, I::Resize({ expanded: false }), WS::Person)
   val begun = WS::begin(compact,
     { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, WS::Person)
-  val loaded = WS::receiveLoad(begun, { id: begun.browser.selected,
+  WS::receiveLoad(begun, { id: begun.browser.selected,
     version: B::tabById(begun.browser, begun.browser.selected).loadVersion, result: B::Loaded,
     secure: false, endedAt: "https://utility.example" }, WS::Host)
+}
+pure val wValues = {
+  val loaded = exampleLoadedWorkspace
   val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion,
     browserRevision: loaded.browser.revision, taskVersion: loaded.assistant.workVersion,
     website: X::goodObservation, checkpoint: "Read the current account" }, WS::Host)
@@ -262,11 +265,11 @@ type QueuedWebsiteCommand = { command: WS::WorkspaceEffect, prepVersion: int, so
 type FormRead = NoTaskForm | VerifiedForm({ command: WS::WorkspaceEffect, key: T::Subject, fill: K::Fill, field: BookingField })
 
 pure def captureWebsiteCommand(
-  preparation: P::Prep, command: WS::WorkspaceEffect, preparedTask: str, field: BookingField
+  preparation: P::Prep, command: WS::WorkspaceEffect, preparedTask: str, bookingField: BookingField
 ): QueuedWebsiteCommand =
   { command: command, prepVersion: preparation.version,
     source: if (preparation.phase == P::NoTask) OutsidePreparation
-      else TaskForm({ task: preparedTask, key: preparation.key, fill: K::fillOf(preparation.choice), field: field }) }
+      else TaskForm({ task: preparedTask, key: preparation.key, fill: K::fillOf(preparation.choice), field: bookingField }) }
 
 pure def writesFormField(operation: X::WebsiteEffect): bool = match operation {
   | Operate(details) => details.kind == X::FillOrdinary
@@ -283,9 +286,9 @@ pure def namesBookingField(command: WS::WorkspaceEffect, target: str, valueRef: 
   | _ => false
 }
 pure def bookingFieldMatches(
-  command: WS::WorkspaceEffect, key: T::Subject, fill: K::Fill, field: BookingField, answerVersion: int
+  command: WS::WorkspaceEffect, key: T::Subject, fill: K::Fill, bookingField: BookingField, answerVersion: int
 ): bool = match fill {
-  | BookFill(booking) => match field {
+  | BookFill(booking) => match bookingField {
     | NoBookingField => false
     | BookingTimeField(time) => time.slot == booking.bookForm.slot and time.answerVersion == answerVersion and
         namesBookingField(command, time.target, time.valueRef)
@@ -293,7 +296,7 @@ pure def bookingFieldMatches(
         saved.savedRevision >= 0 and saved.answerVersion == answerVersion and booking.bookForm.details.includes(saved.detail) and
         namesBookingField(command, saved.target, saved.valueRef)
   }
-  | _ => field == NoBookingField
+  | _ => bookingField == NoBookingField
 }
 pure def fillPermitted(
   preparation: P::Prep, fillWorkspace: WS::Workspace, queued: QueuedWebsiteCommand, read: FormRead, by: WS::WorkspaceActor
@@ -347,7 +350,7 @@ pure def lawATaskFillUsesItsOwnVerifiedForm(
 }
 
 pure def exampleFillWorkspace(target: str, valueRef: str): WS::Workspace = {
-  val loaded = wValues.filter(w => w.commitment.stage == CM::Empty and w.assistant.taskId == "task").getOnlyElement()
+  val loaded = exampleLoadedWorkspace
   val observed = WS::observe(loaded, { deviceVersion: loaded.device.contextVersion, browserRevision: loaded.browser.revision,
     taskVersion: loaded.assistant.workVersion, checkpoint: "Read the form", website: { ...X::goodObservation,
       generation: loaded.execution.generation, targets: List({ id: target, consequence: X::AskFirst, inReach: true }) } }, WS::Host)
