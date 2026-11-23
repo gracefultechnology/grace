@@ -191,7 +191,11 @@ remembers under the programs installed now. Each tool runs in a process group
 of its own, and a check that is interrupted, or that exits, ends each group
 still running and the group of each process a tool started outside its own, as
 a browser is: no verifier, simulation or browser outlives it. A tool stopped
-for its time or its output is ended the same way. A run
+for its time or its output is ended the same way. An unreached simulation goal
+or an event its guard never allows cancels the queued proofs started alongside
+the simulations. On systems with process groups, it also stops their running
+tools. The check reports every simulation and waits for the tools to close
+before it releases the project lock. A run
 of a tool is remembered when it reached its answer, a refusal of its input
 included, never when it was stopped, timed out or failed for want of a file or
 program: an unchanged unit whose proof failed runs neither again, and an edit
@@ -234,6 +238,24 @@ the completed Quint, LemmaScript, and Dafny actions, keyed by the installed
 tools and their inputs. The project directory holds its lock, generated files,
 and stage results. An acceptance or nightly check always reads fresh inputs.
 
+To precompute normal-profile simulations for a subset of a disposable project,
+use `precomputeSimulations(projectDirectory, readSpecs(projectDirectory), moduleNames)`
+from the same entry point inside `withFormalCache`. It compiles the selected
+modules and their transitive imports, runs the selected simulations and replay,
+and returns their verdicts in the requested module order. Treat a failed verdict
+or rejection as a failed precomputation. Run the full check with the shared
+actions to verify the whole project.
+
+For a transfer between trusted runners, call `prepareSimulationReceipts` with
+the same three arguments and an existing private scratch directory as the
+fourth. It returns `results` and, when all requested simulations passed and
+their receipts are complete, `seedDirectory`. Transfer only the files in that
+returned directory. They hold the model typechecks and simulation results the
+ordinary check can reuse. Copy them into the receiving project's `.spec-cache`
+before the full normal check. Match the checkout and toolchain, and keep the
+seed within the same trust boundary as other spec cache entries. The check
+computes its own keys and recomputes a missing or unreadable result.
+
 Turborepo caches `gen`, `build`, `typecheck`, tests, selftest and lint according
 to `turbo.json`. The task entry point fingerprints Node, VibeLang, Dafny, Z3
 and their runtime files before Turbo hashes its inputs. A build can run
@@ -252,7 +274,8 @@ The tooling package sets `--skip-gen-on-pack` in its prepare script. A
 generated models, which the tools' tarball does not contain.
 The three tool selftest jobs in `ci.yml` run only the listed `//#build` task and generate their scratch
 projects on demand. The packaged CLI test rebuilds from a clean copy of the
-workspace. Other GitHub Actions jobs use the same strict root
+workspace. The nightly check builds the tools during install and generates the
+application in its nightly task graph. Other GitHub Actions jobs use the same strict root
 `gen` task as verification, so a successful install warms the task cache. A failed generation leaves the
 remaining checks runnable and is retried by verification. Generated stories,
 browser build artifacts, compiler declarations and successful test receipts
@@ -311,6 +334,10 @@ typechecks reusable before and after installation. Turbo passes `QUINT_HOME`
 to tasks so they use the selected evaluator. Its bytes determine the fingerprint.
 In CI, a Turborepo cache entry is
 kept for seven days after its last hit, which the run summary names.
+
+The shared Dafny library is a direct input of the tool package build and the
+Studio tests that run proofs. An edit to that library leaves the application
+build keys unchanged.
 
 ### Seeds and budgets
 
@@ -387,7 +414,7 @@ configured scopes are in `knip.config.js`, `.madgerc`, `.jscpd.json` and
 | When | Runs |
 |---|---|
 | Pull request or push to `develop` or `main` | All `pnpm verify` tasks on four runners. The product runner checks the application, documents and examples. Each tool shard has its own runner. After a failure, independent tasks still run and tasks with a failed prerequisite stop. The `verify` status requires all four to pass. |
-| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into `develop` |
+| Nightly | Every check fresh under the fixed nightly profile; saved counterexamples become a pull request into the checked branch. A dispatch from a tag checks the default branch. |
 | Changes to Android build inputs on a pull request or push to `develop` or `main` | `.github/workflows/android.yml` builds the APKs for each ABI and stages the x86_64 launcher and browser for Cuttlefish |
 
 Each row's budget is in [Seeds and budgets](#seeds-and-budgets). A failing
@@ -401,26 +428,31 @@ restore their shared fixture runs and the product runner restores verification
 results from the root, workspace packages and standalone examples. The result
 cache keys include the job, lockfile, commit and run attempt. A job tries both
 key layouts for its own name and current lockfile, then the current layout for
-another lockfile. Each entry is named by the tools and inputs that produced it.
+another lockfile. Selftest jobs on pull requests first try an archive for that pull request and lockfile.
+A successful replay of the entire fixture task can reuse that archive when setup leaves the cached evaluator intact.
+Each entry is named by the tools and inputs that produced it.
 Nightly verification restores
 only the pinned evaluator and runs fresh checks.
 The default branch’s product job publishes the pnpm store after the frozen install.
 All jobs restore it under Grace, Eliza and example lockfiles. This cache holds public
 packages only because fork pull requests can read it.
 Turborepo shares task results through the private Cloudflare/R2 cache.
+The fixture jobs can restore a successful exact-task archive from GitHub when
+the shared task cache is unavailable. Closed pull requests skip late cache
+uploads on their first attempt; an explicit rerun keeps its normal publication.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
-The product runner installs full Chromium and its headless shell. Tool shard A installs full Chromium for Bombadil. Shards B and rest run without a browser.
+The product and nightly runners install full Chromium and its headless shell. Tool shard A installs full Chromium when its Bombadil journey runs. Shards B and rest run without a browser.
 Pull requests read shared results; only branch pushes receive the publishing
 credential, protected by the `turbo-cache-publish` environment's branch
 policy. A pull request keeps its own Turborepo results in the GitHub cache
 instead, which only that pull request reads, so its next push reuses them. Branch pushes without a remote cache token also save their local results for later runs. Newer commits replace an older run of the same pull request.
-A pull request from `develop` into `main` waits for the push of the same commit
-to `develop` and replays its published results.
-A job restores only the Turborepo results a job of its name saved. Pushes to
-one branch run one at a time: the running commit finishes and the newest push
-replaces an older pending run. A push re-run uses a separate concurrency group.
-Completed tasks are shared through the cache.
+A push to `develop` shares a concurrency group with the promotion of that exact
+commit into `main`. A running push can finish and publish its results before the
+promotion replays them. On other branches, the newest pending push replaces
+older pending pushes. Explicit retries of those pushes use their own group.
+Each job restores its own Turbo archive. Merging an ordinary PR retires its remaining PR jobs.
+Closing one without merging keeps the run available for qualification.
 Local `pnpm` task commands read the operator's cache credential from
 `~/.config/vibestack/turbo-cache.json`, outside the repository. Credentials
 are never part of a task fingerprint.

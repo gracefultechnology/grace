@@ -685,6 +685,16 @@ pure def lawGuidanceControlsKeepExecution(w: Workspace, input: I::Interaction, b
       interact(w, input, by).assistant.conversation == w.assistant.conversation)
 pure def sometimesGuidanceShown(w: Workspace): bool = guidanceVisible(w)
 pure def sometimesGuidanceDismissed(w: Workspace): bool = guidanceIsCurrent(w) and not(w.assistant.guidance.shown)
+pure val eval_witness_sometimesGuidanceDismissed = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("visit", S::Browser, Person),
+  ("openGrace", Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 0 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("publishGuidance", { target: "control", revision: 0, workVersion: 1, conversationVersion: 2,
+    deviceVersion: 7, browserRevision: 1, verified: true }, A::Tap, "Read the account", Host),
+  ("interact", I::DismissGuidance({ revision: 1 }), Person))
 pure val guidanceRevisionValues = Set(0, 1, 2)
 pure val guidanceTitleValues = Set("", "Tap Send")
 pure val guidanceReportValues = Set(
@@ -949,12 +959,14 @@ pure def stayOnPage(w: Workspace, stayed: StayedLoad, by: WorkspaceActor): Works
 
 The host identifies a document change caused by the currently dispatched
 ordinary operation or payment. It records that navigation in the actual
-browser and invalidates the old target. Fresh observation follows within
-the active task. A payment result page continues its existing outcome wait;
-it never becomes another submit. An unexpected change pauses instead. A payment progress callback must belong
-to the attached task and an active execution. A proof witness showed that an
-unrelated retained payment could otherwise create ordinary website work inside
-an active guided plan.
+browser and invalidates the old target. Fresh observation follows within the
+active task. A payment result page continues its existing outcome wait; it
+never becomes another submit. An unexpected change pauses instead. When the
+page in view starts again at the address it already shows, the host names the
+load version it was running, and a report naming any other is refused. A
+payment progress callback must belong to the attached task and an active
+execution. A proof witness showed that an unrelated retained payment could
+otherwise create ordinary website work inside an active guided plan.
 
 ```quint
 pure def canReceiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceActor): bool =
@@ -1014,8 +1026,7 @@ were; the selected page's own move, while hidden, changes the revision as
 any page moving by itself does. The host names the load version of the
 load the page was running when it moved, and a report is refused once that
 tab has started another load; what happens in other tabs, or to the
-browser's revision, never makes it late. A start at a retained address also
-names the prior load version when the page is in view.
+browser's revision, never makes it late.
 
 ```quint
 pure def canUnwatchedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =

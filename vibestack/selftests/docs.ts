@@ -76,7 +76,7 @@ describe("the documents name what exists", () => {
     const listed = (script: string) => scripts[script].split(" ").slice(3);
     const selftests = Object.keys(scripts).filter((script) => script.startsWith("selftest:")).sort();
     const shards = selftests.filter((script) => script.startsWith("selftest:tools:"));
-    const dry = await exec(turbo, ["run", ...listed("selftest"), "--dry=json"], project, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
+    const dry = await exec(turbo, ["run", ...listed("selftest"), "--dry=json", "--cache=local:w"], project, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
     assert.equal(dry.status, 0, dry.stderr);
     const plan: { globalCacheInputs: { files: Record<string, string> }; tasks: { taskId: string; inputs: Record<string, string> }[] } = JSON.parse(dry.stdout);
     const global = Object.keys(plan.globalCacheInputs.files);
@@ -104,7 +104,7 @@ describe("the documents name what exists", () => {
       [["selftest:tools:a", "selftest:tools:b", "selftest:tools:rest"], selftests.map((task) => `//#${task}`), selftests.map((task) => `//#${task}`)], "pnpm selftest and pnpm verify run every selftest task");
     const ci = read(".github/workflows/ci.yml");
     const lanes = [...ci.matchAll(/^ +(?:- )?lane: (.+)$/gm)].flatMap(([, lane]) => lane.startsWith("[") ? lane.slice(1, -1).split(", ") : [lane]);
-    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --summarize(?: --log-order=stream)?$/m)?.[1].split(" ").filter((task) => !task.startsWith("--")) ?? [];
+    const product = ci.match(/^ +run: pnpm all (build .+) --continue=dependencies-successful --summarize --log-order=stream$/m)?.[1].split(" ").filter((task) => !task.startsWith("--")) ?? [];
     assert.deepEqual(lanes.sort(), ["product", ...shards.map((task) => `selftest-${task.split(":")[2]}`)].sort(), "each hosted tool shard has its own runner");
     assert.deepEqual([...product, ...shards.map((task) => `//#${task}`)].sort(), listed("verify").sort(), "the hosted jobs run each task of pnpm verify once");
     const each = "the tools each check catches its own kind of mistake";
@@ -139,6 +139,9 @@ describe("the documents name what exists", () => {
     assert.match(ci, /TASK: \$\{\{ matrix\.tasks \}\}/, "the fixture command reads its matrix task");
     assert.match(ci, /pnpm all "\$TASK" --only --continue=dependencies-successful --summarize/, "a dedicated runner executes only its shard after setup");
     assert.match(scripts.prepare, /^node vibestack\/spec\.ts gen --install --skip-gen-on-pack \/\/#build(?: |$)/);
+    const fuzz = read(".github/workflows/fuzz.yml");
+    const nightly = fuzz.match(/^  vibestack-nightly-check:\n((?: {4}.*\n|\n)*)/m)?.[1] ?? "";
+    assert.match(nightly, /^ +- run: pnpm all check --continue -- --nightly$/m);
     const [first, ...others] = shards.map((task) => JSON.parse(read("turbo.json")).tasks[`//#${task}`].dependsOn);
     assert.deepEqual(others, others.map(() => first), "the shards wait for the same integration prerequisites");
   });
@@ -173,7 +176,7 @@ describe("the documents name what exists", () => {
     assert.equal(child.status, 0, child.stderr);
     assert.ok(child.stdout.includes(evaluatorHome), child.stdout);
     const plan = async () => {
-      const dry = await exec(turbo, ["run", "build", "typecheck", "test", "test:browser", "@grace/cloud#dev", "vibestack-studio#dev", "//#lint:js", "//#lint:css", "//#analyze", "//#selftest:tools:a", "//#selftest:tools:b", "//#selftest:tools:rest", "//#selftest:docs", "//#selftest:examples", "--dry=json"], root, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
+      const dry = await exec(turbo, ["run", "build", "typecheck", "test", "test:browser", "@grace/cloud#dev", "vibestack-studio#dev", "//#lint:js", "//#lint:css", "//#analyze", "//#selftest:tools:a", "//#selftest:tools:b", "//#selftest:tools:rest", "//#selftest:docs", "//#selftest:examples", "--dry=json", "--cache=local:w"], root, { ...process.env, TURBO_TELEMETRY_DISABLED: "1" });
       assert.equal(dry.status, 0, dry.stderr);
       const tasks: { taskId: string; hash: string; command: string; dependencies: string[]; inputs: Record<string, string> }[] = JSON.parse(dry.stdout).tasks;
       return new Map(tasks.map((task) => [task.taskId, task]));
