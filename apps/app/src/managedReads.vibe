@@ -298,7 +298,8 @@ effect function fetchPage(authorization: AccountActions.Shape, scope: ReadyScope
     if (!sameListing || !managedReadMatches(scope.accountId, loaded.accountId, "", "")) throw new ManagedReadFailed()
     const existing = next && prior?.kind === "mail" ? prior.rows : []
     const rows = [...new Map([...existing, ...loaded.messages].map((row) => [row.externalId, row])).values()]
-    return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, folder, search, counts: loaded.counts ?? (prior?.kind === "mail" ? prior.counts : undefined), rows, next: loaded.nextPageToken }
+    const trashed = prior?.kind === "mail" && prior.accountId === scope.accountId && prior.grant === scope.grant ? prior.trashed : undefined
+    return { kind: "mail" as const, accountId: scope.accountId, grant: scope.grant, folder, search, counts: loaded.counts ?? (prior?.kind === "mail" ? prior.counts : undefined), rows, next: loaded.nextPageToken, trashed }
   }
   const window = prior?.kind === "calendar" ? prior.window : navigation(initialCalendarView.window, "Today", dayOf(try Clock.currentTimeMillis)).window
   const interval = next && prior?.kind === "calendar" ? prior : home
@@ -557,12 +558,26 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     if (!changeReceiptMatches(accountId, receipt.accountId, expected, receipt.itemId, operationId, receipt.operationId) ||
       !(try still(scope))) return undefined
     if (action.kind === "trash" && shown.kind === "mail") {
-      const remaining = { ...shown, counts: undefined, rows: shown.rows.filter((row) => row.externalId !== action.id), selected: undefined, attachment: undefined, proposed: undefined, trashed: receipt }
-      try publish(remaining)
-      if (shown.counts !== undefined) {
+      const current = try SubscriptionRef.get(latest)
+      if (current.kind !== "mail" || current.accountId !== accountId || current.grant !== grant ||
+        current.trashed?.operationId !== shown.trashed?.operationId) return receipt
+      const closesMessage = current.selected?.message.externalId === action.id
+      const remaining = {
+        ...current, counts: undefined, trashed: receipt,
+        rows: current.folder === "trash" ? current.rows : current.rows.filter((row) => row.externalId !== action.id),
+        ...(closesMessage ? { selected: undefined, attachment: undefined, proposed: undefined, linkReview: undefined, replying: undefined, photosSaved: undefined } : {}),
+      }
+      if (!(try publishReview(scope, current, remaining))) return receipt
+      if (closesMessage && current.attachment) webView.window.URL.revokeObjectURL(current.attachment.url)
+      if (current.counts !== undefined) {
         const refreshed = fetchPage(authorization, scope, remaining) catch () => undefined
         if (refreshed?.kind === "mail" && refreshed.counts !== undefined) try publishReview(scope, remaining, { ...remaining, counts: refreshed.counts })
       }
+    }
+    if (action.kind === "undo") {
+      const current = try SubscriptionRef.get(latest)
+      if (current.kind === "mail" && current.accountId === accountId && current.grant === grant && current.trashed?.operationId === action.prior)
+        try publishReview(scope, current, { ...current, trashed: undefined })
     }
     if (action.kind === "undo" || action.kind === "appointment") try refresh(scope)
     return receipt
