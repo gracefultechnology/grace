@@ -71,7 +71,7 @@ effect function pendingDevice() {
 const clearDevice = () => Effect.try(() => webView.window.sessionStorage.removeItem(deviceAttemptKey))
 
 export type CodeProvider = "email" | "sms"
-type UpgradeOperation = { kind: "beginLeaseUpgrade" | "cancelLeaseUpgrade" }
+type UpgradeOperation = { kind: "beginLeaseUpgrade" } | { kind: "cancelLeaseUpgrade" }
 type AccountOperation =
   | { kind: "refresh" | "signOut" | "cleanupLegacySignIn" | "checkout" | "portal" | "manageAccount" | "cancelDevice" | "disconnectGoogle" }
   | { kind: "authorizeDevice"; expectedAccountId: string }
