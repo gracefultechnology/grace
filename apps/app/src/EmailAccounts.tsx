@@ -4,7 +4,7 @@ import {
   type MailServersFormProps, OtherEmailForm, type OtherEmailProblem, PageText, ProviderGrid, RemoveAccountDialog, SettingsApp, type SettingsAppProps, SignInSheet, Spinner, Toast,
 } from "@repo/ui";
 import { TriangleAlert } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { type Account, type AccountPage, type Accounts, type Event, type Lookup, type Problem, type Provider, providerOf } from "../gen/app__accounts.ts";
 import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import { showsMailLeaseUpgrade } from "../gen/app__setup.ts";
@@ -63,6 +63,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   const account = useSetup(useRuntime()).state?.graceAccount;
   const accountPage = { type: "chooseSettingsPage", page: "AccountSettings" } as const;
   const flows = useSignIns();
+  const [otherDraft, setOtherDraft] = useState({ name: "", address: "" });
   const offer = (event: Event) => can(event) ? () => void send(event) : undefined;
   const sources = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
   const status = (id: number) => boxes.some((b) => b.id === id && accountStatus(b.state) === "MailNeedsSignIn") ? "needsSignIn" : "connected";
@@ -73,7 +74,10 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   const pointAt = <Target extends string>(idOf: (target: string) => Target | undefined) => sheet ? undefined : guide(idOf);
 
   const choosing = Object.values(chosen).some((provider) => can({ type: "chooseProvider", provider }));
-  const choose = choosing ? (provider: EmailProvider) => offer({ type: "chooseProvider", provider: chosen[provider] })?.() : undefined;
+  const choose = choosing ? (provider: EmailProvider) => {
+    if (provider === "other") setOtherDraft({ name: "", address: "" });
+    offer({ type: "chooseProvider", provider: chosen[provider] })?.();
+  } : undefined;
   const tileGuide = pointAt((target) => tiles.get(target));
   const rowGuide = pointAt((target) => registry.accounts.some((a) => target === `acc-${a.id}`) ? target : undefined);
   const notice = notices[problem];
@@ -99,14 +103,19 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
         return <>{alert}<ProviderGrid bare onChoose={choose} guide={tileGuide} /></>;
       case "OtherEmailPage": {
         const renewing = registry.accounts.find((a) => a.id === signIn.renewing);
-        const fromName = renewing?.fromName || flows.owner;
+        const defaultAddress = renewing?.address || otherDraft.address || undefined;
+        const defaultName = renewing?.fromName || otherDraft.name || flows.owner;
+        const cancel = offer({ type: "goBack" });
         return (
           <>
             {problem === "SignInUnfinished" && alert}
-            <OtherEmailForm key={renewing?.id ?? 0} defaultAddress={renewing?.address} defaultName={fromName} problem={otherProblem(registry)}
+            <OtherEmailForm key={renewing?.id ?? 0} defaultAddress={defaultAddress} defaultName={defaultName} problem={otherProblem(registry)}
               checking={signIn.stage === "CheckingOther"} accepts={(address) => can({ type: "submitOther", domain: domainOf(address) })}
-              onNext={({ name, address, password }) => void flows.other({ name, address, password: secretPassword(password) })}
-              onCancel={offer({ type: "goBack" })} />
+              onNext={({ name, address, password }) => {
+                setOtherDraft({ name, address });
+                void flows.other({ name, address, password: secretPassword(password) });
+              }}
+              onCancel={cancel && (() => { setOtherDraft({ name: "", address: "" }); cancel(); })} />
           </>
         );
       }

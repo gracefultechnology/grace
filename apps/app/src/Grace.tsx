@@ -1,12 +1,13 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
 // Grace's window: compact at the bottom, over the page when one shows, or expanded over everything
 // right of the rail. The workspace owns the composer and its active turn.
-import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
+import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceVoiceMenu, type GraceVoiceMenuProps, GraceWindow, PageText, UserBubble } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
 import { memo, useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { CalendarNews } from "./calendar.vibe";
-import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, resumeAvailable, type GuidedStep } from "../gen/app__workspace.ts";
+import type { Pace } from "../gen/app__preferences.ts";
+import { currentGuidedNameCorrection, guidanceVisible, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, resumeAvailable, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import type { GuidedCheck } from "./conversation.vibe";
@@ -74,6 +75,34 @@ const notCounted = (check: Exclude<GuidedCheck, "Confirmed">, step: GuidedStep |
     case "Refused": return "I couldn’t confirm this step yet.";
   }
 };
+
+type VoiceSpeed = NonNullable<GraceVoiceMenuProps["speed"]>;
+const speedOfPace: Record<Pace, VoiceSpeed> = { Slower: "slower", Normal: "normal", Faster: "faster" };
+const paceOfSpeed: Record<VoiceSpeed, Pace> = { slower: "Slower", normal: "Normal", faster: "Faster" };
+
+function GraceVoice({ expanded }: { expanded: boolean }) {
+  const { workspace, can, send } = useWorkspace();
+  const preferences = workspace!.preferences.session;
+  const setPreferences = (settings: typeof preferences) => {
+    const event = { type: "changePreferences", settings } as const;
+    if (can(event)) void send(event);
+  };
+  const repeat = { type: "interact", input: { tag: "RepeatReply", audible: preferences.voiceOutput } } as const;
+  const startOver = { type: "newConversation" } as const;
+  return (
+    <GraceVoiceMenu
+      side={expanded ? "bottom" : "top"}
+      voiceOn={preferences.voiceOutput}
+      onVoiceChange={(voiceOutput) => setPreferences({ ...preferences, voiceOutput })}
+      speed={speedOfPace[preferences.pace]}
+      onSpeedChange={(speed) => setPreferences({ ...preferences, pace: paceOfSpeed[speed] })}
+      canRepeat={can(repeat)}
+      onRepeat={() => { if (can(repeat)) void send(repeat); }}
+      canStartOver={can(startOver)}
+      onNewConversation={() => { if (can(startOver)) void send(startOver); }}
+    />
+  );
+}
 
 /** @model spec/app/assistant.md */
 
@@ -212,6 +241,14 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     void pointAtReadLink(report).then(report, () => report({ kind: "Unavailable", words: "I could not highlight a link on this page." }));
   };
 
+  const showGuide: Interaction = { tag: "ShowGuidance", revision: assistant.guidance.revision };
+  const nudge = expanded && guidanceVisible(workspace!) && assistant.keyboard !== "ChatKeyboard" && conversation.turn !== "Thinking" && conversation.turn !== "Speaking";
+  const placeholder = localCommands ? "Type a Passwords command"
+    : conversation.turn === "Listening" || conversation.turn === "Speaking" || conversation.turn === "Thinking" ? ""
+    : assistant.keyboard === "ChatKeyboard" ? "Type a message"
+    : conversation.voice ? "Talk or tap to type a message"
+    : "Tap to type a message, or turn on the mic";
+
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": compact over a
   // shown page, and expanded over one the host has not hidden yet. One window at both sizes, so resizing keeps its focus.
   return (
@@ -222,11 +259,13 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
         header={
           <GraceHeader pause={paused ? "paused" : pausable ? "live" : conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
             onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void resumeReadPlan() : interact({ tag: "ResumeSpeech" })}
-            expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })}
+            voice={<GraceVoice expanded={expanded} />}
+            showGuide={can({ type: "interact", input: showGuide })} onShowGuide={() => interact(showGuide)}
+            expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })} nudge={nudge}
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
-          <GraceDock value={draft} placeholder={localCommands ? "Type a Passwords command" : undefined} maxLines={expanded ? 6 : 4} mic={conversation.voice}
+          <GraceDock value={draft} placeholder={placeholder} listening={conversation.turn === "Listening"} maxLines={expanded ? 6 : 4} mic={conversation.voice}
             quiet={((localCommands || !device.reasoningAvailable) && passwordDirection(draft) === "NoPasswordGuide") || conversation.turn === "Thinking"}
             micUnavailable={!canTalk ? (localCommands ? "Type a Passwords command" : "Type your request") : needsMicPermission ? "Allow the microphone to talk to Grace" : undefined}
             onFixMic={needsMicPermission ? () => talk() : undefined} fixMicLabel={needsMicPermission ? "Allow mic" : undefined}
