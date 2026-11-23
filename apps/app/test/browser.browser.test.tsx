@@ -268,7 +268,7 @@ type PendingPageCheck = {
   snapshot: "not-requested" | "requested" | "returned" | "failed";
 };
 
-it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $taskId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
+it.each(inject("browserBenchmarks"))('Follow Grace to a benchmark link $titleId (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")', async ({ taskId, intent, startUrl, exploratory, gradeWholeCohort, requiredStep }) => {
   const transport = commands.benchmarkSurface;
   const publicFailure = (failure: unknown, stage: "Browser setup" | "Browser journey" | "Benchmark grading or cleanup") => {
     if (failure instanceof Error && (failure.name === "TimeoutError" ||
@@ -675,7 +675,7 @@ async function prepareBillWorldStatement(attempt: string, billerId: string | und
   return { ...statement, transport };
 }
 
-async function readBillWorldStatement(billerId: string | undefined, context: TestContext, prepared: Awaited<ReturnType<typeof prepareBillWorldStatement>>) {
+async function readBillWorldStatement(billerId: string | undefined, refuses: true | undefined, context: TestContext, prepared: Awaited<ReturnType<typeof prepareBillWorldStatement>>) {
   const { url, taskId, question, transport } = prepared;
   let shown: string | null | undefined;
   let observations = 0;
@@ -713,7 +713,18 @@ async function readBillWorldStatement(billerId: string | undefined, context: Tes
     }
     await transport({ kind: "evidence", value: "restored" });
   }
+  const before = observations;
   await userEvent.click(check);
+  if (refuses) {
+    await expect.poll(() => observations).toBeGreaterThan(before);
+    await expect.element(check).toBeEnabled();
+    expect(complete.query()).toBeNull();
+    const grade = await transport({ kind: "answer", text: "" });
+    expect(grade).toMatchObject({ success: false, taskId, predicateSource: "task",
+      results: [{ pass: true }, { pass: true }, { pass: false }, { pass: true }, { pass: true }],
+    });
+    return;
+  }
   await expect.element(complete).toBeVisible();
   await userEvent.click(ui.getByRole("button", { name: "Expand", exact: true }));
   const answer = ui.getByRole("region", { name: "Task plan" }).getByText(/^[^:]+: (?:[-−]?[$£€]|USD |EUR |GBP |\d)[^:]*\. [^:]+: .+\.$/u);
@@ -730,7 +741,7 @@ async function readBillWorldStatement(billerId: string | undefined, context: Tes
   }
 }
 
-for (const { billerId, label } of inject("billworldStatements")) {
+for (const { billerId, label, refuses } of inject("billworldStatements")) {
   describe("BillWorld", () => {
     let attempt: string;
     let prepared: Awaited<ReturnType<typeof prepareBillWorldStatement>> | undefined;
@@ -742,7 +753,7 @@ for (const { billerId, label } of inject("billworldStatements")) {
     afterEach(async () => { await commands.releasedStatement(attempt, { kind: "close" }); });
     it(`Read the ${label} BillWorld statement (spec/app/workspace.md, "Story: Follow one reviewed plan across apps")`, { timeout: 120_000 }, async (context) => {
       if (billerId !== undefined && prepared === undefined) throw new Error("The Fleet statement fixture did not finish before the journey");
-      await readBillWorldStatement(billerId, context, prepared ?? await prepareBillWorldStatement(attempt, billerId, context));
+      await readBillWorldStatement(billerId, refuses, context, prepared ?? await prepareBillWorldStatement(attempt, billerId, context));
     });
   });
 }

@@ -41,6 +41,10 @@ and hosted benchmark variables and use:
 GRACE_BILLWORLD_COHORT=2 pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' --passWithNoTests
 ```
 
+To select an individual case, add its displayed ID or a unique prefix to
+the `-t` pattern. Long IDs and IDs with non-ASCII characters use a short
+prefix and a hash in the Vitest title. The receipt retains the full task ID.
+
 To resume locally, set `GRACE_BILLWORLD_RESUME_DIR` to the existing
 `fleet-*` directory containing `cohort.json`. Keep the same Grace commit,
 BillWorld checkout, cohort, and shard setting. Use the browser command with
@@ -87,8 +91,17 @@ Each Fleet case signs in to an isolated local simulator and reads its
 current statement through the reviewed Grace plan. The pinned Fleet grader
 checks the amount and due date, login, unchanged account settings and zero
 payments. It also rejects a no-action and a wrong-answer trial. CI uploads
-these receipts as `billworld-fleet-view-bill`. The planner is scripted for
-these statement journeys.
+these receipts and the qualification inventory as `billworld-fleet-view-bill`.
+The inventory derives eligibility from the pinned catalog and upstream task
+generator. The required cohort includes 17 official passing reads and two
+expected refusals. The KUBRA and Rent journeys check in Chromium that Grace
+leaves an ambiguous read unconfirmed. Their receipt check requires an empty
+answer, rejection by the bound grader on the answer predicate alone, and
+both rejected controls. The inventory lists each eligible template's website
+count and the selected, attempted and officially passing billers. A pass requires the bound grader's
+accepted answer and both rejected controls. CI writes the inventory when
+journeys fail or produce no receipts. The planner is scripted for these
+statement journeys.
 
 The standard verification job exercises Google sign-in and cross-app tasks in
 Chromium. A resettable loopback provider serves OAuth consent, Gmail messages

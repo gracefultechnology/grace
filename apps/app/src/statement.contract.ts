@@ -3,7 +3,7 @@ import { Arbitrary, Schema } from "effect";
 import { contract } from "vibestack/testing";
 import { type StatementAnswer, type StatementFact, statementAnswer } from "./statementLabels.ts";
 
-const dueLabels = ["Total amount due", "Amount due", "Total due", "Balance due", "Total Balance Due", "Current amount due", "Your amount due", "AMOUNT DUE"] as const;
+const dueLabels = ["Total amount due", "Amount due", "Total due", "Balance due", "Total Balance Due", "Current amount due", "Your amount due", "AMOUNT DUE", "Payment due", "Account balance (amount due)", "Current balance (amount due)"] as const;
 const balanceLabels = ["New Balance", "Statement balance", "Last statement balance", "Your new balance", "New balance due"] as const;
 const remainingLabels = ["Remaining statement balance", "Remaining Balance Due", "REMAINING STATEMENT BALANCE"] as const;
 const dateLabels = ["Payment due date", "Due date", "Bill due date", "Payment due", "Due by", "Payment due by", "Pay by", "Due on", "PAYMENT DUE DATE",
@@ -22,7 +22,7 @@ const others = [
   "Statement balance $12.00 credit", "Autopay date 12/03/26", "Due upon receipt",
 ] as const;
 const layouts = ["colon", "space", "next", "dot"] as const;
-const kinds = ["due", "balance", "remaining", "agreeing", "conflict", "cents"] as const;
+const kinds = ["due", "balance", "remaining", "agreeing", "conflict", "cents", "missingDate", "unqualifiedBalance", "conflictingDue", "pairedDate", "conflictingDate", "unboundDate", "labeledDate"] as const;
 
 const pick = <T>(values: readonly T[], n: number): T => values[((Math.trunc(n) % values.length) + values.length) % values.length];
 
@@ -42,25 +42,30 @@ const statements = Arbitrary.schema(Schema.Struct({
   together: Schema.Boolean, noise: Schema.Array(Schema.Int), order: Schema.Boolean,
 })).pipe(Arbitrary.map((drawn) => {
   const kind = pick(kinds, drawn.kind);
-  const [shownAmount, readAmount] = pick(amounts, drawn.amount);
+  const pairedDate = kind === "pairedDate" || kind === "conflictingDate";
+  const [shownAmount, readAmount] = pick(pairedDate || kind === "unboundDate" || kind === "labeledDate" ? amounts.filter(([shown, read]) => shown === read) : amounts, drawn.amount);
   const [shownOther] = pick(amounts.filter(([, read]) => read !== readAmount), drawn.other);
   const date = pick(dates, drawn.date);
   const labelOf = (of: StatementFact) => of === "StatementBalance" ? pick(balanceLabels, drawn.balanceLabel)
     : of === "RemainingBalance" ? pick(remainingLabels, drawn.remainingLabel) : pick(dueLabels, drawn.dueLabel);
   const owedFact: StatementFact = kind === "remaining" || kind === "balance" ? "StatementBalance" : "AmountDue";
-  const owed = placed(labelOf(owedFact), kind === "cents" ? "$84\n12" : split(kind === "remaining" || kind === "conflict" ? shownOther : shownAmount, drawn.split),
+  const owed = placed(kind === "unqualifiedBalance" ? "Account balance" : labelOf(owedFact), kind === "cents" ? "$84\n12" : split(kind === "remaining" || kind === "conflict" ? shownOther : shownAmount, drawn.split),
     pick(layouts, drawn.amountLayout));
   const dueLabel = pick(dateLabels, drawn.dateLabel);
-  const due = placed(dueLabel, date, pick(layouts, drawn.dateLayout));
+  const due = placed(dueLabel, kind === "conflictingDate" ? "January 1, 2001" : date, pick(layouts, drawn.dateLayout));
+  const datedAmount = owed + " by " + date;
   const left = kind === "remaining" || kind === "agreeing" || kind === "conflict"
-    ? [placed(labelOf("RemainingBalance"), split(shownAmount, drawn.split + 1), "colon")] : [];
-  const facts = drawn.together && !owed.includes("\n") && !due.includes("\n") ? [`${owed}. ${due}.`] : drawn.order ? [due, owed] : [owed, due];
+    ? [placed(labelOf("RemainingBalance"), split(shownAmount, drawn.split + 1), "colon")]
+    : kind === "conflictingDue" ? [placed("Payment due", shownOther, "colon")] : [];
+  const facts = kind === "unboundDate" || kind === "labeledDate"
+    ? [owed + "\n by \n" + date, kind === "labeledDate" ? due : "Due date: January 1, 2001"] : pairedDate ? kind === "pairedDate" ? [datedAmount] : [datedAmount, due]
+    : kind === "missingDate" ? [owed] : drawn.together && !owed.includes("\n") && !due.includes("\n") ? [`${owed}. ${due}.`] : drawn.order ? [due, owed] : [owed, due];
   const noise = drawn.noise.map((n) => pick(others, n));
   const lines = [...noise.slice(0, 2), ...facts.flatMap((line, k) => [line, ...noise.slice(2 + k * 2, 4 + k * 2)]), ...left, ...noise.slice(6)];
   const fact: StatementFact = kind === "balance" ? "StatementBalance" : kind === "remaining" || kind === "agreeing" ? "RemainingBalance" : "AmountDue";
-  const expected: StatementAnswer = kind === "conflict" ? { tag: "Unread", reason: "Several" }
-    : kind === "cents" ? { tag: "Unread", reason: "NotFound" }
-    : { tag: "Read", amount: { fact, label: labelOf(fact), value: readAmount }, due: { fact: "DueDate", label: dueLabel, value: date } };
+  const expected: StatementAnswer = kind === "conflict" || kind === "conflictingDue" || kind === "conflictingDate" ? { tag: "Unread", reason: "Several" }
+    : kind === "cents" || kind === "missingDate" || kind === "unqualifiedBalance" || kind === "unboundDate" ? { tag: "Unread", reason: "NotFound" }
+    : { tag: "Read", amount: { fact, label: labelOf(fact), value: readAmount }, due: { fact: "DueDate", label: pairedDate ? "by" : dueLabel, value: date } };
   return { text: lines.join("\n"), expected };
 }));
 type Statement = { text: string; expected: StatementAnswer };

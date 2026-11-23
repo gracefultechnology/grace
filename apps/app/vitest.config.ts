@@ -1,6 +1,6 @@
 import tailwindcss from "@tailwindcss/vite";
 import { defaultClientConditions } from "vite";
-import { randomUUID, randomInt } from "node:crypto";
+import { createHash, randomUUID, randomInt } from "node:crypto";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -13,7 +13,7 @@ import { project } from "vibestack/testing/vitest";
 import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
 import { hasHostedNavigation, hasUserAssistedSearch, matchesPublicSearch, PublicSearch, publicSearchQuery } from "./test/browser-receipt.ts";
-import { fleetFixture, fleetStatement, fleetStatementCases } from "./test/fleet.fixture.ts";
+import { fleetFixture, fleetStatement, fleetStatementCases, fleetStatementRefusals } from "./test/fleet.fixture.ts";
 import { webArena, webArenaPluginName, WebArenaEvaluatorError } from "./test/webarena.ts";
 
 const base = project({ root: import.meta.dirname, plugins: [tailwindcss()] });
@@ -59,6 +59,18 @@ if (runs.some(({ requiredStep, intent, chat, evaluator, siteStorageState, fixtur
 const byId = new Map(runs.map((item) => [item.taskId, item]));
 if (byId.size !== runs.length || new Set(runs.map(({ receipt }) => receipt)).size !== runs.length)
   throw new Error("Benchmark task IDs and receipt paths must be unique");
+function benchmarkTitleId(taskId: string): string {
+  if (/^[A-Za-z0-9-]{1,32}$/.test(taskId)) return taskId;
+  const prefix = taskId.replace(/[^A-Za-z0-9-]+/gu, "-").replace(/^-+|-+$/gu, "").slice(0, 23);
+  const hash = createHash("sha256").update(taskId).digest("hex").slice(0, 8);
+  return `${prefix || "task"}-${hash}`;
+}
+
+const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
+  taskId, titleId: benchmarkTitleId(taskId), intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet),
+}));
+if (new Set(browserBenchmarks.map(({ titleId }) => titleId)).size !== runs.length)
+  throw new Error("Benchmark test title IDs must be unique");
 const officialCases = runs.filter(({ evaluator }) => evaluator === "webarena");
 function prepareOfficialCases() {
   if (!officialCases.length) return;
@@ -479,7 +491,9 @@ async function releasedStatement(context: BrowserCommandContext, attempt: string
     try {
       const results = process.env.GRACE_BILLWORLD_RESULTS ?? ".cache/grace-billworld";
       mkdirSync(results, { recursive: true });
-      const directory = mkdtempSync(join(results, action.billerId === undefined ? "released-statement-" : "fleet-view-bill-"));
+      const refusal = fleetStatementRefusals.some(({ billerId }) => billerId === action.billerId);
+      const prefix = action.billerId === undefined ? "released-statement-" : refusal ? "fleet-statement-refusal-" : "fleet-view-bill-";
+      const directory = mkdtempSync(join(results, prefix));
       episode = action.billerId === undefined ? await startReleasedStatement(releasedDirectory, directory)
         : await fleetStatement(releasedDirectory, action.billerId, directory);
       if (statementRuns.get(context.page) !== reservation) throw new Error("The statement attempt ended before preparation");
@@ -822,8 +836,8 @@ declare module "vitest" {
     site: string;
     cloud: string;
     groundProxy: string;
-    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { exploratory: boolean; gradeWholeCohort: boolean })[];
-    billworldStatements: readonly { label: string; billerId?: string }[];
+    browserBenchmarks: readonly (Pick<BenchmarkDefinition, "taskId" | "intent" | "startUrl" | "requiredStep"> & { titleId: string; exploratory: boolean; gradeWholeCohort: boolean })[];
+    billworldStatements: readonly { label: string; billerId?: string; refuses?: true }[];
     realModel: boolean;
   }
 }
@@ -839,12 +853,10 @@ export default defineConfig(async (env) => {
           test: { ...entry.test, ...(official && { globalSetup: ["test/webarena.ts"] }), browser: { ...entry.test.browser, commands: { benchmarkSurface, googleConsent, privateVerification, recordPage, releasedStatement, realModel } } },
         }
       : entry);
-  const browserBenchmarks = runs.map(({ taskId, intent, startUrl, requiredStep, evaluator, exploratory }) => ({
-    taskId, intent, startUrl, requiredStep, exploratory: evaluator === "webarena" && exploratory === true, gradeWholeCohort: Boolean(fleet),
-  }));
   const billworldStatements = releasedDirectory === undefined ? [] : [
     { label: "released" },
     ...fleetStatementCases.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId })),
+    ...fleetStatementRefusals.map(({ billerId, template }) => ({ label: "Fleet " + template, billerId, refuses: true as const })),
   ];
   const reporters = fleet ? ["default", { onTestRunEnd: () => fleet.close() }] as const : undefined;
   return { ...config, resolve: { ...config.resolve, conditions: ["eliza-source", ...defaultClientConditions] }, test: { ...config.test, ...(reporters ? { reporters: [...reporters] } : {}), projects, provide: { browserBenchmarks, billworldStatements, realModel: realModelCredential !== undefined }, globalSetup: ["test/setup.vibe"] } };
