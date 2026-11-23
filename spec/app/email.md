@@ -1245,11 +1245,12 @@ any picker leaves the draft unchanged. Its result must match the exact composer
 revision captured at launch, so a delayed result cannot attach to a later draft. Forwarding copies sanitized selected
 content and attachments into a new editable draft and never sends it.
 
-When adding a file and preparing the message for delivery, the connector
-checks which formats and filenames the provider accepts. The draft can
-carry up to ten attachments with different filenames, ignoring case.
-An older draft with an incompatible attachment stays editable. Its
-attachments are never renamed or converted during delivery.
+When adding a file, saving a draft to the provider, or sending, Grace checks
+the attachment formats and allows at most ten attachments with distinct
+filenames, ignoring case. A forwarded or restored draft keeps its attachments
+and stays editable. The person can remove or replace incompatible attachments
+before saving to the provider or sending. Grace keeps the original filenames
+and formats.
 
 Saving is dispatched to [Files](./files.md). `mayExportAttachments`
 is the source authorization check before the host constructs its `FileImport`;
@@ -1331,6 +1332,7 @@ pure def validMailbox(m: Mailbox): bool =
   alwaysBillProvenance(m) and alwaysScamWarningIsCurrent(m) and alwaysLinkBelongsToSelection(m) and
   alwaysFlaggedMessageIsNoBillSource(m) and alwaysResultPersistenceHasTerminal(m) and
   alwaysSendHasRecipient(m) and alwaysSendEvidence(m) and alwaysApprovalIsCurrent(m) and
+  alwaysDraftCountIsNonnegative(m) and
   alwaysDraftHasAccount(m) and alwaysDraftStoreHasRevision(m) and alwaysRetirementHasMailbox(m) and
   alwaysDraftVersions(m) and alwaysEditableDraftIsNotRetired(m) and alwaysDraftAssetsAreValid(m) and
   alwaysMessageAssetsAreBound(m) and alwaysQueuedSendsAreIssued(m) and alwaysChoosingNeedsComposer(m) and

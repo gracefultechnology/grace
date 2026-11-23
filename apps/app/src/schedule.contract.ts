@@ -80,7 +80,18 @@ export const series = contract({
 
 export const repeated = contract({
   input: days,
-  run: ({ n, k, month }: Days) => repetitions(month ? "Monthly" : "Weekly", n, within(k, 6), n + 400),
-  invariant: ({ n, k, month }, found) => found.length > 0 && found.every((r, i) => r.day < n + 400 && (i === 0 || r.day > found[i - 1].day)
-    && r.day === shifted(month ? "Monthly" : "Weekly", n, r.place - within(k, 6))),
+  run: ({ n, k, month }: Days) => repetitions(
+    { repeat: month ? "Monthly" : "Weekly", day: n, place: 1000 + within(k, 6) },
+    { kind: "DateRange", first: n - 100, until: n + 400 },
+  ),
+  invariant: ({ n, k, month }, found) => {
+    const anchor = utc(n);
+    const expected = Array.from({ length: 73 }, (_, i) => i - 15).flatMap((offset) => {
+      const date = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + offset, anchor.getUTCDate()));
+      const at = month ? Math.round(date.getTime() / day) : n + 7 * offset;
+      return (!month || date.getUTCDate() === anchor.getUTCDate()) && n - 100 <= at && at < n + 400
+        ? [{ place: 1000 + within(k, 6) + offset, day: at }] : [];
+    });
+    return found.length === expected.length && found.every((r, i) => r.place === expected[i].place && r.day === expected[i].day);
+  },
 });

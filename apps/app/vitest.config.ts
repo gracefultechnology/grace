@@ -562,6 +562,8 @@ async function observeSite(existing: Site, action: SiteObservation) {
   const { command } = request;
   if (command.subaction !== "snapshot" && command.subaction !== "guide")
     throw new Error("The benchmark surface accepts only observation and show-only guidance");
+  if (command.subaction === "snapshot" && command.statementRegions && request.documentId !== loaderId)
+    throw new Error("The requested statement document changed");
   if (command.subaction === "guide" && command.guidance?.kind !== "hide" &&
       (request.documentId !== loaderId || command.guidance?.kind !== "show" || command.guidance.action !== undefined || command.guidance.origin !== origin))
     throw new Error("The benchmark guide no longer belongs to the current document");

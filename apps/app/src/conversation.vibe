@@ -83,7 +83,7 @@ type GuidedReadSource =
   | { tag: "PublicSortDocument"; tabId: number; loadVersion: number; documentId: string; domRevision: number; url: string; origin: string; category: string; direction: "PriceAscending" | "PriceDescending" }
   | { tag: "NamedDocument"; tab: number; loadVersion: number; documentId: string; url: string; heading: string }
   | { tag: "SearchDocument"; loadVersion: number; documentId: string; url: string; origin: string; query: string; heading: string }
-  | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string }
+  | { tag: "CurrentStatement"; tab: number; loadVersion: number; document: string; region: string }
   | { tag: "CurrentAppointment"; key: number; owner: string; calendarId: string; occurrence: string; generation: number; revision: number }
 type GuidedReadReceipt = { source: GuidedReadSource; identity: readonly string[]; text: string }
 type GuidedMiss = Exclude<GuidedCheck, "Confirmed">
@@ -187,12 +187,21 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const tab = activeTab(workspace.browser)
       const address = itemAddress(tabUrl(tab))
       if (!mayGuideReadLink(workspace) || address === undefined) return "Refused"
-      const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
+      const id = PageId.make(`tab-${tab.id}`)
+      const url = tabUrl(tab)
+      const snapshot = native.observeLinks(id) catch () => undefined
       if (snapshot === undefined) return "Changed"
-      if (guidedPageState(snapshot, tabUrl(tab)) === "PrivateForm") return "PrivateForm"
-      const statement = statementRead(snapshot, tabUrl(tab))
+      const access = guidedPageState(snapshot, url)
+      if (access === "PrivateForm") return "PrivateForm"
+      if (access !== "Ordinary") return "Covered"
+      const scoped = native.observeStatement(id, snapshot.documentId) catch () => undefined
+      if (scoped === undefined || scoped.documentId !== snapshot.documentId) return "Changed"
+      const current = guidedPageState(scoped, url)
+      if (current === "PrivateForm") return "PrivateForm"
+      if (current !== "Ordinary") return "Covered"
+      const statement = statementRead(snapshot, scoped, url)
       if (statement.tag === "Unread") return statement.reason
-      return receipt({ tag: "CurrentStatement", tab: tab.id, loadVersion: tab.loadVersion, document: statement.document }, [address], statement.text)
+      return receipt({ tag: "CurrentStatement", tab: tab.id, loadVersion: tab.loadVersion, document: statement.document, region: statement.region }, [address], statement.text)
     }
     case "ReadLatestRecord": return undefined
     case "SearchPublicSite": {

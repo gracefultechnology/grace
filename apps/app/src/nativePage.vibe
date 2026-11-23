@@ -124,6 +124,7 @@ export service NativePage {
   readonly privateSignIn: boolean
   readonly opensWebsites: boolean
   observeLinks(id: PageId): LinkObservation!PageFailed
+  observeStatement(id: PageId, documentId: string): LinkObservation!PageFailed
   readRecordText(id: PageId, selector: string): (typeof VisibleTextRead.Type)!PageFailed
   readPrimaryHeading(id: PageId, outsideLink?: boolean): (typeof VisibleTextRead.Type)!PageFailed
   hasNavigationMenu(id: PageId, selector: string, url: string): boolean!!
@@ -244,6 +245,8 @@ function devicePage(plugin: SurfacePlugin) {
     privateSignIn: true,
     opensWebsites: true,
     observeLinks: (id) => observe(id, () => ask(LinkObservation, (p) => p.controlPage({ ...own(id), command: { subaction: "snapshot" } }))),
+    observeStatement: (id, documentId) => observe(id, () => ask(LinkObservation, (p) =>
+      p.controlPage({ ...own(id), documentId, command: { subaction: "snapshot", statementRegions: true } }))),
     readRecordText: (id, selector) => observe(id, () => ask(VisibleTextRead, (p) => p.readPage({ ...own(id), selector }))),
     readPrimaryHeading: (id, outsideLink) => observe(id, () => {
       const heading = (selector: string) => ask(VisibleTextRead, (p) => p.readPage({ ...own(id), selector: outsideLink ? selector + outsideLinks : selector }))
