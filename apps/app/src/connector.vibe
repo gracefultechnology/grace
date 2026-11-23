@@ -486,15 +486,16 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     const timezone = e.timezone ?? entry.committed.timezone
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
     const latest = details(e, startAt, endAt, timezone, entry.committed)
-    return verified && validDetails(latest) ? { latest, version: versionOf(e) } : undefined
+    const version = versionOf(e)
+    return verified && version !== "" && validDetails(latest) ? { latest, version } : undefined
   }
 
   effect function removed(entry: Calendar, id: string, absent: DeletionReceipt): DeletionReceipt!NeedsSignIn {
-    const status = Effect.as(call(removal(id, entry.identity.calendarId, entry.version)), 0) catch effect (e) => match (e) {
+    const status = entry.version === "" ? 412 : (Effect.as(call(removal(id, entry.identity.calendarId, entry.version)), 0) catch effect (e) => match (e) {
       when NeedsSignIn: throw e;
       when ProviderRefused: e.status;
       when Unreachable: -1;
-    }
+    })
     if (status === 0) return { succeeded: true, evidence: `deleted:${id}` }
     if (status === 404) return absent
     if (status === -1) return { succeeded: false, evidence: "" }
@@ -564,14 +565,14 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     },
     write: effect (entry, _view, dispatch) => {
       const revision = entry.revision
-      const status = Effect.map(stored(entry, dispatch), (saved): StoreReceipt => ({
+      const status = entry.hasSaved && entry.version === "" ? 412 : (Effect.map(stored(entry, dispatch), (saved): StoreReceipt => ({
         revision, succeeded: true, published: [], ...saved.version === "" ? {} : { version: saved.version },
         ...entry.hasSaved ? {} : { providerId: saved.id }
       })) catch effect (e) => match (e) {
         when NeedsSignIn: throw e;
         when ProviderRefused: e.status;
         default: 0;
-      }
+      })
       if (typeof status !== "number") return status
       const outdated = status === 412 && entry.hasSaved ? try reread(entry) : undefined
       return { revision, succeeded: false, published: [], ...outdated === undefined ? {} : { outdated } }

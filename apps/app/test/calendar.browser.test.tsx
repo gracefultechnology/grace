@@ -432,11 +432,19 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await click("Edit");
   await expect.element(page.getByRole("radio", { name: "Every week" })).not.toBeInTheDocument();
   await click("Back to Calendar");
+  // spec/app/calendarView.md, "A change at the company names the revision it read and never overwrites a newer one"
+  const newer = "Gmail has a newer version of this appointment, so the tablet didn’t change it. This is how it is now.";
+  const remembered = await run(selectedGmailCalendar);
+  localStorage.setItem("calendar/1", JSON.stringify({
+    ...remembered,
+    entries: remembered.entries.map((entry) => entry.identity.occurrenceId === eye ? { ...entry, version: "" } : entry),
+  }));
+  await edit("Eye check before the tablet has a revision", "Never");
+  await expect.element(page.getByText(newer)).toBeVisible();
+  expect(await titles()).toEqual(["Eye check with Dr. Patel"]);
   await edit("Eye check at Riverside", "Never");
   await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
   await expect.poll(() => held(secret), atCloud).toEqual([{ title: "Eye check at Riverside", startAt: eyeAt }]);
-  // spec/app/calendarView.md, "A change at the company names the revision it read and never overwrites a newer one"
-  const newer = "Gmail has a newer version of this appointment, so the tablet didn’t change it. This is how it is now.";
   expect((await atCompany(secret, eye, { method: "PATCH", body: { title: "Eye check in room 4" } })).ok).toBe(true);
   await edit("Eye check at the front desk", "Never");
   await expect.element(page.getByText(newer)).toBeVisible();
