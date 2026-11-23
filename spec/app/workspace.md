@@ -2429,6 +2429,7 @@ pure val currentObservationValues = {
   val elsewhere = { ...observed, website: { ...X::goodObservation, origin: "https://credit.example" } }
   Set(observed, quoted,
   { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://credit.example" } },
+  { ...observed, website: { ...X::goodObservation, generation: 2, task: "other", origin: "https://credit.example" } },
   { ...observed, browserRevision: 4, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 4, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 5, taskVersion: 3,
@@ -2600,8 +2601,11 @@ on a commitment. Evidence of work already sent, a commitment's outcome, prior
 result or save, is kept only where it leaves the task's activity and version
 as they were; applying it to the task waits for her answer. Her answer, Stop,
 leaving and every other event are not held. When the hold ends, the workspace
-records the current task, its work version, and its last observation. A fresh
-observation for that task and work version shows that it can continue.
+retires the old operation generation and payment approval. An ordinary step
+that was queued or in flight returns to rechecking. Grace observes the page
+again before preparing a new operation. A possibly sent payment keeps its
+attempt and durable outcome so that Grace can check what happened. Answering
+the question never sends it again.
 
 ```quint
 pure def heldByWebsite(w: Workspace): bool = w.websiteHold == WebsiteHolds
@@ -2610,11 +2614,17 @@ pure def taskStandsStill(w: Workspace, after: Workspace): bool =
 pure def canHoldForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): bool =
   by == Host and holds != heldByWebsite(w)
 pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspace =
-  { ...w, websiteHold: if (holds) WebsiteHolds else WebsiteAnswered({
-    task: w.assistant.taskId, workVersion: w.assistant.workVersion, observation: w.execution.observation
-  }) }
+  if (holds) { ...w, websiteHold: WebsiteHolds }
+  else {
+    val assistant = if (w.assistant.activity == A::DoingWork) A::supersede(true, w.assistant) else w.assistant
+    { ...w, assistant: assistant,
+      execution: if (X::canInvalidate(w.execution, X::BrowserBridge)) X::invalidate(w.execution, X::BrowserBridge) else w.execution,
+      commitment: if (w.commitment.live and CM::canInvalidate(w.commitment, T::Host))
+        CM::invalidate(w.commitment, T::Host) else w.commitment,
+      websiteHold: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
+  }
 pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
-  "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection",
+  "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection", "resumePublicTab",
   "confirmGuided", "confirmGuidedNamedPage", "confirmGuidedSearch", "confirmGuidedPublicSort",
   "stageGuidedRecord", "confirmGuidedRecord", "confirmGuidedMail",
   "rebindGuidedMail", "expectGuidedCalendar", "observeGuidedCalendar", "reconcileGuidedSave",
@@ -2642,7 +2652,7 @@ pure val eval_witness_sometimesAHeldTaskGoesOnAfterHerAnswer = (
   ("adjustPreferenceLevel", R::VolumeBy({ amount: 10 }), Person),
   ("holdForWebsite", true, Host),
   ("holdForWebsite", false, Host),
-  ("observe", { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://credit.example" } }, Host)
+  ("observe", { ...observed, website: { ...X::goodObservation, generation: 2, task: "other", origin: "https://credit.example" } }, Host)
 )
 pure val weight_holdForWebsite = 8
 ```

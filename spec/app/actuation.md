@@ -27,7 +27,9 @@ and the provider subject and actual typed values resolved for that exact
 command. The bridge's `fillPermitted` applies `currentEffect` here and, before
 Grace types into a task's form, requires `graceMayFill`. A failed check drops
 the write. A task that ends while a write is queued never turns that entry
-into permission for an ordinary fill.
+into permission for an ordinary fill. While a website question is open the
+actuator refuses queued reads, fills and submissions. Answering the question
+cannot revive a command that was issued before it.
 
 ```quint
 import workspace as WS from "./workspace"
@@ -44,7 +46,7 @@ pure def currentOrdinaryEffect(x: X::Execution, operation: X::WebsiteEffect): bo
 }
 
 pure def currentEffect(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, by: WS::WorkspaceActor): bool =
-  by == WS::Actuator and WS::mayAssist(w) and WS::observationIsCurrent(w) and match pendingEffect {
+  by == WS::Actuator and not(WS::heldByWebsite(w)) and WS::mayAssist(w) and WS::observationIsCurrent(w) and match pendingEffect {
     | Execute(command) => command.deviceVersion == w.device.contextVersion and
       command.browserRevision == w.browser.revision and w.assistant.activity == A::DoingWork and
       w.execution.task == w.assistant.taskId and currentOrdinaryEffect(w.execution, command.effect)
@@ -58,6 +60,12 @@ pure def currentEffect(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, by:
 
 pure def lawOnlyActuatorConsumes(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect, by: WS::WorkspaceActor): bool =
   currentEffect(w, pendingEffect, by) implies by == WS::Actuator
+
+pure def lawWebsiteQuestionRetiresTheCommand(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect): bool =
+  val held = WS::holdForWebsite(w, true, WS::Host)
+  val answered = WS::holdForWebsite(held, false, WS::Host)
+  not(currentEffect(held, pendingEffect, WS::Actuator)) and
+    (currentEffect(w, pendingEffect, WS::Actuator) implies not(currentEffect(answered, pendingEffect, WS::Actuator)))
 
 pure def lawStaleBrowserCommandIsRefused(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect): bool = match pendingEffect {
   | Execute(command) => (command.deviceVersion != w.device.contextVersion or command.browserRevision != w.browser.revision)
