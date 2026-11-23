@@ -823,10 +823,15 @@ it('Settle the original send with Email switched off (spec/app/mailboxes.md, "A 
   const deferred = vi.mocked(window.fetch);
   const fetchWas = deferred.getMockImplementation();
   if (!fetchWas) throw new Error("The mail fixture has no transport");
+  const sendDispatch = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Struct({
+    proposal: Schema.Struct({ kind: Schema.Literal("send") }),
+  })));
   deferred.mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, location.href);
+    const operation = url.origin === new URL(cloud).origin && /\/inbox-v1\/operations\/[^/]+\/dispatch$/u.test(url.pathname);
+    const candidate = operation ? input instanceof Request ? await input.clone().text() : init?.body : undefined;
     const result = await fetchWas(input, init);
-    if (url.origin === new URL(cloud).origin && /\/inbox-v1\/operations\/[^/]+\/dispatch$/u.test(url.pathname) && result.ok) {
+    if (result.ok && sendDispatch(candidate)._tag === "Some") {
       received.openUnsafe();
       await Effect.runPromise(finish.await);
     }
