@@ -20,7 +20,7 @@ function android() {
   const tablet = {
     location: "prompt" as "prompt" | "granted" | "denied", ssid: null as string | null, joins: [] as ConnectOptions[],
     panels: 0, signIns: 0, delayed: false, saved: false, captiveOnJoin: false, captivePortal: false, otherDefault: false, validated: true,
-    visible: true, scan: undefined as WiFiNetwork[] | undefined, currentPoint: undefined as WiFiNetwork | undefined,
+    visible: true, hideAccess: false, scan: undefined as WiFiNetwork[] | undefined, currentPoint: undefined as WiFiNetwork | undefined,
     holdScan: undefined as (() => Promise<void>) | undefined,
   };
   const plugin: WiFiPlugin = {
@@ -63,7 +63,7 @@ function android() {
       return {
         required: tablet.captivePortal,
         validated,
-        access: validated && tablet.location === "granted" && network !== null ? [network] : [],
+        access: validated && !tablet.hideAccess && tablet.location === "granted" && network !== null ? [network] : [],
       };
     },
     openWifiSignIn: () => { tablet.signIns += 1; return Promise.resolve(); },
@@ -287,6 +287,14 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
 
     tablet.ssid = guest.ssid;
+    tablet.otherDefault = false;
+    tablet.hideAccess = true;
+    await changed();
+    await joinedTo("Internet connection");
+    await expect.element(button(/WeWorkGuest.*Connecting/)).toBeVisible();
+
+    tablet.otherDefault = true;
+    tablet.hideAccess = false;
     await changed();
     await joinedTo(guest.ssid);
     await expect.element(signIn).not.toBeInTheDocument();

@@ -102,9 +102,9 @@ const host = (wifi: WiFiPlugin, wifiSignIn: WifiSignIn) => Layer.effect(WifiPage
     const foundNetworks = scan.networks
     const prior = requested?.version === attempt.version ? requested.offer : undefined
     const signInStatus = try readSignIn()
-    let access = signInStatus?.access ?? []
+    let access = signInStatus?.access
     let defaultName: string | null = null
-    if (access.length === 0) {
+    if (access === undefined) {
       const active = ask(Schema.decodeUnknownEffect(Connectivity), () => wifi.getConnectivity()) catch () => undefined
       defaultName = active?.validated && !active.captivePortal ? active.ssid : null
       const current = defaultName ? (ask(Schema.decodeUnknownEffect(Current), () => wifi.getConnectedNetwork()) catch () => undefined)?.network : undefined
