@@ -71,13 +71,23 @@ const UserAssistedSearch = Schema.Struct({
   }),
 });
 
-export function hasUserAssistedSearch(input: unknown, landingUrl: string | undefined) {
+export type CompletedPublicSearch = {
+  search: typeof PublicSearch.Type;
+  start: typeof Document.Type;
+  destination: typeof Document.Type;
+};
+
+export function hasUserAssistedSearch(input: unknown, completed: CompletedPublicSearch | undefined, current: typeof Document.Type | undefined) {
   const decoded = Schema.decodeUnknownOption(UserAssistedSearch)(input);
-  if (decoded._tag === "None") return false;
+  if (decoded._tag === "None" || !completed || !current) return false;
   const { startUrl, intent, decisionResults, outcome } = decoded.value;
   const { start, destination, publicSearch, reviewedSteps, hops } = outcome;
   const landed = URL.parse(destination.url);
-  return start.url === startUrl && destination.url === landingUrl && landed !== null &&
+  return start.url === startUrl && start.url === completed.start.url && start.documentId === completed.start.documentId &&
+    destination.url === current.url && destination.documentId === current.documentId &&
+    destination.url === completed.destination.url && destination.documentId === completed.destination.documentId &&
+    publicSearch.query === completed.search.query && publicSearch.action === completed.search.action &&
+    publicSearch.field === completed.search.field && landed !== null &&
     landed.origin === URL.parse(startUrl)?.origin && destination.documentId !== start.documentId &&
     publicSearch.query === publicSearchQuery(intent) && reviewedSteps.length === 1 &&
     reviewedSteps[0]?.subject === publicSearch.query && matchesPublicSearch(landed, publicSearch) &&

@@ -12,7 +12,7 @@ import type { BrowserCommandContext } from "vitest/node";
 import { project } from "vibestack/testing/vitest";
 import type { SurfacePlugin } from "./src/surfacePlugin.ts";
 import { releasedBillworld } from "./test/billworld-released.fixture.ts";
-import { hasHostedNavigation, hasUserAssistedSearch, matchesPublicSearch, PublicSearch, publicSearchQuery } from "./test/browser-receipt.ts";
+import { type CompletedPublicSearch, hasHostedNavigation, hasUserAssistedSearch, matchesPublicSearch, PublicSearch, publicSearchQuery } from "./test/browser-receipt.ts";
 import { fleetFixture, fleetStatement, fleetStatementCases, fleetStatementRefusals } from "./test/fleet.fixture.ts";
 import { webArena, webArenaPluginName, WebArenaEvaluatorError } from "./test/webarena.ts";
 
@@ -94,7 +94,10 @@ type SiteAction =
 
 type Site = { page: Page; origin: string; browser: BrowserContext; session: CDPSession; world?: { loaderId: string; executionContextId: number } };
 const DecisionResult = Schema.Struct({ status: Schema.String, model: Schema.optional(Schema.String), choice: Schema.optional(Schema.NullOr(Schema.String)), confidence: Schema.optional(Schema.Finite) });
-type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: typeof PublicSearch.Type; site?: Site };
+type PublicSearchSubmission =
+  | { state: "submitting"; search: typeof PublicSearch.Type }
+  | ({ state: "completed" } & CompletedPublicSearch);
+type Run = { fixture: BenchmarkDefinition; decisions: number; decisionResults: { http: number; candidates: number; result?: typeof DecisionResult.Type }[]; chatStatus?: number; chatRoute?: string; decisionRoute?: string; publicSearch?: PublicSearchSubmission; site?: Site };
 const activeRuns = new WeakMap<Page, Run>();
 const Choices = Schema.Struct({ kind: Schema.Literal("choice"), goal: Schema.NonEmptyString, candidates: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, label: Schema.NonEmptyString })) });
 const PageText = Schema.Struct({ title: Schema.String, text: Schema.String, truncated: Schema.Boolean, readyState: Schema.Literals(["loading", "interactive", "complete"]) });
@@ -165,13 +168,25 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         actionUrl.username || actionUrl.password || actionUrl.search || actionUrl.hash)
       throw new Error("The public Search field is not bound to a same-origin GET form");
     const search = Schema.decodeUnknownSync(PublicSearch)({ ...form, query: action.query });
-    run.publicSearch = search;
+    const { frameTree: { frame: before } } = await site.session.send("Page.getFrameTree");
+    if (before.url !== definition.startUrl || run.publicSearch) throw new Error("The search starting document changed");
+    run.publicSearch = { state: "submitting", search };
     await field.pressSequentially(search.query);
     if (await field.inputValue() !== search.query) throw new Error("The exact reviewed term was not entered");
-    await Promise.all([
+    const [response] = await Promise.all([
+      site.page.waitForResponse((candidate) => {
+        const request = candidate.request();
+        return request.isNavigationRequest() && request.frame() === site.page.mainFrame() &&
+          request.method() === "GET" && matchesPublicSearch(new URL(candidate.url()), search);
+      }, { timeout: 30_000 }),
       site.page.waitForURL((url) => matchesPublicSearch(url, search), { waitUntil: "load", timeout: 30_000 }),
       field.press("Enter"),
     ]);
+    const { frameTree: { frame: after } } = await site.session.send("Page.getFrameTree");
+    if (!response.ok() || after.url !== response.url() || after.loaderId === before.loaderId)
+      throw new Error("The public search did not load a new result document");
+    run.publicSearch = { state: "completed", search, start: { url: before.url, documentId: before.loaderId },
+      destination: { url: after.url, documentId: after.loaderId } };
     return search;
   }
   if (action.kind === "decisionRoute") {
@@ -241,7 +256,11 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
       const webArenaGrade = definition.evaluator === "webarena" ? await official?.grade(definition.taskId, action.outcome, {
         guided, authenticatedFixture: Boolean(run.site && definition.siteStorageState),
       }).catch((error: unknown) => ({ failure: error instanceof WebArenaEvaluatorError ? error.message : "The official WebArena evaluation failed" })) : undefined;
-      const userAssisted = publicSearch && hasUserAssistedSearch(observation, run.site?.page.url());
+      let userAssisted = false;
+      if (publicSearch && run.site && run.publicSearch?.state === "completed") {
+        const { frameTree: { frame } } = await run.site.session.send("Page.getFrameTree");
+        userAssisted = hasUserAssistedSearch(observation, run.publicSearch, { url: frame.url, documentId: frame.loaderId });
+      }
       const receipt = { ...observation, grade, webArena: webArenaGrade, ...(publicSearch && { userAssisted }) };
       if (fleet) fleet.record(definition.taskId, receipt);
       else writeFileSync(definition.receipt, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx", mode: 0o600 });
@@ -293,7 +312,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         if (url.origin !== origin) return route.abort();
         if (publicSearch && (!["GET", "HEAD"].includes(request.method()) ||
           (request.isNavigationRequest() && url.href !== start.href &&
-            (!run.publicSearch || request.method() !== "GET" || !matchesPublicSearch(url, run.publicSearch)))))
+            (!run.publicSearch || request.method() !== "GET" || !matchesPublicSearch(url, run.publicSearch.search)))))
           return route.abort();
         if (definition.evaluator === "webarena" && definition.taskId === "157" &&
           (!["GET", "HEAD"].includes(request.method()) || request.isNavigationRequest() && !url.pathname.startsWith("/admin/")))

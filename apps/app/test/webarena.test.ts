@@ -167,7 +167,8 @@ it('Verify the exact user-assisted search and its newly checked result (spec/app
   const input = {
     intent, startUrl: start.url, decisionProvider: "none", decisionRequests: 0, decisionResults: [], chatStatus: 200, syntheticStorageState: true, outcome,
   };
-  const result = (changes: Partial<typeof outcome>) => hasUserAssistedSearch({ ...input, outcome: { ...outcome, ...changes } }, landed.href);
+  const completed = { start, destination, search };
+  const result = (changes: Partial<typeof outcome>) => hasUserAssistedSearch({ ...input, outcome: { ...outcome, ...changes } }, completed, destination);
   expect({
     query: publicSearchQuery(intent),
     ambiguous: publicSearchQuery('Search for "usb" or "wifi"'),
@@ -176,14 +177,18 @@ it('Verify the exact user-assisted search and its newly checked result (spec/app
     repeated: matchesPublicSearch(new URL(landed.href + "&term=other"), search),
     differentOrigin: matchesPublicSearch(new URL(landed.pathname + landed.search, "https://other.localhost"), search),
     checked: result({}),
+    unsubmitted: hasUserAssistedSearch(input, undefined, destination),
+    replacedResult: hasUserAssistedSearch(input, completed, { ...destination, documentId: "second-results" }),
+    forgedForm: result({ publicSearch: { ...search, action: search.action + "?invented=1" } }),
     skippedResume: result({ resumed: false }),
-    noSyntheticLogin: hasUserAssistedSearch({ ...input, syntheticStorageState: false }, landed.href),
+    noSyntheticLogin: hasUserAssistedSearch({ ...input, syntheticStorageState: false }, completed, destination),
     reusedDocument: result({ destination: { ...destination, documentId: start.documentId } }),
     changedReview: result({ reviewedSteps: [{ kind: "SearchPublicSite", subject: "iphone 13" }] }),
     unchecked: result({ hops: [{ ...destination, checked: false }] }),
-    inventedRanking: hasUserAssistedSearch({ ...input, decisionProvider: "hosted", decisionRequests: 1 }, landed.href),
+    inventedRanking: hasUserAssistedSearch({ ...input, decisionProvider: "hosted", decisionRequests: 1 }, completed, destination),
   }).toEqual({
     query, ambiguous: undefined, exact: true, shortened: false, repeated: false, differentOrigin: false,
-    checked: true, skippedResume: false, noSyntheticLogin: false, reusedDocument: false, changedReview: false, unchecked: false, inventedRanking: false,
+    checked: true, unsubmitted: false, replacedResult: false, forgedForm: false,
+    skippedResume: false, noSyntheticLogin: false, reusedDocument: false, changedReview: false, unchecked: false, inventedRanking: false,
   });
 });
