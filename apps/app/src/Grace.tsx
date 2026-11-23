@@ -103,6 +103,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const [linkFeedback, setLinkFeedback] = useState<{ key: string; attempt: symbol; result?: BrowserGuidance }>();
   // Prototype `layout()`: the window sits on the keyboard.
   const keyboard = useKeyboardHeight();
+  const [drawn, setDrawn] = useState(false);
   if (assistant.presentation === "Closed") return null;
   const expanded = assistant.presentation === "Expanded";
   const canTalk = mayOfferTalk(workspace!);
@@ -201,10 +202,11 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": compact over a
   // shown page, and expanded over one the host has not hidden yet. One window at both sizes, so resizing keeps its focus.
   return (
-    <OverPage className={cn(besideRail, "z-[3]")} style={{ bottom: 6 + keyboard }}>
+    <OverPage className={cn(besideRail, "pointer-events-none z-[3]")} style={{ bottom: 6 + keyboard }} onDrawnChange={setDrawn}>
       <GraceWindow size={expanded ? "expanded" : "compact"} onHeightChange={onHeightChange}
         // Prototype `sizeCompact()`: an explicit height at both sizes, so every change animates.
-        style={expanded ? { height: `calc(100dvh - ${12 + keyboard}px)` } : undefined}
+        expandedHeight={`calc(100dvh - ${12 + keyboard}px)`}
+        presence={drawn ? "open" : "waiting"}
         header={
           <GraceHeader pause={paused ? "paused" : pausable ? "live" : conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
             onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void resumeReadPlan() : interact({ tag: "ResumeSpeech" })}

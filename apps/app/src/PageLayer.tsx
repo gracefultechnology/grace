@@ -32,9 +32,9 @@ export function PageArea({ className }: { className?: string }) {
 }
 
 /** @model spec/app/surface.md */
-export function OverPage({ className, ...props }: ComponentProps<"div">) {
+export function OverPage({ className, onDrawnChange, ...props }: ComponentProps<"div"> & { onDrawnChange?: (drawn: boolean) => void }) {
   const [drawn, setDrawn] = useState(false);
-  const ref = useWatch(useMemo(() => Part.Control({ show: setDrawn }), []));
+  const ref = useWatch(useMemo(() => Part.Control({ show: (shown) => { setDrawn(shown); onDrawnChange?.(shown); } }), [onDrawnChange]));
   return <div ref={ref} inert={!drawn} className={cn("pointer-events-auto", !drawn && "invisible", className)} {...props} />;
 }
 
