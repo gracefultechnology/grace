@@ -455,13 +455,9 @@ root is the no-action control. [Original task catalog](https://github.com/web-ar
 
 The WebArena-Verified GitLab compatibility image is
 `am1n3e/webarena-verified-gitlab@sha256:673ba94d757c5b3f4bb55751ad8b745a33bad2b987349322403cbc41035a92e0`.
-Its Linux x86-64 manifest lists about 22 GB of compressed layers before
-unpacking and database startup. The standard Linux hosted runner lists
-14 GB of SSD storage. Use an existing x86-64 host with Docker, room for the
-compressed and expanded image plus GitLab data, and at least 4 GB of RAM
-available to GitLab. Allow several minutes for startup. Bind the fixture to
-loopback and verify that the public project list opens with the published
-synthetic login. [GitLab container and resource requirements](https://servicenow.github.io/webarena-verified/v1.2.3/environments/gitlab/) · [Hosted runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+Its Linux x86-64 manifest lists 22.0 GB of compressed layers. Upstream lists approximately 31.6 GB for the optimized image and recommends at least 4 GB of RAM. The Docker filesystem on a previous standard runner had 81 GiB free after Grace setup. The GitLab job measures the space and available RAM on its own runner before pulling the image. It starts the fixture on loopback and checks the seeded account’s profile and home page. [Fixture sizing](https://servicenow.github.io/webarena-verified/v1.2.3/environments/) · [GitLab requirements](https://servicenow.github.io/webarena-verified/v1.2.3/environments/gitlab/) · [Measured Linux runner](https://github.com/gracefultechnology/grace/actions/runs/45076352266/job/137374326415)
+
+To run this case in CI, enable `benchmarks_only` and `webarena_gitlab` on the manual `ci` workflow and disable `billworld` and `webarena`. The `webarena-gitlab` artifact retains the capacity check and subsequent completed stages. A passing navigation requires a fresh checked destination, hosted guidance, an official score of one and an untouched score of zero.
 
 After signing in, return to the home document and save Chromium's storage
 state in a private directory. Declare task `258` with the fixture root as
