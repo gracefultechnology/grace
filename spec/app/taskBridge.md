@@ -261,12 +261,14 @@ import memory as M from "./memory"
 import savedDetails as SD from "./savedDetails"
 import memoryActuation as MA from "./memoryActuation"
 
+type BookingDetailBinding = { target: str, valueRef: str, detail: str, answerVersion: int }
 type BookingField = NoBookingField
   | BookingTimeField({ target: str, valueRef: str, slot: T::Slot, answerVersion: int })
-  | BookingSavedField({ target: str, valueRef: str, detail: str, answerVersion: int })
+  | BookingSavedField(BookingDetailBinding)
 type FillSource = OutsidePreparation | TaskForm({ task: str, key: T::Subject, fill: K::Fill, bookingField: BookingField })
 type QueuedWebsiteCommand = { command: WS::WorkspaceEffect, prepVersion: int, source: FillSource }
-type BookingDetailRead = NoBookingDetailRead | ReadBookingDetail({ details: SD::SavedDetails, resolved: MA::SavedFill })
+type ResolvedBookingDetail = { details: SD::SavedDetails, resolved: MA::SavedFill }
+type BookingDetailRead = NoBookingDetailRead | ReadBookingDetail(ResolvedBookingDetail)
 type VerifiedTaskForm = {
   command: WS::WorkspaceEffect, key: T::Subject, fill: K::Fill, bookingField: BookingField, detailRead: BookingDetailRead
 }
@@ -379,10 +381,10 @@ pure def exampleFillWorkspace(target: str, valueRef: str): WS::Workspace = {
 }
 pure val billFill = exampleFillWorkspace("bill-amount", "chosen-payment")
 pure val bookedNameWrite = MA::savedWorkspace(AC::observedSample(WS::initial))
-pure val bookingNameBinding = { target: "name-field", valueRef: "memory-name-revision-2", detail: "name", answerVersion: 5 }
+pure val bookingNameBinding: BookingDetailBinding = { target: "name-field", valueRef: "memory-name-revision-2", detail: "name", answerVersion: 5 }
 pure val bookingNameField = BookingSavedField(bookingNameBinding)
 pure val bookedNameAuthorization = MA::authorizedFill(MA::approvedFact(M::initial))
-pure val bookingNameRead = { details: { facts: List(bookedNameAuthorization.state) },
+pure val bookingNameRead: ResolvedBookingDetail = { details: { facts: List(bookedNameAuthorization.state) },
   resolved: { owner: K::sampleVisitKey.owner, valueRef: bookingNameBinding.valueRef, authorization: bookedNameAuthorization.out.nth(0) } }
 pure val fillWorkspaceValues: Set[WS::Workspace] =
   Set(billFill, WS::dispatch(billFill, AC::sampleOperationTokens(billFill), WS::Actuator).state, bookedNameWrite.state,
