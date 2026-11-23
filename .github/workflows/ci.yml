@@ -812,6 +812,7 @@ jobs:
           product_revision = os.environ["GRACE_PRODUCT_REVISION"]
           cohort_number = int(os.environ["GRACE_BILLWORLD_SELECTED_COHORT"])
           verified = {}
+          misses = {}
           documents = set()
 
           def load(path):
@@ -869,15 +870,24 @@ jobs:
               scores = load(directory / "scores.json")
               require(
                   (scores["revision"], scores["productRevision"], scores["shard"], scores["shardCount"], scores["cohortTotal"],
-                   scores["attempted"], scores["total"], scores["passed"]) == (revision, product_revision, shard, 4, cohort_total, shard_total, shard_total, shard_total),
-                  f"Incomplete or failed Fleet score for shard {shard}",
+                   scores["attempted"], scores["total"]) == (revision, product_revision, shard, 4, cohort_total, shard_total, shard_total),
+                  f"Incomplete Fleet score for shard {shard}",
               )
               require(scores.get("cohortNumber", 1) == cohort_number, f"Wrong score cohort on shard {shard}")
               require(set(scores["cases"]) == set(assigned), f"Wrong case membership on shard {shard}")
+              require(all(type(score) is bool for score in scores["cases"].values()) and
+                      scores["passed"] == sum(scores["cases"].values()), f"Inconsistent Fleet scores on shard {shard}")
               for task_id, task in assigned.items():
                   require(Path(task_id).name == task_id and task_id not in (".", ".."), "Invalid Fleet task ID")
                   receipt = load(directory / f"{task_id}.json")
                   grade = receipt["grade"]
+                  require(receipt["taskId"] == task_id and receipt["surface"] == "desktop-chromium" and
+                          loopback(receipt["startUrl"])[2:] == loopback(task["startUrl"])[2:] and
+                          loopback(grade["expected"])[2:] == loopback(task["expected"])[2:] and
+                          grade["passed"] is scores["cases"][task_id], f"Receipt disagrees with assigned case {task_id}")
+                  if not grade["passed"]:
+                      misses[task_id] = shard
+                      continue
                   outcome = receipt["outcome"]
                   opened = outcome["start"]
                   landed = outcome["destination"]
@@ -903,15 +913,19 @@ jobs:
                   verified[task_id] = shard
                   documents.update(ids)
 
-          require(len(verified) == cohort_total, f"Expected {cohort_total} distinct verified Fleet browser receipts")
-          require(os.environ["GRACE_BILLWORLD_MATRIX_RESULT"] == "success", "A Fleet shard job did not succeed")
+          checked = len(verified) + len(misses)
+          require(checked == cohort_total, f"Expected {cohort_total} distinct Fleet browser receipts")
           (root / "qualification.json").write_text(json.dumps(
-              {"revision": revision, "productRevision": product_revision, "cohortNumber": cohort_number, "checked": cohort_total, "passed": cohort_total, "shards": 4, "cases": verified}, indent=2
+              {"revision": revision, "productRevision": product_revision, "cohortNumber": cohort_number,
+               "checked": checked, "passed": len(verified), "shards": 4, "cases": verified, "misses": misses}, indent=2
           ) + "\n")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a") as summary:
-              summary.write(f"Verified **{cohort_total} of {cohort_total}** distinct Fleet billers in cohort {cohort_number} across four shards.\n")
+              summary.write(f"Verified **{len(verified)} of {checked}** distinct Fleet billers in cohort {cohort_number} across four shards.\n")
+          require(not misses, f"{len(misses)} Fleet browser receipts failed to reach their assigned destination")
+          require(os.environ["GRACE_BILLWORLD_MATRIX_RESULT"] == "success", "A Fleet shard job did not succeed")
           PY
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
         with:
           name: billworld-browser-qualification
           path: ${{ runner.temp }}/grace-fleet-shards/qualification.json
