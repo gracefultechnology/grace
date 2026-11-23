@@ -1979,6 +1979,35 @@ lemma confirmGuidedNamedPage_ensures(w: Workspace, pageCheck: GuidedNamedPageChe
   GuidedReceiptPreserves(w, pageCheck.report, by_);
 }
 
+lemma confirmGuidedSearch_ensures(w: Workspace, searchCheck: GuidedSearchCheck, by_: WorkspaceActor)
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysDeviceRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysBrowserRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysAssistantRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysExecutionRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCommitmentRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCommitmentRegistryIsCanonical(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCommitmentAssociation(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysPausedCommitmentCannotSubmit(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysOneTask(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysPausedTogether(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysRecordingHasPermission(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysOperationHasVisibleTask(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysEvidenceVersionsAreNonnegative(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysWakeRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysActiveWakePausesWebsiteWork(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysPreferencesRules(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCommitmentUsesCanonicalIdentity(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCurrentBeforeAction(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> alwaysCommitmentReviewUsesCurrentContext(confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepInterruptionsKeepTask(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepWakeNeverDispatchesWebsite(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepEffectsRequireCurrentContext(w, confirmGuidedSearch(w, searchCheck, by_), []))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepDepartureKeepsCommitmentAttempt(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_)))
+  ensures (inv(w) ==> canConfirmGuidedSearch(w, searchCheck, by_) ==> stepCommitmentSwitchRetainsRecords(w, "confirmGuidedSearch", confirmGuidedSearch(w, searchCheck, by_)))
+{
+  GuidedReceiptPreserves(w, searchCheck.report, by_);
+}
+
 lemma confirmGuidedRecord_ensures(w: Workspace, recordCheck: GuidedRecordCheck, by_: WorkspaceActor)
   ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysDeviceRules(confirmGuidedRecord(w, recordCheck, by_)))
   ensures (inv(w) ==> canConfirmGuidedRecord(w, recordCheck, by_) ==> alwaysBrowserRules(confirmGuidedRecord(w, recordCheck, by_)))
