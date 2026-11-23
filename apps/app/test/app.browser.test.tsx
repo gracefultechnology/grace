@@ -3408,6 +3408,15 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       expect(await tablet.checkStep()).toBe("Past");
       await expect.element(pending).toHaveAttribute("aria-current", "step");
     }
+    const amountLabel = balance.previousElementSibling!;
+    const originalLabel = amountLabel.textContent;
+    amountLabel.textContent = "Premium due";
+    for (const historical of ["Previous premium", "Premium history", "Premium paid"]) {
+      statementHeading.textContent = historical;
+      expect(await tablet.checkStep()).toBe("Past");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+    }
+    amountLabel.textContent = originalLabel;
     statementHeading.textContent = "Current statement";
 
     // spec/app/deviceKeys.md, "A task waits while a website's question holds me, and goes on after my answer"

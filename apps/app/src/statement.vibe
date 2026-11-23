@@ -7,7 +7,7 @@ export type StatementRead =
   | { readonly tag: "Read"; readonly document: string; readonly region: string; readonly text: string }
   | { readonly tag: "Unread"; readonly reason: "NotFound" | "Several" | "Past" | "Changed" | "Covered" }
 
-const pastStatement = /\b(?:(?:past|previous|prior|paid|settled|closed|archived)\s+(?:billing\s+)?(?:bills?|statements?|invoices?|installments?)|(?:bill|statement|invoice|installment|payment)\s+(?:history|archive)|(?:bill|statement|invoice|installment)\s+(?:paid|settled|closed))\b/iu
+const pastStatement = /\b(?:(?:past|previous|prior|paid|settled|closed|archived)\s+(?:billing\s+)?(?:bills?|statements?|invoices?|installments?|premiums?)|(?:bill|statement|invoice|installment|payment|premiums?)\s+(?:history|archive)|(?:bill|statement|invoice|installment|premiums?)\s+(?:paid|settled|closed))\b/iu
 
 type Region = NonNullable<LinkObservation["result"]["statementRegions"]>["regions"][number]
 
