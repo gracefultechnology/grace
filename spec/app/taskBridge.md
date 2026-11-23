@@ -378,18 +378,18 @@ pure def exampleFillWorkspace(target: str, valueRef: str): WS::Workspace = {
       generation: loaded.execution.generation, targets: List({ id: target, consequence: X::AskFirst, inReach: true }) } }, WS::Host)
   WS::prepare(observed, AC::sampleOperationRequest(observed, target, valueRef, X::FillOrdinary), WS::Host)
 }
-pure val billFill = exampleFillWorkspace("bill-amount", "chosen-payment")
-pure val bookedNameWrite = MA::savedWorkspace(AC::observedSample(WS::initial))
+pure val billFill: WS::Workspace = exampleFillWorkspace("bill-amount", "chosen-payment")
+pure val bookedNameWrite: WS::WorkspaceResult = MA::savedWorkspace(AC::observedSample(WS::initial))
 pure val bookingNameBinding: BookingDetailBinding = { target: "name-field", valueRef: "memory-name-revision-2", detail: "name", answerVersion: 5 }
-pure val bookingNameField = BookingSavedField({ target: bookingNameBinding.target, valueRef: bookingNameBinding.valueRef,
+pure val bookingNameField: BookingField = BookingSavedField({ target: bookingNameBinding.target, valueRef: bookingNameBinding.valueRef,
   detail: bookingNameBinding.detail, answerVersion: bookingNameBinding.answerVersion })
-pure val bookedNameAuthorization = MA::authorizedFill(MA::approvedFact(M::initial))
+pure val bookedNameAuthorization: M::MemoryStep = MA::authorizedFill(MA::approvedFact(M::initial))
 pure val bookingNameRead: ResolvedBookingDetail = { details: { facts: List(bookedNameAuthorization.state) },
   resolved: { owner: K::sampleVisitKey.owner, valueRef: bookingNameBinding.valueRef, authorization: bookedNameAuthorization.out.nth(0) } }
 pure val fillWorkspaceValues: Set[WS::Workspace] =
   Set(billFill, WS::dispatch(billFill, AC::sampleOperationTokens(billFill), WS::Actuator).state, bookedNameWrite.state,
     WS::initial, AC::ordinarySample(AC::observedSample(WS::initial)).state)
-pure val queuedValues = {
+pure val queuedValues: Set[QueuedWebsiteCommand] = {
   val write = WS::dispatch(billFill, AC::sampleOperationTokens(billFill), WS::Actuator)
   val chosen = preparationValues.filter(p => p.key == CM::exampleKey and p.phase == P::Preparing and p.fillBy == P::NotAsked).getOnlyElement()
   val yes = P::decideFill(chosen, P::GraceFills, chosen.version, T::Person)
@@ -407,7 +407,7 @@ pure val operationValues: Set[X::WebsiteEffect] = queuedValues.map(q => {
     | _ => Set()
   }
 }).flatten()
-pure val readValues = {
+pure val readValues: Set[FormRead] = {
   val outside = queuedValues.filter(q => q.source == OutsidePreparation).getOnlyElement()
   val original = { command: outside.command, key: CM::exampleKey, fill: K::fillOf(CM::exampleTerms),
     bookingField: NoBookingField, detailRead: NoBookingDetailRead }
