@@ -2458,9 +2458,11 @@ pure val heldTaskEvidence = Set("recordCommitment", "reconcilePriorCommitment", 
 pure def stepAHeldTaskDoesNotAdvance(before: Workspace, via: str, after: Workspace): bool =
   heldByWebsite(before) implies
     not(heldTaskSteps.contains(via)) and (heldTaskEvidence.contains(via) implies taskStandsStill(before, after))
-pure def sometimesAHeldTaskGoesOnAfterHerAnswer(w: Workspace): bool = match w.websiteHold {
-  | WebsiteAnswered(answered) => w.execution.observation > answered.observation
-  | _ => false
-}
+pure def sometimesAHeldTaskGoesOnAfterHerAnswer(w: Workspace): bool =
+  val hold = w.websiteHold
+  match hold {
+    | WebsiteAnswered(answered) => w.execution.observation > answered.observation
+    | _ => false
+  }
 pure val weight_holdForWebsite = 8
 ```
