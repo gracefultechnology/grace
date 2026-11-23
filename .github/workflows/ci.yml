@@ -708,7 +708,7 @@ jobs:
           -t "Gmail signup to Calendar|Follow one reviewed plan across apps|An authenticated restart restores the reviewed plan paused at its next outcome|Open a control from the agent reply|Return to owned Google mail and calendar|Sign in privately on a website|Approve the website’s exact label for one step"
       - id: verify-tasks
         if: ${{ matrix.lane == 'product' && !inputs.cross_app_only && !cancelled() && steps.setup.outcome == 'success' }}
-        run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue=dependencies-successful --concurrency=100% --summarize
+        run: pnpm all build typecheck test test:browser check //#lint:js //#lint:css //#analyze //#selftest:docs //#selftest:examples --continue=dependencies-successful --concurrency=100% --summarize --log-order=stream
       - if: ${{ matrix.lane != 'product' && !cancelled() && steps.setup.outcome == 'success' }}
         env:
           LANE: ${{ matrix.lane }}
