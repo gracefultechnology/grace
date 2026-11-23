@@ -1483,7 +1483,7 @@ name quoted from the current request. The quoted name may differ from the person
 does not finish that step. The person can ask for another highlight from
 the new page with the same step active.
 
-For a requested statement read, the host reads the current visible document locally, whatever its title, unless the title names it a past, previous or prior bill, statement or invoice. A heading on the page, the statement section, or an enclosing section that identifies a past, paid, archived or closed statement keeps the check open. Conflicting structural labels leave the source ambiguous. An ordinary link to earlier statements has no bearing on which statement is open. A section headed as the current statement or identifying one numbered invoice may supply its own due date and one explicitly labeled amount-due total from its own noninteractive line-items table. The browser identifies the row and the owning section. The total must agree with any labeled amount elsewhere. Two sibling rows, an account overview outside the section, and a table of separate records cannot establish this association. The amount due and due date each need a single distinct labeled value on the same statement, written after its label or on the next line, including an amount the page splits across text fragments. An amount whose cents the page shows apart with no decimal mark supplies no value. A labeled remaining statement balance, or remaining balance due, replaces the statement or new balance when the statement shows one; an amount due labeled beside it must agree with it. An amount the page marks CR keeps that mark, and one the page calls a credit supplies no value. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter, with or without its year. Payment due can also label a currency amount. The connective “by” may give the due date immediately after a labeled amount due on the same line. When the browser exposes it separately from that amount, the host cannot use it as the due date. The check remains open unless an independent due-date label gives the same value. A distinct competing date keeps the check open. An account or current balance labeled as the amount due counts as that amount. An unqualified account or current balance supplies a different fact, as do a previous or running balance, minimum payment, a loan's remaining balance, credit limit, pending charge and statement issue date. A label with no value beside it supplies none. The amount and date must also occur together in one visible statement section on that document. A date elsewhere on the page cannot supply a missing field. Grace requests section evidence locally for the reviewed statement. Missing or incomplete section evidence leaves the check open. Several independently complete sections leave it open even when their amounts and dates coincide. The host rereads the document identity, address, section and values before confirming the step. Only those values are compared, so a time the page counts by itself, or any other change elsewhere in the document, may occur between the two reads. The confirmation repeats the statement's own labels. An ambiguous or incomplete statement, one whose values change between the reads, and one that is covered, still loading or no longer at its address leave the step open, and Grace says which.
+For a requested statement read, the host reads the current visible document locally, whatever its title, unless the title names it a past, previous or prior bill, statement, invoice or premium. A heading on the page, the statement section, or an enclosing section that identifies a past, paid, archived or closed statement or premium keeps the check open. Conflicting structural labels leave the source ambiguous. An ordinary link to earlier statements has no bearing on which statement is open. A section headed as the current statement or identifying one numbered invoice may supply its own due date and one explicitly labeled amount-due total from its own noninteractive line-items table. The browser identifies the row and the owning section. The total must agree with any labeled amount elsewhere. Two sibling rows, an account overview outside the section, and a table of separate records cannot establish this association. The amount due and due date each need a single distinct labeled value on the same statement, written after its label or on the next line, including an amount the page splits across text fragments. An amount whose cents the page shows apart with no decimal mark supplies no value. A labeled remaining statement balance, or remaining balance due, replaces the statement or new balance when the statement shows one; an amount due labeled beside it must agree with it. An amount the page marks CR keeps that mark, and one the page calls a credit supplies no value. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter, with or without its year. Payment due and Premium due can label a currency amount. Current premium without a payable label does not supply an amount due. The connective “by” may give the due date immediately after a labeled amount due on the same line. When the browser exposes it separately from that amount, the host cannot use it as the due date. The check remains open unless an independent due-date label gives the same value. A distinct competing date keeps the check open. An account or current balance labeled as the amount due counts as that amount. An unqualified account or current balance supplies a different fact, as do a previous or running balance, minimum payment, a loan's remaining balance, credit limit, pending charge and statement issue date. A label with no value beside it supplies none. The amount and date must also occur together in one visible statement section on that document. A date elsewhere on the page cannot supply a missing field. Grace requests section evidence locally for the reviewed statement. Missing or incomplete section evidence leaves the check open. Several independently complete sections leave it open even when their amounts and dates coincide. The host rereads the document identity, address, section and values before confirming the step. Only those values are compared, so a time the page counts by itself, or any other change elsewhere in the document, may occur between the two reads. The confirmation repeats the statement's own labels. An ambiguous or incomplete statement, one whose values change between the reads, and one that is covered, still loading or no longer at its address leave the step open, and Grace says which.
 
 ```quint
 pure def statementAmounts(due: Set[str], balances: Set[str], remaining: Set[str]): Set[str] =
@@ -2487,6 +2487,7 @@ pure val currentObservationValues = {
   val elsewhere = { ...observed, website: { ...X::goodObservation, origin: "https://credit.example" } }
   Set(observed, quoted,
   { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://credit.example" } },
+  { ...observed, website: { ...X::goodObservation, generation: 2, task: "other", origin: "https://credit.example" } },
   { ...observed, browserRevision: 4, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 4, taskVersion: 2, website: { ...X::goodObservation, generation: 2 } },
   { ...observed, browserRevision: 5, taskVersion: 3,
@@ -2671,8 +2672,11 @@ on a commitment. Evidence of work already sent, a commitment's outcome, prior
 result or save, is kept only where it leaves the task's activity and version
 as they were; applying it to the task waits for her answer. Her answer, Stop,
 leaving and every other event are not held. When the hold ends, the workspace
-records the current task, its work version, and its last observation. A fresh
-observation for that task and work version shows that it can continue.
+retires the old operation generation and payment approval. An ordinary step
+that was queued or in flight returns to rechecking. Grace observes the page
+again before preparing a new operation. A possibly sent payment keeps its
+attempt and durable outcome so that Grace can check what happened. Answering
+the question never sends it again.
 
 ```quint
 pure def heldByWebsite(w: Workspace): bool = w.websiteHold == WebsiteHolds
@@ -2680,12 +2684,17 @@ pure def taskStandsStill(w: Workspace, after: Workspace): bool =
   after.assistant.activity == w.assistant.activity and after.assistant.workVersion == w.assistant.workVersion
 pure def canHoldForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): bool =
   by == Host and holds != heldByWebsite(w)
-pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspace =
-  { ...w, websiteHold: if (holds) WebsiteHolds else WebsiteAnswered({
-    task: w.assistant.taskId, workVersion: w.assistant.workVersion, observation: w.execution.observation
-  }) }
+pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspace = {
+  val assistant = if (w.assistant.activity == A::DoingWork) A::supersede(true, w.assistant) else w.assistant
+  if (holds) { ...w, websiteHold: WebsiteHolds }
+  else { ...w, assistant: assistant,
+    execution: if (X::canInvalidate(w.execution, X::BrowserBridge)) X::invalidate(w.execution, X::BrowserBridge) else w.execution,
+    commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment,
+    websiteHold: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
+}
 pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
-  "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection", "confirmGuidedNameCorrection",
+  "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection",
+  "confirmGuidedNameCorrection", "resumePublicTab",
   "confirmGuided", "confirmGuidedNamedPage", "confirmGuidedSearch", "confirmGuidedPublicSort",
   "stageGuidedRecord", "confirmGuidedRecord", "confirmGuidedMail",
   "rebindGuidedMail", "expectGuidedCalendar", "observeGuidedCalendar", "reconcileGuidedSave",
@@ -2713,7 +2722,7 @@ pure val eval_witness_sometimesAHeldTaskGoesOnAfterHerAnswer = (
   ("adjustPreferenceLevel", R::VolumeBy({ amount: 10 }), Person),
   ("holdForWebsite", true, Host),
   ("holdForWebsite", false, Host),
-  ("observe", { ...observed, website: { ...X::goodObservation, task: "other", origin: "https://credit.example" } }, Host)
+  ("observe", { ...observed, website: { ...X::goodObservation, generation: 2, task: "other", origin: "https://credit.example" } }, Host)
 )
 pure val weight_holdForWebsite = 8
 ```

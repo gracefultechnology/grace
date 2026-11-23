@@ -43,7 +43,7 @@ export function HomePager({ page, count = 2, onPageChange, nextLabel = "More app
         </Button>
       )}
       {!compact && (
-        <div className="absolute bottom-[18px] left-[182px] flex w-[1042px] items-center justify-center gap-1.5">
+        <div className="absolute bottom-[18px] left-[182px] flex w-[1042px] items-center justify-center gap-1.5 will-change-transform">
           {Array.from({ length: count }, (_, i) => (
             <button
               key={i}

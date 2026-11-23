@@ -42,7 +42,7 @@ const backEvents: Record<Exclude<BackAction, "Unconsumed" | "PrivatePageBack" | 
 };
 
 /** A window right of the rail, 6px from the screen's edges (design.md, "Windows"); its bottom follows Grace's compact window and the keyboard (prototype `layout()`). */
-const lifted = "absolute top-1.5 right-1.5 transition-[bottom] duration-window ease-standard motion-reduce:transition-none";
+const lifted = "absolute top-1.5 right-1.5";
 /** What expanded Grace covers is out of reach, for touch and for assistive technology. */
 const homeUpdates = Stream.unwrap(Effect.map(ManagedReads, (managed) => managed.home));
 const appointmentClock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
@@ -101,6 +101,7 @@ function Screen() {
   // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath": each popover points at its rail button.
   const [anchor, setAnchor] = useState(0);
   const [graceHeight, setGraceHeight] = useState(260);
+  const [uncovered, setUncovered] = useState<"Closed" | "Compact" | "Expanded">("Closed");
   // The host's Back and Home keys (MainActivity). spec/app/deviceKeys.md, "Back closes the nearest open thing first and leaves only from a resting Home":
   // an unconsumed Back leaves the standalone app, and the launcher dispatches launcher-home.
   useEffect(() => {
@@ -147,7 +148,8 @@ function Screen() {
   // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses": what Grace's window covers.
   const privateSurface = privateSurfaceActive(workspace);
   const covered = !privateSurface && assistant.presentation === "Expanded";
-  const docked = !privateSurface && assistant.presentation === "Compact";
+  if (assistant.presentation !== "Expanded" && uncovered !== assistant.presentation) setUncovered(assistant.presentation);
+  const docked = !privateSurface && (covered ? uncovered : assistant.presentation) === "Compact";
   const bottom = keyboard + (docked ? 6 + graceHeight + 6 : 6);
   const clock = Object.fromEntries(new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).formatToParts(now).map((p) => [p.type, p.value]));
   const hour = now.getHours();
@@ -190,7 +192,7 @@ function Screen() {
               }}
               internet={visit("Browser")} files={{ photos: files?.photos ?? [], document: files?.document, ...visit("Files") }} passwords={visit("Passwords")}
               page={device.homePage}
-              onPageChange={(page) => { const event = { type: "chooseHomePage", page } as const; if (can(event)) void send(event); }} />
+              onPageChange={(page) => { const event = { type: "chooseHomePage", page } as const; const allowed = can(event); if (allowed) void send(event); return allowed; }} />
             )}</WithCalendars>
           )}</WithMailboxes>
         </OverPage>
