@@ -288,11 +288,12 @@ pure def formFillCommand(command: WS::WorkspaceEffect): bool = match command {
   | Execute(details) => writesFormField(details.effect)
   | _ => false
 }
+pure def namesBookingOperation(effect: X::WebsiteEffect, target: str, valueRef: str): bool = match effect {
+  | Operate(operation) => operation.kind == X::FillOrdinary and operation.target == target and target != "" and
+      operation.valueRef == valueRef and valueRef != ""
+}
 pure def namesBookingField(command: WS::WorkspaceEffect, target: str, valueRef: str): bool = match command {
-  | Execute(details) => match details.effect {
-    | Operate(operation) => operation.kind == X::FillOrdinary and operation.target == target and target != "" and
-        operation.valueRef == valueRef and valueRef != ""
-  }
+  | Execute(details) => namesBookingOperation(details.effect, target, valueRef)
   | _ => false
 }
 pure def bookingDetailKindMatches(kind: M::FactKind, detail: str): bool =
