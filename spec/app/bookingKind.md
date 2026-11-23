@@ -112,4 +112,7 @@ pure def suggestedBooking(facts: VisitFacts): T::Booking =
     cost: facts.cost, currency: facts.currency, shares: facts.asks, acceptsClash: false }
 pure def lawAnUnreadCalendarIsNeverSuggestedOver(facts: VisitFacts): bool =
   not(facts.diaryRead) implies not(onlyFreeSlot(facts))
+pure def lawTheSuggestedTimeIsOfferedAndFree(facts: VisitFacts): bool =
+  onlyFreeSlot(facts) implies (facts.slots.includes(suggestedBooking(facts).slot) and
+    not(facts.busy.includes(suggestedBooking(facts).slot)) and not(suggestedBooking(facts).acceptsClash))
 ```

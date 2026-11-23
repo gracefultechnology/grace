@@ -10,7 +10,7 @@ Sources: new prototype's sign-in, account, payment, review and outcome views; PR
 
 ### A bill preparation holds evidence and choices separately
 
-The facts are a reading of one kind of task, here the [bill kind's](./billKind.md), or nothing read yet; the choice is the task's terms, here a payment, or none yet. Unknown balances and fees are represented explicitly rather than treated as zero. The provider's bill identity is independent of the calendar entry used to open it. No balance is interpreted as proof of affordability or available bank funds. Each trusted access, fact or form report carries its identity and revision together; representative report samples include accepted, stale and invalid evidence, for a bill and for a visit, and a visit's subject with a bill's facts, without imposing a runtime bound.
+The facts are a reading of one kind of task, here the [bill kind's](./billKind.md), or nothing read yet; the choice is the task's terms, here a payment, or none yet. Unknown balances and fees are represented explicitly rather than treated as zero. The provider's bill identity is independent of the calendar entry used to open it. No balance is interpreted as proof of affordability or available bank funds. Each trusted access, fact or form report carries its identity and revision together; representative report samples include accepted, stale and invalid evidence for a bill, accepted and invalid facts and two form revisions for a visit, and a visit's subject with a bill's facts, without imposing a runtime bound.
 
 ```quint
 import task as T from "./task"
