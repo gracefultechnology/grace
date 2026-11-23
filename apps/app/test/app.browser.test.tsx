@@ -3093,7 +3093,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         guideCalls++;
         expect(init?.body).not.toContain("Private sign-in link");
         expect(init?.body).not.toContain("Private username");
-        expect(init?.body).not.toContain("Account number or email");
+        expect(init?.body).not.toContain(combinedLabel);
         expect(init?.body).not.toContain("Credential URL");
         expect(init?.body).not.toContain("Help center inside a form");
         expect(init?.body).not.toContain("Sign Up for Our Newsletter");
@@ -3273,10 +3273,6 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         documentId: about.id, command: { guidance: { nodeId: "help" } },
       });
     }
-    await tap(check);
-    await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
-    await expect.element(pending).toHaveAttribute("aria-current", "step");
-
     signInWidget = "hidden";
     newsletterEmail = blankNewsletterEmail;
     const beforeNewsletterGuide = guideCalls;
@@ -3295,10 +3291,12 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await routeTo(resume);
     expect(check.query()).toBeNull();
     await tap(resume);
-    signInWidget = "idle";
+    signInWidget = "accountNumber";
+    const readsBeforeIdentifierCheck = native.calls("readPage").length;
     await tap(check);
     await expect.poll(() => result.query()?.textContent).toContain("Finish the form yourself in this tab");
     await expect.element(pending).toHaveAttribute("aria-current", "step");
+    expect(native.calls("readPage")).toHaveLength(readsBeforeIdentifierCheck);
     signInWidget = "hidden";
     replaceDocumentDuringRead = true;
     await tap(check);
