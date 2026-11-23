@@ -11,6 +11,10 @@ export interface Shown { first: number; until: number }
 export interface Member { id: string; placed: boolean; place: number }
 export interface Planned { id: string; include: boolean; moved: boolean; day: number }
 export interface Repetition { place: number; day: number }
+export interface SeriesAnchor { repeat: Repeat; day: number; place: number }
+export type RepetitionWindow =
+  | { kind: "DateRange"; first: number; until: number }
+  | { kind: "FromPlace"; first: number; blocked: number };
 
 //@ pure
 export function leap(year: number): boolean {
@@ -160,21 +164,54 @@ export function planned(members: Member[], selected: string, at: number, repeat:
   return out;
 }
 
-export function repetitions(repeat: Repeat, day: number, place: number, untilDay: number): Repetition[] {
-  //@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i].place >= 0 && \result[i].day === shifted(repeat, day, \result[i].place - place) && 0 <= \result[i].day && \result[i].day < untilDay)
+//@ pure
+function boundPlace(anchor: SeriesAnchor, day: number): number {
+  if (anchor.repeat === "Monthly") {
+    const from = civilOf(anchor.day);
+    const to = civilOf(day);
+    return anchor.place + 12 * (to.year - from.year) + to.month - from.month;
+  }
+  return anchor.place + Math.floor((day - anchor.day + 6) / 7);
+}
+
+//@ pure
+function includesRepetition(window: RepetitionWindow, place: number, day: number): boolean {
+  return day >= 0 && (window.kind === "FromPlace" ? place >= window.first : window.first <= day && day < window.until);
+}
+
+interface PositionRange { first: number; until: number }
+
+//@ pure
+function positions(anchor: SeriesAnchor, window: RepetitionWindow): PositionRange {
+  if (window.kind === "DateRange" && (window.until <= window.first || window.until <= 0)) return { first: 0, until: 0 };
+
+  const earliest = window.kind === "DateRange" ? boundPlace(anchor, Math.max(0, window.first)) : Math.max(window.first, boundPlace(anchor, 0));
+  const first = Math.max(0, anchor.repeat === "Once" ? anchor.place : earliest);
+  const until = anchor.repeat === "Once" ? anchor.place + 1
+    : window.kind === "FromPlace" ? first + (anchor.repeat === "Monthly" ? 2 : 1) * (Math.max(0, window.blocked) + 1)
+    : anchor.repeat === "Monthly" ? boundPlace(anchor, window.until - 1) + 1
+    : boundPlace(anchor, window.until);
+  return { first, until };
+}
+
+//@ pure
+function occurrenceAt(anchor: SeriesAnchor, place: number): Repetition {
+  return { place, day: shifted(anchor.repeat, anchor.day, place - anchor.place) };
+}
+
+export function repetitions(anchor: SeriesAnchor, window: RepetitionWindow): Repetition[] {
+  //@ ensures forall(i, 0 <= i && i < \result.length ==> \result[i].place >= 0 && \result[i].day === shifted(anchor.repeat, anchor.day, \result[i].place - anchor.place) && includesRepetition(window, \result[i].place, \result[i].day))
+  //@ ensures forall(p, positions(anchor, window).first <= p && p < positions(anchor, window).until && includesRepetition(window, p, occurrenceAt(anchor, p).day) ==> \result.includes(occurrenceAt(anchor, p)))
+  const range = positions(anchor, window);
   const out: Repetition[] = [];
-  let n = 0;
-  let going = true;
-  while (going && n < 1000) {
+  let n = range.first;
+  while (n < range.until) {
     //@ invariant n >= 0
-    //@ invariant forall(i, 0 <= i && i < out.length ==> out[i].place >= 0 && out[i].day === shifted(repeat, day, out[i].place - place) && 0 <= out[i].day && out[i].day < untilDay)
-    //@ decreases 1000 - n
-    const at = shifted(repeat, day, n - place);
-    if (at >= untilDay) {
-      going = false;
-    } else if (at >= 0) {
-      out.push({ place: n, day: at });
-    }
+    //@ invariant forall(i, 0 <= i && i < out.length ==> out[i].place >= 0 && out[i].day === shifted(anchor.repeat, anchor.day, out[i].place - anchor.place) && includesRepetition(window, out[i].place, out[i].day))
+    //@ invariant forall(p, range.first <= p && p < n && includesRepetition(window, p, occurrenceAt(anchor, p).day) ==> out.includes(occurrenceAt(anchor, p)))
+    //@ decreases range.until - n
+    const at = occurrenceAt(anchor, n);
+    if (includesRepetition(window, n, at.day)) out.push(at);
     n = n + 1;
   }
   return out;
