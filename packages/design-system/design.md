@@ -379,6 +379,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `keyframes.glow-ring` | 0%{transform:scale(1);opacity:.9}100%{transform:scale(1.75);opacity:0} |
 | `keyframes.sheen` | 0%,55%{left:-40%}100%{left:140%} |
 | `keyframes.sheen-pan` | 0%,55%{transform:translateX(-150%)}100%{transform:translateX(150%)} |
+| `keyframes.sway` | 0%,100%{transform:rotate(-6deg) translate(-2%,1.5%)}50%{transform:rotate(6deg) translate(2%,-1.5%)} |
 | `animate.rise` | rise .3s ease-out |
 | `animate.eq` | eq .9s ease-in-out infinite |
 | `animate.breathe` | breathe 1.8s ease-in-out infinite |
@@ -396,6 +397,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `animate.glow-ring` | glow-ring 2.4s ease-out infinite |
 | `animate.sheen` | sheen 9s ease-in-out infinite |
 | `animate.sheen-pan` | sheen-pan 9s ease-in-out infinite |
+| `animate.sway` | sway 10s ease-in-out infinite |
 | `animate.spin-slow` | spin 14s linear infinite |
 | `duration.fast` | 100ms |
 | `duration.base` | 150ms |
