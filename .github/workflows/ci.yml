@@ -454,6 +454,7 @@ jobs:
           echo "GitLab did not serve the synthetic sign-in form"
           exit 1
       - name: Verify the pinned GitLab synthetic sign-in
+        id: gitlab_sign_in
         working-directory: apps/app
         run: |
           umask 077
@@ -469,6 +470,7 @@ jobs:
           PY
           node --input-type=module <<'JS'
           import { readFile, writeFile } from "node:fs/promises";
+          import { scheduler } from "node:timers/promises";
           import { chromium } from "playwright";
           const origin = process.env.GITLAB_ORIGIN;
           const privateDir = process.env.WEBARENA_PRIVATE;
@@ -508,9 +510,18 @@ jobs:
             advance("wait-for-authenticated-navigation");
             await page.waitForURL((url) => url.origin === origin && url.pathname !== "/users/sign_in", { timeout: 120000 });
             advance("verify-profile");
-            const profile = await page.goto(origin + "/-/profile", { timeout: 120000 });
-            diagnostic.profileStatus = profile?.status() ?? null;
-            if (!profile?.ok() || new URL(page.url()).pathname !== "/-/profile") throw new Error("Synthetic profile did not open");
+            const profileUrl = origin + "/-/profile";
+            diagnostic.profileAttempts = [];
+            for (let attempt = 0; attempt < 6; attempt++) {
+              const profile = await page.goto(profileUrl, { timeout: 120000 });
+              const expectedProfile = page.url() === profileUrl;
+              diagnostic.profileStatus = profile?.status() ?? null;
+              diagnostic.profileAttempts.push({ status: diagnostic.profileStatus, expectedProfile });
+              if (profile?.ok() && expectedProfile) break;
+              if (!expectedProfile || ![502, 503, 504].includes(diagnostic.profileStatus) || attempt === 5)
+                throw new Error("Synthetic profile did not open");
+              await scheduler.wait(2000);
+            }
             advance("verify-home");
             const start = await page.goto(origin + "/", { timeout: 120000 });
             diagnostic.homeStatus = start?.status() ?? null;
@@ -549,6 +560,27 @@ jobs:
             }
           }
           JS
+      - name: Record local GitLab service readiness after a transient profile failure
+        if: failure() && steps.gitlab_sign_in.outcome == 'failure'
+        run: |
+          auth="$WEBARENA_RESULTS/authentication.json"
+          if ! jq -e '.phase == "verify-profile" and (.profileAttempts | length == 6 and all(.[]; .expectedProfile and (.status == 502 or .status == 503 or .status == 504)))' "$auth" >/dev/null; then
+            exit 0
+          fi
+          site=grace-webarena-gitlab
+          state=$(docker inspect --format '{{json .State}}' "$site" | jq '{running:.Running, restarting:.Restarting, oomKilled:.OOMKilled, exitCode:.ExitCode}')
+          rails=$(docker exec "$site" sh -c 'curl -sS --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:8023/-/readiness?all=1"' 2>/dev/null || true)
+          services=$(docker exec "$site" gitlab-ctl status 2>/dev/null |
+            awk 'match($0,/^(run|down): (gitaly|nginx|postgresql|puma|redis|sidekiq|gitlab-workhorse):/){print $2, $1}' |
+            jq -Rn '[inputs | split(" ") | {(.[0] | rtrimstr(":")): (.[1] | rtrimstr(":"))}] | add // {}') || services='{}'
+          memory=$(docker exec "$site" sh -c 'cat /sys/fs/cgroup/memory.events' 2>/dev/null |
+            awk '$1 ~ /^(oom|oom_kill|max)$/ && $2 ~ /^[0-9]+$/ { print $1, $2 }' |
+            jq -Rn '[inputs | split(" ") | {(.[0]): (.[1] | tonumber)}] | add // {}') || memory='{}'
+          available=$(awk '/^MemAvailable:/ { printf "%.0f", $2*1024 }' /proc/meminfo)
+          jq -n --argjson state "$state" --arg rails "$rails" --argjson services "$services" --argjson memory "$memory" \
+            --argjson available "$available" \
+            '{container:$state, railsReadinessStatus:($rails|tonumber? // null), services:$services, memoryEvents:$memory, availableMemoryBytes:$available}' \
+            > "$WEBARENA_RESULTS/profile-readiness.json"
       - name: Grade official GitLab public-project navigation
         env:
           GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
@@ -583,6 +615,7 @@ jobs:
             ${{ runner.temp }}/grace-webarena-results/gitlab-image.json
             ${{ runner.temp }}/grace-webarena-results/readiness.json
             ${{ runner.temp }}/grace-webarena-results/authentication.json
+            ${{ runner.temp }}/grace-webarena-results/profile-readiness.json
             ${{ runner.temp }}/grace-webarena-results/task-258.json
           if-no-files-found: warn
   billworld:
