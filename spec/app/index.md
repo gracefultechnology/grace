@@ -34,6 +34,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [The vocabulary of a task: its kind, subject and terms](./task.md)
 - [The task kinds: what each needs, its facts and its fill](./taskKinds.md)
 - [A bill as a task kind: its facts and fitting payment](./billKind.md)
+- [A visit as a task kind: its facts and fitting booking](./bookingKind.md)
 - [Generic evidence-grounded website operations](./execution.md)
 - [Bill discovery, choices and verified preparation](./prep.md)
 - [Join a task's preparation to its review, its fills and its view](./taskBridge.md)
@@ -49,7 +50,7 @@ The application in `apps/app` is a Capacitor Android application. The MVP ships 
 
 ## Story: Manage my saved passwords privately
 
-> I can open Passwords from the last Home page, beside Files, and immediately find,
+> I can open Passwords from its own Home page after Files and immediately find,
 > add, change or delete a saved sign-in, even if my tablet has no screen lock.
 > I can tap to show or copy a password. When I ask Grace to sign in on a website,
 > Android lets me choose a matching account. Grace can point to these controls
