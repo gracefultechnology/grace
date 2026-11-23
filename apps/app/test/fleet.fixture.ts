@@ -309,6 +309,12 @@ export const fleetStatementCases = [
 export const fleetStatementRefusals = [
   { billerId: "ameren-illinois-7add9b", template: "kubra" },
   { billerId: "accura-healthcare-2b95c9", template: "rent-portal" },
+  { billerId: "1-800-contacts-49fab3", template: "streaming" },
+  { billerId: "180-medical-ce4448", template: "patient-pay" },
+  { billerId: "3-rivers-communications-4be1c7", template: "smarthub" },
+  { billerId: "aarp-medicare-rx-unitedhealthcare-prescription-d-a4cd2b", template: "health-plan" },
+  { billerId: "abbeville-county-treasurer-sc-cfd70d", template: "property-tax" },
+  { billerId: "adams-county-ms-online-car-tag-renewal-county-ta-c199ba", template: "dmv" },
 ];
 
 const fleetStatementSelections = [
