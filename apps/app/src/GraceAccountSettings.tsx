@@ -1,9 +1,9 @@
-// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"
 import { AccountFacts, Button, Checkbox, Input, PageHeading, PageText, RetryNotice } from "@repo/ui";
 import { Effect, Exit } from "effect";
 import { useId, useState, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
-import { managesOnTheWeb, mayBeginDeviceSignIn, mayCheckAccountAgain, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, showsTabletSignIn } from "../gen/app__setup.ts";
+import { managesOnTheWeb, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCheckAccountAgain, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, showsMailLeaseUpgrade, showsTabletSignIn } from "../gen/app__setup.ts";
 import { AccountActions, type Operation } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
 import { GraceSignInCode } from "./GraceSignInCode.tsx";
@@ -82,7 +82,15 @@ export function GraceAccountSettings() {
       )}
       {snapshot !== undefined && managesOnTheWeb(snapshot) && (
         <>
-          <PageText role="status">This tablet is signed in.</PageText>
+          {snapshot.tag === "GraceDeviceSignedIn" && showsMailLeaseUpgrade(snapshot) ? (
+            <>
+              <PageText role="status">{snapshot.mailLeaseUpgrade.tag === "LeaseUpgradeAcknowledgmentPending" ? "Finishing sign-in…" : "Sign in again to use email and calendar."}</PageText>
+              {mayBeginMailLeaseUpgrade(snapshot) && <Button variant="prominent" size="pill" disabled={pending || confirmingSignOut}
+                onClick={() => run({ kind: "beginLeaseUpgrade" })}>Sign in again</Button>}
+              {mayCancelMailLeaseUpgrade(snapshot) && <Button variant="capsule" size="pill"
+                onClick={() => run({ kind: "cancelLeaseUpgrade" })}>Cancel</Button>}
+            </>
+          ) : <PageText role="status">This tablet is signed in.</PageText>}
           <Button variant="prominent" size="pill" disabled={pending || confirmingSignOut} onClick={() => run({ kind: "manageAccount" })}>Manage Grace account</Button>
         </>
       )}
