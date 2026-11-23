@@ -437,6 +437,9 @@ The default branch’s product job publishes the pnpm store after the frozen ins
 All jobs restore it under Grace, Eliza and example lockfiles. This cache holds public
 packages only because fork pull requests can read it.
 Turborepo shares task results through the private Cloudflare/R2 cache.
+The fixture jobs can restore a successful exact-task archive from GitHub when
+the shared task cache is unavailable. Closed pull requests skip late cache
+uploads on their first attempt; an explicit rerun keeps its normal publication.
 The task entry point disables Turbo telemetry. Each `selftest:tools` task waits for the root and
 Studio test tasks so those integration journeys do not compete with it on one machine. On separate CI runners, each shard runs its own task with `--only` after setup builds the tools. The product job runs the integration tests.
 The product and nightly runners install full Chromium and its headless shell. Tool shard A installs full Chromium when its Bombadil journey runs. Shards B and rest run without a browser.

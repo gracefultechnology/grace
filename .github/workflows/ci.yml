@@ -846,7 +846,7 @@ jobs:
           echo "Skipping the spec cache upload for superseded commit $GITHUB_SHA."
       - id: closed-pr-cache
         if: >-
-          always() && !inputs.cross_app_only && github.event_name == 'pull_request' && github.run_attempt == '1' &&
+          always() && github.event_name == 'pull_request' && github.run_attempt == '1' &&
           (steps.setup.outputs.spec-cache-key != '' || steps.setup.outputs.turbo-cache-key != '')
         shell: bash
         env:
@@ -939,7 +939,7 @@ jobs:
     environment: *cache-environment
     env: *cache-env
     steps: *verification-steps
-  required:
+  verification:
     name: verify
     needs: [verify, vibestack-fixture-selftests]
     if: always() && needs.verify.result != 'skipped'
