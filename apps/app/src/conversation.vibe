@@ -13,7 +13,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { canConfirmGuidedNameCorrection, guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, nextOutcome, priorGuidedMail, privateSurfaceActive, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedNameCorrection, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { canConfirmGuidedNameCorrection, guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, privateSurfaceActive, publicResultLoad, resumeAvailable, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedNameCorrection, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type GraceAction } from "./agent.vibe"
 import { BrowserGuide } from "./browserGuide.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
@@ -208,13 +208,14 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
     case "SearchPublicSite": {
       const tab = activeTab(workspace.browser)
       if (!workspace.device.observationAllowed || workspace.device.surface !== "Browser" ||
-          tab.id !== step.tabId || tab.load !== "Loaded" || !tab.secure || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+          tab.id !== step.tabId || tab.load !== "Loaded" || !tab.secure) return undefined
       const url = tabUrl(tab)
       const address = URL.parse(url)
       if (address?.origin !== step.origin || address.username || address.password || address.hash) return undefined
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
-      if (!before || (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
+      if (!before || !publicResultLoad(workspace.plan, tab.loadVersion, before.documentId) ||
+          (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
       const miss = pageMiss(before, url, "CheckPublicSearchResult")
       if (miss !== undefined) return miss
       const heading = native.readPrimaryHeading(id, true) catch () => undefined
@@ -234,10 +235,10 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
       const tab = activeTab(workspace.browser)
       const url = URL.parse(tabUrl(tab))
       if (!url || url.origin !== step.origin || url.username || url.password || url.hash || tab.id !== step.tabId ||
-          !tab.secure || tab.load !== "Loaded" || tab.loadVersion <= workspace.plan.openingBrowser) return undefined
+          !tab.secure || tab.load !== "Loaded") return undefined
       const id = PageId.make(`tab-${tab.id}`)
       const before = native.observeLinks(id) catch () => undefined
-      if (!before || before.result.domRevision === undefined ||
+      if (!before || before.result.domRevision === undefined || !publicResultLoad(workspace.plan, tab.loadVersion, before.documentId) ||
           (expectedDocument !== undefined && before.documentId !== expectedDocument)) return "Changed"
       const miss = pageMiss(before, url.href, "CheckPublicSort")
       if (miss !== undefined) return miss
@@ -378,6 +379,38 @@ function distinctReadConfirmation(source: GuidedReadSource, report: GuidedObserv
   return rebind ? { type: "rebindGuidedMail", mailCheck } : { type: "confirmGuidedMail", mailCheck }
 }
 
+effect function observedPublicTab(state: Scene["workspace"], native: NativePage.Shape) {
+  if (!resumeAvailable(state, "Person") || privateSurfaceActive(state) ||
+      state.device.surface !== "Browser" || !state.device.observationAllowed) return undefined
+  const step = nextOutcome(state.plan)
+  const tab = activeTab(state.browser)
+  const url = tabUrl(tab)
+  const address = URL.parse(url)
+  if ((step.tag !== "SearchPublicSite" && step.tag !== "SortPublicListing") || !address ||
+      address.protocol !== "https:" || address.origin !== step.origin || address.username || address.password || address.hash ||
+      tab.load !== "Loaded" || !tab.secure) return undefined
+  const snapshot = native.observeLinks(PageId.make(`tab-${tab.id}`)) catch () => undefined
+  if (!snapshot?.documentId || pageMiss(snapshot, url, step.tag === "SearchPublicSite" ? "CheckPublicSearchResult" : "CheckPublicSort") !== undefined) return undefined
+  return { owner: state.plan.owner, task: state.assistant.taskId, version: state.assistant.workVersion,
+    stepIndex: state.plan.receipts.length, deviceVersion: state.device.contextVersion, browserRevision: state.browser.revision,
+    tabId: tab.id, loadVersion: tab.loadVersion, documentId: snapshot.documentId, url, origin: address.origin }
+}
+
+effect function browserReadAccount(setup: Setup.Shape) {
+  const { graceAccount } = try setup.get()
+  if (graceAccount.tag === "GraceDeviceSignedIn") {
+    const lease = nativeBrowserGuideLease() catch () => undefined
+    return lease !== undefined && (try setup.get()).graceAccount.tag === graceAccount.tag ? JSON.stringify([graceAccount.tag, lease]) : undefined
+  }
+  if (graceAccount.tag === "GraceSignedIn") {
+    const scope = browserSessionScope() catch () => undefined
+    const active = (try setup.get()).graceAccount
+    return scope !== undefined && active.tag === "GraceSignedIn" && active.accountId === graceAccount.accountId &&
+      scope.accountId === active.accountId ? JSON.stringify([active.tag, scope.session]) : undefined
+  }
+  return graceAccount.tag
+}
+
 export const conversation = (link: CloudLink | undefined) => Layer.effect(Conversation, effect {
   const website = try WebsiteTask
   const workspace = try Workspaces
@@ -397,21 +430,6 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const digest = try Digest.Digest
   const setup = try Setup
   const recovery = try GuidedRecovery
-
-  effect function browserReadAccount() {
-    const { graceAccount } = try setup.get()
-    if (graceAccount.tag === "GraceDeviceSignedIn") {
-      const lease = nativeBrowserGuideLease() catch () => undefined
-      return lease !== undefined && (try setup.get()).graceAccount.tag === graceAccount.tag ? JSON.stringify([graceAccount.tag, lease]) : undefined
-    }
-    if (graceAccount.tag === "GraceSignedIn") {
-      const scope = browserSessionScope() catch () => undefined
-      const active = (try setup.get()).graceAccount
-      return scope !== undefined && active.tag === "GraceSignedIn" && active.accountId === graceAccount.accountId &&
-        scope.accountId === active.accountId ? JSON.stringify([active.tag, scope.session]) : undefined
-    }
-    return graceAccount.tag
-  }
 
   effect function tell(words: string) {
     if (words !== "" && link !== undefined) try Ref.update(told, (all) => [...all, words])
@@ -529,7 +547,14 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     resumeReadPlan: effect () => {
       const state = try workspace.get()
       if (!hasNext(state.plan) || !(try recovery.canAccess(state))) return false
-      return (workspace.send({ type: "resume" }, "Person") catch () => undefined) !== undefined
+      if (!needsRecoveredPublicTab(state.plan)) return (workspace.send({ type: "resume" }, "Person") catch () => undefined) !== undefined
+      if (!(try website.clear)) return false
+      const account = try browserReadAccount(setup)
+      if (account === undefined) return false
+      const tabRecovery = try observedPublicTab(state, native)
+      if (tabRecovery === undefined || !(try recovery.canAccess(state)) ||
+          (try browserReadAccount(setup)) !== account || !(try website.clear)) return false
+      return (workspace.send({ type: "resumePublicTab", tabRecovery }, "Person") catch () => undefined) !== undefined
     },
     confirmSortName: effect (correction) => {
       const scene = try look()
@@ -562,7 +587,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
           (current.assistant.activity !== "ReadyForStep" && current.assistant.activity !== "Rechecking")) return "Refused"
       const read = step.tag
       const browserScope = surface === "Browser" ? browserReadScope(current) : undefined
-      const account = browserScope === undefined ? undefined : try browserReadAccount()
+      const account = browserScope === undefined ? undefined : try browserReadAccount(setup)
       if (browserScope !== undefined && account === undefined) return "Refused"
       const context = replyControlContext(current)
       effect function currentBrowserWorkspace() {
@@ -575,7 +600,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
           browserReadScope(w) === browserScope
       }
       effect function ownsBrowserRead() {
-        return (try browserReadAccount()) === account && (try currentBrowserWorkspace())
+        return (try browserReadAccount(setup)) === account && (try currentBrowserWorkspace())
       }
       if (browserScope !== undefined && !(try currentBrowserWorkspace())) return "Refused"
       if (read === "ReadLatestRecord") return try guide.checkLatestRecord()

@@ -6,7 +6,7 @@ import { Effect, Exit, Stream } from "effect";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { CalendarNews } from "./calendar.vibe";
-import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, nextOutcome, priorGuidedMail, type GuidedStep } from "../gen/app__workspace.ts";
+import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, resumeAvailable, type GuidedStep } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import type { BrowserGuidance } from "./browserGuide.vibe";
 import type { GuidedCheck } from "./conversation.vibe";
@@ -131,8 +131,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     ? savePlan ? "Planned checks complete" : "Read checks complete"
     : null;
   const stop = { type: "stop" } as const;
-  const resume = { type: "resume" } as const;
-  const paused = hasPlan && ownsPlan && can(resume);
+  const paused = hasPlan && ownsPlan && workspace && resumeAvailable(workspace, "Person");
   const pausable = hasPlan && ownsPlan && assistant.activity !== "Paused" && can(stop);
   const stepKind = currentStep?.tag ?? "SurfaceOutcome";
   const details = currentStep && guidedDetails(currentStep);
@@ -153,7 +152,9 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   const recoveryInstruction = recoveredSave ? recoveredSave.occurrence
     ? "Open the saved appointment in Calendar to check it."
     : "The save was interrupted. Check your calendar before asking to save this appointment again."
-    : reopenMail ? "Reopen the original email and check it before reviewing the appointment." : undefined;
+    : reopenMail ? "Reopen the original email and check it before reviewing the appointment."
+    : needsRecoveredPublicTab(plan) && (currentStep?.tag === "SearchPublicSite" || currentStep?.tag === "SortPublicListing")
+      ? `Open a public page on ${currentStep.origin} in Internet. Allow Grace to read it, then choose Resume Grace.` : undefined;
   const canCheck = ownsPlan && label && (checkSurface !== "Browser" || workspace?.device.observationAllowed) &&
     checkSurface === workspace?.device.surface &&
     (assistant.activity === "ReadyForStep" || assistant.activity === "Rechecking") && assistant.replacementId === "" &&
