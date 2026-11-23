@@ -96,15 +96,15 @@ the test supervisor reads the episode’s original amount and due date to build
 the third control. Only the supervisor sees those reference values. CI uploads
 these receipts and the qualification inventory as `billworld-fleet-view-bill`.
 The inventory derives eligibility from the pinned catalog and upstream task
-generator. The required cohort includes 17 official passing reads and two
-expected refusals. The KUBRA and Rent journeys check in Chromium that Grace
-leaves an ambiguous read unconfirmed. Their receipt check requires an empty
-answer, rejection by the bound grader on the answer predicate alone, and
-both rejected controls. The inventory lists each eligible template's website
-count and the selected, attempted and officially passing billers. A pass requires the bound grader's
-accepted answer and all three rejected controls. CI writes the inventory when
-journeys fail or produce no receipts. The planner is scripted for these
-statement journeys.
+generator. The required cohort includes 17 official passing reads and eight
+expected refusals. The refusal journeys check in Chromium that Grace leaves
+an ambiguous read unconfirmed. Their receipt check requires an empty answer,
+rejection by the bound grader on the answer predicate alone, and all three
+rejected controls. The inventory lists each eligible template's website count
+and the selected, attempted and officially passing billers. A pass requires the
+bound grader's accepted answer and all three rejected controls. CI writes the
+inventory when journeys fail or produce no receipts. The planner is scripted
+for these statement journeys.
 
 The standard verification job exercises Google sign-in and cross-app tasks in
 Chromium. A resettable loopback provider serves OAuth consent, Gmail messages
