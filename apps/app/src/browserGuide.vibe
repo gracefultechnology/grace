@@ -101,7 +101,7 @@ function directRecordVisit(visit: PendingRecordVisit, current: RecordContext): b
     from.history.slice(0, from.cursor + 1).every((url, index) => current.history[index] === url)
 }
 
-const insufficientRecords = unavailableBecause("I can’t verify which matching record is newest on this list.")
+const insufficientRecords = unavailableBecause("I can’t verify the newest match. In the website’s record history, open records with the requested status and compare their full dates.")
 function recordUnavailable(words: string): BrowserGuidance { return { kind: "RecordUnavailable", words } }
 const recordCoverage = recordUnavailable("I can’t verify that I’ve checked the whole list. Start on the first page, or review all pages on the website yourself.")
 const recordDates = recordUnavailable("I can’t tell which matching record is newest from the dates shown. Open the matching records and compare their full dates on the website.")

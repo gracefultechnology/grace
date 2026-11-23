@@ -963,12 +963,14 @@ pure def stayOnPage(w: Workspace, stayed: StayedLoad, by: WorkspaceActor): Works
 
 The host identifies a document change caused by the currently dispatched
 ordinary operation or payment. It records that navigation in the actual
-browser and invalidates the old target. Fresh observation follows within
-the active task. A payment result page continues its existing outcome wait;
-it never becomes another submit. An unexpected change pauses instead. A payment progress callback must belong
-to the attached task and an active execution. A proof witness showed that an
-unrelated retained payment could otherwise create ordinary website work inside
-an active guided plan.
+browser and invalidates the old target. Fresh observation follows within the
+active task. A payment result page continues its existing outcome wait; it
+never becomes another submit. An unexpected change pauses instead. When the
+page in view starts again at the address it already shows, the host names the
+load version it was running, and a report naming any other is refused. A
+payment progress callback must belong to the attached task and an active
+execution. A proof witness showed that an unrelated retained payment could
+otherwise create ordinary website work inside an active guided plan.
 
 ```quint
 pure def canReceiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceActor): bool =
@@ -1028,8 +1030,7 @@ were; the selected page's own move, while hidden, changes the revision as
 any page moving by itself does. The host names the load version of the
 load the page was running when it moved, and a report is refused once that
 tab has started another load; what happens in other tabs, or to the
-browser's revision, never makes it late. A start at a retained address also
-names the prior load version when the page is in view.
+browser's revision, never makes it late.
 
 ```quint
 pure def canUnwatchedPage(w: Workspace, unexpected: UnexpectedNavigation, by: WorkspaceActor): bool =

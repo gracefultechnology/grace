@@ -17,7 +17,16 @@ const urlTask = {
     reference_url: Schema.NonEmptyString,
   }),
 };
+const StringTask = Schema.Struct({
+  task_id: Schema.Literal(386), sites: Schema.Tuple([Schema.Literal("shopping")]),
+  start_url: Schema.Literal("__SHOPPING__"), intent: Schema.NonEmptyString, require_login: Schema.Literal(true),
+  eval: Schema.Struct({
+    eval_types: Schema.Tuple([Schema.Literal("string_match")]),
+    reference_answers: Schema.Struct({ must_include: Schema.Tuple([Schema.NonEmptyString]) }),
+  }),
+});
 const Task = Schema.Union([
+  StringTask,
   Schema.Struct({ ...urlTask, task_id: Schema.Int, sites: Schema.Tuple([Schema.Literal("shopping")]), start_url: Schema.Literal("__SHOPPING__") }),
   Schema.Struct({ ...urlTask, task_id: Schema.Literal(157), sites: Schema.Tuple([Schema.Literal("shopping_admin")]), start_url: Schema.Literal("__SHOPPING_ADMIN__") }),
   Schema.Struct({
@@ -33,9 +42,12 @@ const Outcome = Schema.Struct({
   ringTap: Schema.optional(Schema.Boolean),
   graceTerminal: Schema.optional(Schema.NullOr(Schema.String)),
   failure: Schema.optional(Schema.String),
+  answer: Schema.optional(Schema.String),
+  noAction: Schema.optional(Document),
 });
 const Scores = Schema.Tuple([Schema.Literals([0, 1]), Schema.Literals([0, 1])]);
-const officialUrlEvaluator = `
+const AnswerScores = Schema.Tuple([Schema.Literals([0, 1]), Schema.Literals([0, 1]), Schema.Literals([0, 1])]);
+const officialEvaluator = `
 import json
 import os
 from pathlib import Path
@@ -51,7 +63,12 @@ with os.fdopen(3, "w") as output:
         with NamedTemporaryFile("w", suffix=".json") as config:
             json.dump(request["fixture"], config)
             config.flush()
-            scores = [URLEvaluator()([], Path(config.name), PseudoPage(None, url), None) for url in request["urls"]]
+            if "urls" in request:
+                scores = [URLEvaluator()([], Path(config.name), PseudoPage(None, url), None) for url in request["urls"]]
+            else:
+                from browser_env.actions import create_stop_action
+                from evaluation_harness import StringEvaluator
+                scores = [StringEvaluator()([create_stop_action(answer)], Path(config.name)) for answer in request["answers"]]
         print(json.dumps(scores), file=output, flush=True)
 `;
 
@@ -60,7 +77,7 @@ export class WebArenaEvaluatorError extends Error {
   readonly reason: "spawn" | "exit" | "protocol" | "deadline" | "closed";
 
   constructor(phase: WebArenaEvaluatorError["phase"], reason: WebArenaEvaluatorError["reason"]) {
-    super(`Pinned WebArena URL evaluator ${phase} failed (${reason})`);
+    super(`Pinned WebArena evaluator ${phase} failed (${reason})`);
     this.phase = phase;
     this.reason = reason;
   }
@@ -68,7 +85,7 @@ export class WebArenaEvaluatorError extends Error {
 
 function spawnEvaluator(python: string, root: string, env: NodeJS.ProcessEnv) {
   try {
-    return spawn(python, ["-IB", "-c", officialUrlEvaluator, root], {
+    return spawn(python, ["-IB", "-c", officialEvaluator, root], {
       env, cwd: root, stdio: ["pipe", "ignore", "ignore", "pipe"],
     });
   } catch {
@@ -79,7 +96,7 @@ function spawnEvaluator(python: string, root: string, env: NodeJS.ProcessEnv) {
 type WorkerOptions = {
   python: string; root: string; env: NodeJS.ProcessEnv; startupTimeoutMs?: number; gradingTimeoutMs?: number;
 };
-type Evaluation = { fixture: string; urls: readonly [string, string] };
+type Evaluation = { fixture: string } & ({ urls: readonly [string, string] } | { answers: readonly [string, string, string] });
 
 function launchEvaluator({ python, root, env, startupTimeoutMs = 30 * 60_000, gradingTimeoutMs = 30_000 }: WorkerOptions) {
   const child = spawnEvaluator(python, root, env);
@@ -135,14 +152,15 @@ function launchEvaluator({ python, root, env, startupTimeoutMs = 30 * 60_000, gr
       throw error instanceof WebArenaEvaluatorError ? error : new WebArenaEvaluatorError("startup", "protocol");
     }
   })();
-  const grade = async ({ fixture, urls }: Evaluation) => {
+  const grade = async ({ fixture, ...candidates }: Evaluation) => {
     await ready;
     if (closing || !input) throw new WebArenaEvaluatorError("grading", "closed");
     try {
       const task: unknown = JSON.parse(fixture);
-      input.write(JSON.stringify({ fixture: task, urls }) + "\n");
+      input.write(JSON.stringify({ fixture: task, ...candidates }) + "\n");
       const response = await read("grading", AbortSignal.timeout(gradingTimeoutMs));
-      return Schema.decodeUnknownSync(Scores)(JSON.parse(response));
+      const decoded: unknown = JSON.parse(response);
+      return "answers" in candidates ? Schema.decodeUnknownSync(AnswerScores)(decoded) : Schema.decodeUnknownSync(Scores)(decoded);
     } catch (error) {
       await close();
       throw error instanceof WebArenaEvaluatorError ? error : new WebArenaEvaluatorError("grading", "protocol");
@@ -196,6 +214,13 @@ export function webArena({ checkout, python, cases }: { checkout: string; python
     const hits = tasks.filter((task) => task.task_id?.toString() === taskId);
     if (hits.length !== 1) throw new Error("The requested WebArena task is absent from the pinned catalog");
     const task = Schema.decodeUnknownSync(Task)(hits[0]);
+    const stringTask = "reference_answers" in task.eval;
+    if (stringTask) {
+      const originals = Schema.decodeUnknownSync(Schema.Struct({
+        eval: Schema.Struct({ reference_answers: Schema.Unknown }),
+      }))(hits[0]);
+      Schema.decodeUnknownSync(StringTask.fields.eval.fields.reference_answers, { onExcessProperty: "error" })(originals.eval.reference_answers);
+    }
     const start = new URL(startUrl);
     const { origin } = start;
     const site = task.sites[0];
@@ -204,7 +229,7 @@ export function webArena({ checkout, python, cases }: { checkout: string; python
     const initialPath = admin ? "/admin/admin/dashboard/" : "/";
     if (start.protocol !== "https:" || !["127.0.0.1", "localhost"].includes(start.hostname) || start.href !== `${origin}${initialPath}` || task.intent !== intent)
       throw new Error("WebArena input needs the unchanged official task intent and the synthetic site's starting document");
-    const checkedPath = site === "gitlab" ? new URL(task.eval.reference_url.replace(task.start_url, siteRoot)).pathname : undefined;
+    const checkedPath = "reference_url" in task.eval && site === "gitlab" ? new URL(task.eval.reference_url.replace(task.start_url, siteRoot)).pathname : undefined;
     const fixture = JSON.stringify(hits[0]).replaceAll(task.start_url, siteRoot);
     const unused = "http://127.0.0.1:1";
     const env = { SHOPPING: unused, SHOPPING_ADMIN: unused, REDDIT: unused, GITLAB: unused,
@@ -224,6 +249,15 @@ export function webArena({ checkout, python, cases }: { checkout: string; python
           throw new Error("The observed Chromium URL left the pinned WebArena fixture");
         const worker = workers.get(scope);
         if (!worker) throw new WebArenaEvaluatorError("startup", "closed");
+        if (stringTask) {
+          const { noAction } = outcome;
+          if (!destination || destination.documentId === initial.documentId || !noAction || new URL(noAction.url).href !== start.href ||
+              noAction.documentId === initial.documentId || noAction.documentId === destination.documentId || !evidence.authenticatedFixture)
+            throw new Error("String grading requires a separate untouched synthetic starting document");
+          const [answerScore, emptyScore, wrongAnswerScore] = await worker.grade({ fixture, answers: [outcome.answer ?? "", "", "1 star"] });
+          return { evaluatorRevision: revision, catalogSha256, site, officialScore: answerScore, noActionScore: emptyScore,
+            wrongAnswerScore, groundedNavigation: false, qualifiedHostedGuidance: false };
+        }
         [officialScore, noActionScore] = await worker.grade({ fixture, urls: [destination?.url ?? initial.url, initial.url] });
         if (destination) {
           const next = new URL(destination.url);

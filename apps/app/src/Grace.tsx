@@ -50,7 +50,7 @@ const checks: Record<GuidedStep["tag"], { label: string; item: string; missing: 
   ReadChangedBrowser: { label: "Check page", item: "page", missing: "Open the page you want me to read, then check again." },
   SortPublicListing: { label: "Check price order", item: "page", missing: "I couldn’t verify the category and price order here. Use the site’s Sort By control, then check again." },
   ReachNamedPage: { label: "Check page", item: "page", missing: "" },
-  ReadLatestRecord: { label: "Check page", item: "page", missing: "I couldn’t verify the latest matching record on this page." },
+  ReadLatestRecord: { label: "Check page", item: "page", missing: "I couldn’t verify the latest record here. Open the website’s record history to check the status and full dates." },
   SearchPublicSite: { label: "Check search results", item: "page", missing: "I couldn’t verify these search results. Use the reviewed website’s search and try again." },
   ReadStatement: { label: "Read statement", item: "page", missing: "I couldn’t find one amount due and one due date on this page." },
   ReadCalendar: { label: "Check appointment", item: "appointment", missing: "I couldn’t read an open appointment. Open the one you want me to check." },
