@@ -2613,16 +2613,15 @@ pure def taskStandsStill(w: Workspace, after: Workspace): bool =
   after.assistant.activity == w.assistant.activity and after.assistant.workVersion == w.assistant.workVersion
 pure def canHoldForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): bool =
   by == Host and holds != heldByWebsite(w)
-pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspace =
+pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspace = {
+  val assistant = if (w.assistant.activity == A::DoingWork) A::supersede(true, w.assistant) else w.assistant
   if (holds) { ...w, websiteHold: WebsiteHolds }
-  else {
-    val assistant = if (w.assistant.activity == A::DoingWork) A::supersede(true, w.assistant) else w.assistant
-    { ...w, assistant: assistant,
-      execution: if (X::canInvalidate(w.execution, X::BrowserBridge)) X::invalidate(w.execution, X::BrowserBridge) else w.execution,
-      commitment: if (w.commitment.live and CM::canInvalidate(w.commitment, T::Host))
-        CM::invalidate(w.commitment, T::Host) else w.commitment,
-      websiteHold: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
-  }
+  else { ...w, assistant: assistant,
+    execution: if (X::canInvalidate(w.execution, X::BrowserBridge)) X::invalidate(w.execution, X::BrowserBridge) else w.execution,
+    commitment: if (w.commitment.live and CM::canInvalidate(w.commitment, T::Host))
+      CM::invalidate(w.commitment, T::Host) else w.commitment,
+    websiteHold: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
+}
 pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
   "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection", "resumePublicTab",
   "confirmGuided", "confirmGuidedNamedPage", "confirmGuidedSearch", "confirmGuidedPublicSort",
