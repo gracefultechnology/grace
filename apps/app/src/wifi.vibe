@@ -127,7 +127,10 @@ const host = (wifi: WiFiPlugin, wifiSignIn: WifiSignIn) => Layer.effect(WifiPage
     const confirmed = result === "Joined" && shown.connected?.id !== n.selected.id ? "Unverified" : result
     const report = { network: n.selected.id, version: n.version, result: confirmed, certificate: "", explanation }
     const next = networks.send({ type: "receive", report }, "OperatingSystem") catch () => undefined
-    if (next?.phase === "PortalEntry") try signIn()
+    if (next?.phase === "PortalEntry") {
+      try signIn()
+      return try look
+    }
     if (result !== "Joined" && (next?.phase === "JoinUnconfirmed" || next?.phase === "JoinFailed" || next?.phase === "SavedNetworkPanel")) try look
   }
 
