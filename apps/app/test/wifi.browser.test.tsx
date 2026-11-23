@@ -52,7 +52,15 @@ function android() {
     },
   };
   const wifiSignIn = {
-    getWifiSignIn: () => Promise.resolve({ required: tablet.captivePortal }),
+    getWifiSignIn: async () => {
+      const validated = tablet.ssid !== null && tablet.validated && !tablet.captivePortal;
+      const { network } = await plugin.getConnectedNetwork();
+      return {
+        required: tablet.captivePortal,
+        validated,
+        access: validated && tablet.location === "granted" && network !== null ? [network] : [],
+      };
+    },
     openWifiSignIn: () => { tablet.signIns += 1; return Promise.resolve(); },
   };
   return { tablet, plugin, wifiSignIn };
@@ -259,11 +267,13 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await expect.element(signIn).not.toBeInTheDocument();
 
     tablet.ssid = guest.ssid;
+    tablet.otherDefault = true;
     await changed();
     await joinedTo(guest.ssid);
     await expect.element(signIn).not.toBeInTheDocument();
 
     tablet.ssid = null;
+    tablet.otherDefault = false;
     await draw(false);
     await changed();
     await expect.element(page.getByRole("button", { name: guest.ssid, exact: true })).toBeVisible();

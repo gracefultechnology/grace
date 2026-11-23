@@ -1,20 +1,27 @@
 package technology.graceful.grace;
 
+import android.Manifest;
 import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.location.LocationManager;
 import android.media.AudioManager;
 import android.net.ConnectivityManager;
 import android.net.Network;
 import android.net.NetworkCapabilities;
+import android.net.wifi.WifiInfo;
 import android.os.BatteryManager;
+import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.view.Window;
 import android.view.WindowManager;
 import androidx.core.content.ContextCompat;
+import ai.eliza.plugins.wifi.WiFiStateReader;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -64,15 +71,36 @@ public class GraceDevicePlugin extends Plugin {
  @SuppressWarnings("deprecation")
  @PluginMethod public void getWifiSignIn(PluginCall call) {
   ConnectivityManager connectivity = getContext().getSystemService(ConnectivityManager.class);
+  MainActivity activity = getActivity() instanceof MainActivity host ? host : null;
+  boolean hasIdentity = activity != null
+   && getContext().checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+   && getContext().getSystemService(LocationManager.class).isLocationEnabled();
+  boolean required = false;
+  boolean validated = false;
+  JSArray access = new JSArray();
   for (Network network : connectivity.getAllNetworks()) {
    NetworkCapabilities capabilities = connectivity.getNetworkCapabilities(network);
-   if (capabilities != null && capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
-     && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)) {
-    call.resolve(new JSObject().put("required", true));
-    return;
+   if (capabilities == null || !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+     || capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
+   if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)) {
+    required = true;
+    continue;
    }
+   if (!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) continue;
+   validated = true;
+   if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || activity == null || !hasIdentity) continue;
+   WifiInfo info = activity.validatedWifi(network);
+   if (info == null) continue;
+   String ssid = WiFiStateReader.Companion.disclosedSsid(info.getSSID());
+   String bssid = info.getBSSID();
+   int security = info.getCurrentSecurityType();
+   if (ssid == null || bssid == null || security == WifiInfo.SECURITY_TYPE_UNKNOWN) continue;
+   boolean secured = security != WifiInfo.SECURITY_TYPE_OPEN && security != WifiInfo.SECURITY_TYPE_OWE;
+   access.put(new JSObject().put("ssid", ssid).put("bssid", bssid).put("secured", secured));
   }
-  call.resolve(new JSObject().put("required", false));
+  JSObject status = new JSObject().put("required", required).put("validated", validated);
+  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) status.put("access", access);
+  call.resolve(status);
  }
 
  @PluginMethod public void openWifiSignIn(PluginCall call) {

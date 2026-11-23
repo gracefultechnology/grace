@@ -206,8 +206,9 @@ Grace offers sign-in when Android reports that a connected Wi-Fi network
 needs it, including when the connection was made before opening Grace's
 Wi-Fi page, location access is off, or another connection is the default.
 Grace also offers it while the selected join is waiting for sign-in and
-Android has not validated a Wi-Fi connection. If Android validates a different
-Wi-Fi network and reports no portal, Grace shows that connection while the
+Android has not validated a Wi-Fi connection. On Android 12 and later, Grace
+can confirm a Wi-Fi connection even when another connection is the default.
+If Android validates a different Wi-Fi network and reports no portal, Grace shows that connection while the
 selected join remains pending. When Android first reports a sign-in page
 for the current attempt, Grace opens
 Android's Wi-Fi settings. There the person taps the connected network to

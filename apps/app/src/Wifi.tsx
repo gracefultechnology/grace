@@ -68,22 +68,22 @@ function PrivateEntry({ n, name, person, join }: { n: NetworkJoin; name: string;
 export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime; online: boolean; onFix: () => void }) {
   const { state: n, can, send } = useMachine(runtime);
   const page = runtime.runSync(Effect.service(WifiPage));
-  const { nearby: offers, connected: identified, signInRequired } = useSyncExternalStore(page.offers.subscribe, page.offers.current);
+  const { nearby: offers, connected: identified, signInRequired, wifiValidated } = useSyncExternalStore(page.offers.subscribe, page.offers.current);
   if (!n) return null;
   const person = (event: Event) => { if (can(event, "Person")) void send(event, "Person"); };
   const run = (effect: Effect.Effect<void>) => void runtime.runPromise(effect);
   const name = ssidOf(n);
   if (n.phase === "PrivateEntry") return <PrivateEntry key={n.version} n={n} name={name} person={person} join={(password) => run(page.join(password))} />;
 
-  const connected = online ? identified ?? unnamed : undefined;
+  const connected = identified ?? (online ? unnamed : undefined);
   const offersById = new Map(offers.map((offer) => [offer.network.id, offer]));
   const nearby = n.discovery.tag === "NetworksFound" ? n.discovery.networks.flatMap((network) => {
     const offer = offersById.get(network.id);
-    return offer && (!online || network.id !== identified?.id) ? [row(offer)] : [];
+    return offer && network.id !== identified?.id ? [row(offer)] : [];
   }) : [];
   const action = listAction(n.discovery);
   const act = { NoAction: () => {}, OpenPanel: () => run(page.openPanel()), Explain: () => person({ type: "explainLocation" }), Allow: () => run(page.allowLocation()), Rescan: () => person({ type: "rescan" }) }[action];
-  const signIn = wifiSignInOffered(n, signInRequired, identified !== undefined);
+  const signIn = wifiSignInOffered(n, signInRequired, wifiValidated);
   const said = signIn && n.phase === "SavedNetworkPanel" ? undefined : notice(n, name);
   return (
     <>
