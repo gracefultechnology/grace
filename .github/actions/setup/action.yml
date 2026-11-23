@@ -123,7 +123,7 @@ runs:
         echo "fixture-prefix=$scope" >> "$GITHUB_OUTPUT"
         echo "key=${scope:-$prefix}$GITHUB_SHA-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
     - id: restore-turbo-cache
-      if: steps.turbo-cache.outputs.key != ''
+      if: inputs.job != 'android' && steps.turbo-cache.outputs.key != ''
       uses: actions/cache/restore@v6
       with:
         path: .turbo/cache
@@ -148,10 +148,15 @@ runs:
       shell: bash
     - id: gen-seed
       if: >-
-        inputs.job == 'product' && inputs.cache-verification == 'true' &&
+        (inputs.job == 'product' || inputs.job == 'android') && inputs.cache-verification == 'true' &&
         env.TURBO_CACHE == 'local:rw' && steps.turbo-cache.outputs.key != ''
       shell: bash
-      run: printf 'prefix=turbo-gen-v2-%s-%s-product-\n' "$RUNNER_OS" "$RUNNER_ARCH" >> "$GITHUB_OUTPUT"
+      env:
+        JOB: ${{ inputs.job }}
+        PUBLISH: ${{ inputs.verification == 'true' || (inputs.job == 'android' && matrix.abi == 'arm64-v8a') }}
+      run: |
+        printf 'prefix=turbo-gen-v2-%s-%s-%s-\n' "$RUNNER_OS" "$RUNNER_ARCH" "$JOB" >> "$GITHUB_OUTPUT"
+        printf 'publish=%s\n' "$PUBLISH" >> "$GITHUB_OUTPUT"
     - id: lookup-gen-seed
       if: steps.gen-seed.outputs.prefix != ''
       continue-on-error: true
@@ -210,7 +215,7 @@ runs:
       id: install-workspace
       shell: bash
       env:
-        PUBLISH_GEN_SEED: ${{ inputs.verification == 'true' && steps.gen-seed.outputs.prefix != '' }}
+        PUBLISH_GEN_SEED: ${{ steps.gen-seed.outputs.publish == 'true' }}
         REMEMBER_RESTORED_EVALUATORS: >-
           ${{ startsWith(inputs.job, 'selftest-') &&
               steps.restore-spec-cache.outcome == 'success' && steps.restore-spec-cache.outputs.cache-matched-key != '' &&
@@ -234,7 +239,7 @@ runs:
         if [[ $PUBLISH_GEN_SEED == true ]]; then export TURBO_RUN_SUMMARY=true; fi
         pnpm install --frozen-lockfile --package-import-method=clone-or-copy
     - id: publish-gen-seed
-      if: inputs.verification == 'true' && steps.gen-seed.outputs.prefix != ''
+      if: steps.gen-seed.outputs.publish == 'true'
       continue-on-error: true
       shell: bash
       env:
