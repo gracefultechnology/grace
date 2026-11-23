@@ -1662,13 +1662,16 @@ pure val pageCheckValues = Set(samplePageCheck, { ...samplePageCheck, heading: "
       browserRevision: 5, step: ReachNamedPage({ subject: "Help" }), evidence: "Help" },
     loadVersion: 4, url: "https://utility.example/help", heading: "Help" })
 pure val sampleCollectionUrl = "https://utility.example/help"
+pure val exampleCollectionLoading = B::navigate(initial.browser, sampleCollectionUrl)
+pure val exampleCollectionBrowser =
+  B::finishPageLoad(exampleCollectionLoading, 1, B::activeTab(exampleCollectionLoading).loadVersion, B::Loaded, true, sampleCollectionUrl)
+pure val exampleCollectionDevice =
+  S::setObservationPermission(S::openSurface(S::finishStartup(initial.device, true), S::Browser), true)
+pure val exampleCollectionAssistant =
+  A::beginTask(A::open(initial.assistant, C::ConversationUser), "task", "Open the list of help topics", C::ConversationUser)
 pure val exampleCollection: Workspace = {
-  val loading = B::navigate(initial.browser, sampleCollectionUrl)
-  val browser = B::finishPageLoad(loading, 1, B::activeTab(loading).loadVersion, B::Loaded, true, sampleCollectionUrl)
-  val device = S::setObservationPermission(S::openSurface(S::finishStartup(initial.device, true), S::Browser), true)
-  val assistant = A::beginTask(A::open(initial.assistant, C::ConversationUser), "task", "Open the list of help topics", C::ConversationUser)
-  { ...initial, assistant: assistant, browser: browser, device: device,
-    plan: { ...emptyPlan, owner: "owner", steps: List(sampleCollectionStep), openingBrowser: 0, originalAsk: "Open the list of help topics" } }
+  ...initial, assistant: exampleCollectionAssistant, browser: exampleCollectionBrowser, device: exampleCollectionDevice,
+  plan: { ...emptyPlan, owner: "owner", steps: List(sampleCollectionStep), openingBrowser: 0, originalAsk: "Open the list of help topics" }
 }
 pure val sampleCollectionCheck: GuidedCollectionCheck = {
   report: { ...sampleReport, step: sampleCollectionStep, version: exampleCollection.assistant.workVersion,
