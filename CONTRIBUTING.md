@@ -430,6 +430,7 @@ cache keys include the job, lockfile, commit and run attempt. A job tries both
 key layouts for its own name and current lockfile, then the current layout for
 another lockfile. Selftest jobs on pull requests first try an archive for that pull request and lockfile.
 A successful replay of the entire fixture task can reuse that archive when setup leaves the cached evaluator intact.
+Fixture jobs restore their pull request’s Turbo archive before the shared fallback. A full replay keeps that archive when the cached files stay unchanged and no files need pruning. Turbo refreshes its checkout-specific restore manifests locally.
 Each entry is named by the tools and inputs that produced it.
 Nightly verification restores
 only the pinned evaluator and runs fresh checks.
