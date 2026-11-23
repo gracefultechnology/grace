@@ -1240,7 +1240,10 @@ owner. An account change retires a guided task only when the host names its
 current task and work version.
 
 Grace restores the next instruction with a work version newer than the saved
-one. Recovery starts closed and paused. Opening Grace waits for an explicit
+one. Recovery starts closed and paused. A recovered public collection keeps
+its reviewed subject and website. It binds to the new active tab rather than
+trusting the tab number from the previous browser session. The person still
+opens the reviewed website there and resumes before any fresh check. Opening Grace waits for an explicit
 Resume with the current authority. An observation must use the new work
 version and current app, page and permission. The checkpoint contains no
 queued work, browser session, selected private source, page observation,
@@ -1292,11 +1295,16 @@ pure def canRestoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceA
   w.assistant.activity == A::NoTask and w.assistant.presentation == A::Closed and
   w.execution.phase == X::Idle and w.commitmentTask == "" and w.plan.owner == "" and
   recovery.owner == recovery.checkpoint.request.owner and validGuidedCheckpoint(recovery.checkpoint)
+pure def restoreCollectionTabs(steps: List[GuidedStep], freshTab: int): List[GuidedStep] =
+  steps.listMap(reviewed => match reviewed {
+    | ReachPublicCollection(target) => ReachPublicCollection({ ...target, tabId: freshTab })
+    | _ => reviewed
+  })
 pure def restoreGuided(w: Workspace, recovery: GuidedRecovery, by: WorkspaceActor): Workspace =
   val checkpoint = recovery.checkpoint
   val request = checkpoint.request
   val nextIndex = checkpoint.receipts.length()
-  val recoveredPlan: GuidedPlan = { ...emptyPlan, owner: request.owner, steps: request.steps, receipts: checkpoint.receipts,
+  val recoveredPlan: GuidedPlan = { ...emptyPlan, owner: request.owner, steps: restoreCollectionTabs(request.steps, B::activeTab(w.browser).id), receipts: checkpoint.receipts,
     openingBrowser: w.browser.revision, originalAsk: request.goal, saveRecovery: checkpoint.save }
   val correction = checkpoint.correction
   val plan: GuidedPlan = match correction {
@@ -1326,7 +1334,7 @@ pure def lawRestoredGuidanceWaitsForACurrentRead(w: Workspace, recovery: GuidedR
   canRestoreGuided(w, recovery, by) implies (
     after.assistant.presentation == A::Closed and after.assistant.activity == A::Paused and
     after.assistant.workVersion > recovery.checkpoint.workVersion and after.assistant.operation == "" and
-    after.plan.steps == recovery.checkpoint.request.steps and after.plan.receipts == recovery.checkpoint.receipts and
+    after.plan.steps == restoreCollectionTabs(recovery.checkpoint.request.steps, B::activeTab(w.browser).id) and after.plan.receipts == recovery.checkpoint.receipts and
     after.plan.mail == noGuidedMail and after.plan.calendarApproval == noGuidedApproval and
     after.plan.recordSelection == NoGuidedRecordSelection and
     after.browser == w.browser and after.execution == w.execution and not(canRestoreGuided(after, recovery, by)))
@@ -1631,10 +1639,13 @@ pure def lawCommitmentCannotUsePlanReceipt(w: Workspace, report: GuidedObservati
   w.commitmentTask != "" implies not(canConfirmGuided(w, report, by))
 pure val sampleStep: GuidedStep = SurfaceOutcome({ surface: S::Home, subject: "appointment", outcome: "Read the appointment" })
 pure val sampleSearchStep: GuidedStep = SearchPublicSite({ query: "green tea", origin: "https://utility.example", tabId: 1 })
+pure val sampleCollectionStep: GuidedStep =
+  ReachPublicCollection({ subject: "help topics", origin: "https://utility.example", tabId: 1 })
 pure val requestValues = Set(
   { owner: "owner", task: "task", goal: "Read my appointment", steps: List(sampleStep) },
   { owner: "tablet", task: "read", goal: "Find Support", steps: List(ReachNamedPage({ subject: "Support" })) },
-  { owner: "owner", task: "task", goal: "Search for green tea", steps: List(sampleSearchStep) })
+  { owner: "owner", task: "task", goal: "Search for green tea", steps: List(sampleSearchStep) },
+  { owner: "owner", task: "task", goal: "Open the list of help topics", steps: List(sampleCollectionStep) })
 pure val sampleReport: GuidedObservation = {
   owner: "owner", task: "task", version: 1, deviceVersion: 1, browserRevision: 0,
   step: sampleStep, sourceKey: "appointment-id", evidence: "appointment-receipt"
@@ -1650,6 +1661,26 @@ pure val pageCheckValues = Set(samplePageCheck, { ...samplePageCheck, heading: "
   { ...samplePageCheck, report: { ...namedReport, owner: "tablet", task: "read", version: 4, deviceVersion: 7,
       browserRevision: 5, step: ReachNamedPage({ subject: "Help" }), evidence: "Help" },
     loadVersion: 4, url: "https://utility.example/help", heading: "Help" })
+pure val sampleCollectionUrl = "https://utility.example/help"
+pure val exampleCollection: Workspace = {
+  val loading = B::navigate(initial.browser, sampleCollectionUrl)
+  val browser = B::finishPageLoad(loading, 1, B::activeTab(loading).loadVersion, B::Loaded, true, sampleCollectionUrl)
+  val device = S::setObservationPermission(S::openSurface(S::finishStartup(initial.device, true), S::Browser), true)
+  val assistant = A::beginTask(A::open(initial.assistant, C::ConversationUser), "task", "Open the list of help topics", C::ConversationUser)
+  { ...initial, assistant: assistant, browser: browser, device: device,
+    plan: { ...emptyPlan, owner: "owner", steps: List(sampleCollectionStep), openingBrowser: 0, originalAsk: "Open the list of help topics" } }
+}
+pure val sampleCollectionCheck: GuidedCollectionCheck = {
+  report: { ...sampleReport, step: sampleCollectionStep, version: exampleCollection.assistant.workVersion,
+    deviceVersion: exampleCollection.device.contextVersion, browserRevision: exampleCollection.browser.revision,
+    sourceKey: "collection-document", evidence: "Found the collection for help topics." },
+  documentId: "collection-document", loadVersion: B::activeTab(exampleCollection.browser).loadVersion,
+  url: sampleCollectionUrl, origin: "https://utility.example", tabId: 1, subject: "help topics", entries: 2
+}
+pure val checkValues = Set(sampleCollectionCheck, { ...sampleCollectionCheck, entries: 1 },
+  { ...sampleCollectionCheck, origin: "https://other.example" }, { ...sampleCollectionCheck, tabId: 2 })
+pure def lawPublicCollectionExampleIsAdmitted(by: WorkspaceActor): bool =
+  by == Host implies canConfirmGuidedCollection(exampleCollection, sampleCollectionCheck, by)
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
 ```
