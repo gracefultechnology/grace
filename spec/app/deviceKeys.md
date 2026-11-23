@@ -9,9 +9,10 @@ dispatches `launcher-home`. This library decides what each key means for the
 current [shell](./shell.md), [assistant](./assistant.md),
 [browser](./browser.md) and [what websites ask](./websiteRequests.md); each
 decision is one existing [workspace](./workspace.md) or website requests
-event, whose own rules say what else it changes. It also holds the gate on
-Grace's task steps while a website's question holds the person, since it is
-where the workspace and what websites ask meet.
+event, whose own rules say what else it changes. It also says when a
+website's question holds Grace's task, since it is where the workspace and
+what websites ask meet; the [workspace](./workspace.md) refuses each held
+step.
 Reference: the previous application's HardwareBack (NA-1).
 
 ## Story: Step back inside Grace before leaving
