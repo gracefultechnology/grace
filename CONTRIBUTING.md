@@ -419,7 +419,8 @@ A push to `develop` shares a concurrency group with the promotion of that exact
 commit into `main`. A running push can finish and publish its results before the
 promotion replays them. On other branches, the newest pending push replaces
 older pending pushes. Explicit retries of those pushes use their own group.
-Each job restores its own Turbo archive.
+Each job restores its own Turbo archive. Merging an ordinary PR retires its remaining PR jobs.
+Closing one without merging keeps the run available for qualification.
 Local `pnpm` task commands read the operator's cache credential from
 `~/.config/vibestack/turbo-cache.json`, outside the repository. Credentials
 are never part of a task fingerprint.
