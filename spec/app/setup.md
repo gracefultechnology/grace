@@ -672,8 +672,10 @@ pure def lawAReturningCustomerMayManageAndSubscribeAgain(accountId: str, email: 
 
 ### An enrolled tablet offers one sign-in to update mail and calendar access
 
-A tablet with an older device credential offers sign-in again in Account.
-Email and Calendar direct the owner to Account until that sign-in is done.
+A tablet with an older device credential offers sign-in again in Account
+when its Grace service offers the upgrade. Email and Calendar direct the owner
+to Account until that sign-in is done. On a standalone tablet whose service has
+yet to offer the upgrade, Email and Calendar still open on Grace’s website.
 The owner can cancel while the browser sign-in is pending.
 The tablet retains the same owner and offers no new attempt while it waits
 for a device acknowledgment. When the device confirms the updated sign-in,

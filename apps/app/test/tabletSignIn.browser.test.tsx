@@ -200,7 +200,7 @@ it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.m
 });
 
 it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access")', async () => {
-  let phase: "required" | "signInPending" | "acknowledgmentPending" | undefined = "required";
+  let phase: "hosted" | "required" | "signInPending" | "acknowledgmentPending" | undefined = "hosted";
   const accountId = "enrolled-tablet";
   const leaseVersion = "acknowledged";
   const grantId = "connected-google";
@@ -212,7 +212,7 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   const status = () => ({
     kind: "signedIn" as const,
     voiceDisclosureScope: "existing-owner",
-    ...(phase === undefined ? { mailLease: { accountId, leaseVersion } } : { mailLeaseUpgrade: phase }),
+    ...(phase === undefined ? { mailLease: { accountId, leaseVersion } } : phase === "hosted" ? {} : { mailLeaseUpgrade: phase }),
   });
   const reads: string[] = [];
   const result = (body: unknown) => Promise.resolve({ status: 200, body: JSON.stringify(body) });
@@ -274,6 +274,12 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   const open = (title: "Email" | "Calendar") => act(() => userEvent.click(
     page.getByRole("button", { name: new RegExp(`^${title}(?:$| )`) })));
   await open("Email");
+  await expect.element(button("Open Grace")).toBeEnabled();
+  expect(reads).toEqual([]);
+  await act(() => {
+    phase = "required";
+    notify?.(status());
+  });
   await expect.element(button("Go to Account")).toBeEnabled();
   await click("Go to Account");
   await expect.element(button("Sign in again")).toBeEnabled();
