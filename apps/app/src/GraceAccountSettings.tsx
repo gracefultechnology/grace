@@ -84,7 +84,7 @@ export function GraceAccountSettings() {
         <>
           {snapshot.tag === "GraceDeviceSignedIn" && showsMailLeaseUpgrade(snapshot) ? (
             <>
-              <PageText role="status">{snapshot.mailLeaseUpgrade === "LeaseUpgradeAcknowledgmentPending" ? "Finishing sign-in…" : "Sign in again to use email and calendar."}</PageText>
+              <PageText role="status">{snapshot.mailLeaseUpgrade.tag === "LeaseUpgradeAcknowledgmentPending" ? "Finishing sign-in…" : "Sign in again to use email and calendar."}</PageText>
               {mayBeginMailLeaseUpgrade(snapshot) && <Button variant="prominent" size="pill" disabled={pending || confirmingSignOut}
                 onClick={() => run({ kind: "beginLeaseUpgrade" })}>Sign in again</Button>}
               {mayCancelMailLeaseUpgrade(snapshot) && <Button variant="capsule" size="pill"

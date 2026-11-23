@@ -287,7 +287,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
   const signedIn = person?.tag === "GraceSignedIn" ? person : undefined;
   const authorized = account !== undefined && mayReadManaged(account.graceAccount, account.googleLink, view === "Email" ? "ManagedEmail" : "ManagedCalendar");
   const phase = person?.tag === "GraceDeviceSignedIn" ? person.mailLeaseUpgrade : undefined;
-  const leaseVersion = phase !== undefined && typeof phase !== "string" ? phase.leaseVersion : undefined;
+  const leaseVersion = phase?.tag === "LeaseMailReady" ? phase.leaseVersion : undefined;
 
   const link = account?.googleLink;
   const grant = link?.tag === "GoogleLinkConnected" ? link.grant : "";

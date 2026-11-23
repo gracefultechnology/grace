@@ -290,7 +290,7 @@ effect function scopeOf(native: boolean, view: ReadView, account: SetupState, in
   let leaseVersion: string | undefined
   if (native) {
     if (showsMailLeaseUpgrade(person)) return { kind: "waiting", view, reason: "leaseUpgrade" }
-    if (person.tag !== "GraceDeviceSignedIn" || typeof person.mailLeaseUpgrade === "string" || !accountId)
+    if (person.tag !== "GraceDeviceSignedIn" || person.mailLeaseUpgrade.tag !== "LeaseMailReady" || !accountId)
       return { kind: "waiting", view, reason: "native" }
     leaseVersion = person.mailLeaseUpgrade.leaseVersion
   } else if (person.tag !== "GraceSignedIn") return { kind: "waiting", view, reason: "signedOut" }

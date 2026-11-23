@@ -42,3 +42,7 @@ export interface ReminderPlugin {
 
 export const reminderPlugin = Capacitor.isPluginAvailable("GraceReminders")
   ? registerPlugin<ReminderPlugin>("GraceReminders") : undefined;
+
+export function accountReadResponse(status: number, body: string) {
+  return new Response(status === 204 || status === 205 || status === 304 ? null : body, { status });
+}

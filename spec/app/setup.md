@@ -760,7 +760,8 @@ disappear.
 type ManagedReadView = ManagedEmail | ManagedCalendar
 pure def mayReadManaged(account: GraceAccount, link: GoogleLink, view: ManagedReadView): bool =
   managedReadAccountId(account) != "" and match link {
-    | GoogleLinkConnected(g) => if (view == ManagedEmail) g.mail else g.calendar
+    | GoogleLinkConnected(g) => (tabletMailAccountId(account) == "" or g.grant != "") and
+      (if (view == ManagedEmail) g.mail else g.calendar)
     | _ => false
   }
 pure def managedReadMatches(accountId: str, receiptAccountId: str, wanted: str, received: str): bool =
