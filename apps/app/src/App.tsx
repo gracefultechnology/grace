@@ -190,7 +190,7 @@ function Screen() {
               }}
               internet={visit("Browser")} files={{ photos: files?.photos ?? [], document: files?.document, ...visit("Files") }} passwords={visit("Passwords")}
               page={device.homePage}
-              onPageChange={(page) => { const event = { type: "chooseHomePage", page } as const; if (can(event)) void send(event); }} />
+              onPageChange={(page) => { const event = { type: "chooseHomePage", page } as const; const allowed = can(event); if (allowed) void send(event); return allowed; }} />
             )}</WithCalendars>
           )}</WithMailboxes>
         </OverPage>

@@ -9,9 +9,7 @@ export const meta: ComponentMeta<LauncherCardProps> = {
   args: { title: "Calendar", status: "Nothing else today", art: <CalendarIcon weekday="FRI" day={13} aria-hidden />, children: undefined, onClick },
   examples: {
     Medium: { title: "Email", status: "2 new", size: "medium" },
-    Turned: { title: "Calendar", status: "Nothing else today", turn: 0.65 },
   },
-  bounds: { turn: [-1, 1] },
   decorator: (story) => (
     <div className="bg-gradient-frame-soft p-12">
       <div className="h-[300px] w-[480px] *:size-full">{story()}</div>

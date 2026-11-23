@@ -64,7 +64,8 @@ Pull requests go to `develop`, and `develop` to `main`; what CI runs on each is 
 | `vibestack/parse.ts`, `vibestack/review.ts` | literate specs and the review ledger |
 | `vibestack/cache.ts`, `vibestack/run.ts` | stage caches and bounded tool execution |
 | `vibestack/units.ts`, `vibestack/simulate.ts` | generation, proof units, simulation and replay |
-| `vibestack/util.ts` | source discovery, the `tests` stage and the rules it holds tests to, and citations |
+| `vibestack/util.ts` | source discovery, package fingerprints and citations |
+| `vibestack/testing/check.ts` | the `tests` stage and the rules it holds tests to |
 | `vibestack/gen/vibe.ts` | `gen/<name>.effect.vibe`, read off the generated TypeScript |
 | `vibestack/gen/react.ts` | `gen/<name>.react.ts` (`useMachine`), in a package that depends on React |
 | `vibestack/scan.ts` | how a spec's lines are read; imports nothing, so Studio's page uses it too |
@@ -91,6 +92,9 @@ Node runs all of it directly; `pnpm build` compiles it for the packaged `spec` c
 The pinned LemmaScript compiler includes the upstream fix for tagged union comparisons.
 It preserves the union type when Dafny checks a record literal against a value of that type.
 [LemmaScript change 8c2a339](https://github.com/lalalune/LemmaScript/commit/8c2a33990bd55f63daa643a7be708db579541884).
+
+The same pin carries the additions-only comparison from [LemmaScript PR #374](https://github.com/midspiral/LemmaScript/pull/374/commits/2a9525199ed1fe00e054553720092eb70ab89761).
+Git counts inserted and deleted lines with `--numstat -z`. A large proof can add lines without filling a process output buffer. A deleted line or an incomplete comparison still fails the check.
 
 `check(root)` returns `{ ok, results, next }`, and `spec check --json` prints each result as one line of JSON as soon as
 it is reported, then that object as its last line. Each result has `ok`, `stage` (a stage, or `skipped`), `summary`,

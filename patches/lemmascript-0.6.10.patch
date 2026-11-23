@@ -1,0 +1,147 @@
+diff --git a/tools/dist/dafny-commands.js b/tools/dist/dafny-commands.js
+--- a/tools/dist/dafny-commands.js
++++ b/tools/dist/dafny-commands.js
+@@ -2,7 +2,7 @@
+  * Dafny backend commands: gen, check, regen.
+  */
+ import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs";
+-import { execFileSync } from "child_process";
++import { execFileSync, spawnSync } from "child_process";
+ import path from "path";
+ import { DEFAULT_OPTIONS, parseOptionValue } from "./config.js";
+ function writeGen(genPath, text) {
+@@ -41,41 +41,25 @@
+         console.error(`ERROR: ${path.basename(dfyPath)}: ${error instanceof Error ? error.message : String(error)}`);
+         return false;
+     }
+-    let diff = "";
+-    try {
+-        diff = execFileSync("git", ["diff", "--no-index", "--minimal", "--no-color", "--no-ext-diff", "--no-textconv", "--text", "--", genPath, dfyPath], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
+-    }
+-    catch (e) {
+-        // `git diff --no-index` exits 1 for a valid, non-empty comparison. Every
+-        // other exit shape means the comparison did not complete, even when git
+-        // happened to return partial stdout.
+-        const status = e?.status;
+-        const stdout = typeof e?.stdout === "string" ? e.stdout : "";
+-        if (status !== 1 || e?.signal != null || e?.code != null || !stdout.startsWith("diff --git ")) {
+-            const detail = typeof e?.stderr === "string" ? e.stderr.trim() : "";
+-            console.error(`ERROR: could not run \`git diff\` to verify ${path.basename(dfyPath)} is additions-only` +
+-                `${status === undefined ? " (is git installed?)" : ` (git exited ${status})`}` +
+-                `${detail ? `: ${detail}` : ""}`);
+-            return false;
+-        }
+-        diff = stdout;
+-    }
+-    // Only file headers are metadata. Inside a hunk, even a line beginning
+-    // with "---" is a deletion (for example, text inside a multiline string).
+-    const deletions = [];
+-    let inHunk = false;
+-    for (const line of diff.split("\n")) {
+-        if (line.startsWith("diff --git "))
+-            inHunk = false;
+-        else if (line.startsWith("@@ "))
+-            inHunk = true;
+-        else if (inHunk && line.startsWith("-"))
+-            deletions.push(line);
+-    }
+-    if (deletions.length > 0) {
+-        console.error(`WARNING: ${path.basename(dfyPath)} has modifications to generated lines (not additions-only):`);
+-        for (const d of deletions.slice(0, 5))
+-            console.error("  " + d);
++    const diff = spawnSync("git", ["diff", "--no-index", "--minimal", "--numstat", "-z", "--no-color", "--no-ext-diff", "--no-textconv", "--text", "--", genPath, dfyPath], { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] });
++    // Numstat returns counts and NUL-delimited paths, with no patch body.
++    const summary = /^\d+\t(\d+)\t(?:[^\0]+\0|\0[^\0]+\0[^\0]+\0)$/.exec(diff.stdout ?? "");
++    const complete = diff.status === 0 ? diff.stdout === ""
++        : diff.status === 1 && summary !== null && summary[0] === diff.stdout;
++    if (diff.error || diff.signal || !complete) {
++        const code = diff.error && "code" in diff.error && typeof diff.error.code === "string" ? diff.error.code : undefined;
++        const reason = code === "ENOENT" ? "git not found on PATH"
++            : diff.error ? code ?? diff.error.message
++                : diff.signal ? `signal ${diff.signal}`
++                    : diff.status === 0 || diff.status === 1 ? `invalid numstat output (git exited ${diff.status})`
++                        : `git exited ${diff.status}`;
++        const detail = diff.stderr?.trim();
++        console.error(`ERROR: could not run \`git diff\` to verify ${path.basename(dfyPath)} is additions-only (${reason})` +
++            `${detail ? `: ${detail}` : ""}`);
++        return false;
++    }
++    if (summary && summary[1] !== "0") {
++        console.error(`WARNING: ${path.basename(dfyPath)} has modifications to generated lines (not additions-only): ${summary[1]} deleted line(s)`);
+         return false;
+     }
+     return true;
+diff --git a/tools/dist/extract.js b/tools/dist/extract.js
+--- a/tools/dist/extract.js
++++ b/tools/dist/extract.js
+@@ -719,9 +719,11 @@
+             return { kind: "emptyCollection", collectionType: name, tsType };
+         }
+     }
+-    // As-expression: expr as T — strip the type assertion
+     if (Node.isAsExpression(node)) {
+-        return extractExpr(node.getExpression());
++        const expr = extractExpr(node.getExpression());
++        return expr.kind === "record" && !expr.spread
++            ? { ...expr, assertedTsType: typeToString(node.getType()) }
++            : expr;
+     }
+     // delete obj[key] → map delete expression
+     if (Node.isDeleteExpression(node)) {
+diff --git a/tools/dist/resolve.js b/tools/dist/resolve.js
+--- a/tools/dist/resolve.js
++++ b/tools/dist/resolve.js
+@@ -1317,7 +1317,10 @@
+         }
+         case "record": {
+             const spread = e.spread ? resolveExpr(e.spread, ctx) : null;
+-            const ty = spread ? spread.ty : { kind: "unknown" };
++            const asserted = e.assertedTsType && expandAlias(parseTsType(e.assertedTsType), ctx.typeDecls);
++            const assertedUnion = asserted && asserted.kind === "user" &&
++                declOfKind(ctx.typeDecls, asserted.name, "discriminated-union");
++            const ty = spread ? spread.ty : assertedUnion ? asserted : { kind: "unknown" };
+             // Record literal in map-typed context (e.g. `const M: Record<string, V> = {a: ...}`):
+             // attach the map type so transform/emit can produce a map literal.
+             if (!spread && ctx.returnTy.kind === "map") {
+diff --git a/tools/dist/types.js b/tools/dist/types.js
+--- a/tools/dist/types.js
++++ b/tools/dist/types.js
+@@ -6,29 +6,18 @@
+  */
+ import { tyEqual } from "./typedir.js";
+ import { Node, Project, SyntaxKind } from "ts-morph";
+-/**
+- * Parses TS type strings via a real ts-morph parse — no regex cascade. Set
+- * once per run by `extractModule` (so it reuses the module's Project); a
+- * separate in-memory Project is created lazily for callers that hit
+- * `parseTsType` outside the extract pipeline (e.g. tests, `lsc info` when
+- * driven independently).
+- */
+-let _synthFile = null;
++let typeProject = null;
+ export function initTypeParser(project) {
+-    _synthFile = project.createSourceFile("__lsc_type_parse__.ts", "", { overwrite: true });
+-}
+-function synthFile() {
+-    if (_synthFile)
+-        return _synthFile;
+-    const p = new Project({ useInMemoryFileSystem: true });
+-    _synthFile = p.createSourceFile("__lsc_type_parse__.ts", "");
+-    return _synthFile;
++    typeProject = new Project({ useInMemoryFileSystem: true, compilerOptions: project.getCompilerOptions() });
+ }
+ export function parseTsType(tsType) {
+-    const sf = synthFile();
+-    sf.replaceWithText(`type __t = ${tsType};`);
+-    const alias = sf.getTypeAliasOrThrow("__t");
+-    return tyFromTypeNode(alias.getTypeNodeOrThrow());
++    typeProject ??= new Project({ useInMemoryFileSystem: true });
++    const file = typeProject.createSourceFile("__lsc_type_parse__.ts", `type __t = ${tsType};`);
++    try {
++        return tyFromTypeNode(file.getTypeAliasOrThrow("__t").getTypeNodeOrThrow());
++    } finally {
++        typeProject.removeSourceFile(file);
++    }
+ }
+ function tyFromTypeNode(tn) {
+     if (Node.isParenthesizedTypeNode(tn))

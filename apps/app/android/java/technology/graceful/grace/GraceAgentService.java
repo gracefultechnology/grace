@@ -29,6 +29,12 @@ public class GraceAgentService extends EmbeddedAgentService {
   else if (!alive) start(context, null);
  }
 
+ static void deviceCredentialChanged(Context context) {
+  if (GracePasswordsOwner.accountChanging()) return;
+  retire();
+  if (alive) finishAccountChange(context);
+ }
+
  static void retire() {
   restartOwed = true;
   prepareRestartFor(GraceAgentService.class);

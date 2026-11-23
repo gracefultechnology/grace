@@ -66,6 +66,15 @@ on:
 concurrency:
   group: >-
     ci-${{ github.event_name == 'workflow_dispatch' && inputs.cross_app_only && format('cross-app-{0}', github.sha) ||
+    github.event_name == 'workflow_dispatch' && inputs.benchmarks_only &&
+    (inputs.billworld || inputs.billworld_statement_cohort == 'held-out' || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only || inputs.webarena_sort_only) &&
+    format('benchmark-{0}-fleet-{1}-statements-{2}-shopping-{3}-gitlab-{4}',
+      github.sha,
+      inputs.billworld && format('{0}/{1}', inputs.billworld_cohort, inputs.billworld_resume_run || 'fresh') || 'off',
+      (inputs.billworld || inputs.billworld_statement_cohort == 'held-out') && inputs.billworld_statement_cohort || 'off',
+      inputs.webarena_rating_only && 'rating' || inputs.webarena_sort_only && 'sort' ||
+        inputs.webarena && format('navigation-{0}-{1}', inputs.webarena_pending_order, inputs.webarena_public_search) || 'off',
+      inputs.webarena_gitlab) ||
     github.event_name == 'pull_request' && !(github.head_ref == 'develop' && github.event.pull_request.head.repo.full_name == github.repository) && format('pr-{0}', github.event.pull_request.number) ||
     github.event_name == 'push' && github.ref != 'refs/heads/develop' && (github.run_attempt == '1' && github.ref || github.run_id) ||
     format('sha-{0}', github.event.pull_request.head.sha || github.sha) }}

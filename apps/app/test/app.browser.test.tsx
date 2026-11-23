@@ -609,7 +609,11 @@ it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday
   await tap("Home");
   await expect.element(button("Expand")).toBeVisible();
   await tap("More apps");
+  await expect.element(page.getByRole("button", { name: /^Files\b/ })).toBeVisible();
+  await expect.element(button("Passwords")).not.toBeInTheDocument();
   await tap("More apps");
+  await expect.element(button("Passwords")).toBeVisible();
+  await expect.element(page.getByRole("button", { name: /^Files\b/ })).not.toBeInTheDocument();
   await tap("Previous page");
   await tap("Previous page");
   await tap("Close Grace");
@@ -2521,19 +2525,23 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
   await expect.element(page.getByText("Updated on this tablet", { exact: true })).not.toBeInTheDocument();
   const filesPage = page.getByRole("button", { name: "Page 2", exact: true });
   await expect.element(filesPage).toBeVisible();
-  const swipe = (direction: "left" | "right") => act(async () => {
+  const swipe = (direction: "left" | "right", cancel = false) => act(async () => {
     const session = cdp();
     const cards = filesPage.element().parentElement!.getBoundingClientRect();
     const [from, to] = direction === "left" ? [0.85, 0.2] : [0.2, 0.85];
     const point = (across: number) => [{ x: cards.left + cards.width * across, y: innerHeight * 0.4 }];
     await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: point(from) });
     await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: point(to) });
-    await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    await session.send("Input.dispatchTouchEvent", { type: cancel ? "touchCancel" : "touchEnd", touchPoints: [] });
   });
+  await swipe("left", true);
+  await expect.element(page.getByRole("button", { name: "Page 1", exact: true })).toHaveAttribute("aria-current", "true");
   await swipe("left");
   await expect.element(filesPage).toHaveAttribute("aria-current", "true");
+  await expect.element(page.getByRole("button", { name: "Passwords", exact: true })).not.toBeInTheDocument();
   await swipe("left");
   await expect.element(page.getByRole("button", { name: "Page 3", exact: true })).toHaveAttribute("aria-current", "true");
+  await expect.element(page.getByRole("button", { name: /^Files\b/ })).not.toBeInTheDocument();
   await swipe("right");
   await expect.element(filesPage).toHaveAttribute("aria-current", "true");
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
@@ -3008,7 +3016,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
   let ambiguousLogin = false;
   const idleIdentifier = { focused: false, edited: false, hasInput: false };
   let identifierEvidence: Partial<typeof idleIdentifier> = idleIdentifier;
-  const card = { id: "card-statements", frame: await pinnedPage("statements", origin + "/topic.html?history", (html) => html
+  const card = { id: "card-statements", frame: await pinnedPage("statements", origin + "/topic.html?overview", (html) => html
     .replace("<dl>", '<section><h2 id="statement-heading">Current statement</h2><dl>')
     .replace("</dl>", '</dl><p><a href="/archive">Previous statements</a></p></section>')
     .replace("<dt>New Balance</dt><dd>$1,284.56</dd>", '<dt>Current balance</dt><dd>$1,301.12</dd><dt>Last statement balance</dt><dd id="balance">$1,284<sup>56</sup></dd>')
@@ -3123,9 +3131,9 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
         goals.push(asked.goal);
         duringDecision?.();
         duringDecision = undefined;
-        const history = asked.candidates.find(({ label }) => label.startsWith("Payment history"));
-        if (history && asked.goal.includes("Prefer a page that shows the bill")) return Promise.resolve(Response.json({ status: "ok", kind: "choice", model: "fixture",
-          choice: history.id, confidence: 1, probabilities: Object.fromEntries([...asked.candidates.map(({ id }) => id), "none"].map((id) => [id, id === history.id ? 1 : 0])) }));
+        const overview = asked.candidates.find(({ label }) => label.startsWith("Account overview"));
+        if (overview) return Promise.resolve(Response.json({ status: "ok", kind: "choice", model: "fixture",
+          choice: overview.id, confidence: 1, probabilities: Object.fromEntries([...asked.candidates.map(({ id }) => id), "none"].map((id) => [id, id === overview.id ? 1 : 0])) }));
         return browserFetch(new URL(url.pathname, cloud), { ...init, credentials: "omit",
           headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/json" } }).then((response) => {
           if (replaceGuideOwner) {
@@ -3376,8 +3384,8 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     const left = counting.frame.document.getElementById("left")!;
     duringDecision = () => { left.textContent = "4:40"; };
     await tap(showLink);
-    await routeTo(page.getByText("Look for “Payment history” on example.org."));
-    expect(goals.at(-1)).toContain("Prefer a page that shows the bill, statement or account activity. Avoid a link that only starts a payment, such as Make a payment.");
+    await routeTo(page.getByText("Look for “Account overview” on example.org."));
+    expect(goals.at(-1)).toMatch(/current bill or account summary.*Avoid invoice history.*account switching.*start a payment/u);
     expect(native.calls("controlPage").at(-1)).toMatchObject({ documentId: counting.id,
       command: { subaction: "guide", guidance: { kind: "show", snapshotId: `countdown-${counting.frame.snapshots()}` } } });
 
@@ -3408,6 +3416,15 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       expect(await tablet.checkStep()).toBe("Past");
       await expect.element(pending).toHaveAttribute("aria-current", "step");
     }
+    const amountLabel = balance.previousElementSibling!;
+    const originalLabel = amountLabel.textContent;
+    amountLabel.textContent = "Premium due";
+    for (const historical of ["Previous premium", "Premium history", "Premium paid"]) {
+      statementHeading.textContent = historical;
+      expect(await tablet.checkStep()).toBe("Past");
+      await expect.element(pending).toHaveAttribute("aria-current", "step");
+    }
+    amountLabel.textContent = originalLabel;
     statementHeading.textContent = "Current statement";
 
     // spec/app/deviceKeys.md, "A task waits while a website's question holds me, and goes on after my answer"
@@ -3454,6 +3471,12 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
     await visit(counting);
     const figures = [...counting.frame.document.querySelectorAll("p")].find((line) => line.textContent?.startsWith("Statement balance"))!;
     figures.textContent = "Statement balance: $612.40. Remaining statement balance: $40.00. Payment due date: 12/05/2026.";
+    const premium = counting.frame.document.createElement("p");
+    premium.textContent = "Premium due: $41.00";
+    counting.frame.document.querySelector("main")!.append(premium);
+    await tap(readStatement);
+    await expect.poll(() => result.query()?.textContent).toBe("I found more than one amount due or due date on this page.");
+    premium.remove();
     reads = counting.frame.snapshots();
     betweenReads = { after: "statement", change: () => { left.textContent = "4:39"; } };
     await tap(readStatement);
@@ -3706,19 +3729,21 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
   }
 }, 120_000);
 
-it('Check the public price direction (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async () => {
+it.each([
+  { target: "Rain jackets", siteLabel: "Rain jackets", order: "ascending", directionRequested: "PriceAscending" },
+  { target: "living room furtniture", siteLabel: "Living Room Furniture", order: "descending", directionRequested: "PriceDescending" },
+])('Check the price direction in the reviewed public category $target (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async ({ target, siteLabel, order, directionRequested }) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
-  const target = "Rain jackets";
-  const request = "List products from Rain jackets category by ascending price";
+  const request = `List products from ${target} category by ${order} price`;
   await Effect.runPromise(Effect.provide(script(cloud, secret, [{
     said: request,
     answer: JSON.stringify({ text: "Review this plan.", isQuestion: false, answers: [],
-      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "SortPublicListing", target, direction: "PriceAscending" }] }] }),
+      actions: [{ kind: "proposeReadPlan", steps: [{ kind: "SortPublicListing", target, direction: directionRequested }] }] }),
   }]), client));
   const home = "https://example.org/";
   const frame = await pinnedPage("statements", home, (html) => html.replace(/<main>[\s\S]*<\/main>/u, () =>
-    `<script>(${String(pageCommand)})(null, "");</script><main><h1>Rain jackets</h1>
+    `<script>(${String(pageCommand)})(null, "");</script><main><h1>${siteLabel}</h1>
       <div id="sort"><label for="order">Sort By</label><select id="order"><option selected>Name</option><option>Price</option></select>
       <a href="#" id="direction" title="Set Descending Direction">Change sort direction</a></div>
       <ul><li>Lightweight jacket</li><li>Winter jacket</li></ul></main>`));
@@ -3740,6 +3765,9 @@ it('Check the public price direction (spec/app/workspace.md, "Only a current obs
   let view = await publicReadSession(native, cloud, secret);
   const { routeTo, tap } = view;
   const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const matchesSiteName = target === siteLabel;
+  const correction = button(`Use “${siteLabel}” for this step`);
+  const priceDirection = order === "ascending" ? "lowest" : "highest";
   const complete = page.getByText("Read checks complete", { exact: true });
   const check = button("Check price order");
   let activeId = "tab-1";
@@ -3764,19 +3792,19 @@ it('Check the public price direction (spec/app/workspace.md, "Only a current obs
     await routeTo(message);
     await act(() => message.fill(request));
     await act(() => userEvent.keyboard("{Enter}"));
-    await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(/Rain jackets.*lowest price first/u));
+    await routeTo(page.getByRole("region", { name: "Review read plan" }).getByText(`Open “${target}” and sort by ${priceDirection} price first.`));
     await tap(button("Collapse"));
     await tap(button("Start read plan"));
     await pending();
     await visit(home + "coats?display=grid");
     await pending();
     sorter.selectedIndex = 1;
-    direction.title = "Set Ascending Direction";
+    direction.title = order === "ascending" ? "Set Ascending Direction" : "Set Descending Direction";
     await pending();
-    direction.title = "Set Descending Direction";
+    direction.title = order === "ascending" ? "Set Descending Direction" : "Set Ascending Direction";
     heading.textContent = "Snow jackets";
     await pending();
-    heading.textContent = target;
+    heading.textContent = siteLabel;
     await visit("https://other.example/coats?display=grid");
     await pending();
     await visit(home + "coats?display=list");
@@ -3786,18 +3814,35 @@ it('Check the public price direction (spec/app/workspace.md, "Only a current obs
     await view.dispose();
     view = await cloudReadPlan(native, cloud, secret);
     activeId = "tab-2";
-    direction.title = "Set Ascending Direction";
+    direction.title = order === "ascending" ? "Set Ascending Direction" : "Set Descending Direction";
     await startPublicReadPlan(native, tap, () => load(home), 2);
     await routeTo(page.getByRole("region", { name: "Task plan" }).getByText("Paused"));
     await tap(button("Resume Grace"));
     await pending();
-    direction.title = "Set Descending Direction";
+    direction.title = order === "ascending" ? "Set Descending Direction" : "Set Ascending Direction";
     documentId += "-different";
     await pending();
     await visit(home + "coats?display=grid");
+    if (!matchesSiteName) {
+      await routeTo(button("Collapse"));
+      await pending();
+      await routeTo(correction);
+      documentId += "-interrupted";
+      await tap(correction);
+      await routeTo(page.getByRole("status", { name: "Page check result" }).getByText("The page changed while I checked it. Check it again."));
+      await routeTo(page.getByText(`Open “${target}” and sort by ${priceDirection} price first.`));
+      expect(complete.query()).toBeNull();
+      await pending();
+      await tap(correction);
+      await routeTo(page.getByText(`Open “${siteLabel}” and sort by ${priceDirection} price first.`));
+      expect(complete.query()).toBeNull();
+      direction.title = "Set Descending Direction";
+      await pending();
+      direction.title = "Set Ascending Direction";
+    }
     await tap(check);
     await routeTo(complete);
-    expect(page.getByText("Rain jackets sorted by ascending price.", { exact: true }).query()).not.toBeNull();
+    expect(page.getByText(`${siteLabel} sorted by ${order} price.`, { exact: true }).query()).not.toBeNull();
   } finally {
     await view.dispose();
   }
