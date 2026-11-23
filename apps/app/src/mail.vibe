@@ -204,6 +204,22 @@ function nameIn(names: ReadonlyMap<string, string>, shelf: Instances.Shape, to: 
   return names.get(first.toLowerCase()) ?? (sender || first)
 }
 
+effect function contactsFor(registry: Accounts.Shape, connectionOf: (account: Account) => MailConnection, names: Map<string, string>) {
+  const a = try registry.get()
+  const found: Contact[] = []
+  names.clear()
+  for (const id of contactAccounts(a)) {
+    const account = a.accounts.find((x) => x.id === id)
+    if (account === undefined) continue
+    for (const c of (connectionOf(account).contacts() catch () => [])) {
+      if (found.some((f) => f.address.toLowerCase() === c.address.toLowerCase())) continue
+      names.set(c.address.toLowerCase(), c.name)
+      found.push(c)
+    }
+  }
+  return found
+}
+
 export const mailing = Layer.effect(Mail, effect {
   const registry = try Accounts
   const shelf = try Instances
@@ -246,22 +262,6 @@ export const mailing = Layer.effect(Mail, effect {
 
   effect function say(source: MailNoticeSource, text: string) {
     if (!quiet.delete(source.id)) try show(source, text)
-  }
-
-  effect function people() {
-    const a = try registry.get()
-    const found: Contact[] = []
-    names.clear()
-    for (const id of contactAccounts(a)) {
-      const account = a.accounts.find((x) => x.id === id)
-      if (account === undefined) continue
-      for (const c of (connectionOf(account).contacts() catch () => [])) {
-        if (found.some((f) => f.address.toLowerCase() === c.address.toLowerCase())) continue
-        names.set(c.address.toLowerCase(), c.name)
-        found.push(c)
-      }
-    }
-    return found
   }
 
   effect function prepareReply(id: number, mail: MailConnection, box: MailMachine.Shape, m: Mailbox) {
@@ -467,7 +467,7 @@ export const mailing = Layer.effect(Mail, effect {
     capture: (id) => asBuilt(capture(id)),
     camera: library.camera,
     share: (photo) => asBuilt(share(photo)),
-    contacts: () => asBuilt(people()),
+    contacts: () => asBuilt(contactsFor(registry, connectionOf, names)),
     hush: (id) => { quiet.add(id) },
     nameOf,
     board: {
