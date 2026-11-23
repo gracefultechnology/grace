@@ -19,10 +19,14 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "GraceDevice")
 public class GraceDevicePlugin extends Plugin {
  private static final int MEDIA = AudioManager.STREAM_MUSIC;
+ private static final String VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION";
+ private static final String MUTE_CHANGED = "android.media.STREAM_MUTE_CHANGED_ACTION";
  private AudioManager audio;
- private final BroadcastReceiver screen = new BroadcastReceiver() {
+ private final BroadcastReceiver reports = new BroadcastReceiver() {
   @Override public void onReceive(Context context, Intent intent) {
-   notifyListeners("screen", new JSObject().put("on", Intent.ACTION_SCREEN_ON.equals(intent.getAction())));
+   String action = intent.getAction();
+   if (VOLUME_CHANGED.equals(action) || MUTE_CHANGED.equals(action)) notifyListeners("volume", volume());
+   else notifyListeners("screen", new JSObject().put("on", Intent.ACTION_SCREEN_ON.equals(action)));
   }
  };
 
@@ -30,22 +34,18 @@ public class GraceDevicePlugin extends Plugin {
   audio = getContext().getSystemService(AudioManager.class);
   IntentFilter changes = new IntentFilter(Intent.ACTION_SCREEN_ON);
   changes.addAction(Intent.ACTION_SCREEN_OFF);
-  ContextCompat.registerReceiver(getContext(), screen, changes, ContextCompat.RECEIVER_NOT_EXPORTED);
- }
-
- @Override protected void handleOnResume() {
-  super.handleOnResume();
-  notifyListeners("volume", volume());
+  changes.addAction(VOLUME_CHANGED);
+  changes.addAction(MUTE_CHANGED);
+  ContextCompat.registerReceiver(getContext(), reports, changes, ContextCompat.RECEIVER_NOT_EXPORTED);
  }
 
  @Override protected void handleOnDestroy() {
-  getContext().unregisterReceiver(screen);
+  getContext().unregisterReceiver(reports);
   super.handleOnDestroy();
  }
 
  void stepVolume(boolean up) {
   audio.adjustStreamVolume(MEDIA, up ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER, 0);
-  notifyListeners("volume", volume());
  }
 
  @PluginMethod public void getDevice(PluginCall call) {
