@@ -40,6 +40,84 @@ export service FileLibrary {
 
 error FilesRejected
 
+effect function fileImage(port: FileStorage.Shape["port"], lease: string, id: string, page: number, small: boolean) {
+  if (!port) throw new FilesRejected()
+  const preview = try Schema.decodeUnknownEffect(Preview)(try tryPromise(() => port.preview({ lease, id, page, small })))
+  if (preview.id !== id || preview.page !== page) throw new FilesRejected()
+  return preview.image
+}
+
+type FileContentAccess = {
+  port: FileStorage.Shape["port"]
+  advance: (ready: Ready, event: Event, actor: FileActor) => Effect.Effect<{ ready: Ready }, FilesRejected>
+  keep: (ready: Ready) => Effect.Effect<void, FilesRejected>
+  exposeCatalog: (ready: Ready) => Effect.Effect<void, FilesRejected>
+  readAttachmentImport: () => Effect.Effect<string | undefined>
+}
+
+function fileContents({ port, advance, keep, exposeCatalog, readAttachmentImport }: FileContentAccess) {
+  effect function readSelected(ready: Ready) {
+    const { model } = ready
+    if (!model.selected) return false
+    const result = fileImage(port, ready.lease, model.selected, model.page, false) catch () => undefined
+    const current = { ...ready, image: result, issue: !result }
+    if (model.pending === "ReadingFile") {
+      try advance(current, { type: "contentResult", fileReceipt: {
+        owner: ready.lease, generation: model.generation, id: model.selected, succeeded: result !== undefined, evidence: "device-preview",
+      } }, "FileHost")
+    } else try keep(current)
+    return result !== undefined
+  }
+
+  effect function importOwner(ready: Ready, command: Extract<Command, { kind: "pick" }> | { kind: "capture" } | { kind: "confirmAttachment"; request: string }) {
+    if (!port?.commit || !ready.model.loaded || ready.model.pending !== "NoFileOperation" || (ready.model.selected !== "" && command.kind !== "confirmAttachment")) return false
+    if (command.kind === "confirmAttachment" && command.request !== ready.attachmentImport) return false
+    const { capture, pick, commit, stageAttachmentImport } = port
+    if (command.kind === "capture" && !capture || command.kind === "pick" && !pick || command.kind === "confirmAttachment" && !stageAttachmentImport) return false
+    const input = { lease: ready.lease }
+    try keep({ ...ready, busy: true, issue: false })
+    const entry = effect {
+      const result = try tryPromise(() => command.kind === "capture" ? capture?.(input) ?? Promise.resolve(undefined)
+        : command.kind === "pick" ? pick?.({ ...input, kind: command.file }) ?? Promise.resolve(undefined)
+        : stageAttachmentImport?.({ ...input, request: command.request }) ?? Promise.resolve(undefined))
+      return try Schema.decodeUnknownEffect(Entry)(result)
+    } catch () => undefined
+    if (!entry) {
+      try keep({ ...ready, attachmentImport: command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport, busy: false })
+      return false
+    }
+    const file = savedFile(entry, ready.owner, ready.lease)
+    const { ready: storing } = try advance(ready, { type: "saveFiles", fileImport: {
+      owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
+    } }, "FileHost")
+    const stored = Effect.flatMap(tryPromise(() => commit({ ...input, id: entry.id })), completion) catch () => undefined
+    const success = stored?.id === entry.id
+    const attachmentImport = command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport
+    const { ready: after } = try advance({ ...storing, attachmentImport }, { type: "writeResult", fileReceipt: {
+      owner: ready.lease, generation: storing.model.generation, id: "", succeeded: success, evidence: "device-save",
+    } }, "FileStore")
+    if (success) try exposeCatalog(after)
+    return success
+  }
+
+  effect function deletePhoto(ready: Ready, command: Extract<Command, { kind: "deletePhoto" }>) {
+    if (!port || ready.lease !== command.lease || !ready.model.contentReady) return false
+    const { id, generation } = command
+    const { ready: removing } = try advance({ ...ready, busy: true }, { type: "deletePhoto", id, generation }, "FileUser")
+    const succeeded = effect {
+      try tryPromise(() => port.remove({ lease: ready.lease, id }))
+      return true
+    } catch () => false
+    const { ready: after } = try advance({ ...removing, busy: false, image: succeeded ? undefined : ready.image }, { type: "writeResult", fileReceipt: {
+      owner: ready.lease, generation: removing.model.generation, id, succeeded, evidence: "device-removal",
+    } }, "FileStore")
+    if (succeeded) try exposeCatalog(after)
+    return succeeded
+  }
+
+  return { readSelected, importOwner, deletePhoto }
+}
+
 export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(FileLibrary, effect {
   const { port } = try FileStorage
   const desk = try Workspaces
@@ -69,18 +147,11 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
     return { ready: next, out: result.out }
   }
 
-  effect function image(lease: string, id: string, page: number, small: boolean) {
-    if (!port) throw new FilesRejected()
-    const preview = try Schema.decodeUnknownEffect(Preview)(try tryPromise(() => port.preview({ lease, id, page, small })))
-    if (preview.id !== id || preview.page !== page) throw new FilesRejected()
-    return preview.image
-  }
-
   effect function exposeCatalog(ready: Ready) {
     const photos = ready.model.entries.filter((entry) => entry.kind === "Photo")
     const document = ready.model.entries.find((entry) => entry.kind === "Pdf")
     const thumbnails = try Effect.forEach(photos.slice(0, 40), effect (entry) => {
-      const preview = image(ready.lease, entry.id, 0, true) catch () => undefined
+      const preview = fileImage(port, ready.lease, entry.id, 0, true) catch () => undefined
       return [entry.id, preview] as const
     }, { concurrency: 3 })
     const thumbs = Object.fromEntries(thumbnails.flatMap(([id, preview]) => preview ? [[id, preview]] : []))
@@ -163,64 +234,7 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
     }
   }
 
-  effect function readSelected(ready: Ready) {
-    const { model } = ready
-    if (!model.selected) return false
-    const result = image(ready.lease, model.selected, model.page, false) catch () => undefined
-    const current = { ...ready, image: result, issue: !result }
-    if (model.pending === "ReadingFile") {
-      try advance(current, { type: "contentResult", fileReceipt: {
-        owner: ready.lease, generation: model.generation, id: model.selected, succeeded: result !== undefined, evidence: "device-preview",
-      } }, "FileHost")
-    } else try keep(current)
-    return result !== undefined
-  }
-
-  effect function importOwner(ready: Ready, command: Extract<Command, { kind: "pick" }> | { kind: "capture" } | { kind: "confirmAttachment"; request: string }) {
-    if (!port?.commit || !ready.model.loaded || ready.model.pending !== "NoFileOperation" || (ready.model.selected !== "" && command.kind !== "confirmAttachment")) return false
-    if (command.kind === "confirmAttachment" && command.request !== ready.attachmentImport) return false
-    const { capture, pick, commit, stageAttachmentImport } = port
-    if (command.kind === "capture" && !capture || command.kind === "pick" && !pick || command.kind === "confirmAttachment" && !stageAttachmentImport) return false
-    const input = { lease: ready.lease }
-    try keep({ ...ready, busy: true, issue: false })
-    const entry = effect {
-      const result = try tryPromise(() => command.kind === "capture" ? capture?.(input) ?? Promise.resolve(undefined)
-        : command.kind === "pick" ? pick?.({ ...input, kind: command.file }) ?? Promise.resolve(undefined)
-        : stageAttachmentImport?.({ ...input, request: command.request }) ?? Promise.resolve(undefined))
-      return try Schema.decodeUnknownEffect(Entry)(result)
-    } catch () => undefined
-    if (!entry) {
-      try keep({ ...ready, attachmentImport: command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport, busy: false })
-      return false
-    }
-    const file = savedFile(entry, ready.owner, ready.lease)
-    const { ready: storing } = try advance(ready, { type: "saveFiles", fileImport: {
-      owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
-    } }, "FileHost")
-    const stored = Effect.flatMap(tryPromise(() => commit({ ...input, id: entry.id })), completion) catch () => undefined
-    const success = stored?.id === entry.id
-    const attachmentImport = command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport
-    const { ready: after } = try advance({ ...storing, attachmentImport }, { type: "writeResult", fileReceipt: {
-      owner: ready.lease, generation: storing.model.generation, id: "", succeeded: success, evidence: "device-save",
-    } }, "FileStore")
-    if (success) try exposeCatalog(after)
-    return success
-  }
-
-  effect function deletePhoto(ready: Ready, command: Extract<Command, { kind: "deletePhoto" }>) {
-    if (!port || ready.lease !== command.lease || !ready.model.contentReady) return false
-    const { id, generation } = command
-    const { ready: removing } = try advance({ ...ready, busy: true }, { type: "deletePhoto", id, generation }, "FileUser")
-    const succeeded = effect {
-      try tryPromise(() => port.remove({ lease: ready.lease, id }))
-      return true
-    } catch () => false
-    const { ready: after } = try advance({ ...removing, busy: false, image: succeeded ? undefined : ready.image }, { type: "writeResult", fileReceipt: {
-      owner: ready.lease, generation: removing.model.generation, id, succeeded, evidence: "device-removal",
-    } }, "FileStore")
-    if (succeeded) try exposeCatalog(after)
-    return succeeded
-  }
+  const { readSelected, importOwner, deletePhoto } = fileContents({ port, advance, keep, exposeCatalog, readAttachmentImport })
 
   effect function sharePhoto(ready: Ready, command: Extract<Command, { kind: "sharePhoto" }>) {
     const { id, generation } = command
