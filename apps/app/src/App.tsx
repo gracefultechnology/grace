@@ -15,6 +15,7 @@ import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../
 import { canChangeLifecycle, privateSurfaceActive, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { Browser } from "./Browser.tsx";
 import { useMachine as useSetup } from "../gen/app__setup.react.ts";
+import { WifiHost } from "./app.vibe";
 import { dayOf, relative, timeLabel } from "./calendar.vibe";
 import { type HomeCards, ManagedReads, surfaceOwner } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
@@ -26,7 +27,7 @@ import { NoticeBanner, Notices } from "./Notices.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { PasswordsApp } from "./PasswordsApp.tsx";
 import { Settings } from "./Settings.tsx";
-import { androidHost, wifiPlugin } from "./surfacePlugin.ts";
+import { androidHost } from "./surfacePlugin.ts";
 import { RuntimeContext, type Runtime, useAccounts, useRuntime, useKeyboardHeight, useMailContent, useWebsiteRequests, useWorkspace, WithCalendars, WithMailboxes } from "./useApp.ts";
 import { site } from "./WebsiteRequests.tsx";
 
@@ -176,14 +177,15 @@ function Screen() {
   const visit = (destination: Surface) => fire({ type: "visit", destination });
   const reminders = (calendars: Parameters<typeof reminderNotice>[1]) =>
     accounts && ours ? reminderNotice(accounts, calendars, now.getTime(), calendarActions, surface === "Calendar" || !visit("Calendar").disabled) : undefined;
+  const wifi = runtime.runSync(Effect.map(Effect.service(WifiHost), (host) => host.plugin));
   const toggle = (popover: Popover) => ({
     selected: device.railPopover === popover,
     ...fire({ type: "togglePopover", popover }),
     onClick: (event: { currentTarget: HTMLElement }) => {
       const { top, height } = event.currentTarget.getBoundingClientRect();
       setAnchor(top + height / 2);
-      if (popover === "WifiPopover" && wifiPlugin) {
-        void wifiPlugin.getConnectivity().then((status) => setWifiSsid(status.ssid ?? null), () => setWifiSsid(null));
+      if (popover === "WifiPopover" && wifi) {
+        void wifi.getConnectivity().then((status) => setWifiSsid(status.ssid ?? null), () => setWifiSsid(null));
       }
       void send({ type: "togglePopover", popover });
     },
