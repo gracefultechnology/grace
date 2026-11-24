@@ -569,12 +569,12 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
     if (inference.length) throw new Error(`${name} carries unapproved local inference classes: ${inference.join(", ")}`);
     if (!classes.includes("Ltechnology/graceful/grace/GraceWakePlugin;") || !classes.includes("Lcom/k2fsa/sherpa/onnx/KeywordSpotter;"))
       throw new Error(`${name} lacks the local wake keyword bridge`);
-    if (!classes.includes("Ltechnology/graceful/grace/GraceAccount;")) throw new Error(`${name} lacks the cloud speech bridge`);
+    if (!classes.includes("Ltechnology/graceful/grace/GraceAccount;")) throw new Error(`${name} lacks the native Grace account`);
     const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent.mjs"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
     const debuggable = execFileSync(aapt, ["dump", "badging", file], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).includes("application-debuggable");
     if (name.includes("-release") && debuggable) throw new Error(`${name} is debuggable, so any computer on USB could read and drive Grace's page`);
     if (cloudProfile === "shared-staging" && !debuggable) throw new Error(`${name} ships staging in a production build`);
-    process.stdout.write(`${name} ${abi} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, cloud speech and the pinned local wake keyword detector; its ${actions} actions declared by name are each allowed or refused\n`);
+    process.stdout.write(`${name} ${abi} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, the native Grace account and the pinned local wake keyword detector; its ${actions} actions declared by name are each allowed or refused\n`);
     return { name, cloudProfile, abi: abis[0], bytes: contents.byteLength, debuggable, sha256: createHash("sha256").update(contents).digest("hex"),
       signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };
   });
