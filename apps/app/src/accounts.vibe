@@ -1,6 +1,7 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"; spec/app/accounts.md, "Signing in again renews the same account"; spec/app/accounts.md, "The settings pages go back one step at a time"; spec/app/accounts.md, "Mail settings can be looked up from her address, and fill the form for her to check"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"
 import { accountAt, accountWith, freshName, initial as initialAccounts, lookupFinds, Machine as Accounts, parseState as parseAccounts, stored as storedAccounts, told, type Accounts as Registry, type Event, type FoundServer, type OtherReport, type Provider, type Security, type ServerKind, type SheetReport } from "../gen/app__accounts.effect.vibe"
 import { stored as storedProposal } from "../gen/app__proposal.effect.vibe"
+import { type GraceAccount, Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type OtherForm, type SecretPassword, type ShownPage } from "./connector.vibe"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
@@ -73,6 +74,8 @@ function watched<A>(initial: A) {
   }
 }
 
+const signedInAs = (account: GraceAccount) => account.tag === "GraceSignedIn" ? account.accountId : account.tag
+
 const companies: Record<Provider, string> = { Gmail: "Gmail", Outlook: "Outlook", Yahoo: "Yahoo", ICloud: "iCloud", Aol: "AOL", OtherEmail: "Email" }
 const internetCompanies: Record<string, string> = { "comcast.net": "Comcast", "att.net": "AT&T", "verizon.net": "Verizon", "cox.net": "Cox", "charter.net": "Charter" }
 const noteFor = "2600 millis"
@@ -102,7 +105,7 @@ function noteOf(before: Registry, after: Registry): string | undefined {
 
 type Held = OtherForm & { readonly name: string; readonly domain: string }
 
-const lookupWait = "8 seconds"
+const lookupDeadline = "8 seconds"
 const setupFiles = (domain: string) => [
   `https://autoconfig.${domain}/mail/config-v1.1.xml`,
   `https://${domain}/.well-known/autoconfig/mail/config-v1.1.xml`,
@@ -113,6 +116,7 @@ const records: readonly { readonly service: string; readonly kind: ServerKind; r
   { service: "_submission._tcp", kind: "SmtpServer", security: "SecureUpgrade" }
 ]
 
+const nothingFound: readonly FoundServer[] = []
 const unfinished = (attempt: number): SheetReport => ({ attempt, outcome: "Refused", address: "", granted: { mail: false, calendar: false, contacts: false } })
 const refused = (attempt: number): OtherReport => ({ attempt, outcome: "OtherRefused", address: "" })
 const leaving: readonly Event[] = [{ type: "cancelSignIn" }, { type: "keepAccount" }, { type: "goBack" }, { type: "goBack" }, { type: "goBack" }]
@@ -120,6 +124,7 @@ const leaving: readonly Event[] = [{ type: "cancelSignIn" }, { type: "keepAccoun
 export const signIns = Layer.effect(SignIns, effect {
   const registry = try Accounts
   const workspace = try Workspaces
+  const setup = try Setup
   const shelf = try Instances
   const connector = Option.getOrUndefined(try Effect.serviceOption(Connector))
   const held = try Ref.make<Held | undefined>(undefined)
@@ -143,7 +148,8 @@ export const signIns = Layer.effect(SignIns, effect {
 
   if (connector !== undefined) {
     try fork.scoped Stream.runForEach(connector.shown, page.set)
-    try fork.scoped learnOwner(connector)
+    const signedIn = Stream.changes(Stream.map(setup.changes, ({ graceAccount }) => signedInAs(graceAccount)))
+    try fork.scoped Stream.runDrain(Stream.switchMap(signedIn, () => Stream.fromEffect(learnOwner(connector))))
   }
 
   effect function renew(id: number) {
@@ -211,11 +217,9 @@ export const signIns = Layer.effect(SignIns, effect {
   }
 
   effect function fetchedText(url: string) {
-    return try timeout(effect {
-      const response = try Effect.provideService(http.execute(HttpClientRequest.get(url)), HttpClient.TracerPropagationEnabled, false)
-      if (response.status !== 200) return ""
-      return try response.text
-    }, lookupWait)
+    const response = try Effect.provideService(http.execute(HttpClientRequest.get(url)), HttpClient.TracerPropagationEnabled, false)
+    if (response.status !== 200) return ""
+    return try response.text
   }
 
   effect function listedIn(service: string, domain: string) {
@@ -223,16 +227,29 @@ export const signIns = Layer.effect(SignIns, effect {
     return try Schema.decodeUnknownEffect(Schema.fromJsonString(Resolved))(try fetchedText(url))
   }
 
+  effect function fromFile(url: string, domain: string) {
+    return timeout(effect {
+      const xml = try fetchedText(url)
+      return try Effect.try(() => serversIn(xml, domain))
+    }, lookupDeadline) catch () => nothingFound
+  }
+
+  effect function fromRecord({ service, kind, security }: (typeof records)[number], domain: string) {
+    return timeout(effect {
+      const answer = try listedIn(service, domain)
+      return try Effect.try(() => serversListed(answer, kind, security))
+    }, lookupDeadline) catch () => nothingFound
+  }
+
   effect function serversOf(domain: string) {
+    const files = setupFiles(domain)
+    const asked: Fiber.Fiber<readonly FoundServer[]>[] = []
+    for (const url of files) asked.push(try fork fromFile(url, domain))
+    for (const record of records) asked.push(try fork fromRecord(record, domain))
     const found: FoundServer[] = []
-    for (const url of setupFiles(domain)) {
-      const xml = fetchedText(url) catch () => ""
-      found.push(...(Effect.try(() => serversIn(xml, domain)) catch () => []))
-      if (lookupFinds(found)) return found
-    }
-    for (const { service, kind, security } of records) {
-      const answer = listedIn(service, domain) catch () => ({})
-      found.push(...(Effect.try(() => serversListed(answer, kind, security)) catch () => []))
+    for (const [index, fiber] of asked.entries()) {
+      found.push(...(try join fiber))
+      if (index < files.length && lookupFinds(found)) return found
     }
     return found
   }
