@@ -237,7 +237,8 @@ pure def lawSleepingDeviceIsNotObservable(s: Shell): bool =
 ### A shell is valid when it meets every rule above
 
 A machine that holds a shell beside its own state requires this one check
-rather than repeating the shell's rules.
+rather than repeating the shell's rules. Whoever adds an `always` rule here
+adds it to this conjunction too.
 
 ```quint
 pure def validShell(s: Shell): bool =

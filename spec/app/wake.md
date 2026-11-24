@@ -116,6 +116,14 @@ pure def lawUnavailableNeverWakes(context: WakeContext): bool =
     not(permittedWake(context)) and wakeRow(context.enabled, context.available) == WakeUnavailable
 ```
 
+### A wake is valid when it meets every rule above
+
+The [workspace](./workspace.md) requires `validWake` of its wake, the conjunction of every `always` rule of this spec, rather than repeating them. Whoever adds an `always` rule here adds it to this conjunction too.
+
+```quint
+pure def validWake(w: Wake): bool = alwaysWakeCounters(w) and alwaysActiveWakeHasDeadline(w)
+```
+
 ### Examples cover enabled, disabled, playback and expired callbacks
 
 ```quint
