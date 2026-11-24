@@ -8,6 +8,7 @@ import { type Event as CalendarEvent, type FormPicker, keepsRepetition, type Vie
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { adding, CalendarNews, dayOf, editingPlan, horizon, hour, instant, longDate, midnight, minutesOf, navigation, type Opening, openingPlan, relative, say, shownDays, timeLabel } from "./calendar.vibe";
+import type { HomeCards } from "./managedReads.vibe";
 import type { ReminderNotice } from "./Notices.tsx";
 import { type CalendarInstance, useAccounts, useCalendarNote, useDraft, useProposal, useRecoveredCalendarDrafts, useRuntime, useWorkspace, WithCalendars } from "./useApp.ts";
 
@@ -18,6 +19,21 @@ const repeatLines: Record<Recurrence, string> = { Once: "Doesn’t repeat", Week
 const reminders: readonly (readonly [string, number])[] = [["Day before", 24 * hour], ["1 hour before", hour]];
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const snoozeFor = 10 * 60 * 1000;
+const shortWeekday = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const shortTime = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+
+export type HostedAppointment = HomeCards["events"][number];
+
+export const appointmentWeekday = (date: Date) => shortWeekday.format(date).toUpperCase();
+
+export function hostedAppointmentDate({ isAllDay, startAt }: HostedAppointment): Date {
+  return new Date(isAllDay && startAt.length === 10 ? `${startAt}T12:00:00` : startAt);
+}
+
+export function hostedAppointmentDisplay(event: HostedAppointment) {
+  const date = hostedAppointmentDate(event);
+  return { date, time: event.isAllDay ? "All day" : shortTime.format(date) };
+}
 
 export const calendarKeys = (registry: Accounts) => [tabletKey, ...registry.accounts.map((a) => a.id)];
 const sourcesOf = (views: readonly CalendarInstance[]): CalendarSource[] => views.map((v) => ({ key: v.key, view: v.state }));
