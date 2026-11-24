@@ -1,6 +1,6 @@
 // The generator on a copy of test/fixtures that nothing else reads or writes, in the system's temporary
 // directory. The copy needs no install: fixtures/modules, its `node_modules`, declares what the fixtures import.
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { afterAll, expect, it } from "vitest";
@@ -264,7 +264,7 @@ it("rewrites only what a change touches, and removes what a deleted component le
   edit("src/Tag.tsx", (text) => text.replace('lg: "l" }', 'lg: "l", xl: "x" }'));
   expect(run()).toMatchObject({ written: ["kit-tag.stories.tsx", "catalog.json", ".cache/manifest.json"], removed: [], analyzed: 1 });
   expect(stories("Tag", run())).toContain("prop kit-tag--size-xl");
-  expect(["src/Tag.tsx", "tsconfig.json", "package.json", "generated/stories/kit-tag.stories.tsx", "node_modules/react/index.ts", ".cache/Tag.tsx"].filter(watched(root))).toEqual(["src/Tag.tsx", "tsconfig.json", "package.json"]);
+  expect(["src/Tag.tsx", "packages/views/src/New.tsx", "src/Tag.test.tsx", "test/unrelated.test.ts", "src/unreferenced.ts", "tsconfig.json", "package.json", "generated/stories/kit-tag.stories.tsx", "node_modules/react/index.ts", ".cache/Tag.tsx"].filter(watched(root))).toEqual(["src/Tag.tsx", "packages/views/src/New.tsx", "tsconfig.json", "package.json"]);
 
   // A type reached through a path alias is an input, and so is the tsconfig that names the alias.
   edit("src/shades.ts", (text) => text.replace('"red"', '"crimson"'));
@@ -306,6 +306,45 @@ it("rewrites only what a change touches, and removes what a deleted component le
   writeFiles(workspace, { "fields/noise.ts": props("unused") });
   expectField(["second"], 0);
 
+  writeFiles(workspace, { "ui/tsconfig.json": '{"extends":"../options"}' });
+  expectField(["second"]);
+  writeFiles(workspace, { options: options(["./preferred"]) });
+  expectField(["first"]);
+  rmSync(join(workspace, "options"));
+  expectField(["second"]);
+
+  const link = join(ui, "node_modules/@workspace/fields");
+  mkdirSync(dirname(link), { recursive: true });
+  symlinkSync(join(workspace, "fields"), link, "junction");
+  writeFiles(workspace, {
+    "ui/src/View.tsx": 'import type { Props } from "@workspace/fields"; export function View({ first, second }: Props) { return <button>{first ?? second}</button>; }',
+  });
+  for (const preserveSymlinks of [false, true]) {
+    writeFiles(workspace, {
+      "ui/tsconfig.json": JSON.stringify({ extends: "../options.json", compilerOptions: { preserveSymlinks } }),
+      "fields/package.json": '{"types":"one.d.ts"}',
+    });
+    expectField(["first"]);
+    writeFiles(workspace, { "fields/package.json": '{"types":"two.d.ts"}' });
+    expectField(["second"]);
+    expectField(["second"], 0);
+    writeFiles(workspace, { "elsewhere/package.json": '{"types":"two.d.ts"}', "elsewhere/two.d.ts": props("first") });
+    rmSync(link);
+    symlinkSync(join(workspace, "elsewhere"), link, "junction");
+    expectField(["first"]);
+    rmSync(link);
+    symlinkSync(join(workspace, "fields"), link, "junction");
+    expectField(["second"]);
+  }
+  writeFiles(workspace, {
+    "ui/tsconfig.json": '{"compilerOptions":{"jsx":"preserve","noLib":true,"types":[]}}',
+    "ui/src/Owner.tsx": 'export function Owner() { return <button/> }',
+  });
+  expect(component("Owner", generate()).package).toBe("@fixture/kit");
+  writeFiles(workspace, { "ui/src/package.json": '{"name":"@fixture/nested"}' });
+  expect(component("Owner", generate()).package).toBe("@fixture/nested");
+  rmSync(join(ui, "src/package.json"));
+  expect(component("Owner", generate()).package).toBe("@fixture/kit");
 
   writeFileSync(join(root, "src/Table.meta.ts"), 'export const meta = { args: { rows: [{ id: 1 }], sort: { by: "id" } } };\n');
   const given = run();
