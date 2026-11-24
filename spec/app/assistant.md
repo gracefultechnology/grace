@@ -499,7 +499,7 @@ pure def newConversation(a: Assistant, by: C::ConversationActor): Assistant =
 
 ### Hidden assistance is quiet and every task status has its necessary context
 
-Pausing a spoken reply turns the microphone off while the reply stays available to resume.
+The assistant keeps every rule of its conversation. Pausing a spoken reply turns the microphone off while the reply stays available to resume.
 
 ```quint
 pure def alwaysConversationRules(a: Assistant): bool = C::validConversation(a.conversation)
