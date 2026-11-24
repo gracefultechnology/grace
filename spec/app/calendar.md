@@ -107,9 +107,8 @@ has an Important switch, which the prototype's form lacks, so she can mark or
 unmark any appointment herself, and Grace can propose the mark with an
 appointment or a change she agrees to. The mark is the tablet's own: it is
 never sent to an email account's company, and a refresh from the company
-keeps it. `formDetails` takes it from the form, and Calendar view keeps each
-other member's own mark when a repeating event is edited and saved as a
-series.
+keeps it. `formDetails` takes it from the form, and Calendar view makes it a
+setting of a repeating event's whole series.
 
 ```quint
 pure def canCreate(c: Calendar, identity: EntryIdentity, by: CalendarActor): bool =

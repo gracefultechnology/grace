@@ -207,11 +207,14 @@ The name she gives on that form is the account’s From name: her email from
 that account goes out under it, and signing in again changes it to the name
 she gives then. The form starts with the From name of the account she is
 signing in to again, otherwise with the name of her Grace account when it is
-available. A later name leaves what she has already typed in place. An Other
-email is never added without a From name; a company’s account has none here,
-because the company’s own page keeps her name. A previously saved Other
-account without a From name stays on the tablet with its existing email and
-an unknown name until she next signs in to it.
+available. That name follows her sign-in to Grace: signing in later, or as
+someone else, gives the form that account’s name. A later name fills the
+field only while she has not typed in it, and leaves everything she has
+typed in place. An Other email is never added without a From name; a
+company’s account has none here, because the company’s own page keeps her
+name. A previously saved Other account without a From name stays on the
+tablet with its existing email and an unknown name until she next signs in
+to it.
 
 ```quint
 type OtherOutcome = OtherAllowed | OtherPasswordRefused | OtherNeedsServers | OtherRefused
@@ -258,14 +261,18 @@ pure def sometimesOtherEmailConnected(a: Accounts): bool = a.accounts.some(x => 
 On Mail settings, Look them up asks, as a new attempt, for the settings of
 the domain after the @: the email company’s own setup file first, then the
 shared list of email companies’ settings, then the internet’s address book.
-The answer is the servers those sources list. The form fills with the first
-incoming (IMAP) and the first outgoing (SMTP) server that is reached over a
-secure connection, a direct secure one before one that turns secure, and
-with nothing when either is missing; then the page says the settings
-weren’t found. Nothing is saved or sent to the email company: she checks the
-filled form and taps Connect, as with servers she typed. Looking them up
-again forgets what the last lookup found, Connect while looking ignores the
-answer, and leaving Mail settings forgets what was found.
+The tablet asks every source at once and waits for them together no longer
+than one deadline; a source that has not answered by then counts as listing
+nothing. The answer is the servers those sources list, in that order, up to
+the first setup file whose servers, with the ones before it, fill the form.
+The form fills with the first incoming (IMAP) and the first outgoing (SMTP)
+server that is reached over a secure connection, a direct secure one before
+one that turns secure, and with nothing when either is missing; then the
+page says the settings weren’t found. Nothing is saved or sent to the email
+company: she checks the filled form and taps Connect, as with servers she
+typed. Looking them up again forgets what the last lookup found, Connect
+while looking ignores the answer, and leaving Mail settings forgets what was
+found.
 
 ```quint
 type ServerKind = ImapServer | SmtpServer | PopServer

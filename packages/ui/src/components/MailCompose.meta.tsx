@@ -47,6 +47,10 @@ export const meta: ComponentMeta<MailComposeProps> = {
     },
     "Record not saved": { sendStatus: "saveFailed", onRetrySave: retrySave },
     "Draft not saved": { draftError: "Your draft couldn’t be saved. Try again.", onRetryDraft: fn() },
+    "Attachments can’t go": {
+      draftError: "Garden.jpg and Recital.jpg are too large to go by email; Scan.pdf couldn’t be read again from its email, so this email is kept on the tablet. Remove them to save it to Drafts.",
+      onRetryDraft: fn(),
+    },
     From: { from },
     "From menu open": { from: { ...from, open: true } },
     "Reply, Grace points at Send": {
