@@ -203,8 +203,9 @@ publishes the certificate SHA-256. The SHA-1 for Android Google client registrat
 
 Built from Grace `f866142` and Eliza `21fac1f`, each launcher APK passed the content check:
 agent payload and inventory, Node runtime, the native Grace account, the pinned wake keyword
-detector and no other inference class, and `debuggable` only in the debug build. The release APKs were signed with a throwaway key, so their
-size holds for the Grace key and their SHA-256 does not.
+detector and no other inference class, and `debuggable` only in the debug build. The release
+APKs were signed with a throwaway key, so their size holds for the Grace key and their SHA-256
+does not.
 
 | APK | Processor type | Bytes | SHA-256 |
 |---|---|---|---|
