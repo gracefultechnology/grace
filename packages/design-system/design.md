@@ -65,6 +65,31 @@ not yet said: white, outlined in her ink, with her tail. While she speaks, `lave
 Grace points with a `guide` ring in the margin around the target and a label beside it: indigo while she
 works, `guide` for "your turn", `ok` when done. A target off screen becomes a glass pill at the edge.
 
+## Grace offers
+
+Wherever Grace teaches what she can do, her mark is the sparkle (Lucide `Sparkle`), in `lavender`, her own colour,
+as on the Ask Grace orb and her speaking bars. `GraceOffer` is the full form: the sparkle on a solid `lavender` tile,
+one line in `primary` on `lavender/20`, and at most one prominent step. A hint with no step is the sparkle in a white
+note. Plum stays for what needs the person: the dark `Banner` (sign in again, connect email inside an app) is never
+an offer.
+
+## Empty states
+
+A card is empty for a reason, and says which; it never goes blank.
+
+- **Status line, always.** What is in the card ("2 new", "Nothing today", "All caught up"), or why it is empty
+  ("Nothing planned", "No photos yet", "None saved yet").
+- **Its shape stays.** `PlaceholderRows` fade where rows would be; Files keeps dashed frames where photos go.
+- **One cause, one banner.** A cause that empties more than one card is said once, in Home's light `Banner`,
+  with its one fix, and the cards stay quiet with no buttons of their own. One banner at a time, first of: no
+  Wi‑Fi (Fix Wi‑Fi), an account signed out (Sign in), no email added (Add email). A card asks only for what is
+  its own: Passwords' Grace offer.
+- **Saved still shows.** Offline or signed out, Calendar and Email keep what they have and their status becomes
+  "Last updated 9:02 AM" ("a few minutes ago", "yesterday at 6 PM"); only then. Internet greys Open and drops its
+  status; the banner says why.
+- **Words.** A status says what is true in a few words; a note only what the status cannot (what happens next, or
+  that nothing is lost); a button says what it does ("Add email", "Sign in to Gmail", "Try now").
+
 ## Screens
 
 Each screen-level component's stories against the state of `prototype/Grace Prototype.html` that they show, by
