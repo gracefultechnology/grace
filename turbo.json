@@ -84,6 +84,10 @@
       "dependsOn": ["@grace/cloud#build"],
       "outputs": [".vibe/declarations/**"]
     },
+    "@grace/cloud#test": {
+      "dependsOn": ["@grace/cloud#build"],
+      "outputs": [".cache/test-result-*.json"]
+    },
     "@repo/app#gen": {
       "inputs": [
         "$TURBO_ROOT$/vendor/eliza/packages/{cloud,core,os}/package.json",

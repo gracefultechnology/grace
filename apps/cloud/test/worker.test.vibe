@@ -1,0 +1,39 @@
+import { assert, describe, it } from "@effect/vitest"
+import { NodeFileSystem } from "@effect/platform-node"
+import { HttpClientRequest, HttpClientResponse } from "effect/http"
+import { nativeAssetLinks } from "@elizaos/cloud/worker"
+
+schema Vars {
+  PUBLIC_API_ORIGIN: string
+  WEB_ORIGIN: string
+  CLOUD_ENVIRONMENT: "staging" | "production"
+  NATIVE_CLIENT_REGISTRY: string
+}
+schema Environment { vars: Vars }
+schema Environments { staging: Environment; production: Environment }
+schema Wrangler { env: Environments }
+
+const debugCertificate = "41:C2:73:72:4A:EA:BA:69:3F:1B:B0:91:A0:8B:E7:60:7E:75:AD:D8:A4:C4:19:9B:AF:69:50:0C:3A:89:C0:64"
+const releaseCertificate = "B8:9E:0E:36:E3:6E:75:3E:9E:95:1C:EA:A6:3B:AE:85:3F:AB:76:93:5D:F7:A4:15:3B:CF:C2:CC:EB:C7:D3:D7"
+const association = (certificate: string) => [{
+  relation: ["delegate_permission/common.handle_all_urls"],
+  target: { namespace: "android_app", package_name: "technology.graceful.grace", sha256_cert_fingerprints: [certificate] }
+}]
+
+effect function assetLinks(environment: "staging" | "production") {
+  const fs = try FileSystem.FileSystem
+  const file = try fs.readFileString(`${import.meta.dirname}/../wrangler.jsonc`)
+  const vars = (try Schema.decodeUnknownEffect(Schema.fromJsonString(Wrangler))(file)).env[environment].vars
+  const request = HttpClientRequest.get(`${vars.WEB_ORIGIN}/.well-known/assetlinks.json`)
+  const response = HttpClientResponse.fromWeb(request, nativeAssetLinks(vars))
+  return { environment: vars.CLOUD_ENVIRONMENT, status: response.status, statements: try response.json }
+}
+
+describe("Sign in to Grace and manage my subscription (spec/app/setup.md, \"Story: Sign in to Grace and manage my subscription\")", () => {
+  it.effect("a debug build verifies its sign-in return only on staging, and production verifies only the release build", () => effect {
+    provide NodeFileSystem.layer {
+      assert.deepStrictEqual(try assetLinks("staging"), { environment: "staging", status: 200, statements: association(debugCertificate) })
+      assert.deepStrictEqual(try assetLinks("production"), { environment: "production", status: 200, statements: association(releaseCertificate) })
+    }
+  })
+})
