@@ -108,6 +108,7 @@ lemma CalendarChanged(c: app__calendar_Calendar, command: OccurrenceAction, by_:
     case EntryStored(revision, succeeded) =>
       if succeeded { app__calendar_save_ensures(c, revision, true, app__calendar_CalendarActor.CalendarStore); }
       else { app__calendar_saveFailed_ensures(c, revision, app__calendar_CalendarActor.CalendarStore); }
+    case EntryOutdated(revision, latest, version) => app__calendar_saveOutdated_ensures(c, revision, latest, version, app__calendar_CalendarActor.CalendarStore);
     case AdvanceClock(now) => app__calendar_advanceTime_ensures(c, now, app__calendar_CalendarActor.CalendarClock);
     case ShowDueReminder => app__calendar_showReminder_ensures(c, app__calendar_CalendarActor.CalendarClock);
     case SnoozeReminder(until) => app__calendar_snooze_ensures(c, until, app__calendar_CalendarActor.CalendarUser);
@@ -429,9 +430,9 @@ lemma publishOccurrence_ensures(v: CalendarView, incoming: app__calendar_Calenda
   ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysEntriesUseSeries(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
   ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSelectionIsCurrent(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
   ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletionHasSelection(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
+  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
   ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesStayDeleted(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
   ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysDeletedSeriesIdsAreNonempty(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
-  ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
   ensures (inv(v) ==> canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) ==> stepOccurrenceIdentityIsFixed(v, publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_)))
 {
   PublishAllowedEnsures(v, incoming, seriesVersion, scheduleVerified, by_);
@@ -448,9 +449,9 @@ lemma deletionResult_ensures(v: CalendarView, generation: int, succeeded: bool, 
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysEntriesUseSeries(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysSelectionIsCurrent(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysDeletionHasSelection(deletionResult(v, generation, succeeded, evidence, by_)))
+  ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysSeriesDeletionIsRecurring(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysDeletedSeriesStayDeleted(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysDeletedSeriesIdsAreNonempty(deletionResult(v, generation, succeeded, evidence, by_)))
-  ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> alwaysSeriesDeletionIsRecurring(deletionResult(v, generation, succeeded, evidence, by_)))
   ensures (inv(v) ==> canDeletionResult(v, generation, evidence, by_) ==> stepOccurrenceIdentityIsFixed(v, deletionResult(v, generation, succeeded, evidence, by_)))
 {
   if inv(v) && canDeletionResult(v, generation, evidence, by_) && succeeded {
@@ -506,9 +507,9 @@ lemma openCalendar_ensures(v: CalendarView, owner: string, calendarId: string, t
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysEntriesUseSeries(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSelectionIsCurrent(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysDeletionHasSelection(openCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSeriesDeletionIsRecurring(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysDeletedSeriesStayDeleted(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysDeletedSeriesIdsAreNonempty(openCalendar(v, owner, calendarId, timezone, by_)))
-  ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSeriesDeletionIsRecurring(openCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenCalendar(v, owner, calendarId, timezone, by_) ==> stepOccurrenceIdentityIsFixed(v, openCalendar(v, owner, calendarId, timezone, by_)))
 {
   if inv(v) && canOpenCalendar(v, owner, calendarId, timezone, by_) {
@@ -527,9 +528,9 @@ lemma navigate_ensures(v: CalendarView, report: NavigationReport, by_: ViewActor
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysEntriesUseSeries(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysSelectionIsCurrent(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysDeletionHasSelection(navigate(v, report, by_)))
+  ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysSeriesDeletionIsRecurring(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysDeletedSeriesStayDeleted(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysDeletedSeriesIdsAreNonempty(navigate(v, report, by_)))
-  ensures (inv(v) ==> canNavigate(v, report, by_) ==> alwaysSeriesDeletionIsRecurring(navigate(v, report, by_)))
   ensures (inv(v) ==> canNavigate(v, report, by_) ==> stepOccurrenceIdentityIsFixed(v, navigate(v, report, by_)))
 {
   if inv(v) && canNavigate(v, report, by_) {
@@ -548,15 +549,40 @@ lemma openOccurrence_ensures(v: CalendarView, id: string, by_: ViewActor)
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysEntriesUseSeries(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysSelectionIsCurrent(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysDeletionHasSelection(openOccurrence(v, id, by_)))
+  ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysSeriesDeletionIsRecurring(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysDeletedSeriesStayDeleted(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysDeletedSeriesIdsAreNonempty(openOccurrence(v, id, by_)))
-  ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> alwaysSeriesDeletionIsRecurring(openOccurrence(v, id, by_)))
   ensures (inv(v) ==> canOpenOccurrence(v, id, by_) ==> stepOccurrenceIdentityIsFixed(v, openOccurrence(v, id, by_)))
 {
   if inv(v) && canOpenOccurrence(v, id, by_) {
-    CalendarSameEntries(v, openOccurrence(v, id, by_));
+    var after := openOccurrence(v, id, by_);
+    var before := entryAt(v, id);
     CalendarEntryMember(v, id);
-    CalendarEntryFind(openOccurrence(v, id, by_), entryAt(v, id));
+    CalendarUniqueDistinct(v);
+    forall i | 0 <= i < |v.entries|
+      ensures after.entries[i].identity == v.entries[i].identity
+      ensures validStored(after.entries[i])
+      ensures after.entries[i].phase == v.entries[i].phase
+      ensures after.entries[i].hasSaved == v.entries[i].hasSaved
+      ensures after.entries[i].committed == v.entries[i].committed
+      ensures after.entries[i].draft == v.entries[i].draft
+      ensures after.entries[i].approvedRevision == v.entries[i].approvedRevision
+      ensures after.entries[i].reminder == v.entries[i].reminder
+    {
+      var prior := v.entries[i];
+      if prior.identity.occurrenceId == id {
+        app__calendar_noticed_ensures(prior);
+      }
+    }
+    CalendarDistinctUnique(after);
+    var idx :| 0 <= idx < |v.entries| && v.entries[idx] == before;
+    CalendarEntryFind(after, after.entries[idx]);
+    forall prior, laterEntry | prior in v.entries && laterEntry in after.entries && app__calendar_sameOccurrence(prior, laterEntry)
+      ensures prior.identity == laterEntry.identity
+    {
+      var j :| 0 <= j < |after.entries| && after.entries[j] == laterEntry;
+      CalendarSameKey(v, prior, v.entries[j]);
+    }
   }
 }
 
@@ -571,9 +597,9 @@ lemma backToCalendar_ensures(v: CalendarView, by_: ViewActor)
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysEntriesUseSeries(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysSelectionIsCurrent(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysDeletionHasSelection(backToCalendar(v, by_)))
+  ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysSeriesDeletionIsRecurring(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysDeletedSeriesStayDeleted(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysDeletedSeriesIdsAreNonempty(backToCalendar(v, by_)))
-  ensures (inv(v) ==> canBackToCalendar(v, by_) ==> alwaysSeriesDeletionIsRecurring(backToCalendar(v, by_)))
   ensures (inv(v) ==> canBackToCalendar(v, by_) ==> stepOccurrenceIdentityIsFixed(v, backToCalendar(v, by_)))
 {
   if inv(v) && canBackToCalendar(v, by_) {
@@ -592,9 +618,9 @@ lemma requestDeletion_ensures(v: CalendarView, by_: ViewActor)
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysEntriesUseSeries(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysSelectionIsCurrent(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysDeletionHasSelection(requestDeletion(v, by_)))
+  ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysSeriesDeletionIsRecurring(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysDeletedSeriesStayDeleted(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysDeletedSeriesIdsAreNonempty(requestDeletion(v, by_)))
-  ensures (inv(v) ==> canRequestDeletion(v, by_) ==> alwaysSeriesDeletionIsRecurring(requestDeletion(v, by_)))
   ensures (inv(v) ==> canRequestDeletion(v, by_) ==> stepOccurrenceIdentityIsFixed(v, requestDeletion(v, by_)))
 {
   if inv(v) && canRequestDeletion(v, by_) {
@@ -613,9 +639,9 @@ lemma keepOccurrence_ensures(v: CalendarView, by_: ViewActor)
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysEntriesUseSeries(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysSelectionIsCurrent(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysDeletionHasSelection(keepOccurrence(v, by_)))
+  ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysSeriesDeletionIsRecurring(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysDeletedSeriesStayDeleted(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysDeletedSeriesIdsAreNonempty(keepOccurrence(v, by_)))
-  ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> alwaysSeriesDeletionIsRecurring(keepOccurrence(v, by_)))
   ensures (inv(v) ==> canKeepOccurrence(v, by_) ==> stepOccurrenceIdentityIsFixed(v, keepOccurrence(v, by_)))
 {
   if inv(v) && canKeepOccurrence(v, by_) {
@@ -634,9 +660,9 @@ lemma approveDeletion_ensures(v: CalendarView, scope: DeleteScope, by_: ViewActo
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysEntriesUseSeries(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysSelectionIsCurrent(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysDeletionHasSelection(approveDeletion(v, scope, by_)))
+  ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysSeriesDeletionIsRecurring(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysDeletedSeriesStayDeleted(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysDeletedSeriesIdsAreNonempty(approveDeletion(v, scope, by_)))
-  ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> alwaysSeriesDeletionIsRecurring(approveDeletion(v, scope, by_)))
   ensures (inv(v) ==> canApproveDeletion(v, scope, by_) ==> stepOccurrenceIdentityIsFixed(v, approveDeletion(v, scope, by_)))
 {
   if inv(v) && canApproveDeletion(v, scope, by_) {
@@ -655,9 +681,9 @@ lemma createOccurrence_ensures(v: CalendarView, entry: EntrySeed, by_: ViewActor
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysEntriesUseSeries(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysSelectionIsCurrent(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysDeletionHasSelection(createOccurrence(v, entry, by_)))
+  ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysSeriesDeletionIsRecurring(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysDeletedSeriesStayDeleted(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysDeletedSeriesIdsAreNonempty(createOccurrence(v, entry, by_)))
-  ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> alwaysSeriesDeletionIsRecurring(createOccurrence(v, entry, by_)))
   ensures (inv(v) ==> canCreateOccurrence(v, entry, by_) ==> stepOccurrenceIdentityIsFixed(v, createOccurrence(v, entry, by_)))
 {
   if inv(v) && canCreateOccurrence(v, entry, by_) {
@@ -691,9 +717,9 @@ lemma changeOccurrence_ensures(v: CalendarView, id: string, command: OccurrenceA
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysEntriesUseSeries(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysSelectionIsCurrent(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysDeletionHasSelection(changeOccurrence(v, id, command, by_)))
+  ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysSeriesDeletionIsRecurring(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysDeletedSeriesStayDeleted(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysDeletedSeriesIdsAreNonempty(changeOccurrence(v, id, command, by_)))
-  ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> alwaysSeriesDeletionIsRecurring(changeOccurrence(v, id, command, by_)))
   ensures (inv(v) ==> canChangeOccurrence(v, id, command, by_) ==> stepOccurrenceIdentityIsFixed(v, changeOccurrence(v, id, command, by_)))
 {
   if inv(v) && canChangeOccurrence(v, id, command, by_) {
@@ -773,9 +799,9 @@ lemma saveSeries_ensures(v: CalendarView, receipt: SeriesReceipt, by_: ViewActor
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysEntriesUseSeries(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysSelectionIsCurrent(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysDeletionHasSelection(saveSeries(v, receipt, by_)))
+  ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysSeriesDeletionIsRecurring(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysDeletedSeriesStayDeleted(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysDeletedSeriesIdsAreNonempty(saveSeries(v, receipt, by_)))
-  ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysSeriesDeletionIsRecurring(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> stepOccurrenceIdentityIsFixed(v, saveSeries(v, receipt, by_)))
 {
   if inv(v) && canSaveSeries(v, receipt, by_) {
@@ -846,9 +872,9 @@ lemma closeCalendar_ensures(v: CalendarView, by_: ViewActor)
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysEntriesUseSeries(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysSelectionIsCurrent(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysDeletionHasSelection(closeCalendar(v, by_)))
+  ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysSeriesDeletionIsRecurring(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysDeletedSeriesStayDeleted(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysDeletedSeriesIdsAreNonempty(closeCalendar(v, by_)))
-  ensures (inv(v) ==> canCloseCalendar(v, by_) ==> alwaysSeriesDeletionIsRecurring(closeCalendar(v, by_)))
   ensures (inv(v) ==> canCloseCalendar(v, by_) ==> stepOccurrenceIdentityIsFixed(v, closeCalendar(v, by_)))
 {
   if inv(v) && canCloseCalendar(v, by_) {
@@ -885,9 +911,9 @@ lemma confirmAppointment_ensures(v: CalendarView, request: ConfirmedAppointment,
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysEntriesUseSeries(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysSelectionIsCurrent(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysDeletionHasSelection(confirmAppointment(v, request, by_)))
+  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysSeriesDeletionIsRecurring(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysDeletedSeriesStayDeleted(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysDeletedSeriesIdsAreNonempty(confirmAppointment(v, request, by_)))
-  ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> alwaysSeriesDeletionIsRecurring(confirmAppointment(v, request, by_)))
   ensures (inv(v) ==> canConfirmAppointment(v, request, by_) ==> stepOccurrenceIdentityIsFixed(v, confirmAppointment(v, request, by_)))
 {
   if inv(v) && canConfirmAppointment(v, request, by_) {
@@ -923,9 +949,9 @@ lemma importBillOccurrence_ensures(v: CalendarView, entry: EntrySeed, billEviden
   ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysEntriesUseSeries(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
   ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysSelectionIsCurrent(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
   ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysDeletionHasSelection(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
+  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
   ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysDeletedSeriesStayDeleted(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
   ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysDeletedSeriesIdsAreNonempty(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
-  ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> alwaysSeriesDeletionIsRecurring(importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
   ensures (inv(v) ==> canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) ==> stepOccurrenceIdentityIsFixed(v, importBillOccurrence(v, entry, billEvidence, scheduleVerified, by_)))
 {
   if inv(v) && canImportBillOccurrence(v, entry, billEvidence, scheduleVerified, by_) {
@@ -944,9 +970,9 @@ lemma openReminder_ensures(v: CalendarView, id: string, owner: string, calendarI
   ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysEntriesUseSeries(openReminder(v, id, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysSelectionIsCurrent(openReminder(v, id, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysDeletionHasSelection(openReminder(v, id, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysSeriesDeletionIsRecurring(openReminder(v, id, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysDeletedSeriesStayDeleted(openReminder(v, id, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysDeletedSeriesIdsAreNonempty(openReminder(v, id, owner, calendarId, timezone, by_)))
-  ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> alwaysSeriesDeletionIsRecurring(openReminder(v, id, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canOpenReminder(v, id, owner, calendarId, timezone, by_) ==> stepOccurrenceIdentityIsFixed(v, openReminder(v, id, owner, calendarId, timezone, by_)))
 {
   if inv(v) && canOpenReminder(v, id, owner, calendarId, timezone, by_) {
@@ -954,7 +980,7 @@ lemma openReminder_ensures(v: CalendarView, id: string, owner: string, calendarI
     openCalendar_ensures(v, owner, calendarId, timezone, by_);
     assert inv(shown);
     openOccurrence_ensures(shown, id, by_);
-    CalendarSameEntries(v, openReminder(v, id, owner, calendarId, timezone, by_));
+    assert shown.entries == v.entries;
   }
 }
 
@@ -990,9 +1016,9 @@ lemma bindCalendar_ensures(v: CalendarView, owner: string, calendarId: string, t
   ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysEntriesUseSeries(bindCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSelectionIsCurrent(bindCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysDeletionHasSelection(bindCalendar(v, owner, calendarId, timezone, by_)))
+  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSeriesDeletionIsRecurring(bindCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysDeletedSeriesStayDeleted(bindCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysDeletedSeriesIdsAreNonempty(bindCalendar(v, owner, calendarId, timezone, by_)))
-  ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> alwaysSeriesDeletionIsRecurring(bindCalendar(v, owner, calendarId, timezone, by_)))
   ensures (inv(v) ==> canBindCalendar(v, owner, calendarId, timezone, by_) ==> stepOccurrenceIdentityIsFixed(v, bindCalendar(v, owner, calendarId, timezone, by_)))
 {
   if inv(v) && canBindCalendar(v, owner, calendarId, timezone, by_) {
@@ -1039,9 +1065,9 @@ lemma confirmChange_ensures(v: CalendarView, changeRequest: ConfirmedChange, by_
   ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysEntriesUseSeries(confirmChange(v, changeRequest, by_)))
   ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysSelectionIsCurrent(confirmChange(v, changeRequest, by_)))
   ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysDeletionHasSelection(confirmChange(v, changeRequest, by_)))
+  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysSeriesDeletionIsRecurring(confirmChange(v, changeRequest, by_)))
   ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysDeletedSeriesStayDeleted(confirmChange(v, changeRequest, by_)))
   ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysDeletedSeriesIdsAreNonempty(confirmChange(v, changeRequest, by_)))
-  ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> alwaysSeriesDeletionIsRecurring(confirmChange(v, changeRequest, by_)))
   ensures (inv(v) ==> canConfirmChange(v, changeRequest, by_) ==> stepOccurrenceIdentityIsFixed(v, confirmChange(v, changeRequest, by_)))
 {
   if inv(v) && canConfirmChange(v, changeRequest, by_) {
@@ -1097,9 +1123,9 @@ lemma confirmDeletion_ensures(v: CalendarView, deletionRequest: ConfirmedDeletio
   ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysEntriesUseSeries(confirmDeletion(v, deletionRequest, by_)))
   ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysSelectionIsCurrent(confirmDeletion(v, deletionRequest, by_)))
   ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysDeletionHasSelection(confirmDeletion(v, deletionRequest, by_)))
+  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysSeriesDeletionIsRecurring(confirmDeletion(v, deletionRequest, by_)))
   ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysDeletedSeriesStayDeleted(confirmDeletion(v, deletionRequest, by_)))
   ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysDeletedSeriesIdsAreNonempty(confirmDeletion(v, deletionRequest, by_)))
-  ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> alwaysSeriesDeletionIsRecurring(confirmDeletion(v, deletionRequest, by_)))
   ensures (inv(v) ==> canConfirmDeletion(v, deletionRequest, by_) ==> stepOccurrenceIdentityIsFixed(v, confirmDeletion(v, deletionRequest, by_)))
 {
   if inv(v) && canConfirmDeletion(v, deletionRequest, by_) {
@@ -1226,9 +1252,9 @@ lemma storeCreated_ensures(v: CalendarView, created: CreatedReceipt, by_: ViewAc
   ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysEntriesUseSeries(storeCreated(v, created, by_)))
   ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysSelectionIsCurrent(storeCreated(v, created, by_)))
   ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysDeletionHasSelection(storeCreated(v, created, by_)))
+  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysSeriesDeletionIsRecurring(storeCreated(v, created, by_)))
   ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysDeletedSeriesStayDeleted(storeCreated(v, created, by_)))
   ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysDeletedSeriesIdsAreNonempty(storeCreated(v, created, by_)))
-  ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> alwaysSeriesDeletionIsRecurring(storeCreated(v, created, by_)))
   ensures (inv(v) ==> canStoreCreated(v, created, by_) ==> stepOccurrenceIdentityIsFixed(v, storeCreated(v, created, by_)))
 {
   if inv(v) && canStoreCreated(v, created, by_) {
@@ -1259,9 +1285,9 @@ lemma storeCreatedSeries_ensures(v: CalendarView, receipt: SeriesReceipt, provid
   ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysEntriesUseSeries(storeCreatedSeries(v, receipt, providerId, by_)))
   ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysSelectionIsCurrent(storeCreatedSeries(v, receipt, providerId, by_)))
   ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysDeletionHasSelection(storeCreatedSeries(v, receipt, providerId, by_)))
+  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysSeriesDeletionIsRecurring(storeCreatedSeries(v, receipt, providerId, by_)))
   ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysDeletedSeriesStayDeleted(storeCreatedSeries(v, receipt, providerId, by_)))
   ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysDeletedSeriesIdsAreNonempty(storeCreatedSeries(v, receipt, providerId, by_)))
-  ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> alwaysSeriesDeletionIsRecurring(storeCreatedSeries(v, receipt, providerId, by_)))
   ensures (inv(v) ==> canStoreCreatedSeries(v, receipt, providerId, by_) ==> stepOccurrenceIdentityIsFixed(v, storeCreatedSeries(v, receipt, providerId, by_)))
 {
   if inv(v) && canStoreCreatedSeries(v, receipt, providerId, by_) {
@@ -1324,9 +1350,9 @@ lemma showPicker_ensures(v: CalendarView, picker: FormPicker, by_: ViewActor)
   ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysEntriesUseSeries(showPicker(v, picker, by_)))
   ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysSelectionIsCurrent(showPicker(v, picker, by_)))
   ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysDeletionHasSelection(showPicker(v, picker, by_)))
+  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysSeriesDeletionIsRecurring(showPicker(v, picker, by_)))
   ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysDeletedSeriesStayDeleted(showPicker(v, picker, by_)))
   ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysDeletedSeriesIdsAreNonempty(showPicker(v, picker, by_)))
-  ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysSeriesDeletionIsRecurring(showPicker(v, picker, by_)))
   ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> stepOccurrenceIdentityIsFixed(v, showPicker(v, picker, by_)))
 {
   if inv(v) && canShowPicker(v, picker, by_) {
@@ -1345,9 +1371,9 @@ lemma hidePicker_ensures(v: CalendarView, picker: FormPicker, by_: ViewActor)
   ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysEntriesUseSeries(hidePicker(v, picker, by_)))
   ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysSelectionIsCurrent(hidePicker(v, picker, by_)))
   ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysDeletionHasSelection(hidePicker(v, picker, by_)))
+  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysSeriesDeletionIsRecurring(hidePicker(v, picker, by_)))
   ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysDeletedSeriesStayDeleted(hidePicker(v, picker, by_)))
   ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysDeletedSeriesIdsAreNonempty(hidePicker(v, picker, by_)))
-  ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> alwaysSeriesDeletionIsRecurring(hidePicker(v, picker, by_)))
   ensures (inv(v) ==> canHidePicker(v, picker, by_) ==> stepOccurrenceIdentityIsFixed(v, hidePicker(v, picker, by_)))
 {
   if inv(v) && canHidePicker(v, picker, by_) {
