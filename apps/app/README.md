@@ -199,7 +199,8 @@ User QA receives the release-signed APK. R8 shrinks the release build, Capacitor
 plugin methods, and the content check enforces `debuggable=false`. The Grace release key for
 `technology.graceful.grace` is held outside this repository. Supply the established key through
 the four signing variables above. The [production App Links document](https://app.graceforseniors.com/.well-known/assetlinks.json)
-publishes the certificate SHA-256. The SHA-1 for Android Google client registration is
+publishes the certificate SHA-256, which `android/release-signer.json` holds for the AOSP image's
+staging. The SHA-1 for Android Google client registration is
 `7D:9D:BF:44:E3:E5:D6:29:16:D3:DE:95:24:97:4A:A1:F6:10:D4:02`.
 
 Built from Grace `c484352` and Eliza `21fac1f`, each launcher APK passed the content check:
@@ -272,8 +273,9 @@ time limit (the boot 15 minutes, the install 5) and is killed when the command e
 emulator that exits before it boots fails the command with its log. An emulator the command booted
 is stopped when the command fails or is interrupted, and left running when it succeeds, for the next
 `--install`; stop it with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the
-same on an emulator that is already running and never stops it; it refuses any serial that is not an
-emulator's, so a tablet on USB is never touched. With `--release` the signed launcher release APK is
+same on an emulator that is already running and never stops it, and also takes a Cuttlefish
+device's local serial (`0.0.0.0:6520`, `127.0.0.1:6520`); it refuses any other serial, so a tablet on
+USB is never touched. With `--release` the signed launcher release APK is
 installed instead and the walk ends once Grace's process is running as Home; it needs the four
 signing variables, and `--exercise` is refused, since a release build's page has no debugging
 socket. An emulator holding Grace signed by another key (debug after release, or the reverse) has
