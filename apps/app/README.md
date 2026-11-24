@@ -181,7 +181,7 @@ inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
 `.safetensors`, `.pte` or `.task` file, a native library in any directory named for llama, ggml,
 mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omnivoice`, a
 `llama-server` or `llama-omnivoice-server`, or a `tts/`, `asr/`, `model/` or `models/` directory under
-`assets/` outside the web UI's `assets/public/`. It also lists classes in the APK's dex, rejects local inference classes and checks the native Grace account and speech bridge. The
+`assets/` outside the web UI's `assets/public/`. It also lists classes in the APK's dex, rejects local inference classes and checks the native Grace account. The
 `versionCode` is `package.json`'s version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
 
 Every machine and CI sign debug builds with one key, `android/debug.keystore`, so a debug APK built
