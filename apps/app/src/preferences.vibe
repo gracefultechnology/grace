@@ -100,7 +100,7 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
   }
   try fork.scoped Stream.runForEach(requests, effect (requested) => {
     if (requested !== undefined && "reported" in requested) {
-      follow() catch () => undefined
+      follow() catch effect (cause) => try logWarning("Tablet volume report not followed; Grace keeps its own choice", cause)
       return
     }
     const { device, preferences: { session: choice } } = try workspace.get()

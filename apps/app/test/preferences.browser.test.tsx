@@ -141,7 +141,7 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
   await expect.poll(() => audio.step).toBe(3);
 });
 
-it('Follow the tablet\'s volume keys (spec/app/preferences.md, "Story: Adjust Grace without losing my choices")', async () => {
+it('Adjust Grace without losing my choices: follow the tablet\'s volume keys (spec/app/preferences.md, "Story: Adjust Grace without losing my choices")', async () => {
   const value = JSON.stringify({ voiceOutput: true, pace: "Normal", textSize: "StandardText", volume: 20, muted: false, brightness: 100, nightDimming: false, wakeEnabled: true });
   const { audio, screen, device, listening, report, holdRead, start, saved } = tablet({ revision: 1, value });
   await mount(start());
