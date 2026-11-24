@@ -1,5 +1,5 @@
 // spec/app/setup.md, "Story: Read the Google mail and calendar I connected"; spec/app/email.md, "Story: Read an email and its original attachment"
-import { type Setup as SetupState, Machine as Setup, isSelectedVersion, isTheSelectedSeries, isAReviewableAppointment, isTheReviewedAppointment, trashableVersion, undoesTheTrashReceipt, changeReceiptMatches, managedReadMatches, managedReadAccountId, mayReadManaged, maySendManagedMail, mayChangeManaged, showsMailLeaseUpgrade } from "../gen/app__setup.effect.vibe"
+import { type Setup as SetupState, Machine as Setup, isSelectedVersion, isTheSelectedSeries, isAReviewableAppointment, isTheReviewedAppointment, trashableVersion, undoesTheTrashReceipt, changeReceiptMatches, managedReadMatches, managedMailLinkCurrent, managedReadAccountId, mayReadManaged, maySendManagedMail, mayChangeManaged, showsMailLeaseUpgrade } from "../gen/app__setup.effect.vibe"
 import { guidedDetails, Machine as Workspaces, type GuidedStep, type ReleasedEmailLink } from "../gen/app__workspace.effect.vibe"
 import { initial as initialCalendarView, type Navigation, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { dayOf, midnight, navigation } from "./calendarWindow.vibe"
@@ -636,9 +636,13 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     }
     if (!messageLinkParts(selected.bodyText).some((part) => typeof part !== "string" && part.href === link)) return false
     const scope = try activeScope()
-    if (scope.kind !== "ready" || scope.view !== "Email" || scope.accountId !== shown.accountId || scope.grant !== shown.grant) return false
-    const google = (try setup.get()).googleLink
-    if (scope.leaseVersion !== undefined || google.tag !== "GoogleLinkConnected" || (try localMailDraft(shown.accountId, google.email, selected.message.externalId)).operationId) return false
+    if (scope.kind !== "ready" || scope.view !== "Email" || !sameReadIdentity(scope, shown)) return false
+    const account = try setup.get()
+    const google = account.googleLink
+    const leaseVersion = scope.leaseVersion ?? ""
+    if (google.tag !== "GoogleLinkConnected" ||
+      !managedMailLinkCurrent(account.graceAccount, google, scope.accountId, scope.grant, leaseVersion) ||
+      (try localMailDraft(shown.accountId, google.email, selected.message.externalId)).operationId) return false
     const before = try desk.get()
     const release = held ?? { link, deviceVersion: before.device.contextVersion, browserRevision: before.browser.revision }
     const messageId = selected.message.externalId
@@ -647,16 +651,15 @@ effect function managedWrites({ setup, authorization, latest, activeScope, still
     if (!managedReadMatches(scope.accountId, fresh.accountId, messageId, fresh.message.externalId) ||
       !actionableMailBody(fresh) || fresh.historyId !== selected.historyId || fresh.bodyText !== selected.bodyText ||
       fresh.message.from !== selected.message.from || fresh.message.fromEmail !== selected.message.fromEmail ||
-      fresh.message.subject !== selected.message.subject || fresh.message.labels?.includes("SPAM") !== warned ||
-      !(try currentManagedMailGrant(scope.accountId, scope.grant)) || !(try still(scope)) || (try SubscriptionRef.get(latest)) !== reading) return false
+      fresh.message.subject !== selected.message.subject || (fresh.message.labels?.includes("SPAM") === true) !== warned ||
+      !(try currentManagedMailGrant(scope, authorization)) || !(try still(scope)) || (try SubscriptionRef.get(latest)) !== reading) return false
     if (warned && choice === "open") {
       return try SubscriptionRef.modifySome(latest, (current) => current === shown ? [true, Option.some({ ...shown, linkReview: release })] : [false, Option.none()])
     }
     try desk.send({ type: "openReleasedEmailLink", release }, "Host", () => {
-      const account = Effect.runSync(setup.get())
-      return Effect.runSync(SubscriptionRef.get(latest)) === reading && account.graceAccount.tag === "GraceSignedIn" &&
-        account.graceAccount.accountId === scope.accountId && account.googleLink.tag === "GoogleLinkConnected" &&
-        account.googleLink.grant === scope.grant && mayReadManaged(account.graceAccount, account.googleLink, "ManagedEmail")
+      const current = Effect.runSync(setup.get())
+      return Effect.runSync(SubscriptionRef.get(latest)) === reading &&
+        managedMailLinkCurrent(current.graceAccount, current.googleLink, scope.accountId, scope.grant, leaseVersion)
     })
     return true
   }

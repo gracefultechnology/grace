@@ -3,7 +3,7 @@ import { TestClock } from "effect/testing";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterAll, beforeAll, expect, onTestFinished } from "vitest";
-import { page } from "vitest/browser";
+import { page, userEvent } from "vitest/browser";
 import { type Accounts, allowedUse, chooseProvider, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as Setup, signedInTablet } from "../gen/app__setup.effect.vibe";
 import { application } from "../src/app.vibe";
@@ -64,6 +64,16 @@ export async function mountAccounts(accounts: Accounts, cloud: CloudLink, clockA
   ));
   await mount(runtime);
   return runtime;
+}
+
+export const homeCalendarLauncher = () => page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: /^Calendar(?:\s|$)/ });
+
+export async function tapHomeCalendar() {
+  const titles = () => homeCalendarLauncher().getByText("Calendar", { exact: true }).elements().filter((item) => !item.closest("[inert]"));
+  await expect.poll(() => titles().length).toBe(1);
+  const [title] = titles();
+  if (!title) throw new Error("The Calendar launcher is no longer visible");
+  await act(() => userEvent.click(title));
 }
 
 export function actOnScreen() {

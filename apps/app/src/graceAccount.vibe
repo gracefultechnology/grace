@@ -205,8 +205,12 @@ effect function googleLink(response: Response, accountId: string): GoogleLink!un
   }
 }
 
-export effect function currentManagedMailGrant(account: string, grant: string) {
-  const link = try googleLink(try accepted(webTransport, "/api/v1/eliza/google/status", "GET"), account)
+export effect function currentManagedMailGrant(scope: { accountId: string; grant: string; leaseVersion?: string }, authorization: AccountActions.Shape) {
+  const { accountId, grant, leaseVersion } = scope
+  const response = leaseVersion === undefined
+    ? (try accepted(webTransport, "/api/v1/eliza/google/status", "GET"))
+    : (try timeout(authorization.readTabletGoogle({ accountId, leaseVersion }, "status", {}), "10 seconds"))
+  const link = try googleLink(response, accountId)
   return link.tag === "GoogleLinkConnected" && link.mail && link.grant === grant
 }
 

@@ -33,12 +33,14 @@ public class GraceDevicePlugin extends Plugin {
  private static final int MEDIA = AudioManager.STREAM_MUSIC;
  private static final String VOLUME_CHANGED = "android.media.VOLUME_CHANGED_ACTION";
  private static final String MUTE_CHANGED = "android.media.STREAM_MUTE_CHANGED_ACTION";
+ private static final String STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE";
  private AudioManager audio;
  private final BroadcastReceiver reports = new BroadcastReceiver() {
   @Override public void onReceive(Context context, Intent intent) {
    String action = intent.getAction();
-   if (VOLUME_CHANGED.equals(action) || MUTE_CHANGED.equals(action)) notifyListeners("volume", volume());
-   else notifyListeners("screen", new JSObject().put("on", Intent.ACTION_SCREEN_ON.equals(action)));
+   if (VOLUME_CHANGED.equals(action) || MUTE_CHANGED.equals(action)) {
+    if (intent.getIntExtra(STREAM_TYPE, MEDIA) == MEDIA) notifyListeners("volume", volume());
+   } else notifyListeners("screen", new JSObject().put("on", Intent.ACTION_SCREEN_ON.equals(action)));
   }
  };
 

@@ -14,7 +14,7 @@ import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { day, dayOf, hour, longDate, midnight, timeLabel } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, modelTurns, outage, script, signIn } from "./cloud.vibe";
-import { actOnScreen, mountGmail } from "./screen.tsx";
+import { actOnScreen, homeCalendarLauncher, mountGmail, tapHomeCalendar } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -84,7 +84,7 @@ async function start({ down = false, clockAt }: { down?: boolean; clockAt?: numb
       await proposal({ type: "agree", given: consent(tapped, asked.spent + 1, proposalOf(asked)), now: tapped }, "Person");
     },
     toEyeWeek: async () => {
-      await act(() => userEvent.click(card.getByRole("button", { name: /^Calendar(?:$| )/ })));
+      await tapHomeCalendar();
       await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
       for (let i = (mondayOf(eyeDay) - mondayOf(dayOf(Date.now()))) / 7; i > 0; i--) await click("Next week");
       await act(() => userEvent.click(page.getByRole("button", { name: tile(eyeDay) })));
@@ -103,16 +103,17 @@ async function start({ down = false, clockAt }: { down?: boolean; clockAt?: numb
 it('Browse (spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives")', async () => {
   // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"
   const { secret, eye, eyeDay, card, run, reachable, agree, say, toEyeWeek, switchCalendar } = await start({ down: true });
+  const eyePreview = card.getByRole("button", { name: /Eye check with Dr\. Patel/ });
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
 
   // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
-  await expect.element(card.getByRole("button", { name: "Calendar Nothing else today" })).toBeVisible();
-  await expect.element(card.getByText("Eye check with Dr. Patel")).not.toBeInTheDocument();
+  await expect.element(homeCalendarLauncher()).toHaveAccessibleName("Calendar Nothing else today");
+  await expect.element(eyePreview).not.toBeInTheDocument();
   await reachable(true);
-  await act(() => userEvent.click(card.getByRole("button", { name: /^Calendar(?:$| )/ })));
+  await tapHomeCalendar();
   await click("Close Calendar");
-  await expect.element(card.getByText("Eye check with Dr. Patel")).toBeVisible();
-  await act(() => userEvent.click(card.getByText("Eye check with Dr. Patel")));
+  await expect.element(eyePreview).toBeVisible();
+  await act(() => userEvent.click(eyePreview));
   await expect.element(page.getByText("Riverside Clinic")).toBeVisible();
   await click("Back to Calendar");
   await click("Close Calendar");
@@ -150,7 +151,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   // spec/app/calendars.md, "A switched-off account’s appointments and reminders show nowhere, to her or to Grace"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"
   await click("Close Calendar");
   await switchCalendar(false);
-  await expect.element(card.getByText("Eye check with Dr. Patel")).not.toBeInTheDocument();
+  await expect.element(eyePreview).not.toBeInTheDocument();
   await toEyeWeek();
   await expect.element(page.getByText("Connect your email to keep your calendar up to date")).toBeVisible();
   await expect.element(row("Eye check with Dr\\. Patel")).not.toBeInTheDocument();
@@ -162,9 +163,9 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await click("Not now");
   await expect.element(page.getByText("Connect your email to keep your calendar up to date")).not.toBeInTheDocument();
   await click("Close Calendar");
-  await expect.element(card.getByText("Eye check with Dr. Patel")).not.toBeInTheDocument();
+  await expect.element(eyePreview).not.toBeInTheDocument();
   await switchCalendar(true);
-  await expect.element(card.getByText("Eye check with Dr. Patel")).toBeVisible();
+  await expect.element(eyePreview).toBeVisible();
 
   // spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendarView.md, "Coming up lists saved events after the selected day"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"
   await toEyeWeek();
@@ -539,7 +540,7 @@ it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: De
 it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event")', async () => {
   // spec/app/notices.md, "Story: See what needs me on Home"
   const now = Date.now();
-  const { card, run } = await start({ clockAt: now });
+  const { run } = await start({ clockAt: now });
   const network = { online: true };
   Object.defineProperty(navigator, "onLine", { configurable: true, get: () => network.online });
   onTestFinished(() => { Reflect.deleteProperty(navigator, "onLine"); });
@@ -563,7 +564,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   };
   const reminded = (title: string, time: string) => page.getByText(new RegExp(`^Reminder: ${title} today at ${time}`));
   const expireToast = (offer: Offer) => run(TestClock.adjust(lifetimeMs(offer)));
-  await act(() => userEvent.click(card.getByRole("button", { name: /^Calendar(?:$| )/ })));
+  await tapHomeCalendar();
   await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await addToday("Pill pickup", "7 am");
   await expireToast("NoOffer");
@@ -575,7 +576,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await click("Home");
   await expireToast("SeeDetails");
   await expect.element(reminded("Pill pickup", "7 am"), { timeout: 15000 }).not.toBeInTheDocument();
-  await expect.element(card.getByText("Today", { exact: true })).toBeVisible();
+  await expect.element(homeCalendarLauncher()).toHaveAccessibleName("Calendar Today");
   await click("Dismiss");
   await click("Settings");
   await expireToast("NoOffer");
@@ -599,7 +600,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await expect.element(page.getByRole("button", { name: "See details" })).not.toBeInTheDocument();
   // spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"
   await run(TestClock.adjust("11 minutes"));
-  await act(() => userEvent.click(card.getByRole("button", { name: /^Calendar(?:$| )/ })));
+  await tapHomeCalendar();
   await click("Close Calendar");
   await click("See details");
   await expect.element(page.getByText(/8 am to 9 am/)).toBeVisible();
