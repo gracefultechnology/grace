@@ -1,4 +1,4 @@
-// spec/app/handoffs.md, "One provider bill resolves to exactly one payment record across all entry points"
+// spec/app/handoffs.md, "One task subject resolves to exactly one commitment record across all entry points"
 lemma LookupBindings(xs: seq<Binding>, key: app__task_Subject, acc: Binding)
   requires acc == noBinding || (acc.key == key && acc.recordRef != "")
   requires forall row :: row in xs ==> row.recordRef != ""
@@ -66,7 +66,7 @@ lemma resolve_ensures(r: Registry, expectedVersion: int, recordRef: string, by_:
   }
 }
 
-// spec/app/handoffs.md, "A resolved bill is presented only in the still-current source context"
+// spec/app/handoffs.md, "A resolved task is presented only in the still-current source context"
 lemma lawCurrentResolutionCanNavigate_ensures(r: Registry, expectedVersion: int, recordRef: string, by_: RegistryActor)
   ensures (lawCurrentResolutionCanNavigate(r, expectedVersion, recordRef, by_) == true)
 {
@@ -78,6 +78,25 @@ lemma lawCurrentResolutionCanNavigate_ensures(r: Registry, expectedVersion: int,
       assert after.bindings == r.bindings + [added];
     }
     assert bindingFor(after, r.pending.source.key).recordRef == recordRef;
+  }
+}
+
+// spec/app/handoffs.md, "Every entry point of one subject reaches the one commitment kept for it, and no other subject shares its record"
+lemma lawOneRecordPerSubject_ensures(r: Registry, first: TaskSource, second: TaskSource, commitments: seq<app__commitment_Commitment>)
+  ensures (lawOneRecordPerSubject(r, first, second, commitments) == true)
+{
+  if alwaysMappingsAreValid(r) && alwaysOneBillPerRecord(r) && first.key != second.key && accessibleRecord(r, first.key) != "" {
+    LookupBindings(r.bindings, first.key, noBinding);
+    LookupBindings(r.bindings, second.key, noBinding);
+    var a := bindingFor(r, first.key);
+    var b := bindingFor(r, second.key);
+    if accessibleRecord(r, second.key) == accessibleRecord(r, first.key) {
+      assert a in r.bindings && b in r.bindings && a.recordRef == b.recordRef;
+      RegistryFilterView(r);
+      ProofLib.FilterMember((other: Binding) => (other.recordRef == a.recordRef), r.bindings, a);
+      ProofLib.FilterMember((other: Binding) => (other.recordRef == a.recordRef), r.bindings, b);
+      assert a == b;
+    }
   }
 }
 
