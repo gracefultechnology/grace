@@ -187,7 +187,16 @@ export service CalendarNews {
 
 const noteFor = "2600 millis"
 
-export const say = (n: number, options: Intl.DateTimeFormatOptions) => new Date(midnight(n)).toLocaleDateString("en-US", options)
+const dateFormats = new Map<string, Intl.DateTimeFormat>()
+export const say = (n: number, options: Intl.DateTimeFormatOptions) => {
+  const key = JSON.stringify(options)
+  let formatter = dateFormats.get(key)
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat("en-US", options)
+    dateFormats.set(key, formatter)
+  }
+  return formatter.format(midnight(n))
+}
 export const longDate = (n: number) => say(n, { weekday: "long", month: "long", day: "numeric" })
 
 export function timeLabel(at: number) {
@@ -253,14 +262,27 @@ export function adding(v: CalendarView, n: number, id: string): CalendarEvent {
   }
 }
 
-effect function remind(box: CalendarMachine.Shape) {
+effect function remind(box: CalendarMachine.Shape, current?: CalendarView) {
+  const view = current ?? (try box.get())
+  if (!view.entries.some((c) => c.reminder === "ReminderWaiting" && c.phase !== "Deleted")) return
   const now = try Clock.currentTimeMillis
-  for (const c of (try box.get()).entries) {
+  for (const c of view.entries) {
     if (c.reminder !== "ReminderWaiting" || c.phase === "Deleted" || c.remindAt > now) continue
     const id = c.identity.occurrenceId
     box.send({ type: "changeOccurrence", id, command: { tag: "AdvanceClock", now } }, "ViewClock") catch () => undefined
     box.send({ type: "changeOccurrence", id, command: { tag: "ShowDueReminder" } }, "ViewClock") catch () => undefined
   }
+}
+
+function sameSeriesMeta(a: CalendarView, b: CalendarView) {
+  return a.series.length === b.series.length &&
+    a.cancelledIds.length === b.cancelledIds.length &&
+    a.deletedSeries.length === b.deletedSeries.length &&
+    a.series.every((s, i) => s.version === b.series[i].version && s.details.seriesId === b.series[i].details.seriesId &&
+      s.details.recurrence === b.series[i].details.recurrence && s.details.startAt === b.series[i].details.startAt &&
+      s.details.endAt === b.series[i].details.endAt) &&
+    a.cancelledIds.every((id, i) => id === b.cancelledIds[i]) &&
+    a.deletedSeries.every((id, i) => id === b.deletedSeries[i])
 }
 
 function matchesGuidedApproval(key: number, c: Calendar, approval: GuidedCalendarApproval): boolean {
@@ -330,24 +352,36 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     const answered = Effect.as(box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore"), true) catch () => false
     if (answered && result.succeeded) try deleted(entryAt(v, v.selectedId).committed.title)
   }
+  let lastSpan: Reach | undefined
   try Stream.runForEach(box.changes, effect (v) => {
     const before = try Ref.getAndSet(last, v)
     if (before !== undefined) {
       const news = told(key, before, v)
       if (news.news !== "NoCalendarNews") try publish({ told: news })
     }
+    let mutated = false
     for (const c of v.entries) {
       if (c.phase !== "Editing" || c.approvedRevision !== c.revision || !(try first(`${c.identity.occurrenceId}@${c.revision}`))) continue
       try Effect.uninterruptible(stored(c))
+      mutated = true
     }
-    if (v.deletion === "DeletionPending" && (try first(`delete@${v.generation}`))) try Effect.uninterruptible(erased(v))
-    try repeat(box, try span)
-    try remind(box)
+    if (v.deletion === "DeletionPending" && (try first(`delete@${v.generation}`))) {
+      try Effect.uninterruptible(erased(v))
+      mutated = true
+    }
+    const nextSpan = try span
+    const spanChanged = lastSpan === undefined || lastSpan.fromTime !== nextSpan.fromTime || lastSpan.untilTime !== nextSpan.untilTime
+    if (before === undefined || mutated || spanChanged || !sameSeriesMeta(before, v)) {
+      lastSpan = nextSpan
+      try repeat(box, nextSpan, mutated ? undefined : v)
+    }
+    try remind(box, mutated ? undefined : v)
   })
 }
 
-effect function repeat(box: CalendarMachine.Shape, span: Reach) {
-  for (const p of repetitions(try box.get(), span)) box.send({ type: "publishOccurrence", ...p }, "ViewStore") catch () => undefined
+effect function repeat(box: CalendarMachine.Shape, span: Reach, current?: CalendarView) {
+  const view = current ?? (try box.get())
+  for (const p of repetitions(view, span)) box.send({ type: "publishOccurrence", ...p }, "ViewStore") catch () => undefined
 }
 
 effect function spanOf(lead: CalendarMachine.Shape) {
@@ -437,6 +471,29 @@ effect function alignSavedDay({ workspace, lead, box, shown, sources, ring, by }
   }
 }
 
+function sameRecoveryContext(
+  a: { taskId: string; saveRecovery: Workspace["plan"]["saveRecovery"] },
+  b: { taskId: string; saveRecovery: Workspace["plan"]["saveRecovery"] }
+) {
+  if (a.taskId !== b.taskId || a.saveRecovery.tag !== b.saveRecovery.tag) return false
+  if (a.saveRecovery.tag !== "GuidedSaveReconcile" || b.saveRecovery.tag !== "GuidedSaveReconcile") return true
+  return a.saveRecovery.owner === b.saveRecovery.owner && a.saveRecovery.calendar === b.saveRecovery.calendar &&
+    a.saveRecovery.occurrence === b.saveRecovery.occurrence && a.saveRecovery.mailDigest === b.saveRecovery.mailDigest
+}
+
+effect function coalesced(run: void!!) {
+  const lock = try Semaphore.make(1)
+  let running = false
+  let dirty = false
+  return Effect.ignore(effect {
+    if (running) { dirty = true; return }
+    running = true
+    try ensuring(lock.withPermits(1)(effect {
+      do { dirty = false; try run } while (dirty)
+    }), sync(() => { running = false }))
+  })
+}
+
 export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect {
   const digest = try Digest.Digest
   const connector = try Effect.serviceOption(Connector)
@@ -485,7 +542,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
     if (visible && !arrived) lead.send({ type: "navigate", report: navigation((try lead.get()).window, "Today", dayOf(try Clock.currentTimeMillis)) }, "ViewUser") catch () => undefined
   })
 
-  try fork.scoped Stream.runForEach(Stream.tick("30 seconds"), effect () => {
+  try fork.scoped Stream.runForEach(Stream.filter(Stream.tick("30 seconds"), () => !webView.hidden()), effect () => {
     for (const key of shownKeys(try registry.get())) {
       const box = try boxOf(key)
       if (box !== undefined) try remind(box)
@@ -495,8 +552,10 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   const listeners = new Set<() => void>()
   const board: { note: CalendarNote | undefined; next: number } = { note: undefined, next: 1 }
   let recoveredDrafts: { task: string; occurrences: readonly string[] } | undefined
-  const recoveryContext = Stream.changes(Stream.map(workspace.changes, (state) =>
-    JSON.stringify([state.assistant.taskId, state.plan.saveRecovery])))
+  const recoveryContext = Stream.changesWith(
+    Stream.map(workspace.changes, (state) => ({ taskId: state.assistant.taskId, saveRecovery: state.plan.saveRecovery })),
+    sameRecoveryContext
+  )
   try fork.scoped Stream.runForEach(Stream.merge(Stream.as(recoveryContext, undefined), Stream.as(registry.changes, undefined)), effect () => {
     const state = try workspace.get()
     const task = state.assistant.taskId
@@ -547,8 +606,7 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
   try fork.scoped Stream.runDrain(Stream.switchMap(rows, (row) => Stream.fromEffect(ring(row))))
 
   const known = new Map<string, Reminded>()
-  const reminding = try Semaphore.make(1)
-  const noticeReminders = Effect.ignore(reminding.withPermits(1)(effect {
+  const noticeReminders = try coalesced(effect {
     const a = try registry.get()
     const sources = try sourcesOf(a)
     const due = surfaceOwner(try setup.get(), webView.window.location.hash) === "Ours" ? shownReminders(a, sources).sort((x, y) => x.details.startAt - y.details.startAt) : []
@@ -569,18 +627,17 @@ export const calendars = (linked: boolean) => Layer.effect(CalendarNews, effect 
       const admitted = Effect.as(notices.send({ type: "remind", subject }, "App"), true) catch () => false
       if (!admitted) known.delete(subject)
     }
-  }))
+  })
 
   const earlier = try Ref.make(try proposals.get())
-  const asking = try Semaphore.make(1)
-  const turnToAsk = Effect.ignore(asking.withPermits(1)(effect {
+  const turnToAsk = try coalesced(effect {
     const p = try proposals.get()
     const a = try registry.get()
     const sources = try sourcesOf(a)
     const shown = askedDay(a, sources, try Ref.get(earlier), p)
     try turnTo(workspace, lead, shown, "ViewUser")
     if (shown.show || p.ask.tag !== "AddAsk" || !(try lead.get()).opened || calendarFree(sources)) try Ref.set(earlier, p)
-  }))
+  })
   try fork.scoped followAccounts(Stream.map(registry.changes, ({ accounts }) => accounts), effect (account) => try fork.scoped Stream.runForEach((try shelf.calendar(account.id)).changes, () => Effect.andThen(noticeReminders, turnToAsk)))
   try fork.scoped Stream.runForEach(Stream.merge(Stream.merge(registry.changes, lead.changes), setup.changes), () => noticeReminders)
   try fork.scoped Stream.runForEach(lead.changes, () => turnToAsk)

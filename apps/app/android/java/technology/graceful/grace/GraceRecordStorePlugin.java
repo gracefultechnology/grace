@@ -17,12 +17,15 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 @CapacitorPlugin(name = "GraceRecords")
 public class GraceRecordStorePlugin extends Plugin {
  static final Set<String> RECORDS = new HashSet<>(Arrays.asList("commitments", "preferences", "setup", "memory", "calendar"));
+ private static final ExecutorService IO = Executors.newSingleThreadExecutor();
 
  static final class Stale extends Exception {}
 
@@ -66,24 +69,28 @@ public class GraceRecordStorePlugin extends Plugin {
  }
 
  @PluginMethod public void read(PluginCall call) {
-  try {
-   Stored stored = load(record(call));
-   call.resolve(new JSObject().put("revision", stored.revision()).put("value", stored.value()));
-  } catch (IOException | JSONException | RuntimeException failed) {
-   call.reject("The record could not be read", "unreadable", failed);
-  }
+  IO.execute(() -> {
+   try {
+    Stored stored = load(record(call));
+    call.resolve(new JSObject().put("revision", stored.revision()).put("value", stored.value()));
+   } catch (IOException | JSONException | RuntimeException failed) {
+    call.reject("The record could not be read", "unreadable", failed);
+   }
+  });
  }
 
  @PluginMethod public void write(PluginCall call) {
   long revision = call.getLong("revision", call.getInt("revision", -1).longValue());
   String value = call.getString("value");
   if (revision < 0 || value == null) { call.reject("A write needs the revision it read and a value", "invalid"); return; }
-  try {
-   call.resolve(new JSObject().put("revision", commit(record(call), revision, value)));
-  } catch (Stale stale) {
-   call.reject("The record changed since it was read", "stale");
-  } catch (IOException | JSONException | RuntimeException failed) {
-   call.reject("The record could not be saved", "unsaved", failed);
-  }
+  IO.execute(() -> {
+   try {
+    call.resolve(new JSObject().put("revision", commit(record(call), revision, value)));
+   } catch (Stale stale) {
+    call.reject("The record changed since it was read", "stale");
+   } catch (IOException | JSONException | RuntimeException failed) {
+    call.reject("The record could not be saved", "unsaved", failed);
+   }
+  });
  }
 }

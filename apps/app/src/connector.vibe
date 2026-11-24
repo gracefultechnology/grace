@@ -184,8 +184,16 @@ function manifest(account: AccountRef, ref: string, m: Message, all: readonly At
 const addresses = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
 const iso = (at: number) => new Date(at).toISOString()
 
+const wallClockFormats = new Map<string, Intl.DateTimeFormat>()
+const dateInFormats = new Map<string, Intl.DateTimeFormat>()
+
 function wallClock(at: number, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" }).formatToParts(at)
+  let formatter = wallClockFormats.get(timeZone)
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" })
+    wallClockFormats.set(timeZone, formatter)
+  }
+  const parts = formatter.formatToParts(at)
   const part = (type: string) => Number(parts.find((p) => p.type === type)?.value)
   return Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"))
 }
@@ -196,7 +204,14 @@ function midnight(date: string, timeZone: string) {
   return guess - (wallClock(first, timeZone) - first)
 }
 
-const dateIn = (at: number, timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at)
+function dateIn(at: number, timeZone: string) {
+  let formatter = dateInFormats.get(timeZone)
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" })
+    dateInFormats.set(timeZone, formatter)
+  }
+  return formatter.format(at)
+}
 
 function exactly(zones: ReadonlySet<string>, text: string, allDay: boolean, timeZone: string) {
   const at = /(?:[zZ]|[+-]\d\d:?\d\d)$/.test(text) ? Date.parse(text) : Number.NaN
@@ -273,10 +288,11 @@ const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(k
 
 function published(zones: ReadonlySet<string>, view: CalendarView, events: readonly ProviderEvent[], defaults: readonly Reminder[], bindings: ReadonlyMap<string, Calendar>, waiting: ReadonlySet<Calendar>): Published[] {
   const own = view.entries.filter((c) => c.identity.owner === view.owner && c.identity.calendarId === view.calendarId)
-  const listed = (c: Calendar) => events.some((e) => e.externalId === c.identity.occurrenceId)
+  const ownById = new Map(own.map((c) => [c.identity.occurrenceId, c]))
+  const eventIds = new Set(events.map((e) => e.externalId))
   const kept = new Set(waiting)
   const changed = events.flatMap((e) => {
-    const known = own.find((c) => c.identity.occurrenceId === e.externalId)
+    const known = ownById.get(e.externalId)
     const timezone = e.timezone ?? view.timezone
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
     const created = known === undefined ? bindings.get(e.externalId) : undefined
@@ -286,7 +302,7 @@ function published(zones: ReadonlySet<string>, view: CalendarView, events: reado
     if (incoming === undefined && created !== undefined) kept.add(created)
     return incoming === undefined ? [] : [{ incoming, seriesVersion: seriesVersionOf(view, entry.seriesId), scheduleVerified: verified }]
   })
-  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !listed(c) && !kept.has(c))
+  const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !eventIds.has(c.identity.occurrenceId) && !kept.has(c))
   return [...changed, ...gone.map((c) => ({ incoming: deleted(c), seriesVersion: seriesVersionOf(view, c.committed.seriesId), scheduleVerified: true }))]
 }
 
@@ -322,7 +338,7 @@ function sendOutcome(r: Receipt): SendOutcome {
   }
 }
 
-effect function connectorTransport(link: CloudLink) {
+effect function connectorTransport(link: CloudLink, onNeedsSignIn: () => void) {
   const http = try HttpClient.HttpClient
 
   effect function reconnects(sent: HttpClientRequest.HttpClientRequest, response: HttpClientResponse.HttpClientResponse) {
@@ -335,7 +351,10 @@ effect function connectorTransport(link: CloudLink) {
     const sent = try request
     const response = Effect.provideService(http.execute(HttpClientRequest.bearerToken(sent, link.key)), HttpClient.TracerPropagationEnabled, false)
       catch effect () => { throw new Unreachable() }
-    if (response.status === 401 || (response.status === 409 && (try reconnects(sent, response)))) throw new NeedsSignIn()
+    if (response.status === 401 || (response.status === 409 && (try reconnects(sent, response)))) {
+      onNeedsSignIn()
+      throw new NeedsSignIn()
+    }
     if (response.status >= 500) throw new Unreachable()
     if (response.status >= 400) throw new ProviderRefused({ status: response.status })
     return response
@@ -554,7 +573,9 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
 
 export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unreachable) => Layer.effect(Connector, effect {
   const creates = try calendarCreates(link.url, locks)
-  const transport = try connectorTransport(link)
+  const grantCache = new Map<string, string>()
+  const clearGrants = () => { grantCache.clear() }
+  const transport = try connectorTransport(link, clearGrants)
   const { call, fetched, get, post } = transport
   const page = try SignInPage
   const shown = try SubscriptionRef.make<ShownPage | undefined>(undefined)
@@ -569,15 +590,26 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
     return at?.protocol === "https:" || at?.origin === URL.parse(link.url)?.origin
   }
   const zones = new Set([...try orDie(Effect.try(() => Intl.supportedValuesOf("timeZone"))), "UTC"])
+  const grantKey = (account: AccountRef) => `${account.provider}:${account.address.toLowerCase()}`
 
-  effect function grantOf(account: AccountRef) {
+  effect function grantOf(account: AccountRef, fresh = false) {
+    const key = grantKey(account)
+    if (!fresh) {
+      const cached = grantCache.get(key)
+      if (cached !== undefined) return cached
+    }
     const address = account.address.toLowerCase()
     const found = (try fetched(get(routes[account.provider].accounts, { side: "owner" }), Grants)).find((g) => g.connected && g.identity?.email?.toLowerCase() === address)
-    if (found === undefined || found.connectionId === null) throw new NeedsSignIn()
+    if (found === undefined || found.connectionId === null) {
+      grantCache.delete(key)
+      throw new NeedsSignIn()
+    }
+    grantCache.set(key, found.connectionId)
     return found.connectionId
   }
 
   effect function visit({ provider, attempt, renewing }: SignInRequest) {
+    clearGrants()
     const session = try fetched(post(`/api/v1/eliza/connections/${routes[provider].slug}/sessions`, { loginHint: renewing }), Session)
     const where = session.embeddable === true && framable(session.pageUrl) ? inSheet : handedOff
     const waited = ensuring(effect {
@@ -585,13 +617,16 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       return try fetched(get(`/api/v1/eliza/connections/sessions/${session.sessionId}`, {}), SessionOutcome)
     }, where.close(session.pageUrl))
     const answer = try onInterrupt(waited, () => Effect.ignore(call(Effect.succeed(HttpClientRequest.make("DELETE")(`${link.url}/api/v1/eliza/connections/sessions/${session.sessionId}`)))))
+    clearGrants()
     const address = answer.address ?? ""
     const result = answer.status === "allowed" && address === "" ? "Refused" : ended[answer.status]
     return { attempt, outcome: result, address: result === "Allowed" ? address : "", granted: result === "Allowed" ? answer.granted ?? nothing : nothing } satisfies SheetReport
   }
 
   effect function check(attempt: number, body: object) {
+    clearGrants()
     const c = fetched(post("/api/v1/eliza/connections/other", body), OtherCheck) catch effect () => { throw new Unreachable() }
+    clearGrants()
     return { attempt, outcome: checked[c.outcome], address: c.address } satisfies OtherReport
   }
 
@@ -625,7 +660,7 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
         when ProviderRefused: undefined;
         default: throw e;
       }
-      return ids !== undefined && (try grantOf(account)) === grantId ? ids.size : undefined
+      return ids !== undefined && (try grantOf(account, true)) === grantId ? ids.size : undefined
     }
 
     effect function contacts(query: string) {
@@ -714,7 +749,7 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
         const { draftId } = found.value
         const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId, content: "1" }, grantId), DraftRead)
         const opened = d.attachmentCount === 0 ? undefined : try read(messageId, grantId)
-        if ((try grantOf(account)) !== grantId) throw new ProviderRefused({ status: 409 })
+        if ((try grantOf(account, true)) !== grantId) throw new ProviderRefused({ status: 409 })
         const files = opened === undefined ? [] : manifest(account, messageId, opened.message, opened.attachments)
         const content = { to: d.to.join(", "), cc: [...d.cc], bcc: [...d.bcc], subject: d.subject, body: d.bodyText }
         const verified = id === draftId && messageId === ref && d.plainText && !d.threaded && files !== undefined && files.length === d.attachmentCount

@@ -102,7 +102,7 @@ export const vocabulary = `Each action is one object in "actions": ${kinds.anyOf
 const mailTarget = (account: number, ref: string) => `mail:${account}:${ref}`
 const eventTarget = (key: number, id: string) => `event:${key}:${id}`
 const unlinked = (text: string) => text.replace(/\b(?:https?:\/\/|www\.)\S+|(?<![@\w.-])(?:[a-z0-9-]+\.)+(?:[a-z]{2,}\/\S*|(?:com|net|org|info|biz|io|co|us|uk|ca|au)\b)/gi, "[a link]")
-const cleaned = (text: string) => unlinked(withhold({ text, passwords: [] }))
+const cleaned = (text: string) => unlinked(text)
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim()
 const said = (text: string) => text.trim() === "" ? "(empty)" : `“${oneLine(text)}”`
 const quoted = (text: string) => `“${oneLine(text)}”`
@@ -121,11 +121,15 @@ export function sendable(c: Conversation) {
   return messages.at(-1)?.content === c.messages.at(-1)?.text ? messages : undefined
 }
 
-const when = (at: number) =>
-  new Date(at).toLocaleString("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })
+const whenFormat = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })
+const todayFormat = new Intl.DateTimeFormat("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })
+const isoDayFormat = new Intl.DateTimeFormat("en-CA")
+const utcDayFormat = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" })
+
+const when = (at: number) => whenFormat.format(at)
 
 const today = (at: number) =>
-  `${new Date(at).toLocaleString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric", hour: "numeric", minute: "2-digit" })}; as an action date today is ${new Date(at).toLocaleDateString("en-CA")}`
+  `${todayFormat.format(at)}; as an action date today is ${isoDayFormat.format(at)}`
 
 function calendarName(registry: Registry, key: number) {
   return key === tablet ? "On this tablet" : registry.accounts.find((a) => a.id === key)?.name ?? "a calendar no longer on the tablet"
@@ -275,7 +279,7 @@ function calendarScreen(s: Scene): Part {
   const rows = dayRows(registry, calendars, pending).filter((r) => !r.draft)
   return {
     lines: [
-      `Calendar is open, ${w.mode === "WeekView" ? "week" : "month"} view, ${new Date(w.selectedDay * 24 * 60 * 60 * 1000).toLocaleDateString("en-US", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" })} selected.`,
+      `Calendar is open, ${w.mode === "WeekView" ? "week" : "month"} view, ${utcDayFormat.format(w.selectedDay * 24 * 60 * 60 * 1000)} selected.`,
       ...selected === undefined ? [] : [`It is showing ${appointment(registry, open, selected.phase === "Editing" ? selected.draft : selected.committed)}${selected.phase === "Editing" ? ", in its form" : ""}.`],
       `Appointments you can point at or name: ${rows.length === 0 ? "none" : rows.map((r) => `${eventTarget(r.key, r.identity.occurrenceId)} = ${appointment(registry, r.key, r.details)}`).join("; ")}.`
     ],
