@@ -1059,6 +1059,7 @@ it('Take a photo for an email on the tablet (spec/app/files.md, "A photo taken o
   await expect.element(subject()).toHaveValue("More of the garden");
   await click(page.getByRole("button", { name: "Remove Garden.jpg" }));
   await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await expect.element(page.getByText("Saved to Drafts")).toBeVisible();
   await expect.element(row("Drafts 1")).toBeVisible();
   await expect.poll(async () => (await provider()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "More of the garden").map((m) => [m.labels, m.attachments]))).toEqual([[["DRAFT"], []]]);
 }, 300_000);
