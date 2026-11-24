@@ -564,7 +564,7 @@ device is ready and on Home opens Calendar with that occurrence selected,
 through Calendar's own `openCalendar` and `openOccurrence`, and the device shows
 Calendar. A row for another owner or calendar, from an older generation, for an
 occurrence that is gone, unsaved or at another revision, or one tapped while
-Calendar has a form open or a deletion pending opens nothing and leaves the
+Calendar has a form open or a deletion under way opens nothing and leaves the
 device and Calendar as they were. Opening an event keeps every event and series;
 like Calendar's own open, it only marks a change made elsewhere as seen.
 
