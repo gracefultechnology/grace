@@ -574,7 +574,7 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
     const debuggable = execFileSync(aapt, ["dump", "badging", file], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).includes("application-debuggable");
     if (name.includes("-release") && debuggable) throw new Error(`${name} is debuggable, so any computer on USB could read and drive Grace's page`);
     if (cloudProfile === "shared-staging" && !debuggable) throw new Error(`${name} ships staging in a production build`);
-    process.stdout.write(`${name} ${abi} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, cloud speech and the pinned local wake keyword detector; its ${actions} actions declared by name are each allowed or refused\n`);
+    process.stdout.write(`${name} ${abi} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, the native Grace account and the pinned local wake keyword detector; its ${actions} actions declared by name are each allowed or refused\n`);
     return { name, cloudProfile, abi: abis[0], bytes: contents.byteLength, debuggable, sha256: createHash("sha256").update(contents).digest("hex"),
       signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };
   });
