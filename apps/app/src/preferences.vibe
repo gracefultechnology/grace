@@ -1,8 +1,9 @@
 // spec/app/workspace.md, "Preference changes invalidate wake timers and use the same durable settings"; spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence"; spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it"; spec/app/preferences.md, "Story: Adjust Grace without losing my choices"
-import { initial, machine, Machine as Workspaces, canSavePreferences } from "../gen/app__workspace.effect.vibe"
+import { initial, machine, Machine as Workspaces, canSavePreferences, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { type DisplayPreferences, effectiveBrightness, muteChoice, restart, validSettings, volumeChoice } from "../gen/app__preferences.effect.vibe"
 import type { PreferenceDevice, PreferenceRecords } from "./preferencesPlugin.ts"
 import { NoticeHost } from "./notices.vibe"
+import { webView } from "./surfacePlugin.ts"
 
 const Revision = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const StoredOptions = Schema.Struct({ revision: Revision, value: Schema.optional(Schema.NullOr(Schema.String)) })
@@ -35,15 +36,19 @@ export effect function retryPreferences() {
   workspace.send({ type: "savePreferences" }, "Host") catch () => undefined
 }
 
+const samePreferences = (a: Workspace["preferences"], b: Workspace["preferences"]) =>
+  a.saving === b.saving && a.requestedRevision === b.requestedRevision &&
+  sameSettings(a.session, b.session) && sameSettings(a.snapshot, b.snapshot) && sameSettings(a.durable, b.durable)
+
 export const persistPreferences = (port: PreferenceRecords | undefined) => Layer.effectDiscard(effect {
   if (!port) return
   const workspace = try Workspaces
-  const choices = Stream.changes(Stream.map(workspace.changes, ({ preferences }) => preferences))
-  const requests = Stream.merge(Stream.map(choices, () => false), Stream.map(Stream.tick("1 minute"), () => true))
+  const choices = Stream.changesWith(Stream.map(workspace.changes, ({ preferences }) => preferences), samePreferences)
+  const requests = Stream.merge(Stream.map(choices, () => false), Stream.map(Stream.filter(Stream.tick("1 minute"), () => !webView.hidden()), () => true))
   try fork.scoped Stream.runForEach(requests, effect (retrying) => {
     const current = try workspace.get()
     const { saving, session, snapshot } = current.preferences
-    if (saving !== "Saving" && (retrying || saving !== "SaveFailed" || session !== snapshot) && canSavePreferences(current, "Host")) try retryPreferences()
+    if (saving !== "Saving" && (retrying || saving !== "SaveFailed" || !sameSettings(session, snapshot)) && canSavePreferences(current, "Host")) try retryPreferences()
     const { preferences } = try workspace.get()
     if (preferences.saving !== "Saving") return
     const succeeded = effect {
@@ -80,7 +85,7 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
     Effect.option(tryPromise(() => port.addListener?.("volume", () => { Queue.offerUnsafe(queue, { reported: true }) }) ?? Promise.reject())),
     (listener) => Option.isSome(listener) ? Effect.ignore(tryPromise(() => listener.value.remove())) : Effect.void,
   ))
-  const requests = Stream.merge(Stream.merge(chosen, Stream.map(Stream.tick("1 minute"), () => undefined)), reports)
+  const requests = Stream.merge(Stream.merge(chosen, Stream.map(Stream.filter(Stream.tick("1 minute"), () => !webView.hidden()), () => undefined)), reports)
   let confirmed: DeviceChoice | undefined
   const follow = effect () => {
     const { device, preferences } = try workspace.get()
@@ -115,13 +120,18 @@ export const applyDeviceChoices = (port: PreferenceDevice | undefined) => Layer.
       const { min, max } = before.volume
       if (min < 0 || max <= min || before.volume.step < min || before.volume.step > max) return undefined
       const step = stepFor(target.volume, before.volume)
-      try all([
-        watchBrightness && before.brightness.percent !== target.brightness
-          ? timeout(tryPromise(() => port.setBrightness({ percent: target.brightness })), "2 seconds") : Effect.void,
-        watchVolume && (before.volume.step !== step || before.volume.muted !== target.muted)
-          ? timeout(tryPromise(() => port.setVolume({ step, muted: target.muted })), "2 seconds") : Effect.void,
+      const writeBrightness = watchBrightness && before.brightness.percent !== target.brightness
+      const writeVolume = watchVolume && (before.volume.step !== step || before.volume.muted !== target.muted)
+      const [brightnessReply, volumeReply] = try all([
+        writeBrightness
+          ? timeout(tryPromise(() => port.setBrightness({ percent: target.brightness })), "2 seconds") : Effect.succeed(undefined),
+        writeVolume
+          ? timeout(tryPromise(() => port.setVolume({ step, muted: target.muted })), "2 seconds") : Effect.succeed(undefined),
       ], { concurrency: "unbounded" })
-      const reported = try deviceSettings(port)
+      const decodedBrightness = writeBrightness ? Option.getOrUndefined(Schema.decodeUnknownOption(DeviceBrightness)(brightnessReply)) : before.brightness
+      const decodedVolume = writeVolume ? Option.getOrUndefined(Schema.decodeUnknownOption(DeviceVolume)(volumeReply)) : before.volume
+      const needsRead = (writeBrightness && decodedBrightness?.percent === undefined) || (writeVolume && decodedVolume === undefined)
+      const reported = needsRead ? try deviceSettings(port) : { brightness: decodedBrightness ?? before.brightness, volume: decodedVolume ?? before.volume }
       const matches = (!watchBrightness || reported.brightness.percent === target.brightness) &&
         (!watchVolume || (reported.volume.muted === target.muted && (target.muted || reported.volume.step === step)))
       return matches ? target : undefined

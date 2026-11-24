@@ -74,11 +74,17 @@ const host = (wifi: WiFiPlugin | undefined, reminderPort?: ReminderPlugin) => La
 
   const connection = Stream.changes(Stream.concat(Stream.fromEffect(connected(wifi)), Stream.drop(Stream.map(workspace.changes, (w) => w.device.connectivity === "Online"), 1)))
   try fork.scoped Stream.runForEach(connection, (online) => Effect.orDie(notices.send({ type: "observeConnection", online }, "Host")))
+  const workspaceView = Stream.changesWith(
+    Stream.map(workspace.changes, ({ device, assistant }) => ({ surface: device.surface, readiness: device.readiness, expanded: assistant.presentation === "Expanded" })),
+    (a, b) => a.surface === b.surface && a.readiness === b.readiness && a.expanded === b.expanded
+  )
+  const requestBlocked = Stream.changes(Stream.map(requests.changes, (r) => presented(r).id !== 0))
+  const proposalBlocked = Stream.changes(Stream.map(proposals.changes, (q) => asking(q) && q.agreed === 0))
   const scene = Stream.mergeAll([
-    workspace.changes,
-    requests.changes,
-    proposals.changes,
-    Stream.fromEventListener(webView.document, "visibilitychange")
+    Stream.as(workspaceView, undefined),
+    Stream.as(requestBlocked, undefined),
+    Stream.as(proposalBlocked, undefined),
+    Stream.as(Stream.fromEventListener(webView.document, "visibilitychange"), undefined)
   ], { concurrency: "unbounded" })
   try fork.scoped Stream.runForEach(scene, () => serial(follow()))
   const showing = Stream.changesWith(Stream.map(notices.changes, (n) => n.shown.at(0)), (a, b) => a?.id === b?.id)

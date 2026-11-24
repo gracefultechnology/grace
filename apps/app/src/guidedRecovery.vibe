@@ -179,6 +179,21 @@ export service GuidedRecovery {
   beforeOpen(): void!!
 }
 
+function sameRecoveryState(a: Workspace, b: Workspace) {
+  if (a.device.readiness !== b.device.readiness || a.assistant.activity !== b.assistant.activity ||
+      a.assistant.presentation !== b.assistant.presentation ||
+      privateSurfaceActive(a) !== privateSurfaceActive(b) ||
+      a.assistant.taskId !== b.assistant.taskId || a.plan.steps.length !== b.plan.steps.length) return false
+  if (a.assistant.taskId === "" && a.plan.steps.length === 0) return true
+  return a.assistant.workVersion === b.assistant.workVersion && a.plan.owner === b.plan.owner &&
+    a.plan.receipts.length === b.plan.receipts.length && a.plan.linkStep === b.plan.linkStep &&
+    a.plan.linkUrl === b.plan.linkUrl && a.plan.savedOccurrence === b.plan.savedOccurrence &&
+    a.plan.saveRecovery.tag === b.plan.saveRecovery.tag &&
+    a.plan.nameOverride.stepIndex === b.plan.nameOverride.stepIndex &&
+    a.plan.calendarApproval.proposal === b.plan.calendarApproval.proposal &&
+    JSON.stringify(guidedCheckpoint(a)) === JSON.stringify(guidedCheckpoint(b))
+}
+
 export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefined) => Layer.effect(GuidedRecovery, effect {
   const workspace = try Workspaces
   const setup = try Setup
@@ -311,10 +326,7 @@ export const guidedRecovery = (native: boolean, port: GuidedTaskRecords | undefi
     if (binding === undefined && connected !== undefined) try restore(connected, scopes)
   }
 
-  const taskChanges = Stream.changes(Stream.map(workspace.changes, (state) => JSON.stringify([
-    state.device.readiness, state.assistant.activity, state.assistant.presentation,
-    privateSurfaceActive(state), guidedCheckpoint(state)
-  ])))
+  const taskChanges = Stream.changesWith(workspace.changes, sameRecoveryState)
   const changes = Stream.mergeAll([
     Stream.as(taskChanges, false), Stream.as(setup.changes, true),
     Stream.as(accounts.changes, false), Stream.as(sessionChanges(native), true)

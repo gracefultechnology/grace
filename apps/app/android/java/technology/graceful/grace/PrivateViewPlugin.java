@@ -31,6 +31,18 @@ public final class PrivateViewPlugin extends Plugin {
   });
  }
 
+ @PluginMethod public void setHostSurface(PluginCall call) {
+  Boolean transparent = call.getBoolean("transparent");
+  if (transparent == null) {
+   call.reject("Invalid host surface");
+   return;
+  }
+  getActivity().runOnUiThread(() -> {
+   if (getActivity() instanceof MainActivity host) host.setHostTransparent(transparent);
+   call.resolve();
+  });
+ }
+
  @PluginMethod public void openVerificationApp(PluginCall call) {
   String app = call.getString("app", "");
   String category = switch (app) {
