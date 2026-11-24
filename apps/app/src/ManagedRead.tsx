@@ -7,7 +7,7 @@ import { type GraceAccount, type Setup, managedReadAccountId, mayChangeManaged, 
 import { actionableMailBody, inboxTrashVersion, keepMailDraft, localMailDraft, ManagedReads, type EventRow, type LocalMailDraft, type MailReply, type ManagedFolder, type ManagedSnapshot, type ManagedWrite, type AppointmentChange, type ReadView } from "./managedReads.vibe";
 import { messageLinkParts } from "./messageLinks.vibe";
 import { calendarGrid } from "./Calendar.tsx";
-import { dayOf, instant, midnight, shownDays } from "./calendarWindow.vibe";
+import { createDayStarts, dayOf, instant, shownDays } from "./calendarWindow.vibe";
 import type { Navigation } from "../gen/app__calendarView.ts";
 import { webOrigin } from "./graceAccount.vibe";
 import { useManagedReadsSnapshot, useRuntime, useSetupSelector } from "./useApp.ts";
@@ -15,7 +15,7 @@ import { useManagedReadsSnapshot, useRuntime, useSetupSelector } from "./useApp.
 const calendarDay = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 const clock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 const reviewedClock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit", timeZoneName: "short" });
-const isAndroid = typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+const isAndroid = () => typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
 
 function day(value: string) {
   return calendarDay.format(new Date(value.length === 10 ? `${value}T12:00:00` : value));
@@ -251,15 +251,7 @@ function Agenda({ calendar, today, move, open, busy, children }: {
     const days = shownDays(calendar.window.mode, calendar.window.anchorDay);
     const minDay = Math.min(days[0] ?? selected, selected);
     const maxDay = Math.max(days.at(-1) ?? selected, selected);
-    const dayStarts = new Map<number, number>();
-    const startOfDay = (d: number) => {
-      let ms = dayStarts.get(d);
-      if (ms === undefined) {
-        ms = midnight(d);
-        dayStarts.set(d, ms);
-      }
-      return ms;
-    };
+    const startOfDay = createDayStarts();
     const byDay = new Map<number, EventRow[]>();
     for (const item of parsed) {
       const first = Math.max(minDay, dayOf(item.startMs) - 1);
@@ -486,7 +478,7 @@ export function ManagedRead({ view, today }: { view: ReadView; today: number }) 
               openDisabled={pending || !part.supported || !selected.historyId}
               openLabel="Open original" onOpen={() => run({ kind: "openAttachment", partId: part.partId })} />
           ))}
-          {photos.length > 1 && selected.historyId && !isAndroid && (snapshot.photosSaved
+          {photos.length > 1 && selected.historyId && !isAndroid() && (snapshot.photosSaved
             ? <PageText role="status">{snapshot.photosSaved} photos saved to Files</PageText>
             : <Button variant="capsule" size="pill" disabled={pending || photos.some((part) => !part.supported || part.size > 5 * 1024 * 1024)}
                 onClick={() => run({ kind: "savePhotos" })}>Save all photos to Files</Button>)}
@@ -506,10 +498,10 @@ export function ManagedRead({ view, today }: { view: ReadView; today: number }) 
               <Button asChild variant="prominent" size="pill">
                 <a href={snapshot.attachment.url} download={snapshot.attachment.name}>Download original</a>
               </Button>
-              {snapshot.attachment.file && !isAndroid && (snapshot.attachment.file.saved
+              {snapshot.attachment.file && !isAndroid() && (snapshot.attachment.file.saved
                 ? <PageText role="status">Saved to Files</PageText>
                 : <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "saveAttachment" })}>Save to Files</Button>)}
-              {snapshot.attachment.deviceTransfer && isAndroid &&
+              {snapshot.attachment.deviceTransfer && isAndroid() &&
                 <Button variant="capsule" size="pill" asChild>
                   <a href={`${webOrigin}/android/files/import#${snapshot.attachment.deviceTransfer}`} referrerPolicy="no-referrer">Save to Grace Files</a>
                 </Button>}

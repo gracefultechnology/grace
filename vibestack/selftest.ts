@@ -4011,6 +4011,17 @@ pure def left(a: int, b: int): int = a % b`);
     leaks.forEach((quint, i) => assert.equal(leaked[i].said("model", /\bleak \(spec\/cards\.md:\d+\): (what it returns depends on a secret|a secret reaches an element)/)?.ok, false, `${quint}\n${leaked[i].text}`));
   });
 
+  const prepareReactPackage = async (root: string) => {
+    const modules = path.join(root, "node_modules");
+    fs.mkdirSync(modules);
+    for (const dir of [path.join(project, "vibestack/studio/node_modules"), nodeModules])
+      for (const entry of fs.readdirSync(dir)) if (!fs.existsSync(path.join(modules, entry))) fs.symlinkSync(path.join(dir, entry), path.join(modules, entry));
+    const files = await genAll(root);
+    const compiled = await tool("vibelang", ["--noEmit", "-p", "."], root);
+    assert.ok(compiled.ok, compiled.out);
+    return files;
+  };
+
   test("a machine is kept in a store from one run to the next and steps from what another machine stored since, and a package that depends on react gets a hook over its machine, in an owner's gen/ as in its own", async () => {
     const manifest = (name: string) => JSON.stringify({ name, type: "module", dependencies: { react: "19" } });
     const root = scratch({
@@ -4070,14 +4081,8 @@ export function useShown(counter: ManagedRuntime.ManagedRuntime<Machine, never>,
 `,
     });
     // Studio depends on react, so its packages, with the tools' own beside them, are the ones a package with a React interface resolves.
-    const modules = path.join(root, "node_modules");
-    fs.mkdirSync(modules);
-    for (const dir of [path.join(project, "vibestack/studio/node_modules"), nodeModules])
-      for (const entry of fs.readdirSync(dir)) if (!fs.existsSync(path.join(modules, entry))) fs.symlinkSync(path.join(dir, entry), path.join(modules, entry));
     // A library has no machine, and so no hook.
-    assert.deepEqual((await genAll(root)).filter((f) => f.endsWith(".react.ts")), ["index.react.ts", "vault.react.ts"]);
-    const compiled = await tool("vibelang", ["--noEmit", "-p", "."], root);
-    assert.ok(compiled.ok, compiled.out);
+    assert.deepEqual((await prepareReactPackage(root)).filter((f) => f.endsWith(".react.ts")), ["index.react.ts", "vault.react.ts"]);
     // Nothing stored starts from `initial`, and a stored state goes on from where it was; what the rules refuse, or what is no state, leaves the store as it is; a machine steps from what another over the same store stored since, and its guard is judged by it.
     const kept = await exec(process.execPath, ["--import", "vibelang/register", "--input-type=module", "-e", `import assert from "node:assert/strict"; import { Effect } from "effect"; import { counted, twoPages } from "./src/kept.vibe";
 assert.deepEqual(await Promise.all([undefined, "1", "2", "7", "{"].map((before) => Effect.runPromise(counted(before)))), [[1, "1"], [2, "2"], ["Rejected", "2"], ["NotAState", "7"], ["NotAState", "{"]]);
@@ -4150,13 +4155,7 @@ export function useTyped(runtime: ManagedRuntime.ManagedRuntime<Machine, never>)
 }
 `,
     });
-    const modules = path.join(root, "node_modules");
-    fs.mkdirSync(modules);
-    for (const dir of [path.join(project, "vibestack/studio/node_modules"), nodeModules])
-      for (const entry of fs.readdirSync(dir)) if (!fs.existsSync(path.join(modules, entry))) fs.symlinkSync(path.join(dir, entry), path.join(modules, entry));
-    await genAll(root);
-    const compiled = await tool("vibelang", ["--noEmit", "-p", "."], root);
-    assert.ok(compiled.ok, compiled.out);
+    await prepareReactPackage(root);
     const verified = await exec(process.execPath, ["--import", "vibelang/register", "--input-type=module", "-e", `import assert from "node:assert/strict";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import * as KeyValueStore from "effect/persistence/KeyValueStore";

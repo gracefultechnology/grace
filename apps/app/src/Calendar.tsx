@@ -9,6 +9,7 @@ import { type Event as CalendarEvent, type FormPicker, keepsRepetition, type Vie
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { adding, CalendarNews, dayOf, editingPlan, hour, instant, midnight, minutesOf, navigation, shownDays, timeLabel } from "./calendar.vibe";
+import { createDayStarts } from "./calendarWindow.vibe";
 import type { HomeCards } from "./managedReads.vibe";
 import { type CalendarInstance, useAccounts, useCalendarActions, useCalendarKeys, useCalendarNote, useDraft, useProposal, useRecoveredCalendarDrafts, useRuntime, useWorkspace, WithCalendars } from "./useApp.ts";
 
@@ -126,15 +127,7 @@ const emptyBrowsing: Pick<CalendarAppProps, "view" | "nav" | "week" | "month" | 
 function bucketRows(rows: readonly CalRow[], minDay: number, maxDay: number): Map<number, CalRow[]> {
   const sorted = [...rows].sort(byStart);
   const buckets = new Map<number, CalRow[]>();
-  const dayStarts = new Map<number, number>();
-  const startOfDay = (d: number) => {
-    let ms = dayStarts.get(d);
-    if (ms === undefined) {
-      ms = midnight(d);
-      dayStarts.set(d, ms);
-    }
-    return ms;
-  };
+  const startOfDay = createDayStarts();
   for (const row of sorted) {
     const first = Math.max(minDay, dayOf(row.details.startAt) - 1);
     const last = Math.min(maxDay, dayOf(Math.max(row.details.startAt, row.details.endAt - 1)) + 1);

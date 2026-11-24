@@ -113,32 +113,36 @@ function useStoreSelector<S, T>(
   return useSyncExternalStore(store.subscribe, snapshot, snapshot);
 }
 
-function createValueStreamStore<S>(
+function createStreamStore<S, E>(
   cache: WeakMap<Runtime, SubscriptionStore<S>>,
   runtime: Runtime,
-  initial: S,
-  stream: Stream.Stream<S, never, RuntimeEnv>,
+  stream: Stream.Stream<E, never, RuntimeEnv>,
+  get: (active: boolean) => S,
+  onStart: () => void,
+  onEmit: (event: E, emit: () => void) => void,
 ): SubscriptionStore<S> {
   const known = cache.get(runtime);
   if (known) return known;
-  let seen = initial;
   const listeners = new Set<() => void>();
   let active: object | undefined;
   let stop: (() => void) | undefined;
+  const emit = () => {
+    for (const listener of listeners) listener();
+  };
   const store: SubscriptionStore<S> = {
-    get: () => seen,
+    get: () => get(active !== undefined),
     subscribe: (notify) => {
       listeners.add(notify);
       if (!active) {
         const token = {};
         active = token;
+        onStart();
         const fiber = runtime.runFork(
           Stream.runForEach(
             stream,
-            (next) => Effect.sync(() => {
-              if (active !== token || Object.is(seen, next)) return;
-              seen = next;
-              for (const listener of listeners) listener();
+            (event) => Effect.sync(() => {
+              if (active !== token) return;
+              onEmit(event, emit);
             }),
           ),
         );
@@ -158,64 +162,58 @@ function createValueStreamStore<S>(
   return store;
 }
 
+function createValueStreamStore<S>(
+  cache: WeakMap<Runtime, SubscriptionStore<S>>,
+  runtime: Runtime,
+  initial: S,
+  stream: Stream.Stream<S, never, RuntimeEnv>,
+): SubscriptionStore<S> {
+  let seen = initial;
+  return createStreamStore(
+    cache,
+    runtime,
+    stream,
+    () => seen,
+    () => undefined,
+    (next, emit) => {
+      if (Object.is(seen, next)) return;
+      seen = next;
+      emit();
+    },
+  );
+}
+
 function createReadStreamStore<S>(
   cache: WeakMap<Runtime, SubscriptionStore<S>>,
   runtime: Runtime,
   read: () => S,
   changes: Stream.Stream<unknown, never, RuntimeEnv>,
 ): SubscriptionStore<S> {
-  const known = cache.get(runtime);
-  if (known) return known;
   let initialized = false;
   let seen: S;
-  const listeners = new Set<() => void>();
-  let active: object | undefined;
-  let stop: (() => void) | undefined;
-  const refresh = () => {
-    const next = read();
-    if (initialized && Object.is(seen, next)) return;
-    initialized = true;
-    seen = next;
-    for (const listener of listeners) listener();
-  };
-  const store: SubscriptionStore<S> = {
-    get: () => {
-      if (!initialized || !active) {
+  return createStreamStore(
+    cache,
+    runtime,
+    changes,
+    (isActive) => {
+      if (!initialized || !isActive) {
         seen = read();
         initialized = true;
       }
       return seen;
     },
-    subscribe: (notify) => {
-      listeners.add(notify);
-      if (!active) {
-        const token = {};
-        active = token;
-        seen = read();
-        initialized = true;
-        const fiber = runtime.runFork(
-          Stream.runForEach(
-            changes,
-            () => Effect.sync(() => {
-              if (active !== token) return;
-              refresh();
-            }),
-          ),
-        );
-        stop = () => { fiber.interruptUnsafe(); };
-      }
-      return () => {
-        listeners.delete(notify);
-        if (listeners.size === 0) {
-          active = undefined;
-          stop?.();
-          stop = undefined;
-        }
-      };
+    () => {
+      seen = read();
+      initialized = true;
     },
-  };
-  cache.set(runtime, store);
-  return store;
+    (_, emit) => {
+      const next = read();
+      if (initialized && Object.is(seen, next)) return;
+      initialized = true;
+      seen = next;
+      emit();
+    },
+  );
 }
 
 const workspaceChanges = Stream.unwrap(Effect.map(Effect.service(Workspaces), (m) => m.changes));
@@ -792,11 +790,6 @@ export function WithMailboxes({ ids, children }: { ids: readonly number[]; child
 
 export function WithCalendars({ keys, children }: { keys: readonly number[]; children: (views: readonly CalendarInstance[]) => ReactNode }) {
   return createElement(Nested<CalendarInstance>, { ids: keys, use: useCalendar, children });
-}
-
-export function usePageLayer() {
-  const store = pageLayerStoreFor(useRuntime());
-  return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
 export function useDraft(value: string, typing: boolean): [string, (text: string) => void] {

@@ -188,7 +188,7 @@ export service CalendarNews {
 const noteFor = "2600 millis"
 
 const dateFormats = new Map<string, Intl.DateTimeFormat>()
-export const say = (n: number, options: Intl.DateTimeFormatOptions) => {
+const say = (n: number, options: Intl.DateTimeFormatOptions) => {
   const key = JSON.stringify(options)
   let formatter = dateFormats.get(key)
   if (formatter === undefined) {
