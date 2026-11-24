@@ -15,11 +15,17 @@ export const files: FilesCardProps = {
   document: { name: "Visit form", from: "From Main St Clinic" },
 };
 
+export const filesEmpty: FilesCardProps = { status: "No photos yet", photos: [], hint: "Photos you save from email will appear here." };
+
 export const meta: ComponentMeta<FilesCardProps> = {
   args: { ...files, className: "h-[560px] w-[520px]" },
   examples: {
     Compact: { compact: true, className: "h-[402px] w-[334px]" },
     "Photos only": { ...files, document: undefined },
+    "One photo": { ...files, status: "1 photo", photos: files.photos.slice(0, 1), document: undefined },
+    "Two photos": { ...files, status: "2 photos", photos: files.photos.slice(0, 2) },
+    "Letter only": { ...files, status: "1 letter", photos: [] },
   },
+  states: { Empty: { ...filesEmpty, className: "h-[560px] w-[520px]" } },
   decorator: (story) => <div className="bg-gradient-frame-soft p-12">{story()}</div>,
 };

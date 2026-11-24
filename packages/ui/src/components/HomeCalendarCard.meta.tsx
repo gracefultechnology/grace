@@ -16,6 +16,8 @@ export const calendar: HomeCalendarCardProps = {
 const openCalendar = fn();
 const openEvent = fn();
 
+export const calendarEmpty: HomeCalendarCardProps = { ...calendar, status: "Nothing planned", events: [], hint: "Ask Grace to add an appointment." };
+
 export const meta: ComponentMeta<HomeCalendarCardProps> = {
   args: { ...calendar, className: "h-[560px] w-[480px]" },
   examples: {
@@ -23,7 +25,7 @@ export const meta: ComponentMeta<HomeCalendarCardProps> = {
     Today: { ...calendar, status: "Today", events: [{ id: 4, weekday: "TODAY", time: "4 pm", title: "Call with Dana", next: true }, ...calendar.events.slice(1)] },
     "Events open": { ...calendar, className: "h-[560px] w-[480px]", onClick: openCalendar, events: calendar.events.map((e) => ({ ...e, onClick: openEvent })) },
   },
-  states: { Empty: { ...calendar, className: "h-[560px] w-[480px]", events: [] } },
+  states: { Empty: { ...calendarEmpty, className: "h-[560px] w-[480px]" } },
   decorator: (story) => <div className="bg-gradient-frame-soft p-12">{story()}</div>,
   play: {
     "Events open": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
