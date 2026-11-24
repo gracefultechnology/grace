@@ -663,16 +663,6 @@ export function useReplyControlsSnapshot(): ReplyOffer | undefined {
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
-export function useWakeStatus() {
-  const runtime = useRuntime();
-  const { wakeStatus } = runtime.runSync(SpeechActions);
-  const subscribe = useCallback((changed: () => void) => {
-    const fiber = runtime.runFork(Stream.runForEach(SubscriptionRef.changes(wakeStatus), () => Effect.sync(changed)));
-    return () => fiber.interruptUnsafe();
-  }, [runtime, wakeStatus]);
-  return useSyncExternalStore(subscribe, () => runtime.runSync(SubscriptionRef.get(wakeStatus)));
-}
-
 type NestedProps<T> = { ids: readonly number[]; use: (id: number) => T | undefined; children: (all: readonly T[]) => ReactNode };
 
 function Nested<T>({ ids, use, children }: NestedProps<T>): ReactNode {
