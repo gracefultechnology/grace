@@ -156,22 +156,22 @@ in `artifacts/agent-runtime/<pinned-commit>/<abi>`.
 
 `pnpm android` (Node 26,
 JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and `JAVA_HOME`, or their
-usual install paths) writes `artifacts/{launcher,standalone}-debug.apk` for one processor type,
+usual install paths) writes `artifacts/launcher-debug.apk` for one processor type,
 `--abi arm64-v8a` (the default: the tablet and an Apple silicon emulator) or `--abi x86_64`.
 Choose the cloud deployment at build time with `--cloud-profile`. The default
 is `standalone-production` for Grace Cloud. `shared-production` uses Eliza Cloud
 production. `shared-staging` uses Eliza Cloud staging and builds debug APKs only.
-The choice applies to both flavors and fixes the account registration and callback,
+The choice fixes the account registration and callback,
 the web bundle's cloud origins, and the embedded agent's inference endpoint.
 Shared builds write their APKs, verification manifest and intermediate files under
 `artifacts/cloud-profiles/<profile>/`. Use the same `--cloud-profile` with `--verify`.
 
-`--release` adds each flavor's release APK: `<flavor>-release.apk`, signed, when `GRACE_KEYSTORE`
+`--release` adds the release APK: `launcher-release.apk`, signed, when `GRACE_KEYSTORE`
 (absolute, or relative to the directory you ran the command from: `INIT_CWD` under pnpm, otherwise
 the working directory), `GRACE_KEYSTORE_PASSWORD`,
 `GRACE_KEY_ALIAS` and `GRACE_KEY_PASSWORD` are all set (`signing` in `android/host.json`; Gradle
 refuses a partial set, and the build fails if they are set and a release comes out unsigned),
-otherwise `<flavor>-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
+otherwise `launcher-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
 produced with its processor type, size, SHA-256 and the signer verified by `apksigner` from
 Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. The build
 fails unless an APK carries the agent (`assets/agent/agent.mjs`, `libeliza_node.so` for exactly
@@ -181,7 +181,7 @@ inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
 `.safetensors`, `.pte` or `.task` file, a native library in any directory named for llama, ggml,
 mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omnivoice`, a
 `llama-server` or `llama-omnivoice-server`, or a `tts/`, `asr/`, `model/` or `models/` directory under
-`assets/` outside the web UI's `assets/public/`. It also lists classes in the APK's dex, rejects local inference classes and checks the native Grace account and speech bridge. Both flavors'
+`assets/` outside the web UI's `assets/public/`. It also lists classes in the APK's dex, rejects local inference classes and checks the native Grace account and speech bridge. The
 `versionCode` is `package.json`'s version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
 
 Every machine and CI sign debug builds with one key, `android/debug.keystore`, so a debug APK built
@@ -203,9 +203,9 @@ the four signing variables above. The [production App Links document](https://ap
 publishes the certificate SHA-256. The SHA-1 for Android Google client registration is
 `7D:9D:BF:44:E3:E5:D6:29:16:D3:DE:95:24:97:4A:A1:F6:10:D4:02`.
 
-The ARM64 launcher and standalone APKs built from Grace `ace4d8e` and Eliza `3423598` are each
-135,640,693 bytes. Both passed release certificate, package, agent payload, Node runtime and
-16 KiB alignment checks. Only the launcher registers as Android Home.
+The ARM64 launcher APK built from Grace `ace4d8e` and Eliza `3423598` is
+135,640,693 bytes. It passed release certificate, package, agent payload, Node runtime and
+16 KiB alignment checks.
 [Release source](https://github.com/gracefultechnology/grace-new/pull/90)
 
 ### On the tablet
@@ -335,17 +335,15 @@ and shared Eliza Cloud Gradle hosts in `artifacts/cloud-profiles/<profile>/gradl
 AGP 8.13), then upstream's `buildAndroidConsumer` builds the web UI with Vite, copies it in with
 `cap copy android`, runs Gradle and copies the APKs out. The host's inputs are in `android/`: the
 manifests, `MainActivity.java`, `GraceAgentService.java`, `GraceSpeechPlugin.java`,
-`GraceDevicePlugin.java`, `agent.json` and `res/`. Both flavors may
+`GraceDevicePlugin.java`, `agent.json` and `res/`. Grace may
 ask for location and the camera, for a website, after the person's Allow.
 
-| Flavor | Is | `BuildConfig.IS_LAUNCHER` |
-|---|---|---|
-| `launcher` | the tablet's Home (HOME intent filter); Back never leaves it; Grace's own Wi-Fi settings (upstream `ElizaWiFi`, with Wi-Fi permissions) | `true` |
-| `standalone` | an ordinary app; Wi-Fi is the system's, with no Wi-Fi permission | `false` |
+The one flavor, `launcher`, is the tablet's Home (HOME intent filter): Back never leaves it, and
+it has Grace's own Wi-Fi settings (upstream `ElizaWiFi`, with Wi-Fi permissions).
 
 The website is ElizaSurfaceManager's `below-host` surface, a WebView under the transparent bridge
 WebView. Android Back is dispatched to the web UI as a cancelable `hardware-back` event; unconsumed,
-the launcher dispatches `launcher-home` and the standalone app leaves.
+Grace dispatches `launcher-home`.
 
 ### The agent
 
@@ -432,9 +430,8 @@ taking one photo and keeping a few files; the filesystem module is the agent's F
 Android library. Upstream's notifications module mirrors other apps' and mail notices, which Grace
 does not do. There is no printing: the product has none.
 
-Grace starts with the tablet as Home: on the launcher flavor Android opens her at boot and
-`MainActivity` starts the agent service, so no boot receiver starts anything. The standalone flavor
-starts only when opened.
+Grace starts with the tablet as Home: Android opens her at boot and
+`MainActivity` starts the agent service, so no boot receiver starts anything.
 
 ### Speech and the device
 
@@ -477,7 +474,7 @@ Settings show to a device step is the page's work.
   Android's camera compatibility rotation, which turned the display to portrait when a website opened
   the camera. Grace's own Take a photo needs `CAMERA` granted too, since Android refuses its camera app
   to an app that declares the permission and lacks it. `CHANGE_NETWORK_STATE`, which `ElizaWiFi`'s library manifest asks for, is removed:
-  nothing in Grace requests a network; the standalone flavor removes its Wi-Fi permissions too, and
+  nothing in Grace requests a network, and
   `android.hardware.wifi` is not required (without it Grace's Wi-Fi settings say Wi-Fi is unavailable).
 - The `<queries>` list the apps `openExternalLink` can resolve on API 30+: mail and text compose, the
   dial pad, maps, the store and apps with an https link filter; any other app is refused as
