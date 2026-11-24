@@ -30,7 +30,7 @@ import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, modelTurns, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
 import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
-import { actOnScreen, browserAccountResponse, homeCalendarLauncher, mount, signInToGrace, tabletView } from "./screen.tsx";
+import { actOnScreen, browserAccountResponse, mount, signInToGrace, tapHomeCalendar, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -2144,7 +2144,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     try {
       await Effect.runPromise(seriesRequested.await);
       await tap("Close Calendar");
-      await act(() => userEvent.click(homeCalendarLauncher()));
+      await tapHomeCalendar();
       await expect.element(page.getByRole("button", { name: "Close Calendar", exact: true })).toBeVisible();
       await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
     } finally {
@@ -4329,7 +4329,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Check email"));
     await expect.poll(receipts).toEqual([mailReceipt, mailReceipt]);
     await tap(button("Close Email"));
-    await tap(homeCalendarLauncher());
+    await tapHomeCalendar();
     await tap(button(/Managed calendar appointment/));
     await routeTo(page.getByRole("heading", { name: appointment.title, exact: true }));
 
@@ -4582,7 +4582,7 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
       expect(button("Resume Grace").query()).toBeNull();
       expect(button("Check saved appointment").query()).toBeNull();
       await tap(button("Home"));
-      await tap(homeCalendarLauncher());
+      await tapHomeCalendar();
       const save = page.getByRole("button", { name: "Save", exact: true });
       await routeTo(save);
       await expect.element(save).toBeDisabled();

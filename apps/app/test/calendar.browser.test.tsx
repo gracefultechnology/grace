@@ -14,7 +14,7 @@ import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { day, dayOf, hour, longDate, midnight, timeLabel } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, outage, script, signIn } from "./cloud.vibe";
-import { actOnScreen, homeCalendarLauncher, mountGmail } from "./screen.tsx";
+import { actOnScreen, homeCalendarLauncher, mountGmail, tapHomeCalendar } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -75,7 +75,7 @@ async function start({ down = false, clockAt }: { down?: boolean; clockAt?: numb
       await proposal({ type: "agree", given: consent(tapped, asked.spent + 1, proposalOf(asked)), now: tapped }, "Person");
     },
     toEyeWeek: async () => {
-      await act(() => userEvent.click(homeCalendarLauncher()));
+      await tapHomeCalendar();
       await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
       for (let i = (mondayOf(eyeDay) - mondayOf(dayOf(Date.now()))) / 7; i > 0; i--) await click("Next week");
       await act(() => userEvent.click(page.getByRole("button", { name: tile(eyeDay) })));
@@ -101,7 +101,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await expect.element(homeCalendarLauncher()).toHaveAccessibleName("Calendar Nothing else today");
   await expect.element(eyePreview).not.toBeInTheDocument();
   await reachable(true);
-  await act(() => userEvent.click(homeCalendarLauncher()));
+  await tapHomeCalendar();
   await click("Close Calendar");
   await expect.element(eyePreview).toBeVisible();
   await act(() => userEvent.click(eyePreview));
@@ -513,7 +513,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   };
   const reminded = (title: string, time: string) => page.getByText(new RegExp(`^Reminder: ${title} today at ${time}`));
   const expireToast = (offer: Offer) => run(TestClock.adjust(lifetimeMs(offer)));
-  await act(() => userEvent.click(homeCalendarLauncher()));
+  await tapHomeCalendar();
   await expect.element(page.getByRole("heading", { name: "Today" })).toBeVisible();
   await addToday("Pill pickup", "7 am");
   await expireToast("NoOffer");
@@ -549,7 +549,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await expect.element(page.getByRole("button", { name: "See details" })).not.toBeInTheDocument();
   // spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"
   await run(TestClock.adjust("11 minutes"));
-  await act(() => userEvent.click(homeCalendarLauncher()));
+  await tapHomeCalendar();
   await click("Close Calendar");
   await click("See details");
   await expect.element(page.getByText(/8 am to 9 am/)).toBeVisible();
