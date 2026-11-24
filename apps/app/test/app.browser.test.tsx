@@ -4151,7 +4151,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
         return respond({ error: "route_not_found" }, 404);
     }
   });
-  const browserHome = "https://www.example.org/";
+  const browserHome = "https://example.org/";
   let browserUrl = browserHome;
   let switchOwnerDuringPageRead = false;
   const native = fakePlugin(({ command }) => {
@@ -4363,7 +4363,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     const address = page.getByRole("textbox", { name: "Address" });
     await routeTo(address);
     await act(() => userEvent.type(address, "example.org{Enter}"));
-    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.url; }).toBe("https://example.org/");
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.url; }).toBe(browserHome);
     await native.started("tab-1");
     await native.report("tab-1", browserUrl, 100);
     await expect.poll(() => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs[0]).toMatchObject({ history: ["", browserUrl], load: "Loaded" });

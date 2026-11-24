@@ -6,7 +6,7 @@ import { describe, test } from "node:test";
 import { LIB_FILE } from "../prove.ts";
 import { bin, exec } from "../run.ts";
 import { scanSpec } from "../scan.ts";
-import { filesUnder } from "../util.ts";
+import { configured, filesUnder } from "../util.ts";
 import { exampleCheckKeys } from "./examples.ts";
 import { PACKED, toolShards } from "./tools.ts";
 
@@ -201,8 +201,10 @@ describe("the documents name what exists", () => {
     const studio = (ids: string[]) => ids.filter((id) => /^(vibestack-studio#(?!check)|@repo\/(ui#(build|typecheck)|design-system#build)|\/\/#lint:css)/.test(id));
     const append = (file: string, text = "\nMore words.\n") => () => fs.appendFileSync(path.join(root, file), text);
     assert.ok((await changedBy(append(patch))).includes("//#selftest:tools:rest"));
-    const vibeDeclared = [...["packages", "apps"].flatMap(within), "vibestack/studio"]
-      .filter((dir) => fs.existsSync(path.join(root, dir, "tsconfig.json")) && read(`${dir}/tsconfig.json`, root).includes(".vibe/declarations"))
+    const typedSidecarOwners = [...["packages", "apps"].flatMap(within), "vibestack/studio"]
+      .filter((dir) => fs.existsSync(path.join(root, dir, "tsconfig.json"))
+        && read(`${dir}/tsconfig.json`, root).includes(".vibe/declarations")
+        && configured(path.join(root, dir)).some((file) => /\.(?:[mc]?ts|tsx)$/.test(file)))
       .map((dir) => `${JSON.parse(read(`${dir}/package.json`, root)).name}#typecheck`);
     const [prose, selftest, fixture, frameworkTest] = [
       await changedBy(append("spec/app/index.md")),
@@ -237,7 +239,7 @@ describe("the documents name what exists", () => {
       rootUsesElizaModels: reach("//#gen").has("//#gen:eliza"),
       notWaiting: real.filter((id) => !reach(id).has("//#gen")).sort(),
       analyzeWaitsFor: tasks.get("//#analyze")!.dependencies.toSorted(),
-      lintWaitsFor: vibeDeclared.filter((id) => tasks.get("//#lint:js")!.dependencies.includes(id)),
+      lintWaitsFor: typedSidecarOwners.filter((id) => real.includes(id) && tasks.get("//#lint:js")!.dependencies.includes(id)),
       devWaitsFor: tasks.get("vibestack-studio#dev")!.dependencies.toSorted(),
       prose: [studio(prose), prose.includes("@repo/app#test"), prose.includes("//#analyze")],
       readme: [selftests(readme), readme.includes("//#analyze")],
@@ -258,7 +260,7 @@ describe("the documents name what exists", () => {
       rootUsesElizaModels: true,
       notWaiting: ["//#build", "//#gen:eliza", "//#lint:css", "//#selftest:docs", "//#selftest:examples", "@repo/design-system#build", "@repo/ui#typecheck", "vibestack-studio#build", "vibestack-studio#dev", "vibestack-studio#test", "vibestack-studio#typecheck"],
       analyzeWaitsFor: ["//#gen", "@repo/design-system#build", "@repo/ui#gen", "vibestack-studio#gen"],
-      lintWaitsFor: vibeDeclared, devWaitsFor: tasks.get("vibestack-studio#build")!.dependencies.toSorted(), prose: [[], true, true], readme: [["//#selftest:docs", "//#selftest:tools:rest"], false], selftest: [[], false, true],
+      lintWaitsFor: typedSidecarOwners, devWaitsFor: tasks.get("vibestack-studio#build")!.dependencies.toSorted(), prose: [[], true, true], readme: [["//#selftest:docs", "//#selftest:tools:rest"], false], selftest: [[], false, true],
       fixture: { studio: ["vibestack-studio#test"], build: false, selftest: true },
       frameworkTest: { build: false, test: true },
       independentOwner: true, leftovers: [],
