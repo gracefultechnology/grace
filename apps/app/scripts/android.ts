@@ -184,7 +184,8 @@ function stageWakeRuntime(abi: Abi) {
   return { assets: source(assets), jniLibs: source(jniLibs), gradle: source(gradle) };
 }
 
-const EmulatorSerial = Schema.String.check(Schema.isPattern(/^emulator-\d+$/));
+const virtualDevice = /^(emulator-\d+|(0\.0\.0\.0|127\.0\.0\.1):65\d\d)$/;
+const EmulatorSerial = Schema.String.check(Schema.isPattern(virtualDevice));
 const AgentStatus = Schema.Struct({
   state: Schema.Literals(["unavailable", "stopped", "starting", "running", "failed"]),
   failure: Schema.optional(Schema.Literals(["payload", "storage", "config", "credential", "agent", "crashed", "runtime"])),
@@ -592,7 +593,7 @@ const adb = async (args: string[], seconds = 60) => {
 };
 const shell = (serial: string, command: string, seconds?: number) => adb(["-s", serial, "shell", command], seconds);
 const forever = new Promise<never>(() => {});
-const emulators = async () => (await adb(["devices"])).split("\n").map((line) => line.split("\t")[0]).filter((serial) => /^emulator-\d+$/.test(serial));
+const emulators = async () => (await adb(["devices"])).split("\n").map((line) => line.split("\t")[0]).filter((serial) => virtualDevice.test(serial));
 const avds = () => execFileSync(sdk("emulator/emulator"), ["-list-avds"], { encoding: "utf8", timeout: 60_000 }).split("\n");
 
 type Target = { serial: typeof EmulatorSerial.Type; exited: Promise<never>; stop: () => void };
