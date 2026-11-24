@@ -40,10 +40,11 @@ function fitted(section: HTMLElement): number {
  * Grace's window: the header and the answer row float over her conversation, which scrolls beneath them
  * (prototype `#gwin`, `.chat-white`). Its size changes in one layout. Growing, it is laid out at its new size at once;
  * until what holds it is `data-settled` there (the `settles` group) it shows its header over its answer row, as the
- * compact window did, and then its top edge rises. Shrinking, the edge falls first and the layout follows. Only two
- * transforms move, the window's and the conversation's against it, so the conversation and the answer row stay where
- * they are and every control stays inside the window's laid-out box. It takes taps only on the window itself, so what
- * lies above a falling edge is in reach at once. With reduced motion it changes size in one step.
+ * compact window did, and then its top edge rises. Shrinking, the edge falls first and the layout follows. While it
+ * is still entering, a new size is laid out at once and it enters at that size, so a size it never showed never falls.
+ * Only two transforms move, the window's and the conversation's against it, so the conversation and the answer row stay
+ * where they are and every control stays inside the window's laid-out box. It takes taps only on the window itself, so
+ * what lies above a falling edge is in reach at once. With reduced motion it changes size in one step.
  * @model spec/app/assistant.md
  * @design packages/design-system/design.md#grace
  * @design packages/design-system/design.md#screens
@@ -63,7 +64,8 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
   if (asked !== size) {
     setAsked(size);
     const travel = `calc(100% - ${compactHeight}px)`;
-    if (size === "expanded") {
+    if (motion?.kind === "rise" && motion.travel === ENTER) setLaid(size);
+    else if (size === "expanded") {
       setLaid(size);
       setMotion(still ? undefined : { kind: "rise", travel });
     } else if (still || laid === "compact") {
