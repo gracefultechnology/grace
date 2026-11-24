@@ -398,7 +398,7 @@ function passwordsProps(saved: SavedPasswords, open: { disabled: boolean; onClic
   }
 }
 
-// spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller"; spec/app/shell.md, "Files says No photos yet, and how photos arrive while it holds nothing"; spec/app/shell.md, "Offline, Internet has no status and its Open is greyed"; spec/app/calendars.md, "Home’s calendar card says Last updated only while it can’t update, and otherwise what is planned"; spec/app/mailboxes.md, "The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new"
+// spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller"; spec/app/shell.md, "Files says No photos yet, and how photos arrive while it holds nothing"; spec/app/shell.md, "Offline, Internet has no status and still opens the browser"; spec/app/calendars.md, "Home’s calendar card says Last updated only while it can’t update, and otherwise what is planned"; spec/app/mailboxes.md, "The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new"
 function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; docked: boolean; keyboard: number; covered: boolean }) {
   const runtime = useRuntime();
   const slice = useWorkspaceSelector(selectHomeSlice, sameOptionalSlice);
@@ -476,7 +476,7 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
               },
               ...visitProps.email,
             }}
-            internet={{ ...visitProps.browser, "aria-label": "Internet", status: internetStatus, openLabel: slice.online && slice.publicUrl !== "" ? "Continue" : "Open", offline: !slice.online }}
+            internet={{ ...visitProps.browser, "aria-label": "Internet", status: internetStatus, openLabel: slice.online && slice.publicUrl !== "" ? "Continue" : "Open" }}
             files={{
               photos,
               document: files?.document,

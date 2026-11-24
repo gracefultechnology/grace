@@ -217,11 +217,13 @@ pure def lawPasswordsCardShowsOnlyACount(saved: SavedPasswords): bool =
 pure val savedValues = Set(CountUnknown, SavedCount({ count: 0 }), SavedCount({ count: 3 }))
 ```
 
-### Offline, Internet has no status and its Open is greyed
+### Offline, Internet has no status and still opens the browser
 
 While the tablet is not connected, the Internet card says nothing under its
-name and its Open is greyed; the banner says why. Online, it says which
-website was open, or "Open a website".
+name; the banner says why. Its Open is not greyed: the card opens the
+browser, which shows its offline page with Fix Wi-Fi
+([the browser](./browser.md)). Online, it says which website was open, or
+"Open a website".
 
 ```quint
 pure def internetStatusShown(connectivity: Connectivity): bool = connectivity == Online

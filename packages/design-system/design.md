@@ -85,8 +85,8 @@ A card is empty for a reason, and says which; it never goes blank.
   Wi‑Fi (Fix Wi‑Fi), an account signed out (Sign in), no email added (Add email). A card asks only for what is
   its own: Passwords' Grace offer.
 - **Saved still shows.** Offline or signed out, Calendar and Email keep what they have and their status becomes
-  "Last updated 9:02 AM" ("a few minutes ago", "yesterday at 6 PM"); only then. Internet greys Open and drops its
-  status; the banner says why.
+  "Last updated 9:02 AM" ("a few minutes ago", "yesterday at 6 PM"); only then. Internet drops its status and keeps
+  Open, which opens the browser to its grey offline page ("You're offline", Fix Wi‑Fi), never a blank one.
 - **Words.** A status says what is true in a few words; a note only what the status cannot (what happens next, or
   that nothing is lost); a button says what it does ("Add email", "Sign in to Gmail", "Try now").
 
