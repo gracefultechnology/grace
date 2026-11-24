@@ -238,7 +238,6 @@
         "vibestack-studio#test:browser"
       ],
       "inputs": [
-        "eslint.config.js",
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
         "!vibestack/selftests/{docs,examples}.ts",
@@ -269,7 +268,6 @@
         "vibestack-studio#test:browser"
       ],
       "inputs": [
-        "eslint.config.js",
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
         "!vibestack/selftests/{docs,examples}.ts",
@@ -516,9 +514,7 @@
       "dependsOn": [
         "^build"
       ],
-      "outputs": [
-        ".vibe/declarations/**"
-      ]
+      "outputs": []
     },
     "@repo/design-system#build": {
       "dependsOn": [
