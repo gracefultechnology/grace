@@ -5,9 +5,16 @@ import type { CodeProvider, CodeSignIn } from "./graceAccount.vibe";
 import { useState, useTransition } from "react";
 import { mayOfferBackupApproval } from "../gen/app__setup.ts";
 import {
-  cancelPasswordApproval, confirmPasswordApproval, noBackupSignInProviders, signInForApproval, signInWithBackupCode,
+  backupSignInProviders, cancelPasswordApproval, confirmPasswordApproval, noBackupSignInProviders, pendingPasswordApproval, signInForApproval, signInWithBackupCode,
   type Approval, type ConsentResult, type SignedInAccount,
 } from "./passwordBackupConsent.vibe";
+
+export async function loadPendingPasswordBackupConsent() {
+  const { present, approval, account } = await pendingPasswordApproval();
+  if (!present) return undefined;
+  const providers = approval ? await backupSignInProviders() : undefined;
+  return { approval, account, providers };
+}
 
 const titles = {
   read: "Restore your passwords",

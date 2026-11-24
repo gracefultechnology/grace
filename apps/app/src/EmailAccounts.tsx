@@ -6,22 +6,23 @@ import {
 import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { type Account, type AccountPage, type Accounts, type Event, type Problem, type Provider, providerOf } from "../gen/app__accounts.ts";
-import { useMachine as useSetup } from "../gen/app__setup.react.ts";
-import { showsMailLeaseUpgrade } from "../gen/app__setup.ts";
+import { type Setup, showsMailLeaseUpgrade } from "../gen/app__setup.ts";
 import { accountStatus, unsent } from "../gen/app__mailboxes.ts";
 import { domainOf } from "./accounts.vibe";
 import { secretPassword } from "./connector.vibe";
-import { type MailInstance, useAccounts, useRuntime, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
+import { type MailInstance, useAccountIds, useAccounts, useSetupSelector, useSignIns, useWorkspace, WithMailboxes } from "./useApp.ts";
 
 type Frame = Omit<SettingsAppProps, "children" | "pageTitle" | "backLabel" | "onBack">;
 
 const providers = { Gmail: "gmail", Outlook: "outlook", Yahoo: "yahoo", ICloud: "icloud", Aol: "aol", OtherEmail: "other" } as const satisfies Record<Provider, EmailProvider>;
 const chosen: Record<EmailProvider, Provider> = { gmail: "Gmail", outlook: "Outlook", yahoo: "Yahoo", icloud: "ICloud", aol: "Aol", other: "OtherEmail" };
+const chosenProviders = Object.values(chosen);
 const tiles = new Map((Object.keys(providers) as Provider[]).map((p) => [`prov-${p}`, providers[p]]));
 const colours = [1, 2, 3, 4, 5] as const satisfies readonly AccountColour[];
 const home = "Email & calendar";
 const add = "Add an email";
 const other = "Other email";
+const accountPage = { type: "chooseSettingsPage", page: "AccountSettings" } as const;
 
 const notices: Partial<Record<Problem, string>> = {
   AlreadyOnTablet: "This email is already on the tablet.",
@@ -48,18 +49,25 @@ function otherProblem(registry: Accounts): OtherEmailProblem | undefined {
   return registry.problem === "PasswordRefused" ? { kind: "passwordRefused" } : undefined;
 }
 
+const selectGraceAccount = (setup: Setup | undefined) => setup?.graceAccount;
+
 /** @model spec/app/accounts.md */
 export function EmailAccounts(frame: Frame) {
-  const { accounts } = useAccounts();
+  const { accounts, can, send } = useAccounts();
+  const ids = useAccountIds();
   if (!accounts) return null;
-  return <WithMailboxes ids={accounts.accounts.map((a) => a.id)}>{(boxes) => <Settings registry={accounts} boxes={boxes} frame={frame} />}</WithMailboxes>;
+  return <WithMailboxes ids={ids}>{(boxes) => <Settings registry={accounts} can={can} send={send} boxes={boxes} frame={frame} />}</WithMailboxes>;
 }
 
-function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: readonly MailInstance[]; frame: Frame }) {
-  const { can, send } = useAccounts();
+function Settings({ registry, can, send, boxes, frame }: {
+  registry: Accounts;
+  can: (event: Event) => boolean;
+  send: (event: Event) => Promise<unknown>;
+  boxes: readonly MailInstance[];
+  frame: Frame;
+}) {
   const { guide, askGrace, can: canOnDesk, send: sendOnDesk } = useWorkspace();
-  const account = useSetup(useRuntime()).state?.graceAccount;
-  const accountPage = { type: "chooseSettingsPage", page: "AccountSettings" } as const;
+  const account = useSetupSelector(selectGraceAccount);
   const flows = useSignIns();
   const offer = (event: Event) => can(event) ? () => void send(event) : undefined;
   const sources = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
@@ -70,7 +78,7 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
   const sheet = signIn.stage === "ProviderPage";
   const pointAt = <Target extends string>(idOf: (target: string) => Target | undefined) => sheet ? undefined : guide(idOf);
 
-  const choosing = Object.values(chosen).some((provider) => can({ type: "chooseProvider", provider }));
+  const choosing = (page === "AccountList" || page === "AddAccount") && chosenProviders.some((provider) => can({ type: "chooseProvider", provider }));
   const choose = choosing ? (provider: EmailProvider) => offer({ type: "chooseProvider", provider: chosen[provider] })?.() : undefined;
   const tileGuide = pointAt((target) => tiles.get(target));
   const rowGuide = pointAt((target) => registry.accounts.some((a) => target === `acc-${a.id}`) ? target : undefined);

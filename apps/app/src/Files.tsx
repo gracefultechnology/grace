@@ -1,68 +1,99 @@
 // spec/app/files.md, "Story: Find and open something I saved"; spec/app/files.md, "Story: Save, share and remove the chosen file"; spec/app/files.md, "Delete is the explicit local action and does not delete its source email"; spec/app/files.md, "Sharing a photo opens a draft without sending it"
 import { AppWindow, Button, EmptyState, FilePhotoViewer, FilesApp, type FilesPhotoGroup, Input, PageText, PdfViewer, RetryNotice } from "@repo/ui";
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 import { Folder } from "lucide-react";
-import { type ComponentProps, useCallback, useState, useSyncExternalStore, useTransition } from "react";
+import { type ComponentProps, useMemo, useState, useTransition } from "react";
 import { deviceOrigin, enabled, type Event, fileAt, type Files as Library, highlightedFile, type SavedFile } from "../gen/app__files.ts";
-import { useMachine } from "../gen/app__setup.react.ts";
+import type { Setup } from "../gen/app__setup.ts";
 import { canImport, FileLibrary } from "./fileLibrary.vibe";
 import { filesAccount, type Origin } from "./files.vibe";
-import { useRuntime } from "./useApp.ts";
-
-const changes = Stream.unwrap(Effect.map(FileLibrary, (files) => files.changes));
-const home = Stream.unwrap(Effect.map(FileLibrary, (files) => files.home));
-
-export function useFilesHome() {
-  const runtime = useRuntime();
-  const account = filesAccount(useMachine(runtime).state?.graceAccount);
-  const subscribe = useCallback((changed: () => void) => {
-    const fiber = runtime.runFork(Stream.runForEach(home, () => Effect.sync(changed)));
-    return () => fiber.interruptUnsafe();
-  }, [runtime]);
-  return useSyncExternalStore(subscribe, () => account !== undefined
-    ? runtime.runSync(Effect.flatMap(FileLibrary, (files) => files.getHome())) : undefined);
-}
+import { useFileLibrarySnapshot, useRuntime, useSetupSelector } from "./useApp.ts";
 
 const month = new Intl.DateTimeFormat(undefined, { month: "long" });
 const monthYear = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
 const day = 86_400_000;
 
-function savedWhen(savedAt: number, now: Date) {
+function savedWhen(savedAt: number, todayStart: number, currentYear: number) {
   const saved = new Date(savedAt);
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const name = (saved.getFullYear() === now.getFullYear() ? month : monthYear).format(saved);
-  return { group: savedAt >= today - 6 * day ? "This week" : name, detail: savedAt >= today ? "Saved today" : `Saved in ${name}` };
+  const name = (saved.getFullYear() === currentYear ? month : monthYear).format(saved);
+  return { group: savedAt >= todayStart - 6 * day ? "This week" : name, detail: savedAt >= todayStart ? "Saved today" : `Saved in ${name}` };
 }
 
 const fromLine = ({ from, subject }: Partial<Origin>) => (from ? [`From ${from}`, subject].filter(Boolean).join(" · ") : undefined);
 
-function photoGroups(photos: readonly SavedFile[], thumbs: Readonly<Record<string, string>>, origins: Readonly<Record<string, Partial<Origin>>>, now: Date) {
+function photoGroups(
+  photos: readonly SavedFile[],
+  thumbs: Readonly<Record<string, string>>,
+  origins: Readonly<Record<string, Partial<Origin>>>,
+  todayStart: number,
+  currentYear: number,
+) {
   const grouped = new Map<string, SavedFile[]>();
-  for (const entry of [...photos].sort((a, b) => b.savedAt - a.savedAt)) {
-    const title = savedWhen(entry.savedAt, now).group;
-    grouped.set(title, [...grouped.get(title) ?? [], entry]);
+  const sorted = [...photos].sort((a, b) => b.savedAt - a.savedAt);
+  for (const entry of sorted) {
+    const title = savedWhen(entry.savedAt, todayStart, currentYear).group;
+    const list = grouped.get(title);
+    if (list) list.push(entry);
+    else grouped.set(title, [entry]);
   }
-  return [...grouped].map(([title, entries]): FilesPhotoGroup => {
-    const lines = new Set(entries.map((entry) => fromLine(origins[entry.id] ?? {})));
+  const result: FilesPhotoGroup[] = [];
+  for (const [title, entries] of grouped) {
+    const lines = new Set<string | undefined>();
+    const groupPhotos: FilesPhotoGroup["photos"] = [];
+    for (const entry of entries) {
+      lines.add(fromLine(origins[entry.id] ?? {}));
+      groupPhotos.push({ id: entry.id, src: thumbs[entry.id], label: entry.name });
+    }
     const [from] = lines;
-    return { title, ...(lines.size === 1 && from ? { from } : {}), photos: entries.map((entry) => ({ id: entry.id, src: thumbs[entry.id], label: entry.name })) };
-  });
+    result.push({ title, ...(lines.size === 1 && from ? { from } : {}), photos: groupPhotos });
+  }
+  return result;
 }
 
 const offered = (model: Library, event: Event, act: () => void) => (enabled(model, event, "FileUser") ? act : undefined);
+const selectFilesAccount = (setup: Setup | undefined) => filesAccount(setup?.graceAccount);
+const emptyGroups: FilesPhotoGroup[] = [];
+const emptyDocuments: { id: string; name: string; detail: string }[] = [];
 
 export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert" | "aria-hidden"> & { onClose: () => void }) {
   const runtime = useRuntime();
-  const account = filesAccount(useMachine(runtime).state?.graceAccount);
+  const account = useSetupSelector(selectFilesAccount);
   const [query, setQuery] = useState("");
   const [failed, setFailed] = useState(false);
   const [unshared, setUnshared] = useState<string>();
   const [pending, startTransition] = useTransition();
-  const subscribe = useCallback((changed: () => void) => {
-    const fiber = runtime.runFork(Stream.runForEach(changes, () => Effect.sync(changed)));
-    return () => fiber.interruptUnsafe();
-  }, [runtime]);
-  const snapshot = useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(FileLibrary, (files) => files.get())));
+  const snapshot = useFileLibrarySnapshot();
+
+  const readySnapshot = snapshot.kind === "ready" && snapshot.owner === account ? snapshot : undefined;
+  const activeTab = readySnapshot?.model.tab;
+  const entries = readySnapshot?.model.entries;
+  const listedAt = readySnapshot?.listedAt;
+  const thumbs = readySnapshot?.thumbs;
+  const origins = readySnapshot?.origins;
+
+  const groupedPhotos = useMemo(() => {
+    if (!entries || !thumbs || !origins || listedAt === undefined || activeTab !== "Photos") return emptyGroups;
+    const now = new Date(listedAt);
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const photos = entries.filter((entry) => entry.kind === "Photo");
+    return photoGroups(photos, thumbs, origins, todayStart, now.getFullYear());
+  }, [entries, thumbs, origins, listedAt, activeTab]);
+
+  const formattedDocuments = useMemo(() => {
+    if (!entries || !origins || listedAt === undefined || activeTab !== "Documents") return emptyDocuments;
+    const now = new Date(listedAt);
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const currentYear = now.getFullYear();
+    const docs: { id: string; name: string; detail: string }[] = [];
+    for (const entry of entries) {
+      if (entry.kind !== "Pdf") continue;
+      const { from } = origins[entry.id] ?? {};
+      const { detail } = savedWhen(entry.savedAt, todayStart, currentYear);
+      docs.push({ id: entry.id, name: entry.name, detail: from ? `From ${from} · ${detail}` : detail });
+    }
+    return docs;
+  }, [entries, origins, listedAt, activeTab]);
+
   const run = (command: Parameters<FileLibrary.Shape["run"]>[0]) => startTransition(async () => {
     setFailed(false);
     setUnshared(undefined);
@@ -71,9 +102,9 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
     if (command.kind === "sharePhoto") setUnshared(command.id);
     else setFailed(true);
   });
-  const window = { ...cover, onClose };
-  if (snapshot.kind !== "ready" || snapshot.owner !== account) {
-    return <AppWindow {...window} title="Files" icon={<Folder aria-hidden />}>
+  const windowProps = { ...cover, onClose };
+  if (!readySnapshot) {
+    return <AppWindow {...windowProps} title="Files" icon={<Folder aria-hidden />}>
       {snapshot.kind === "unsupported" ? <EmptyState title="Open Files on your Grace tablet" /> :
         snapshot.kind === "unavailable" ? <RetryNotice onRetry={() => run({ kind: "retry" })}>Grace couldn’t read your files.</RetryNotice> :
         snapshot.kind === "signedOut" ? <EmptyState title="Sign in to see your files">
@@ -82,17 +113,14 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
     </AppWindow>;
   }
 
-  const { model } = snapshot;
-  const now = new Date(snapshot.listedAt);
+  const { model } = readySnapshot;
   const selected = fileAt(model, model.selected);
-  const photos = model.entries.filter((entry) => entry.kind === "Photo");
-  const documents = model.entries.filter((entry) => entry.kind === "Pdf");
-  const waiting = pending || snapshot.busy;
+  const waiting = pending || readySnapshot.busy;
   const back = () => run({ kind: "back" });
   const retry = () => run({ kind: "retry" });
-  const previewStatus = snapshot.image ? "ready" : snapshot.issue || model.feedback === "ContentFailed" ? "failed" : "loading";
+  const previewStatus = readySnapshot.image ? "ready" : readySnapshot.issue || model.feedback === "ContentFailed" ? "failed" : "loading";
 
-  const request = snapshot.attachmentImport;
+  const request = readySnapshot.attachmentImport;
   if (request && model.loaded) {
     return <AppWindow {...cover} title="Save attachment to Files?" icon={<Folder aria-hidden />}>
       <div className="flex flex-wrap gap-3">
@@ -106,15 +134,15 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
 
   if (selected.id !== "") {
     if (selected.kind === "Photo") {
-      if (!snapshot.image) return <AppWindow {...cover} onClose={back} closeLabel="Back to Files" title={selected.name}>
+      if (!readySnapshot.image) return <AppWindow {...cover} onClose={back} closeLabel="Back to Files" title={selected.name}>
         {previewStatus === "failed" ? <RetryNotice onRetry={retry}>This photo couldn’t be shown.</RetryNotice> : <PageText role="status">Opening the photo…</PageText>}
       </AppWindow>;
-      const target = { id: selected.id, lease: snapshot.lease, generation: model.generation };
+      const target = { id: selected.id, lease: readySnapshot.lease, generation: model.generation };
       const idle = (event: Event, act: () => void) => (waiting ? undefined : offered(model, event, act));
       const remove = idle({ type: "deletePhoto", ...target }, () => run({ kind: "deletePhoto", ...target }));
       const share = selected.origin === deviceOrigin ? undefined : idle({ type: "sharePhoto", ...target }, () => run({ kind: "sharePhoto", ...target }));
       const deleteFailed = model.feedback === "WriteFailed";
-      return <FilePhotoViewer {...cover} onClose={back} closeLabel="Back to Files" title={selected.name} src={snapshot.image} alt={selected.name}
+      return <FilePhotoViewer {...cover} onClose={back} closeLabel="Back to Files" title={selected.name} src={readySnapshot.image} alt={selected.name}
         first={!enabled(model, { type: "movePhoto", direction: -1 }, "FileUser")}
         last={!enabled(model, { type: "movePhoto", direction: 1 }, "FileUser")}
         onPrevious={() => run({ kind: "photo", direction: -1 })} onNext={() => run({ kind: "photo", direction: 1 })}
@@ -131,9 +159,9 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
             return <Button key={direction} variant="capsule" size="pill" disabled={!turn} onClick={turn}>{direction < 0 ? "Previous page" : "Next page"}</Button>;
           })}
         </div>
-        {snapshot.image?.startsWith("data:application/pdf;") ?
-          <object data={`${snapshot.image}#page=${model.page}`} type="application/pdf" aria-label={selected.name} className="h-[640px] w-full" /> :
-          snapshot.image && <img src={snapshot.image} alt={`Page ${model.page} of ${selected.name}`} className="h-auto max-w-full" />}
+        {readySnapshot.image?.startsWith("data:application/pdf;") ?
+          <object data={`${readySnapshot.image}#page=${model.page}`} type="application/pdf" aria-label={selected.name} className="h-[640px] w-full" /> :
+          readySnapshot.image && <img src={readySnapshot.image} alt={`Page ${model.page} of ${selected.name}`} className="h-auto max-w-full" />}
       </div>
     </PdfViewer>;
   }
@@ -141,8 +169,8 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
   const open = (id: string) => run({ kind: "open", id });
   const sought = query.trim();
   const idle = (event: Event, act: () => void) => (waiting ? undefined : offered(model, event, act));
-  const find = idle({ type: "findFiles", owner: snapshot.lease, query: sought }, () => run({ kind: "search", query }));
-  const importing = !waiting && canImport(snapshot);
+  const find = idle({ type: "findFiles", owner: readySnapshot.lease, query: sought }, () => run({ kind: "search", query }));
+  const importing = !waiting && canImport(readySnapshot);
   const pick = importing ? () => run({ kind: "pick", file: model.tab === "Photos" ? "photo" : "pdf" }) : undefined;
   const capture = importing && model.tab === "Photos" ? () => run({ kind: "capture" }) : undefined;
   const tab = (next: "Photos" | "Documents") => idle({ type: "chooseTab", tab: next }, () => run({ kind: "tab", tab: next }));
@@ -152,24 +180,20 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
         <label>Find a file<Input value={query} maxLength={120} onChange={(event) => setQuery(event.currentTarget.value)} /></label>
         <Button type="submit" variant="capsule" size="pill" disabled={!find}>Find</Button>
       </form>
-      {snapshot.importer && <Button variant="capsule" size="pill" disabled={!pick} onClick={pick}>
+      {readySnapshot.importer && <Button variant="capsule" size="pill" disabled={!pick} onClick={pick}>
         {model.tab === "Photos" ? "Import photo" : "Import PDF"}
       </Button>}
-      {snapshot.importer && model.tab === "Photos" && <Button variant="capsule" size="pill" disabled={!capture} onClick={capture}>Take photo</Button>}
+      {readySnapshot.importer && model.tab === "Photos" && <Button variant="capsule" size="pill" disabled={!capture} onClick={capture}>Take photo</Button>}
       {failed || model.feedback === "WriteFailed" ? <PageText role="status">The file wasn’t saved or opened.</PageText> :
         model.feedback === "FilesSaved" && <PageText role="status">Saved in Files.</PageText>}
     </div>
   );
-  return <FilesApp {...window} actions={browse} status={model.loaded ? "ready" : model.feedback === "CatalogFailed" ? "failed" : "loading"}
+  return <FilesApp {...windowProps} actions={browse} status={model.loaded ? "ready" : model.feedback === "CatalogFailed" ? "failed" : "loading"}
     onRetry={retry} tab={model.tab === "Photos" ? "photos" : "documents"} highlightId={highlightedFile(model)}
     matches={model.matches.map((id) => ({ id, label: fileAt(model, id).name }))} onPickMatch={open}
     noMatch={model.feedback === "NothingFound" ? model.query : undefined}
     onTabChange={tab(model.tab) && ((next) => tab(next === "photos" ? "Photos" : "Documents")?.())}
-    photoGroups={photoGroups(photos, snapshot.thumbs, snapshot.origins, now)}
-    documents={documents.map((entry) => {
-      const { from } = snapshot.origins[entry.id] ?? {};
-      const { detail } = savedWhen(entry.savedAt, now);
-      return { id: entry.id, name: entry.name, detail: from ? `From ${from} · ${detail}` : detail };
-    })}
+    photoGroups={groupedPhotos}
+    documents={formattedDocuments}
     onOpenPhoto={open} onOpenDocument={open} />;
 }

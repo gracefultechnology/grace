@@ -2,10 +2,11 @@
 import tokens from "@repo/design-system/tokens.json" with { type: "json" };
 import { cn, settles } from "@repo/ui";
 import { Effect } from "effect";
-import { type ComponentProps, type ReactNode, createContext, use, useCallback, useMemo, useState } from "react";
+import { type ComponentProps, type ReactNode, createContext, memo, use, useCallback, useMemo, useState } from "react";
+import type { PageLayer } from "../gen/app__surface.ts";
 import { PageHost, Part } from "./page.vibe";
 import { androidHost } from "./surfacePlugin.ts";
-import { type Runtime, usePageLayer } from "./useApp.ts";
+import { type Runtime, usePageLayerSelector } from "./useApp.ts";
 import { websites } from "./webPage.vibe";
 
 type Watch = (element: HTMLElement, part: Part) => () => void;
@@ -42,14 +43,18 @@ const r = parseFloat(tokens.rounded.window);
 
 const adopt = (element: HTMLDivElement | null) => { element?.append(websites); };
 
-export function PageBackdrop({ className }: { className?: string }) {
-  const layer = usePageLayer();
+const selectHole = (layer: PageLayer | undefined): string | undefined => {
   const page = androidHost && layer?.shown ? layer.page : undefined;
-  const hole = page && `M${page.x} ${page.y}H${page.x + page.width}V${page.y + page.height - r}A${r} ${r} 0 0 1 ${page.x + page.width - r} ${page.y + page.height}H${page.x + r}A${r} ${r} 0 0 1 ${page.x} ${page.y + page.height - r}Z`;
+  if (!page) return undefined;
+  return `M${page.x} ${page.y}H${page.x + page.width}V${page.y + page.height - r}A${r} ${r} 0 0 1 ${page.x + page.width - r} ${page.y + page.height}H${page.x + r}A${r} ${r} 0 0 1 ${page.x} ${page.y + page.height - r}Z`;
+};
+
+export const PageBackdrop = memo(function PageBackdrop({ className }: { className?: string }) {
+  const hole = usePageLayerSelector(selectHole);
   return (
     <>
       <div aria-hidden className={className} style={hole ? { clipPath: `path(evenodd, "M0 0H100000V100000H0Z${hole}")` } : undefined} />
       <div ref={adopt} className="contents" />
     </>
   );
-}
+});
