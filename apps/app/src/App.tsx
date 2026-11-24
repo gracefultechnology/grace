@@ -35,7 +35,9 @@ import {
   type Runtime,
   homeCalendar,
   homeMail,
+  isRuntimePrimed,
   nextAppointment,
+  primeRuntime,
   reminderNotice,
   shallowEqual,
   useAccountIds,
@@ -634,10 +636,11 @@ export function createAppRuntime(native: boolean): Runtime {
 }
 
 export function App({ runtime }: { runtime: Runtime }) {
-  const screen = useMemo(() => runtime.context().then(() => <Screen />), [runtime]);
+  const ready = isRuntimePrimed(runtime);
+  const screen = useMemo(() => (ready ? <Screen /> : primeRuntime(runtime).then(() => <Screen />)), [runtime, ready]);
   return (
     <RuntimeContext value={runtime}>
-      <PageMeasurer runtime={runtime}><Suspense>{screen}</Suspense></PageMeasurer>
+      <PageMeasurer runtime={runtime}>{ready ? screen : <Suspense>{screen}</Suspense>}</PageMeasurer>
     </RuntimeContext>
   );
 }
