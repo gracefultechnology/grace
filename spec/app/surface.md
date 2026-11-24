@@ -151,10 +151,10 @@ Expanded Grace covers the page, so the page is paused rather than drawn
 beneath it; compact Grace and popovers are drawn over a shown page. Hiding
 keeps the page, its history and its scroll, and ends a fullscreen video.
 While the device sleeps, `pageShows` is false, so the page is hidden and
-paused under the sleep screen. `pageShows` is the one
-definition of the page being shown, and the layer's `shown` is the one
-state set from it: each `show` takes it from `pageShows` of the shell and
-assistant the interface reports, so the layer is only as current as the
+paused under the sleep screen. `pageShows` is the one definition of the
+page being shown, and the layer's `shown` is the one state set from it:
+each `show` takes it from `pageShows` of the shell and assistant the
+interface reports, so the layer is only as current as the
 last `show`. The interface therefore sends `show` whenever the device or
 the assistant changes so that `pageShows` differs from what the layer holds
 (`reconcile` in `apps/app/src/page.vibe`, run after every workspace change).
@@ -196,8 +196,8 @@ pure def lawSleepingPageIsHiddenAndPaused(l: PageLayer, s: S::Shell, a: A::Assis
 
 Switching apps, turning the screen off or another window covering Grace
 pauses the page and ends a fullscreen video; it resumes when Grace's window
-is visible again and the page is still shown. The native page is paused exactly when `pageRuns` is
-false.
+is visible again and the page is still shown. The native page is paused
+exactly when `pageRuns` is false.
 
 ```quint
 pure def pageRuns(l: PageLayer): bool = l.shown and l.hostVisible
@@ -257,9 +257,9 @@ pure val heightValues = Set(0, 280, 320)
 ### A new page waits for its first routing before it takes any touch
 
 A renderer crash or a recreated surface starts again from no routing, so an
-old acknowledgement cannot let touches through to the new page. It also
-ends a fullscreen video. The
-interface keeps drawing its controls; the next request routes them again.
+old acknowledgement cannot let touches through to the new page, and a
+fullscreen video ends. The interface keeps drawing its controls; the next
+request routes them again.
 
 ```quint
 pure def canRecreate(l: PageLayer): bool = l.routingReady or l.pending
