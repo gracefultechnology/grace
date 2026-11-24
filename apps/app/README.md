@@ -203,10 +203,17 @@ the four signing variables above. The [production App Links document](https://ap
 publishes the certificate SHA-256. The SHA-1 for Android Google client registration is
 `7D:9D:BF:44:E3:E5:D6:29:16:D3:DE:95:24:97:4A:A1:F6:10:D4:02`.
 
-The ARM64 launcher APK built from Grace `ace4d8e` and Eliza `3423598` is
-135,640,693 bytes. It passed release certificate, package, agent payload, Node runtime and
-16 KiB alignment checks.
-[Release source](https://github.com/gracefultechnology/grace-new/pull/90)
+Built from Grace `34bdf07` and Eliza `21fac1f`, each launcher APK passed the content check:
+agent payload and inventory, Node runtime, the native Grace account, no inference class, and
+`debuggable` only in the debug build. The release APKs were signed with a throwaway key, so their
+size holds for the Grace key and their SHA-256 does not.
+
+| APK | Processor type | Bytes | SHA-256 |
+|---|---|---|---|
+| `launcher-debug.apk` | `arm64-v8a` | 149,123,896 | `d2fba32f4a89de1a21d1af024c60864ce114260f05820c154e0dbe5e3732fa41` |
+| `launcher-release.apk` | `arm64-v8a` | 136,069,599 | `d0dcacf8c1649ffd5c45ddff2536e0d8a20ee195e05f48bd8474ceedfdf9e1ec` |
+| `launcher-debug.apk` | `x86_64` | 149,214,005 | `8fab059642232b93b372018d547f9e9b0a9f4ebc455615c891679889355cf514` |
+| `launcher-release.apk` | `x86_64` | 136,155,612 | `b5b27dff635fc96cc6e2b27e6c652ad5a39123cf2a27d5956053460c8f8924a3` |
 
 ### On the tablet
 
