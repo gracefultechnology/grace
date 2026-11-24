@@ -237,13 +237,13 @@ company refused for the same reason, published as a refresh of the saved
 entry.
 
 ```quint
-pure def withCurrent(c: Calendar, latest: EntryDetails, version: str): Calendar =
+pure def withCurrent(latest: EntryDetails, c: Calendar, version: str): Calendar =
   { ...save({ ...c, draft: latest }, c.revision, true, CalendarStore),
     version: version, revision: c.revision + 1, storageError: ChangedElsewhere }
 pure def canSaveOutdated(c: Calendar, revision: int, latest: EntryDetails, version: str, by: CalendarActor): bool =
   canSaveFailed(c, revision, by) and c.hasSaved and validDetails(latest)
 pure def saveOutdated(c: Calendar, revision: int, latest: EntryDetails, version: str, by: CalendarActor): Calendar =
-  withCurrent(c, latest, version)
+  withCurrent(latest, c, version)
 pure def noticed(c: Calendar): Calendar =
   if (c.storageError == ChangedElsewhere) { ...c, storageError: NoStorageError } else c
 pure def lawOutdatedSaveKeepsTheCompanysVersion(c: Calendar, revision: int, latest: EntryDetails, version: str, by: CalendarActor): bool =
