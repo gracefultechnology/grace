@@ -758,8 +758,8 @@ chosen dates. Both views start with read access. A message opens into a
 plain-text preview for the chosen reference, never executable HTML.
 When the person opens a web address in that preview, Grace checks the selected
 message’s current Gmail revision, displayed body, account and grant. On the
-tablet it also checks the same acknowledged lease used to read the preview. A Gmail
-Spam label holds the destination for a separate confirmation. A checked read
+tablet it also checks the same acknowledged lease used to read the preview.
+A Gmail Spam label holds the destination for a separate confirmation. A checked read
 without that label releases the address on tap. An incomplete read grants no
 link action. The Browser opens the released address in one new tab.
 A preview carries no authority to inspect attachments, reply or forward.
@@ -783,6 +783,10 @@ pure def mayReadManaged(account: GraceAccount, link: GoogleLink, view: ManagedRe
       (if (view == ManagedEmail) g.mail else g.calendar)
     | _ => false
   }
+pure def mailLeaseMatches(mailLease: MailLeaseUpgradePhase, accountId: str, leaseVersion: str): bool = match mailLease {
+  | LeaseMailReady(owner) => owner.accountId == accountId and owner.leaseVersion == leaseVersion and leaseVersion != ""
+  | _ => false
+}
 pure def managedMailLinkCurrent(account: GraceAccount, link: GoogleLink, accountId: str, grant: str, leaseVersion: str): bool =
   accountId != "" and grant != "" and mayReadManaged(account, link, ManagedEmail) and
   (match link {
@@ -790,13 +794,7 @@ pure def managedMailLinkCurrent(account: GraceAccount, link: GoogleLink, account
     | _ => false
   }) and (match account {
     | GraceSignedIn(person) => person.accountId == accountId and leaseVersion == ""
-    | GraceDeviceSignedIn(tablet) => {
-      val lease = tablet.mailLeaseUpgrade
-      match lease {
-        | LeaseMailReady(owner) => owner.accountId == accountId and owner.leaseVersion == leaseVersion and leaseVersion != ""
-        | _ => false
-      }
-    }
+    | GraceDeviceSignedIn(tablet) => mailLeaseMatches(tablet.mailLeaseUpgrade, accountId, leaseVersion)
     | _ => false
   })
 pure def managedReadMatches(accountId: str, receiptAccountId: str, wanted: str, received: str): bool =
