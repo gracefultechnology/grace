@@ -30,7 +30,7 @@ import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, modelTurns, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
 import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
-import { actOnScreen, browserAccountResponse, mount, signInToGrace, tapHomeCalendar, tabletView } from "./screen.tsx";
+import { actOnScreen, browserAccountResponse, mount, signInToGrace, tapHomeCalendar, tabletView, wakeBoundary } from "./screen.tsx";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -1316,7 +1316,9 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
   }
 });
 
-it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card inputs out of chat", "Open Passwords by voice"] as const)(
+const wakeJourney = 'Wake using the phrase (spec/app/wake.md, "Story: Call Grace from any app or while the screen sleeps")';
+
+it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card inputs out of chat", "Open Passwords by voice", wakeJourney] as const)(
   '%s via metered speech (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async (journey) => {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
@@ -1439,7 +1441,9 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
   }
   vi.stubGlobal("WebSocket", FixtureSocket);
   const { agent, requests, created, refused } = deviceAgent(() => Promise.resolve(replies.shift() ?? voiceOutput));
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, agent }));
+  const wake = journey === wakeJourney ? wakeBoundary() : undefined;
+  const app = application(undefined, undefined, { native: false, agent, wake: wake?.port });
+  const runtime = ManagedRuntime.make(app.pipe(Layer.provideMerge(wake ? TestClock.layer() : Layer.empty)));
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   try {
@@ -1455,6 +1459,46 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
     const choosePage = (page: "MainCards" | "PasswordsCard") => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
       machine.send({ type: "chooseHomePage", page }, "Person")));
     const refresh = () => act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
+    if (wake) {
+      const button = (name: string) => page.getByRole("button", { name, exact: true });
+      await press(button("Settings"));
+      await press(button("Grace’s voice"));
+      await press(button("Set up “Hey Grace”"));
+      await press(button("Continue"));
+      await expect.poll(wake.armed).not.toBeNull();
+      const hearWake = async () => {
+        const earlier = wake.armed();
+        await press(button("Show sleep screen"));
+        await expect.element(button("Wake Grace")).toBeVisible();
+        await expect.poll(() => {
+          const generation = wake.armed();
+          return generation !== null && generation !== earlier;
+        }).toBe(true);
+        await wake.detect();
+        await expect.element(button("Wake Grace")).not.toBeInTheDocument();
+      };
+      expect([audio.mock.calls.length, calls, sockets]).toEqual([0, [], []]);
+      await hearWake();
+      await expect.poll(() => sentTurn(requests[0]?.body).said).toBe(voiceInput);
+      await expect.poll(() => workspace().assistant.conversation.messages.map((turn) => turn.text)).toEqual([voiceInput, voiceOutput]);
+      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended"]);
+      await expect.poll(() => calls).toEqual(speechSession);
+      expect(wake.chimes()).toBe(1);
+      await press(button("Close Grace"));
+      const beforeSilence = recordedFrames;
+      await hearWake();
+      await expect.poll(() => recordedFrames).toBeGreaterThan(beforeSilence);
+      expect(workspace().assistant.conversation.voice).toBe(true);
+      await act(() => runtime.runPromise(TestClock.adjust("8 seconds")));
+      await expect.poll(() => workspace().wake.phase).toBe("SilenceNotice");
+      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
+      await expect.element(button("Close Grace")).toBeVisible();
+      await act(() => runtime.runPromise(TestClock.adjust("8 seconds")));
+      await expect.element(button("Close Grace")).not.toBeInTheDocument();
+      await expect.poll(wake.armed).not.toBeNull();
+      expect(requests.map(({ body }) => sentTurn(body).said)).toEqual([voiceInput]);
+      return;
+    }
     if (journey === "Talk and hear a reply" || journey === "Answer a spoken question") {
       await press(page.getByRole("button", { name: "Settings", exact: true }));
       await press(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Grace’s voice" }));

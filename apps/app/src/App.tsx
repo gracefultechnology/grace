@@ -1,4 +1,5 @@
 // spec/app/index.md, "Story: Manage my saved passwords privately"
+// spec/app/wake.md, "Settings and the sleep screen say when wake detection is unavailable"
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
 import { AppWindow, AskGraceButton, besideRail, Button, CaptionStrip, type CaptionStripProps, HomeScreen, ListRow, Rail, RailButton, RailPopover, ScreenDim, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
@@ -11,6 +12,7 @@ import type { Turn } from "../gen/app__conversation.ts";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
 import { effectiveBrightness, muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
+import { sleepHint } from "../gen/app__wake.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
 import { canChangeLifecycle, privateSurfaceActive, type Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { Browser } from "./Browser.tsx";
@@ -27,7 +29,7 @@ import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { PasswordsApp } from "./PasswordsApp.tsx";
 import { Settings } from "./Settings.tsx";
 import { androidHost, wifiPlugin } from "./surfacePlugin.ts";
-import { RuntimeContext, type Runtime, useAccounts, useRuntime, useKeyboardHeight, useMailContent, useWebsiteRequests, useWorkspace, WithCalendars, WithMailboxes } from "./useApp.ts";
+import { RuntimeContext, type Runtime, useAccounts, useRuntime, useKeyboardHeight, useMailContent, useWakeStatus, useWebsiteRequests, useWorkspace, WithCalendars, WithMailboxes } from "./useApp.ts";
 import { site } from "./WebsiteRequests.tsx";
 
 // spec/app/deviceKeys.md, "Each Back action is one event its guard allows": the two that end what websites ask,
@@ -145,6 +147,7 @@ function Screen() {
   const read = useMailContent();
   const now = useMinute();
   const battery = useBattery();
+  const wakeStatus = useWakeStatus();
   // Prototype `layout()`, kbH: the keyboard covers the screen right of the rail, which keeps its full height, and the windows rise above it.
   const keyboard = useKeyboardHeight();
   // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath": each popover points at its rail button.
@@ -219,6 +222,7 @@ function Screen() {
   const clock = Object.fromEntries(railClock.formatToParts(now).map((p) => [p.type, p.value]));
   const hour = now.getHours();
   const sleeping = device.readiness === "Sleeping";
+  const wakeHint = sleepHint(workspace.preferences.session.wakeEnabled, wakeStatus.armed);
   const wake = () => {
     if (canChangeLifecycle(current(), "WakeDevice", "Host")) void send({ type: "changeLifecycle", lifecycle: "WakeDevice" }, "Host");
   };
@@ -331,11 +335,11 @@ function Screen() {
       {!privateSurface && !websiteKeyboard && <Grace onHeightChange={setGraceHeight} />}
       </div>
       {sleeping && <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
-        <SleepScreen role="button" tabIndex={0} aria-label="Wake Grace"
+        <SleepScreen role="button" tabIndex={0} aria-label="Wake Grace" aria-description={wakeHint}
         time={`${clock.hour}:${clock.minute}`}
         date={sleepDate.format(now)}
         next={ours ? accounts && nextAppointment(accounts, calendars, now.getTime()) : managedNext(cards, now)}
-        hint="Touch the screen to wake it" onClick={wake} onKeyDown={(event) => {
+        hint={wakeHint} onClick={wake} onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); wake(); }
         }} />
       )}</WithCalendars>}

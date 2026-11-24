@@ -73,6 +73,105 @@ if (pluginLoad.some((name) => Object.hasOwn(policy.plugins.refuse, name)))
   throw new Error("Grace's device policy cannot load a plugin it refuses");
 const Abi = Schema.Literals(["arm64-v8a", "x86_64"]);
 type Abi = typeof Abi.Type;
+const wakeModel = {
+  name: "sherpa-onnx-kws-zipformer-gigaspeech-3.3M-2024-01-01",
+  sha256: "f170013b4716e41b62b9bfd809687c207cef798ef9bc6534d524e17af9b6561a",
+  files: [
+    { name: "encoder.onnx", source: "encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx", sha256: "1e721676515bcd42a186979733981213c66c80db680e1cc582dfedf3be76e678" },
+    { name: "decoder.onnx", source: "decoder-epoch-12-avg-2-chunk-16-left-64.onnx", sha256: "f61ebd3eed3773a44d088d53dfae92dbb6aec4839f4dcaee2d402414741663a3" },
+    { name: "joiner.onnx", source: "joiner-epoch-12-avg-2-chunk-16-left-64.int8.onnx", sha256: "eae9da0c7e1e6c6a3f4cc42d167899c388f6c6701b94cb96320e4f55df79624c" },
+    { name: "tokens.txt", source: "tokens.txt", sha256: "fd2ded4050a55d2b1578870ba8697d02371980217806b7558bd0a5cc60f3ba53" },
+  ],
+};
+const wakeRuntime = {
+  version: "2.0.3",
+  sha256: "7744a3a8f08f017d59c2d8ed8d9b700345561f5abe9f4e06dc6eaef3a0b977b4",
+  library: "libsherpa-onnx-jni.so",
+  libraries: {
+    "arm64-v8a": "ef745a6a58fb5c4825aa636ce1f976166da09f85026ccddefedc5423186fa1b5",
+    x86_64: "62cb846f66d0f1945c7d9378bae6443e0c8c7b459bf3bc0c53ec49e5787ab9e4",
+  },
+  javaSha256: "2a50d5dc2134046e9e686698b6119d0570ac4b8315c4d92d2a3bf41ae86a56f1",
+  java: [
+    "FeatureConfig", "KeywordSpotter", "KeywordSpotter$Companion", "KeywordSpotterConfig",
+    "KeywordSpotterResult", "KeywordSpotterResult$toString$timestampsStr$1", "OnlineModelConfig",
+    "OnlineNeMoCtcModelConfig", "OnlineParaformerModelConfig", "OnlineStream", "OnlineStream$Companion",
+    "OnlineToneCtcModelConfig", "OnlineTransducerModelConfig", "OnlineZipformer2CtcModelConfig", "QnnConfig",
+  ].map((name) => "com/k2fsa/sherpa/onnx/" + name),
+};
+const wakeAssets = "grace-wake";
+const wakeKeywords = "▁HE Y ▁GRA CE @HEY_GRACE\n";
+const wakeDownload = "https://github.com/k2-fsa/sherpa-onnx/releases/download/";
+const wakeLimit = 64 * 1024 * 1024;
+const unzipEntry = (archive: string, entry: string) => execFileSync("unzip", ["-p", archive, entry], { maxBuffer: wakeLimit });
+const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
+
+function verifyWakeBytes(bytes: Buffer, digest: string, name: string) {
+  if (sha256(bytes) !== digest) throw new Error(`Wake keyword input differs from its pin: ${name}`);
+  return bytes;
+}
+
+function downloadWakeInput(file: string, url: string, digest: string) {
+  execFileSync("curl", ["--proto", "=https", "--proto-redir", "=https", "--fail", "--location", "--silent", "--show-error",
+    "--retry", "2", "--connect-timeout", "15", "--max-time", "180", "--max-filesize", String(wakeLimit), "--output", file, url]);
+  verifyWakeBytes(readFileSync(file), digest, file);
+}
+
+function stageWakeRuntime(abi: Abi) {
+  const directory = path.join(artifacts, "wake-runtime", wakeRuntime.sha256, wakeModel.sha256, abi);
+  const assets = path.join(directory, "assets");
+  const jniLibs = path.join(directory, "jniLibs");
+  const archive = path.join(directory, "sherpa-kws.jar");
+  const nativeEntry = path.join(abi, wakeRuntime.library);
+  const classEntries = wakeRuntime.java.map((name) => name + ".class");
+  if (!existsSync(directory)) {
+    mkdirSync(path.dirname(directory), { recursive: true });
+    const scratch = mkdtempSync(path.join(path.dirname(directory), ".stage-"));
+    try {
+      const originalAar = path.join(scratch, "sherpa.aar");
+      const originalModel = path.join(scratch, "model.tar.bz2");
+      const originalJar = path.join(scratch, "classes.jar");
+      const classes = path.join(scratch, "classes");
+      downloadWakeInput(originalAar, `${wakeDownload}v${wakeRuntime.version}/sherpa-onnx-static-link-onnxruntime-${wakeRuntime.version}.aar`, wakeRuntime.sha256);
+      downloadWakeInput(originalModel, `${wakeDownload}kws-models/${wakeModel.name}.tar.bz2`, wakeModel.sha256);
+      const model = path.join(scratch, "assets", wakeAssets);
+      mkdirSync(model, { recursive: true });
+      for (const item of wakeModel.files) {
+        const input = execFileSync("tar", ["-xOf", originalModel, `${wakeModel.name}/${item.source}`], { maxBuffer: wakeLimit });
+        writeFileSync(path.join(model, item.name), verifyWakeBytes(input, item.sha256, item.source));
+      }
+      const library = path.join(scratch, "jniLibs", nativeEntry);
+      mkdirSync(path.dirname(library), { recursive: true });
+      writeFileSync(library, verifyWakeBytes(unzipEntry(originalAar, "jni/" + nativeEntry), wakeRuntime.libraries[abi], nativeEntry));
+      writeFileSync(originalJar, unzipEntry(originalAar, "classes.jar"));
+      for (const entry of classEntries) {
+        const file = path.join(classes, entry);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, unzipEntry(originalJar, entry));
+      }
+      execFileSync("zip", ["-q", path.join(scratch, "sherpa-kws.jar"), ...classEntries], { cwd: classes });
+      for (const file of [originalAar, originalModel, originalJar, classes]) rmSync(file, { recursive: true });
+      if (!existsSync(directory)) renameSync(scratch, directory);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+  for (const item of wakeModel.files)
+    verifyWakeBytes(readFileSync(path.join(assets, wakeAssets, item.name)), item.sha256, item.name);
+  verifyWakeBytes(readFileSync(path.join(jniLibs, nativeEntry)), wakeRuntime.libraries[abi], nativeEntry);
+  const stagedEntries = execFileSync("unzip", ["-Z1", archive], { encoding: "utf8" }).trim().split("\n");
+  if (!isDeepStrictEqual(stagedEntries, classEntries)) throw new Error("Wake keyword Android bindings differ from their pin");
+  verifyWakeBytes(Buffer.concat(classEntries.map((entry) => unzipEntry(archive, entry))), wakeRuntime.javaSha256, archive);
+  const keywords = path.join(assets, wakeAssets, "keywords.txt");
+  if (!existsSync(keywords) || readFileSync(keywords, "utf8") !== wakeKeywords) writeFileSync(keywords, wakeKeywords);
+  const gradle = path.join(directory, "wake.gradle");
+  const gradlePath = archive.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  const script = `dependencies { implementation files('${gradlePath}') }\nandroid.packaging.jniLibs.keepDebugSymbols += '**/${wakeRuntime.library}'\n`;
+  if (!existsSync(gradle) || readFileSync(gradle, "utf8") !== script) writeFileSync(gradle, script);
+  const source = (file: string) => ({ root: "consumer", path: path.relative(app, file) });
+  return { assets: source(assets), jniLibs: source(jniLibs), gradle: source(gradle) };
+}
+
 const EmulatorSerial = Schema.String.check(Schema.isPattern(/^emulator-\d+$/));
 const AgentStatus = Schema.Struct({
   state: Schema.Literals(["unavailable", "stopped", "starting", "running", "failed"]),
@@ -280,6 +379,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
   const webDir = cloudProfile === standaloneProfile ? androidPaths.web : `${output}/web`;
   const agentDirectory = `${output}/agent`;
   const { version } = Schema.decodeUnknownSync(Schema.Struct({ version: Schema.String }))(readJson(path.join(app, "package.json")));
+  const wake = stageWakeRuntime(abi);
   writeAgentData(path.join(app, agentDirectory), selected.agentOrigin);
   generateAndroidConsumerHost({
     consumerRoot: app,
@@ -289,6 +389,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
     identity: { appId: identity.appId, appName: identity.appName, version, versionCode: versionCode(version) },
     profile: {
       ...profile,
+      appScripts: [wake.gradle],
       modules: selected.sources === "shared-cloud"
         ? [...profile.modules, ...sharedSignInModules]
         : profile.modules,
@@ -304,7 +405,8 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
       }).map(([name, value]) => ({ name, type: "String", value })),
       sourceSets: {
         ...profile.sourceSets,
-        main: { ...profile.sourceSets.main, java: [...profile.sourceSets.main.java, { root: "consumer", path: `android/${selected.sources}/java` }] },
+        main: { ...profile.sourceSets.main, assets: [wake.assets], jniLibs: [wake.jniLibs],
+          java: [...profile.sourceSets.main.java, { root: "consumer", path: `android/${selected.sources}/java` }] },
         ...(fixture ? { debug: { res: [{ root: "consumer", path: fixture.resources }] } } : {}),
       },
     },
@@ -413,10 +515,19 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
     const expectedLinks = [selected.callbackPath, "/android/files/import"].map((route) => ({ scheme: "https", host: callbackHost, path: route }));
     if (links.length !== expectedLinks.length || !expectedLinks.every((expected) => links.some((link) => isDeepStrictEqual(link, expected))))
       throw new Error(`${name} must declare the selected account return and Files import links for ${selected.webOrigin}`);
-    const forbidden = entries.filter((entry) => forbiddenEntry.test(entry));
-    if (forbidden.length) throw new Error(`${name} carries an on-device model or local inference: ${forbidden.join(", ")}`);
     const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_node\.so$/.exec(entry)?.slice(1) ?? []);
     if (abis.length !== 1 || !entries.includes("assets/agent/inventory.json")) throw new Error(`${name} does not carry one agent runtime: libeliza_node.so for ${abis.join(", ") || "no processor type"}`);
+    const abi = Schema.decodeUnknownSync(Abi)(abis[0]);
+    const keywordRoot = `assets/${wakeAssets}/`;
+    const allowedWake = new Map(wakeModel.files.map((entry) => [keywordRoot + entry.name, entry.sha256]));
+    allowedWake.set(keywordRoot + "keywords.txt", sha256(Buffer.from(wakeKeywords)));
+    allowedWake.set(`lib/${abi}/${wakeRuntime.library}`, wakeRuntime.libraries[abi]);
+    const forbidden = entries.filter((entry) => (forbiddenEntry.test(entry) || entry.startsWith(keywordRoot)) && !entry.endsWith("/") && !allowedWake.has(entry));
+    if (forbidden.length) throw new Error(`${name} carries an unapproved model or local inference file: ${forbidden.join(", ")}`);
+    for (const [entry, digest] of allowedWake) {
+      if (entries.filter((candidate) => candidate === entry).length !== 1) throw new Error(`${name} must package ${entry} once`);
+      verifyWakeBytes(unzipEntry(file, entry), digest, `${name}:${entry}`);
+    }
     const inventory = Schema.decodeUnknownSync(Schema.Struct({
       schema: Schema.Literal(1),
       files: Schema.Array(Schema.Struct({
@@ -441,14 +552,17 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
     }
     const classes = Array.from(execFileSync(buildTool("dexdump"), [file], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] })
       .matchAll(/^  Class descriptor  : '([^']+)'$/gm), ([, descriptor]) => descriptor);
-    const inference = classes.filter((descriptor) => inferenceClass.test(descriptor));
-    if (inference.length) throw new Error(`${name} carries local inference or voice model classes: ${inference.join(", ")}`);
+    const wakeClasses = new Set(wakeRuntime.java.map((entry) => `L${entry};`));
+    const inference = classes.filter((descriptor) => inferenceClass.test(descriptor) && !wakeClasses.has(descriptor));
+    if (inference.length) throw new Error(`${name} carries unapproved local inference classes: ${inference.join(", ")}`);
+    if (!classes.includes("Ltechnology/graceful/grace/GraceWakePlugin;") || !classes.includes("Lcom/k2fsa/sherpa/onnx/KeywordSpotter;"))
+      throw new Error(`${name} lacks the local wake keyword bridge`);
     if (!classes.includes("Ltechnology/graceful/grace/GraceAccount;")) throw new Error(`${name} lacks the cloud speech bridge`);
     const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent.mjs"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
     const debuggable = execFileSync(aapt, ["dump", "badging", file], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).includes("application-debuggable");
     if (name.includes("-release") && debuggable) throw new Error(`${name} is debuggable, so any computer on USB could read and drive Grace's page`);
     if (cloudProfile === "shared-staging" && !debuggable) throw new Error(`${name} ships staging in a production build`);
-    process.stdout.write(`${name} ${abis[0]} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, the cloud speech bridge and no inference class; its ${actions} actions declared by name are each allowed or refused\n`);
+    process.stdout.write(`${name} ${abi} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, cloud speech and the pinned local wake keyword detector; its ${actions} actions declared by name are each allowed or refused\n`);
     return { name, cloudProfile, abi: abis[0], bytes: contents.byteLength, debuggable, sha256: createHash("sha256").update(contents).digest("hex"),
       signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };
   });

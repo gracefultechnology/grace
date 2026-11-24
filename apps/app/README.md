@@ -176,12 +176,10 @@ produced with its processor type, size, SHA-256 and the signer verified by `apks
 Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. The build
 fails unless an APK carries the agent (`assets/agent/agent.mjs`, `libeliza_node.so` for exactly
 one processor type, `assets/agent/inventory.json` and every file that inventory lists, which the
-service unpacks before it starts), and if it carries an on-device model or local
-inference: a `.gguf`, `.onnx`, `.ort`, `.tflite`,
-`.safetensors`, `.pte` or `.task` file, a native library in any directory named for llama, ggml,
-mtmd, onnxruntime, sherpa, whisper, piper, executorch, `elizainference` or `omnivoice`, a
-`llama-server` or `llama-omnivoice-server`, or a `tts/`, `asr/`, `model/` or `models/` directory under
-`assets/` outside the web UI's `assets/public/`. It also lists classes in the APK's dex, rejects local inference classes and checks the native Grace account and speech bridge. Both flavors'
+service unpacks before it starts) and the pinned local keyword detector.
+It checks the packaged asset and native libraries against the wake detector’s
+inventory, rejects other on-device model and inference artifacts, and checks
+the native Grace account and speech bridge. Both flavors'
 `versionCode` is `package.json`'s version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
 
 Every machine and CI sign debug builds with one key, `android/debug.keystore`, so a debug APK built
@@ -223,13 +221,14 @@ preparing the tablet does this by hand; Grace's scripts refuse any serial that i
 3. Make Grace Home: press Home and choose Grace, Always, or Settings, Apps, Default apps, Home app,
    Grace. A sideloaded launcher never asks to be Home, and only the Grace image makes her Home by
    itself. The stock launcher stays installed as the way back.
-4. Android asks for the microphone at her first Talk; Settings, Apps, Grace, Permissions, Microphone
-   grants or removes it.
+4. Android asks for the microphone at the first Talk or during “Hey Grace”
+   set-up. Android Settings, Apps, Grace, Permissions, Microphone grants or
+   removes access.
 5. Turn USB debugging off.
 
-No model runs on the tablet, so the old minimums sized for models no longer apply: Grace needs what
-her process and her agent hold (about 270 MB and 170 MB resident, measured below) and the storage
-for the APK and what it unpacks (the ARM64 release APK above and its unpacked agent payload); a 4 GB tablet such as the TB336FU has room.
+Keyword detection runs on the tablet. Grace Cloud handles conversation
+recognition, voice synthesis and reasoning. The memory observations below
+precede the wake detector and cover the app and its embedded agent.
 
 ### On the emulator
 
@@ -334,7 +333,7 @@ and shared Eliza Cloud Gradle hosts in `artifacts/cloud-profiles/<profile>/gradl
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
 AGP 8.13), then upstream's `buildAndroidConsumer` builds the web UI with Vite, copies it in with
 `cap copy android`, runs Gradle and copies the APKs out. The host's inputs are in `android/`: the
-manifests, `MainActivity.java`, `GraceAgentService.java`, `GraceSpeechPlugin.java`,
+manifests, `MainActivity.java`, `GraceAgentService.java`, `GraceWakePlugin.java`,
 `GraceDevicePlugin.java`, `agent.json` and `res/`. Both flavors may
 ask for location and the camera, for a website, after the person's Allow.
 
@@ -392,7 +391,8 @@ one `GraceAccount` implementation. The public shared environments currently retu
 `android/agent.json` names the admitted agent routes, `agent/character.json`
 supplies the character, and `agent/policy.json` owns the action allowlist. The upstream agent
 provides storage, the selected Cloud deployment's models and the message service. The APK check rejects
-declared actions outside the allowed or refused list and rejects bundled on-device inference models.
+declared actions outside the allowed or refused list and admits only the
+packaged keyword detector for on-device inference.
 
 ### Records, reminders and files
 
@@ -438,7 +438,16 @@ starts only when opened.
 
 ### Speech and the device
 
-Grace requests a short-lived speech session through the signed-in GraceAccount bridge and streams audio to Grace Cloud. The microphone permission is requested only when the person chooses to speak.
+Open Settings, Grace’s voice, and choose **Set up “Hey Grace”**. Read the
+disclosure, tap Continue and allow microphone access. Say “Hey Grace” while
+Grace is visible, or choose **Show sleep screen** and then say it there.
+When Grace shows she’s listening, say your request. The wake switch stops or
+resumes detection after set-up.
+
+The local detector listens for the phrase while Grace is in the foreground.
+It discards audio before the trigger and pauses while the device plays audio.
+After Talk or a wake, Grace requests a short-lived speech session through the
+signed-in GraceAccount bridge and streams conversation audio to Grace Cloud.
 
 `GraceDevice` (`GraceDevicePlugin`) changes the tablet itself, with no permission:
 
@@ -471,7 +480,8 @@ Settings show to a device step is the page's work.
   animation redraws the window at the display's full rate: about 1.4 cores at 90 Hz on a 3.9 GB
   tablet. Where the display has a 60 Hz mode at its current resolution the window asks for it, again
   after a configuration change; elsewhere it clears its request.
-- `RECORD_AUDIO` is for Talk, asked for natively through `GraceSpeech`. A website's camera and
+- `RECORD_AUDIO` is used for Talk and for local “Hey Grace” detection after
+  set-up. A website's camera and
   location are asked for after the person's Allow and Android's own prompt
   (`spec/app/websiteRequests.md`); the launcher's Wi-Fi scan needs location too. Grace opts out of
   Android's camera compatibility rotation, which turned the display to portrait when a website opened

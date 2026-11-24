@@ -1,26 +1,18 @@
 # Wake Grace by voice
 
-The prototype's “Hey Grace” behavior, which the user selected on November 13,
-is kept here as a model, but the MVP has no wake word on the device: she starts
-listening with a tap. `prototype/Grace Prototype.html:2050,2253–2269` supplies
-the setting, sleep screen, wake response and silence return, and the stored
-setting defaults to enabled.
-[Preferences](./preferences.md) owns that persisted choice; this module owns
-only one wake interaction and its timers. [Workspace](./workspace.md) joins it
-to the actual device and conversation.
+The Android tablet recognizes “Hey Grace” locally after the person sets it up
+in Voice Settings and grants microphone access. [Preferences](./preferences.md)
+owns the durable on/off choice. This module owns one wake interaction and its
+timers. [Workspace](./workspace.md) joins it to the device and conversation.
 
-On November 16 the owner chose speech through Grace's cloud service with no
-model on the tablet. A wake phrase cannot be heard in the cloud without
-sending the room's sound all day, so the MVP ships no wake detector: the host
-reports detection unavailable, no detection is admitted, the Settings row shows
-that it is not available and the sleep screen says to touch the screen. The
-rules below stay so that a detector can return later. Pre-trigger audio is
-neither saved nor sent to any speech service. Detection is not open-ended
-conversation recording. The host excludes Grace's and website audio, checks current microphone
-permission and binds callbacks to this interaction's generation. A recognized
-human wake phrase starts a fresh listening exchange; it never resumes website
-execution or supplies approval to a payment. Turning the setting off stops the
-detector immediately, including while preference persistence is pending.
+The detector runs while Grace is in the foreground, including on Grace’s own
+sleep screen. It stops when Android locks the tablet or Grace leaves the
+foreground. Pre-trigger audio stays in the detector's memory and never goes to
+Grace Cloud. The host suspends the detector during Grace and device playback,
+active conversation capture and private views, checks microphone access and
+binds detections to the current interaction. The setup disclosure explains
+that speech after a wake enters Grace's cloud speech service. Turning the
+setting off stops the detector while preference persistence is pending.
 
 ## Story: Call Grace from any app or while the screen sleeps
 
@@ -33,7 +25,8 @@ Detection while asleep wakes the screen. On Home, Grace opens expanded; over an
 app it opens compact; an already visible window keeps its size. A short chime
 uses device volume/mute. The transcript and unsent draft remain intact. Existing
 website work is paused and old authorization invalidated before listening.
-Touching the sleep screen wakes it without opening Grace or starting capture.
+Touching the sleep screen wakes it without opening Grace or starting a cloud
+speech exchange.
 The native host reports unavailable detection instead of pretending it works.
 When Grace cannot answer, the [workspace](./workspace.md) gives the
 `ExplainUnavailable` signal in place of the chime and starts no wake
@@ -107,9 +100,10 @@ pure def sometimesWakeFinished(w: Wake): bool = w.phase == Dormant and w.generat
 
 ### Settings and the sleep screen say when wake detection is unavailable
 
-The Settings row is on, off, or not available when the tablet has no
-detector, whatever the saved choice. The sleep screen offers the wake phrase
-only when it would be heard; otherwise it says to touch the screen.
+The saved choice turns detection on or off. Settings shows unavailable when
+the tablet has no detector and offers setup or microphone permission when
+needed. The sleep screen offers the wake phrase when the detector is armed.
+Otherwise it says to touch the screen.
 
 ```quint
 type WakeRow = WakeOn | WakeOff | WakeUnavailable

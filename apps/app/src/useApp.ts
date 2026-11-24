@@ -1,7 +1,7 @@
 // .claude/skills/shell/SKILL.md, "The React interface": the workspace and the page layer, as components read
 // them, and the one way a component changes the workspace.
-// spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"
-import { Effect, type ManagedRuntime, Option, Stream } from "effect";
+// spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"; spec/app/wake.md, "Settings and the sleep screen say when wake detection is unavailable"
+import { Effect, type ManagedRuntime, Option, Stream, SubscriptionRef } from "effect";
 import { createContext, createElement, type ReactNode, use, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import type { Event as AccountEvent, Machine as Accounts } from "../gen/app__accounts.effect.vibe";
 import { useMachine as useAccountsMachine } from "../gen/app__accounts.react.ts";
@@ -33,7 +33,7 @@ import type { FileLibrary } from "./fileLibrary.vibe";
 import type { ManagedReads } from "./managedReads.vibe";
 import type { AccountActions } from "./graceAccount.vibe";
 import type { ReplyControls } from "./replyControls.vibe";
-import type { SpeechActions } from "./graceSpeech.vibe";
+import { SpeechActions } from "./graceSpeech.vibe";
 import type { Machine as PasswordView } from "../gen/app.effect.vibe";
 import { useMachine as usePasswordView } from "../gen/app.react.ts";
 import { Passwords } from "./passwords.vibe";
@@ -205,6 +205,16 @@ export function useFiles() {
     return () => fiber.interruptUnsafe();
   }, [runtime]);
   return useSyncExternalStore(subscribe, () => runtime.runSync(Effect.flatMap(Library, (library) => library.get())));
+}
+
+export function useWakeStatus() {
+  const runtime = useRuntime();
+  const { wakeStatus } = runtime.runSync(SpeechActions);
+  const subscribe = useCallback((changed: () => void) => {
+    const fiber = runtime.runFork(Stream.runForEach(SubscriptionRef.changes(wakeStatus), () => Effect.sync(changed)));
+    return () => fiber.interruptUnsafe();
+  }, [runtime, wakeStatus]);
+  return useSyncExternalStore(subscribe, () => runtime.runSync(SubscriptionRef.get(wakeStatus)));
 }
 
 type NestedProps<T> = { ids: readonly number[]; use: (id: number) => T | undefined; children: (all: readonly T[]) => ReactNode };
