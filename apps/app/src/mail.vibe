@@ -374,7 +374,10 @@ export const mailing = Layer.effect(Mail, effect {
     if (!owned) return
     const { account, box, m } = owned
     const header = headerFor(board, shelf.held(id, m.messageRef), id, m) ?? (connectionOf(account).header(m.messageRef, m.generation) catch () => undefined)
+    try Console.log(["DEBUGREPLY", JSON.stringify(header), JSON.stringify({ view: m.view, readStatus: m.readStatus, readKind: m.readKind, sendStatus: m.sendStatus, composeVisible: m.composeVisible, draftStorage: m.draftStorage, connection: m.connection, canRead: m.canRead, folder: m.folder, generation: m.generation, ref: m.messageRef, replyable: replyable(m) })].join(" "))
     if (header !== undefined) box.send({ type: "replyToMessage", header }, "MailHost") catch () => undefined
+    const after = try box.get()
+    try Console.log(["DEBUGAFTER", String(after.composeVisible), after.replyTo].join(" "))
   }
 
   effect function confirmSend(id: number, revision: number) {

@@ -148,6 +148,7 @@ const sentBills = async () => (await Effect.runPromise(Effect.provide(sentMail(c
 async function replyToBill(said: string) {
   await expect.element(page.getByText(/your November bill of \$54\.99 is ready/)).toBeVisible();
   await tap(page.getByRole("button", { name: "Reply" }));
+  await expect.element(page.getByRole("textbox", { name: "Write your message, or ask Grace to help" }), { timeout: 30000 }).toBeVisible().catch((e) => { console.log("DEBUGBODY", document.body.innerText.slice(0, 3000), "DEBUGBUTTONS", [...document.querySelectorAll("button")].map((b) => `${b.textContent}|${b.disabled}`).join(" ; ")); throw e; });
   await act(() => userEvent.fill(page.getByRole("textbox", { name: "Write your message, or ask Grace to help" }), said));
   await tap(page.getByRole("button", { name: "Send" }));
 }
