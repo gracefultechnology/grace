@@ -3091,13 +3091,33 @@ pure val lifecycleValues = Set(StartupSucceeded, StartupFailed, RetryStartup, Sl
 ### A reply offers controls for its current turn and visible context
 
 An offer identifies its exact turn, device surface, browser revision and
-preference revision. A newer turn, closed Grace window, or changed context
-retires the offer. Navigation, browser controls, preference previews and
-owned reads use the same rules as their visible controls. Opening a draft or
-appointment review never authorizes delivery, saving, removal, or a website
-submission. An action without a current supported path is not shown as
-completed. A prepared offer becomes visible only once its exact response is
-the latest turn in the written transcript.
+preference revision. It is current only while the tablet is ready, Grace's
+window is open and she is not thinking. A newer turn, a closed Grace window,
+or a changed device surface, browser revision or preference revision retires
+the offer. A prepared offer becomes visible only once its exact response is
+the latest turn in the written transcript, and never while a private surface
+is in front.
+
+A control the offer opens is the same event its visible control sends, so it
+passes that control's own guard: navigation passes Home's
+[explicit interruption semantics](#home-native-controls-and-close-have-explicit-interruption-semantics),
+browser controls pass
+[the browser's real navigation state](#starting-and-changing-pages-use-the-browsers-real-navigation-state),
+preference previews pass
+[the same durable settings](#preference-changes-invalidate-wake-timers-and-use-the-same-durable-settings),
+and owned reads show
+[only the matching signed-in account](./setup.md#managed-reads-show-only-the-matching-signed-in-account-and-the-capability-it-granted).
+Opening a draft or appointment review never authorizes delivery, saving,
+removal, or a website submission:
+[only the person approves and sends a reply](./email.md#graces-reply-is-a-draft-that-only-the-person-can-approve-and-send),
+an appointment changes
+[only as she agreed](./calendarView.md#graces-change-takes-effect-only-for-the-exact-change-the-person-agreed-to)
+and is removed
+[only in the scope she agreed to](./calendarView.md#graces-deletion-takes-effect-only-for-the-occurrence-and-scope-the-person-agreed-to),
+and a website is submitted only on
+[her approval of the current review](./commitment.md#explicit-approval-binds-to-the-complete-current-proposal-and-is-consumed-once).
+An action without a current supported path is not shown as completed,
+because [only a verified endpoint completes a task](./assistant.md#completion-is-a-verified-domain-endpoint-never-close-silence-or-a-click).
 
 ```quint
 type ReplyControlContext = { generation: int, device: int, browser: int, preferences: int }
@@ -3116,6 +3136,23 @@ pure def replyControlsCurrent(w: Workspace, reply: ReplyControlContext): bool =
   reply.browser == w.browser.revision and reply.preferences == w.preferences.revision
 pure def lawReplyControlStaleTurn(w: Workspace, reply: ReplyControlContext): bool =
   reply.generation != w.assistant.conversation.generation implies not(replyControlsCurrent(w, reply))
+pure def lawReplyControlStaleDevice(w: Workspace, reply: ReplyControlContext): bool =
+  reply.device != w.device.contextVersion implies not(replyControlsCurrent(w, reply))
+pure def lawReplyControlStaleBrowser(w: Workspace, reply: ReplyControlContext): bool =
+  reply.browser != w.browser.revision implies not(replyControlsCurrent(w, reply))
+pure def lawReplyControlStalePreferences(w: Workspace, reply: ReplyControlContext): bool =
+  reply.preferences != w.preferences.revision implies not(replyControlsCurrent(w, reply))
+pure def lawReplyControlClosedWindow(w: Workspace, reply: ReplyControlContext): bool =
+  w.assistant.presentation == A::Closed implies not(replyControlsCurrent(w, reply))
+pure def replyOfferVisible(w: Workspace, reply: ReplyControlContext, messageIndex: int, messageText: str): bool =
+  val message = w.assistant.conversation.messages.nthOr(messageIndex, C::emptyHumanMessage)
+  not(privateSurfaceActive(w)) and replyControlsCurrent(w, reply) and
+  messageIndex >= 0 and w.assistant.conversation.messages.length() == messageIndex + 1 and
+  message.author == C::GraceMessage and message.text == messageText
+pure def lawReplyOfferWaitsForItsResponse(w: Workspace, reply: ReplyControlContext, messageIndex: int, messageText: str): bool =
+  replyOfferVisible(w, reply, messageIndex, messageText) implies
+    w.assistant.conversation.messages.length() == messageIndex + 1 and
+    w.assistant.conversation.messages.nthOr(messageIndex, C::emptyHumanMessage) == { author: C::GraceMessage, text: messageText }
 ```
 
 ## Story: Wait for my answer to a website
