@@ -1073,7 +1073,7 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
     await shell(serial, `appops set ${surfaceTests} SYSTEM_ALERT_WINDOW allow`);
     const report = await shell(serial, `am instrument -w -e class ${step.instrumented} ${surfaceTests}/androidx.test.runner.AndroidJUnitRunner`, 900);
     process.stdout.write(report);
-    if (!/^OK \(\d+ tests?\)$/m.test(report)) throw new Error(`${step.instrumented} did not pass on ${serial}`);
+    if (!/^OK \(\d+ tests?\)\s*$/m.test(report)) throw new Error(`${step.instrumented} did not pass on ${serial}`);
     await shell(serial, `am start -W -n ${activity}`, 120);
     return;
   }
