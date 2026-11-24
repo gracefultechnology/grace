@@ -1,7 +1,7 @@
-import { useCallback, useState, type AnimationEvent, type ComponentProps, type ReactNode } from "react";
+import { useCallback, useRef, useState, type AnimationEvent, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
 import { useReducedMotion } from "../lib/motion.ts";
-import { useSize, watch } from "../lib/observe.ts";
+import { watch } from "../lib/observe.ts";
 
 export type GraceWindowProps = Omit<ComponentProps<"section">, "children" | "ref"> & {
   /** `compact` is three rows over the page (header, the current message, the answer row); `expanded` fills the screen. */
@@ -56,8 +56,20 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
   const expanded = laid === "expanded";
   const fits = !expanded && height === undefined;
   const [fit, setFit] = useState(COMPACT);
-  const [dockRef, dockSize] = useSize<HTMLDivElement>();
-  const dockHeight = dockSize?.height ?? 0;
+  const [dockHeight, setDockHeight] = useState(0);
+  const lastReportedRef = useRef<number | undefined>(undefined);
+  const dockRef = useCallback((element: HTMLDivElement | null) => {
+    if (!element) {
+      setDockHeight(0);
+      return;
+    }
+    const observer = new ResizeObserver(([entry]) => {
+      const height = entry?.borderBoxSize[0]?.blockSize;
+      if (height !== undefined) setDockHeight(height);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const dockExtra = Math.max(0, dockHeight - COMPACT_DOCK);
   const compactHeight = height ?? fit + dockExtra;
   if (asked !== size) {
@@ -81,14 +93,26 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
     setMotion(undefined);
   };
   const ref = useCallback(
-    (section: HTMLElement | null) =>
-      section && fits
-        ? watch(section, () => {
-            const next = fitted(section);
-            setFit(next);
-            onHeightChange?.(next + dockExtra);
-          })
-        : undefined,
+    (section: HTMLElement | null) => {
+      if (!section || !fits) {
+        lastReportedRef.current = undefined;
+        return;
+      }
+      const target = section.querySelector("[role=log]") ?? section;
+      const stop = watch(target, () => {
+        const next = fitted(section);
+        setFit(next);
+        const total = next + dockExtra;
+        if (lastReportedRef.current !== total) {
+          lastReportedRef.current = total;
+          onHeightChange?.(total);
+        }
+      });
+      return () => {
+        stop();
+        lastReportedRef.current = undefined;
+      };
+    },
     [fits, onHeightChange, dockExtra],
   );
   const vars = { "--grace-dock-height": `${dockHeight}px`, "--grace-travel": motion?.travel };
@@ -113,7 +137,7 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
     >
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[100px] rounded-t-device bg-linear-to-b from-background/55 via-background/15 via-70% to-transparent mask-b-from-50% backdrop-blur-soft"
+        className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[100px] rounded-t-device bg-linear-to-b from-background/85 via-background/40 via-65% to-transparent"
       />
       {header}
       <div
@@ -129,7 +153,7 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
           <>
             <span
               aria-hidden
-              className={cn("pointer-events-none absolute inset-x-0 bottom-0 z-[1] rounded-b-device bg-linear-to-t from-background/75 via-background/35 via-60% to-transparent mask-t-from-50% backdrop-blur-fade", expanded ? "h-[120px]" : "h-[110px]")}
+              className={cn("pointer-events-none absolute inset-x-0 bottom-0 z-[1] rounded-b-device bg-linear-to-t from-background/90 via-background/50 via-60% to-transparent", expanded ? "h-[120px]" : "h-[110px]")}
             />
             <div ref={dockRef} className="absolute inset-x-4 bottom-4 z-[2]">{dock}</div>
           </>

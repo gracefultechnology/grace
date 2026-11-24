@@ -31,7 +31,7 @@ export function InternetCard({ title = "Internet", preview, openLabel = "Open", 
     <LauncherCard title={title} size={size} compact={compact} headClassName="w-[200px]" {...props}>
       <span className={cn("absolute inset-0", compact && "[container-type:size]")}>
         <span className={cn("absolute right-0 w-[240px] rotate-2", compact ? "-top-1 [@container(max-height:276px)]:invisible" : "bottom-0 origin-top-right scale-[.88]")}>
-          {preview ? <img src={preview} alt="" className={cn(frame, "object-cover object-left-top")} /> : <span className={frame} />}
+          {preview ? <img src={preview} alt="" decoding="async" className={cn(frame, "object-cover object-left-top")} /> : <span className={frame} />}
         </span>
       </span>
       <Button asChild variant="prominent" size="compact" className={cn("mt-auto mb-0.5 ml-1 self-start px-[26px] leading-none shadow-none active:scale-100", offline && "bg-primary/10 text-grace-ink/38 active:bg-primary/10")}>

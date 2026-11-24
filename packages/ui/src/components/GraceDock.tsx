@@ -1,7 +1,6 @@
-import { useId, type ComponentProps, type FocusEvent, type ReactNode } from "react";
+import { useCallback, useId, useState, type ComponentProps, type FocusEvent, type ReactNode } from "react";
 import { ArrowUp, Keyboard } from "lucide-react";
 import { cn } from "../lib/cn.ts";
-import { useSize } from "../lib/observe.ts";
 import { Button, GracePill, press } from "./Button.tsx";
 import { GraceCapsule } from "./GraceHeader.tsx";
 import { SwitchTrack } from "./Switch.tsx";
@@ -113,14 +112,23 @@ export function GraceDock({
   className,
   ...props
 }: GraceDockProps) {
-  const [fieldRef, field] = useSize<HTMLTextAreaElement>();
+  const [multi, setMulti] = useState(false);
+  const fieldRef = useCallback((element: HTMLTextAreaElement | null) => {
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const height = entry?.borderBoxSize[0]?.blockSize;
+      if (height !== undefined) setMulti(height > LINE);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
   const reasonId = useId();
   const draft = value.trim().length > 0;
   const hears = mic && !micUnavailable;
   return (
     <div className={cn("flex items-end gap-2", className)} {...props}>
       <label
-        data-multi={(field?.height ?? LINE) > LINE || undefined}
+        data-multi={multi || undefined}
         className={cn(
           "flex min-h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 py-4 pr-4 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 data-multi:items-end data-multi:rounded-window",
           quiet && "opacity-70",

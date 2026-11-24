@@ -68,7 +68,8 @@ const STAGE = { width: 1268, height: 788, rail: 138 };
 
 type Slot = keyof typeof slots;
 type Pose = { transform: string; away: number; side: 1 | -1; level: 0 | 1 | 2 };
-type Rail = { stage: HTMLElement; cards: { slot: Slot; frame: HTMLElement; face: HTMLElement; turning: Turning }[] };
+type CardPose = { slot: Slot; frame: HTMLElement; face: HTMLElement; turning: Turning; transform?: string; level?: number };
+type Rail = { stage: HTMLElement; cards: CardPose[] };
 type Swipe = { pointer: number; x: number; k: number; from: number; shift: number; moved: boolean; at: number; speed: number };
 
 const isSlot = (name: string | undefined): name is Slot => name !== undefined && name in slots;
@@ -118,11 +119,17 @@ function turnTo(rail: Rail, full: boolean, shift: number) {
 }
 
 function paint({ cards }: Rail, full: boolean, shift: number) {
-  for (const { slot, frame, face, turning } of cards) {
-    const { transform, away, side, level } = poseAt(full, slot, shift);
-    face.style.transform = transform;
-    frame.style.zIndex = String(level);
-    showTurn(turning, away, side);
+  for (const card of cards) {
+    const { transform, away, side, level } = poseAt(full, card.slot, shift);
+    if (card.transform !== transform) {
+      card.transform = transform;
+      card.face.style.transform = transform;
+    }
+    if (card.level !== level) {
+      card.level = level;
+      card.frame.style.zIndex = String(level);
+    }
+    showTurn(card.turning, away, side);
   }
 }
 
@@ -166,7 +173,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
   const settle = useCallback((stage: HTMLDivElement | null) => {
     if (!stage) return;
     const entering = railRef.current?.stage !== stage;
-    const rail = railOf(stage);
+    const rail = entering || !railRef.current ? railOf(stage) : railRef.current;
     railRef.current = rail;
     if (entering) paint(rail, full, rest);
     else turnTo(rail, full, rest);
@@ -233,7 +240,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     const resting = frame.left - rest;
     const offPage = resting >= viewWidth || resting + frame.width <= 0;
     return (
-      <div key={slot} aria-hidden={offPage || undefined} inert={offPage} className="absolute" style={frame}>
+      <div key={slot} aria-hidden={offPage || undefined} inert={offPage} data-offpage={offPage || undefined} className="group/card absolute" style={frame}>
         <div data-home-card={slot} className="size-full origin-top-left backface-hidden transition-transform duration-slow ease-out-cubic will-change-transform group-data-dragging/home:transition-none motion-reduce:transition-none">
           {cards[slot]}
           {full && <span aria-hidden {...turnsFar} className={cn("pointer-events-none absolute inset-0 rounded-card bg-linear-to-r from-glass/0 from-30% to-glass/70 to-90% data-[side=left]:bg-linear-to-l", turnsFar.className)} />}

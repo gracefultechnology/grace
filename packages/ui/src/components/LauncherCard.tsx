@@ -26,25 +26,32 @@ const heads = {
 };
 
 const fading = "transition-opacity duration-slow ease-out-cubic will-change-[opacity] group-data-dragging/home:transition-none motion-reduce:transition-none";
-const still = "group-data-dragging/home:[animation-play-state:paused] group-data-turning/home:[animation-play-state:paused]";
+const still = "group-data-dragging/home:[animation-play-state:paused] group-data-turning/home:[animation-play-state:paused] group-data-offpage/card:[animation-play-state:paused]";
 
 const turnsNear = { "data-turn": "near", className: fading } as const;
 export const turnsFar = { "data-turn": "far", className: cn("invisible opacity-0 group-data-dragging/home:visible group-data-turning/home:visible", fading) } as const;
 
-export type Turning = { near: HTMLElement[]; far: HTMLElement[] };
+export type Turning = { near: HTMLElement[]; far: HTMLElement[]; shown?: string; faded?: string; side?: "left" | "right" };
 
 const turned = (card: Element, part: "near" | "far") => [...card.querySelectorAll<HTMLElement>(`[data-turn=${part}]`)];
 
 export const turningOf = (card: Element): Turning => ({ near: turned(card, "near"), far: turned(card, "far") });
 
-export function showTurn({ near, far }: Turning, away: number, side: 1 | -1) {
+export function showTurn(turning: Turning, away: number, side: 1 | -1) {
   const shown = Math.max(0, 1 - away * 3).toFixed(3);
   const faded = away.toFixed(3);
   const toward = side > 0 ? "right" : "left";
-  for (const part of near) part.style.opacity = shown;
-  for (const part of far) {
-    part.style.opacity = faded;
-    if (part.dataset.side !== toward) part.dataset.side = toward;
+  if (turning.shown !== shown) {
+    turning.shown = shown;
+    for (const part of turning.near) part.style.opacity = shown;
+  }
+  if (turning.faded !== faded || turning.side !== toward) {
+    for (const part of turning.far) {
+      if (turning.faded !== faded) part.style.opacity = faded;
+      if (turning.side !== toward) part.dataset.side = toward;
+    }
+    turning.faded = faded;
+    turning.side = toward;
   }
 }
 
@@ -73,11 +80,9 @@ export function LauncherCard({ title, status, size = "large", art, compact = fal
       )}
       {...props}
     >
-      <span
-        aria-hidden
-        {...turnsNear}
-        className={cn("pointer-events-none absolute inset-0 animate-sheen-pan rounded-card bg-gradient-sheen bg-size-[400%_100%] bg-position-[100%_0] bg-no-repeat motion-reduce:animate-none", still, turnsNear.className)}
-      />
+      <span aria-hidden {...turnsNear} className={cn("pointer-events-none absolute inset-0 overflow-hidden rounded-card", turnsNear.className)}>
+        <span className={cn("absolute inset-0 animate-sheen-pan bg-gradient-sheen bg-size-[400%_100%] bg-position-[50%_0] bg-no-repeat motion-reduce:animate-none", still)} />
+      </span>
       {art ? <span {...turnsNear} className={cn("absolute", compact ? "top-2 right-2" : "-top-[34px] -right-5", turnsNear.className)}>{art}</span> : null}
       <span className={cn("absolute", head.head, headClassName)}>
         <span className={cn("block font-bold", head.title, titleClassName)}>{title}</span>

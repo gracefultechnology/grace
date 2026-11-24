@@ -19,8 +19,8 @@ export function VoiceBars({ state = "live", className, ...props }: VoiceBarsProp
       {bars.map((height, i) => (
         <span
           key={height}
-          className={cn("w-1 rounded-full bg-lavender motion-reduce:animate-none", live ? "animate-eq" : "animate-breathe")}
-          style={{ height, animationDelay: `${i * (live ? 0.15 : 0.2)}s` }}
+          className={cn("w-1 rounded-full bg-lavender motion-reduce:animate-none", live ? "animate-eq" : "scale-y-[.65] opacity-75")}
+          style={live ? { height, animationDelay: `${i * 0.15}s` } : { height }}
         />
       ))}
     </span>

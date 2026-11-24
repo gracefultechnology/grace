@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import { memo, type ComponentProps } from "react";
 import { cn, focusRing } from "../lib/cn.ts";
 
 export type FileTileProps = Omit<ComponentProps<"button">, "children"> & {
@@ -13,7 +13,7 @@ export type FileTileProps = Omit<ComponentProps<"button">, "children"> & {
  * @model spec/app/files.md
  * @design packages/design-system/design.md#windows
  */
-export function FileTile({ src, label, type = "button", className, ...props }: FileTileProps) {
+export const FileTile = memo(function FileTile({ src, label, type = "button", className, ...props }: FileTileProps) {
   return (
     <button
       type={type}
@@ -25,7 +25,7 @@ export function FileTile({ src, label, type = "button", className, ...props }: F
       )}
       {...props}
     >
-      {src ? <img alt="" src={src} className="block size-full object-cover" /> : <span className="p-3">{label}</span>}
+      {src ? <img alt="" src={src} decoding="async" loading="lazy" className="block size-full object-cover" /> : <span className="p-3">{label}</span>}
     </button>
   );
-}
+});

@@ -4,10 +4,12 @@ import { cn, focusRing } from "../lib/cn.ts";
 import { watch } from "../lib/observe.ts";
 import { Button } from "./Button.tsx";
 
-function latestTop(list: HTMLElement) {
+function latestTop(list: HTMLElement, compact?: boolean) {
   const end = list.scrollHeight - list.clientHeight;
+  const isCompact = compact ?? Boolean(list.closest("[data-size=compact]"));
+  if (!isCompact) return end;
   const last = list.lastElementChild;
-  if (!(last instanceof HTMLElement) || !list.closest("[data-size=compact]") || last.hasAttribute("data-answers")) return end;
+  if (!(last instanceof HTMLElement) || last.hasAttribute("data-answers")) return end;
   const view = list.clientHeight;
   if (last.offsetHeight <= view + 68) return Math.min(end, Math.max(0, last.offsetTop + last.offsetHeight / 2 - view / 2));
   const rest = last.querySelector("[data-rest]")?.getClientRects()[0];
@@ -26,6 +28,8 @@ export type GraceMessagesProps = ComponentProps<"div"> & {
   onJumpToLatest?: () => void;
   /** The words of the Newest message pill. */
   latestLabel?: string;
+  /** Compact window: centres a short latest message or aligns its unspoken words instead of pinning to the bottom. */
+  compact?: boolean;
 };
 
 /**
@@ -40,6 +44,7 @@ export function GraceMessages({
   hasNewer = false,
   onJumpToLatest,
   latestLabel = "Newest message",
+  compact,
   onScroll,
   className,
   ...props
@@ -48,14 +53,15 @@ export function GraceMessages({
     (list: HTMLDivElement | null) =>
       list && following
         ? watch(list, () => {
-            list.scrollTop = latestTop(list);
+            list.scrollTop = latestTop(list, compact);
           })
         : undefined,
-    [following],
+    [following, compact],
   );
   const scrolled = (event: UIEvent<HTMLDivElement>) => {
     const list = event.currentTarget;
-    const atLatest = list.scrollTop >= latestTop(list) - 4;
+    const end = list.scrollHeight - list.clientHeight;
+    const atLatest = list.scrollTop >= end - 4 || list.scrollTop >= latestTop(list, compact) - 4;
     if (atLatest !== following) onFollowingChange?.(atLatest);
     onScroll?.(event);
   };

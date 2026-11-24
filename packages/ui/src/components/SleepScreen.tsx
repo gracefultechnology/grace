@@ -38,7 +38,7 @@ export function SleepScreen({ time, date, next, nextIcon = <Calendar size={28} s
         </div>
       )}
       <div className="absolute bottom-7 flex items-center gap-4 text-lead leading-[30px] font-medium text-sleep-hint">
-        <GraceOrb glow="welcome" />
+        <GraceOrb glow="welcome" animated={false} />
         {hint}
       </div>
     </div>

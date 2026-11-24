@@ -66,7 +66,7 @@ export function GuideLabel({ title, detail, tone = "turn", mark, placement = "be
   const end = placement === "below-end";
   return (
     <div
-      ref={ref}
+      ref={working ? undefined : ref}
       className={cn(
         "pointer-events-none relative w-max max-w-[420px] rounded-window p-[3px] font-sans animate-label-in motion-reduce:animate-none",
         selectable && "pointer-events-auto cursor-pointer",
