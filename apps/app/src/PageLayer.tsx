@@ -2,7 +2,7 @@
 import tokens from "@repo/design-system/tokens.json" with { type: "json" };
 import { cn, settles } from "@repo/ui";
 import { Effect } from "effect";
-import { type ComponentProps, type ReactNode, createContext, memo, use, useCallback, useMemo, useState } from "react";
+import { type ComponentProps, type ReactNode, createContext, memo, use, useCallback, useMemo, useSyncExternalStore } from "react";
 import type { PageLayer } from "../gen/app__surface.ts";
 import { PageHost, Part } from "./page.vibe";
 import { androidHost } from "./surfacePlugin.ts";
@@ -32,10 +32,30 @@ export function PageArea({ className }: { className?: string }) {
   return <div ref={useWatch(area)} aria-hidden className={className} />;
 }
 
+function createControlStore() {
+  let drawn = false;
+  let listener: (() => void) | undefined;
+  return {
+    part: Part.Control({
+      show: (next: boolean) => {
+        if (drawn === next) return;
+        drawn = next;
+        listener?.();
+      },
+    }),
+    subscribe: (notify: () => void) => {
+      listener = notify;
+      return () => { if (listener === notify) listener = undefined; };
+    },
+    get: () => drawn,
+  };
+}
+
 /** @model spec/app/surface.md */
 export function OverPage({ className, ...props }: ComponentProps<"div">) {
-  const [drawn, setDrawn] = useState(false);
-  const ref = useWatch(useMemo(() => Part.Control({ show: setDrawn }), []));
+  const store = useMemo(() => createControlStore(), []);
+  const drawn = useSyncExternalStore(store.subscribe, store.get, store.get);
+  const ref = useWatch(store.part);
   return <div ref={ref} inert={!drawn} className={cn(settles, "pointer-events-auto", !drawn && "invisible", className)} {...props} />;
 }
 

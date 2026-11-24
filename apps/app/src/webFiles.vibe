@@ -30,7 +30,7 @@ effect function opened(owner: string) {
   })), (db) => sync(() => db.close()))
 }
 
-effect function runTransaction<A>(owner: string, mode: IDBTransactionMode, open: (store: IDBObjectStore) => IDBRequest<unknown>, update: (raw: unknown, store: IDBObjectStore) => A | undefined) {
+effect function runTransaction<A, R>(owner: string, mode: IDBTransactionMode, open: (store: IDBObjectStore) => IDBRequest<R>, update: (raw: unknown, store: IDBObjectStore) => A | undefined) {
   return try scoped(effect {
     const db = try opened(owner)
     return try tryPromise(() => new Promise<A>((resolve, reject) => {

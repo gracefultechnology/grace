@@ -264,8 +264,8 @@ function Agenda({ calendar, today, move, open, busy, children }: {
         }
       }
     }
-    const nextStart = midnight(selected + 1);
-    const nextEnd = midnight(selected + 15);
+    const nextStart = startOfDay(selected + 1);
+    const nextEnd = startOfDay(selected + 15);
     const up = week ? parsed.filter((item) => item.startMs >= nextStart && item.startMs < nextEnd).map((item) => item.row) : [];
     return { buckets: byDay, selectedEvents: byDay.get(selected) ?? [], upcomingEvents: up };
   }, [parsed, calendar.window.mode, calendar.window.anchorDay, selected, week]);
