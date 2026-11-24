@@ -8,7 +8,9 @@ When a [commitment](./commitment.md) to book a visit ends confirmed and its outc
 
 ### Only a booking confirmed by its provider and saved proposes a calendar entry
 
-A commitment proposes an entry only when it books a visit, its terms are a whole booking, its outcome is positive (scheduled, accepted or completed) and that outcome is saved exactly as observed. An outcome still unknown or pending, a failed or returned booking, an outcome not yet saved and a paid bill propose nothing.
+A commitment proposes an entry only when it books a visit for a whole subject (owner, website, account and reference), its terms are a whole booking, its outcome is positive (scheduled, accepted or completed) and that outcome is saved exactly as observed. An outcome still unknown or pending, a failed or returned booking, an outcome not yet saved and a paid bill propose nothing.
+
+Discovered by the proof: without a whole subject the proposed entry would have no owner or occurrence, and the calendar would refuse it.
 
 ```quint
 import task as T from "./task"
@@ -16,7 +18,7 @@ import commitment as CM from "./commitment"
 import calendar as C from "./calendar"
 import calendarView as CV from "./calendarView"
 pure def recordAllowed(booked: CM::Commitment): bool =
-  T::recordsInCalendar(booked.key.kind) and T::validTerms(booked.key.kind, booked.proposal) and
+  T::validKey(booked.key) and T::recordsInCalendar(booked.key.kind) and T::validTerms(booked.key.kind, booked.proposal) and
   CM::positiveOutcome(booked.result) and not(CM::outcomeNeedsSave(booked))
 pure def lawUnsavedOrUncertainOutcomeRecordsNothing(booked: CM::Commitment): bool =
   (booked.result == CM::Unknown or booked.result == CM::Pending or CM::outcomeNeedsSave(booked) or
