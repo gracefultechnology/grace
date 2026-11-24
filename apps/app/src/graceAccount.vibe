@@ -384,7 +384,7 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
   const privacy = privateViewPlugin
   if (privacy !== undefined) {
     try fork.scoped Stream.runForEach(Stream.changes(Stream.map(workspace.changes, (w) => accountDetailsShown(w.device))),
-      effect (active: boolean) => { tryPromise(() => privacy.protect({ view: "account", active })) catch () => undefined })
+      effect (active: boolean) => { tryPromise(() => privacy.protect({ view: "account", active })) catch effect (cause) => try logWarning(active ? "Account page shown with captures allowed" : "Captures still blocked after leaving the Account page", cause) })
   }
   if (webView.window.location.hash === "#account") {
     try fork.scoped effect {
