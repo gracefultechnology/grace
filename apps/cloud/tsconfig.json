@@ -9,6 +9,6 @@
     "lib": ["es2024", "dom", "dom.iterable"],
     "rootDirs": [".", ".vibe/declarations"]
   },
-  "include": ["src", "test"],
+  "include": ["src", "test", "*.config.ts"],
   "vibe": { "sidecarDir": ".vibe/declarations" }
 }
