@@ -20,7 +20,7 @@ import config, { androidPaths, CloudProfile, cloudProfiles, standaloneProfile } 
 const app = path.resolve(import.meta.dirname, "..");
 const upstream = path.resolve(app, "../../vendor/eliza");
 const artifacts = path.join(app, "artifacts");
-const flavors = ["launcher", "standalone"];
+const variant = "launcher";
 export const identity = Schema.decodeUnknownSync(
   Schema.Struct({ appId: Schema.String, appName: Schema.String, android: Schema.Struct({ path: Schema.String }) }),
 )(config);
@@ -427,8 +427,8 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
   const userHome = path.join(app, project, "android-user");
   mkdirSync(userHome, { recursive: true });
   copyFileSync(path.join(app, "android/debug.keystore"), path.join(userHome, "debug.keystore"));
-  if (!release && fixture === undefined) for (const flavor of flavors) for (const suffix of ["", "-unsigned"])
-    rmSync(path.join(app, output, `${flavor}-release${suffix}.apk`), { force: true });
+  if (!release && fixture === undefined) for (const suffix of ["", "-unsigned"])
+    rmSync(path.join(app, output, `${variant}-release${suffix}.apk`), { force: true });
   buildAndroidConsumer({
     root: app,
     environment: {
@@ -436,7 +436,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
       GRACE_ANDROID_CAPACITOR_PROJECT: project, GRACE_ANDROID_CAPACITOR_WEB_DIR: webDir,
       VITE_GRACE_CLOUD_PROFILE: cloudProfile, VITE_GRACE_CLOUD_API_ORIGIN: selected.apiOrigin, VITE_GRACE_CLOUD_WEB_ORIGIN: selected.webOrigin,
     },
-    variants: fixture ? ["standalone"] : flavors,
+    variants: [variant],
     release,
     lint: false,
     androidTest: false,
@@ -501,7 +501,7 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
   const aapt = buildTool("aapt");
   const selected = cloudProfiles[cloudProfile];
   const callbackHost = new URL(selected.webOrigin).hostname;
-  const apks = readdirSync(directory).filter((name) => flavors.some((flavor) => name.startsWith(`${flavor}-`)) && name.endsWith(".apk"));
+  const apks = readdirSync(directory).filter((name) => name.startsWith(`${variant}-`) && name.endsWith(".apk"));
   if (!apks.length) throw new Error("No Grace APK was produced for verification");
   const manifest = apks.map((name) => {
     const file = path.join(directory, name);
@@ -981,7 +981,7 @@ async function installGrace(serial: typeof EmulatorSerial.Type, apk: string) {
 }
 
 async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>, release: boolean, cloudProfile: CloudProfile, benchmark?: BenchmarkRun) {
-  await installGrace(serial, path.join(app, apkOutput(cloudProfile), release ? "launcher-release.apk" : "launcher-debug.apk"));
+  await installGrace(serial, path.join(app, apkOutput(cloudProfile), `${variant}-${release ? "release" : "debug"}.apk`));
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
   await shell(serial, `until [ "$(${resolveHome})" = ${activity} ]; do sleep 1; done`, 600)
@@ -1271,7 +1271,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           throw buildFailure;
         }
         step = "build the signed native editor instrumentation";
-        const apk = path.join(app, output, "standalone-debug.apk");
+        const apk = path.join(app, output, `${variant}-debug.apk`);
         const editorApk = buildPasswordEditorFixture(path.join(app, output), login, apk);
         signal.throwIfAborted();
         step = "install the test APK and transport";

@@ -22,16 +22,7 @@
   "signing": { "storeFile": "GRACE_KEYSTORE", "storePassword": "GRACE_KEYSTORE_PASSWORD", "keyAlias": "GRACE_KEY_ALIAS", "keyPassword": "GRACE_KEY_PASSWORD" },
   "manifest": { "root": "consumer", "path": "android/AndroidManifest.xml" },
   "flavors": [
-    {
-      "name": "standalone",
-      "buildConfigFields": [{ "name": "IS_LAUNCHER", "type": "boolean", "value": false }],
-      "manifest": { "root": "consumer", "path": "android/standalone/AndroidManifest.xml" }
-    },
-    {
-      "name": "launcher",
-      "buildConfigFields": [{ "name": "IS_LAUNCHER", "type": "boolean", "value": true }],
-      "manifest": { "root": "consumer", "path": "android/launcher/AndroidManifest.xml" }
-    }
+    { "name": "launcher", "manifest": { "root": "consumer", "path": "android/launcher/AndroidManifest.xml" } }
   ],
   "sourceSets": {
     "androidTest": { "java": [{ "root": "consumer", "path": "test/android" }] },

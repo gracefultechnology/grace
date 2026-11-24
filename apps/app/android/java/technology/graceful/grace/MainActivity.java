@@ -117,7 +117,7 @@ public class MainActivity extends ElizaBridgeActivity {
   registerPlugin(PrivateViewPlugin.class);
   registerPlugin(GraceDevicePlugin.class);
   registerPlugin(GraceWakePlugin.class);
-  if (BuildConfig.IS_LAUNCHER) registerPlugin(WiFiPlugin.class);
+  registerPlugin(WiFiPlugin.class);
   registerPlugin(GraceRecordStorePlugin.class);
   registerPlugin(GraceRemindersPlugin.class);
   super.onCreate(state);
@@ -132,11 +132,10 @@ public class MainActivity extends ElizaBridgeActivity {
   });
   getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
    @Override public void handleOnBackPressed() {
-    if (isRendererGone()) { if (!BuildConfig.IS_LAUNCHER) leave(this); return; }
+    if (isRendererGone()) return;
     getBridge().getWebView().evaluateJavascript(HARDWARE_BACK, answer -> {
      if (isRendererGone() || isFinishing() || "false".equals(answer)) return;
-     if (BuildConfig.IS_LAUNCHER) getBridge().getWebView().evaluateJavascript(LAUNCHER_HOME, null);
-     else leave(this);
+     getBridge().getWebView().evaluateJavascript(LAUNCHER_HOME, null);
     });
    }
   });
@@ -146,34 +145,24 @@ public class MainActivity extends ElizaBridgeActivity {
 
  @Override public void onStart() {
   super.onStart();
-  if (BuildConfig.IS_LAUNCHER) {
-   ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
-   connectivity.registerDefaultNetworkCallback(defaultNetwork);
-   wifiNetwork = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    ? new WifiNetworkChange(ConnectivityManager.NetworkCallback.FLAG_INCLUDE_LOCATION_INFO) : new WifiNetworkChange();
-   connectivity.registerNetworkCallback(new NetworkRequest.Builder()
-    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    .build(), wifiNetwork);
-  }
+  ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
+  connectivity.registerDefaultNetworkCallback(defaultNetwork);
+  wifiNetwork = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+   ? new WifiNetworkChange(ConnectivityManager.NetworkCallback.FLAG_INCLUDE_LOCATION_INFO) : new WifiNetworkChange();
+  connectivity.registerNetworkCallback(new NetworkRequest.Builder()
+   .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+   .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+   .build(), wifiNetwork);
   GraceAgentService.resume(this);
   ManagedCalendarReminders.reconcile(this);
  }
 
  @Override public void onStop() {
-  if (BuildConfig.IS_LAUNCHER) {
-   ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
-   connectivity.unregisterNetworkCallback(wifiNetwork);
-   wifiNetwork = null;
-   connectivity.unregisterNetworkCallback(defaultNetwork);
-  }
+  ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
+  connectivity.unregisterNetworkCallback(wifiNetwork);
+  wifiNetwork = null;
+  connectivity.unregisterNetworkCallback(defaultNetwork);
   super.onStop();
- }
-
- private void leave(OnBackPressedCallback callback) {
-  callback.setEnabled(false);
-  getOnBackPressedDispatcher().onBackPressed();
-  callback.setEnabled(true);
  }
 
  private void preferSixtyHertz() {

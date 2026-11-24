@@ -8,7 +8,7 @@ back with Ask Grace, then Grace's own question, "What would you like to
 do?". Set-up uses English and one voice. It offers no language or wake-word picker.
 
 This follows PRD ONB-01 to ONB-03 (`prototype/prd.md:923–927`), with three
-changes. Wi-Fi comes first on the launcher tablet, because thinking and
+changes. Wi-Fi comes first, because thinking and
 speech run in the cloud. The account step comes before anything spoken,
 because Grace can think only once an email account is connected and the
 cloud account behind speech and reasoning is usable, so Not now there
@@ -35,9 +35,7 @@ acknowledged save that Settings uses.
 ### Set-up has an ordered list of steps and a current one
 
 Each step is pending, done (answered, or already true) or put off with Not
-now. The facts are what the host reports: whether this build owns
-Wi-Fi (the launcher does, the standalone app does not), whether the tablet
-is online, whether an email account is connected, whether the cloud account
+now. The facts are what the host reports: whether the tablet is online, whether an email account is connected, whether the cloud account
 is signed in and usable (signed in, and not needing attention), whether she
 has a saved name, and whether cloud speech is available. Grace can think
 only while an email account is connected, the cloud account is usable and
@@ -49,7 +47,7 @@ import preferences as P from "./preferences"
 import shell as S from "./shell"
 type SetupStage = WifiStep | AccountStep | NameStep | PaceStep | TextSizeStep | ExplainStep | TalkStep | TypeStep | CloseStep | ReopenStep | HandOverStep
 type SetupPhase = Unstarted | Answering | Away | Ending | EndFailed | Ended
-type SetupFacts = { ownsWifi: bool, online: bool, accountConnected: bool, cloudUsable: bool, named: bool, speechAvailable: bool }
+type SetupFacts = { online: bool, accountConnected: bool, cloudUsable: bool, named: bool, speechAvailable: bool }
 type StepOutcome = Pending | Done | PutOff
 type SetupProgress = { step: SetupStage, outcomes: int -> StepOutcome }
 type Setup = { phase: SetupPhase, progress: SetupProgress, facts: SetupFacts, wentAway: bool, endToken: int, graceAccount: GraceAccount, tabletSignIn: TabletSignIn, googleLink: GoogleLink }
@@ -64,7 +62,7 @@ pure def nextStep(st: SetupStage): SetupStage =
   if (st == WifiStep) AccountStep else if (st == AccountStep) NameStep else if (st == NameStep) PaceStep
   else if (st == PaceStep) TextSizeStep else if (st == TextSizeStep) ExplainStep else if (st == ExplainStep) TalkStep
   else if (st == TalkStep) TypeStep else if (st == TypeStep) CloseStep else if (st == CloseStep) ReopenStep else HandOverStep
-pure val noFacts: SetupFacts = { ownsWifi: false, online: false, accountConnected: false, cloudUsable: false, named: false, speechAvailable: false }
+pure val noFacts: SetupFacts = { online: false, accountConnected: false, cloudUsable: false, named: false, speechAvailable: false }
 pure def graceThinks(f: SetupFacts): bool = f.accountConnected and f.cloudUsable and f.online
 pure def outcomeOf(p: SetupProgress, st: SetupStage): StepOutcome = p.outcomes.getOr(orderOf(st), Pending)
 pure def withOutcome(p: SetupProgress, st: SetupStage, answered: bool): int -> StepOutcome = p.outcomes.put(orderOf(st), outcomeFor(answered))
@@ -87,9 +85,7 @@ pure def showsSetUp(s: Setup): bool = s.phase == Answering or s.phase == Ending 
 
 ### A step whose outcome is already true is passed
 
-Wi-Fi is passed when the tablet is online, or when this build does not own
-Wi-Fi (the standalone app, where an offline tablet is pointed to the
-system's own settings). The account step is passed when an email account is
+Wi-Fi is passed when the tablet is online. The account step is passed when an email account is
 connected, and the name step when she has a saved name. A step put off with
 Not now is cleared the moment its outcome comes true: coming online clears a
 put-off Wi-Fi step. Passing never goes beyond the name step, and never
@@ -97,7 +93,7 @@ repeats a finished step.
 
 ```quint
 pure def passes(st: SetupStage, f: SetupFacts): bool =
-  if (st == WifiStep) not(f.ownsWifi) or f.online
+  if (st == WifiStep) f.online
   else if (st == AccountStep) f.accountConnected
   else if (st == NameStep) f.named
   else false
@@ -120,36 +116,23 @@ pure def alwaysTheCurrentStepIsNotAlreadyTrue(s: Setup): bool =
   s.phase != Unstarted implies not(passes(s.progress.step, s.facts))
 ```
 
-### The launcher and the standalone app differ only in the Wi-Fi step
-
-The standalone app shows one step fewer, and its progress count says so.
-
-```quint
-pure def lawFlavorsDifferOnlyInWifi(st: SetupStage, online: bool, connected: bool, named: bool): bool =
-  st != WifiStep implies
-    passes(st, { ...noFacts, ownsWifi: true, online: online, accountConnected: connected, named: named }) ==
-    passes(st, { ...noFacts, ownsWifi: false, online: online, accountConnected: connected, named: named })
-```
-
 ### The progress count fits the steps of this build
 
-Set-up shows "Step n of m", where m counts every step but the hand-over,
-less Wi-Fi on a build that does not own it, since that build never has a
-Wi-Fi step. On a build that has the step, a step passed because it was
-already true still counts, so the number only goes up within a run: a
-launcher tablet already online opens on "Step 2 of 10".
+Set-up shows "Step n of 10", where 10 counts every step but the
+hand-over. A step passed because it was already true still counts, so the
+number only goes up within a run: a tablet already online opens on
+"Step 2 of 10".
 
 ```quint
-pure def shownStepCount(f: SetupFacts): int = if (f.ownsWifi) 10 else 9
-pure def progressNumber(s: Setup): int = if (s.facts.ownsWifi) orderOf(s.progress.step) + 1 else orderOf(s.progress.step)
+pure val shownStepCount: int = 10
+pure def progressNumber(s: Setup): int = orderOf(s.progress.step) + 1
 pure def alwaysTheCountFitsTheStepsShown(s: Setup): bool =
-  (s.phase == Answering) implies (1 <= progressNumber(s) and progressNumber(s) <= shownStepCount(s.facts))
+  (s.phase == Answering) implies (1 <= progressNumber(s) and progressNumber(s) <= shownStepCount)
 ```
 
 ### The host's report starts set-up, and a restart keeps the step
 
-The host reports at every cold start whether it owns Wi-Fi, whether the
-tablet is online, whether an email account is connected and whether she has
+The host reports at every cold start whether the tablet is online, whether an email account is connected and whether she has
 a saved name. The first report shows the first step not already true. After
 a restart set-up is where it was: the same step, unless its outcome came
 true meanwhile, and still on Home if she was there. Whether the cloud
@@ -163,8 +146,8 @@ pure def withFacts(f: SetupFacts, s: Setup): Setup =
   val stops = (s.phase == Ending or s.phase == EndFailed) and not(graceThinks(f))
   { ...s, facts: f, progress: settledProgress(s.progress, f),
     phase: if (stops) Away else s.phase, wentAway: s.wentAway or stops }
-pure def hostStarted(s: Setup, ownsWifi: bool, online: bool, connected: bool, named: bool): Setup =
-  val t = withFacts({ ownsWifi: ownsWifi, online: online, accountConnected: connected, cloudUsable: false, named: named, speechAvailable: false }, s)
+pure def hostStarted(s: Setup, online: bool, connected: bool, named: bool): Setup =
+  val t = withFacts({ online: online, accountConnected: connected, cloudUsable: false, named: named, speechAvailable: false }, s)
   { ...t, phase: if (s.phase == Unstarted) Answering else t.phase }
 pure def stepRestartKeepsTheStep(before: Setup, via: str, after: Setup): bool =
   via == "hostStarted" implies
@@ -179,7 +162,7 @@ hears that the tablet came online or went offline, that an email account
 was connected or removed, that the cloud account became usable or stopped
 being usable, that her name was saved or deleted, and that speech became
 available or stopped. It hears nothing before the host's first report,
-since until then it cannot know whether this build owns Wi-Fi. If Grace
+which starts set-up. If Grace
 stops being able to think while the end is being saved, or after a failed
 save, she is taken to Home, where set-up waits.
 
@@ -449,7 +432,7 @@ pure def lawSetUpChoicesArePreferencePreviews(settings: P::DisplayPreferences, p
 ### Every way through set-up is reachable
 
 A finished set-up, a failed save, a put-off account, a put-off Wi-Fi step,
-a resumed set-up, the standalone app passing Wi-Fi, Talk tried aloud, and
+a resumed set-up, Talk tried aloud, and
 set-up waiting on Home at the hand-over for Grace to be able to think are
 all reachable.
 
@@ -468,7 +451,6 @@ pure def sometimesSaveFailed(s: Setup): bool = s.phase == EndFailed
 pure def sometimesAccountPutOff(s: Setup): bool = s.phase == Away and accountPutOff(s)
 pure def sometimesWifiPutOff(s: Setup): bool = outcomeOf(s.progress, WifiStep) == PutOff
 pure def sometimesResumed(s: Setup): bool = s.phase == Answering and s.wentAway and orderOf(s.progress.step) > orderOf(AccountStep)
-pure def sometimesStandaloneSkipsWifi(s: Setup): bool = not(s.facts.ownsWifi) and outcomeOf(s.progress, WifiStep) == Done and s.phase == Answering
 pure def sometimesTalkTriedAloud(s: Setup): bool = outcomeOf(s.progress, TalkStep) == Done
 pure def sometimesWaitsForGraceAtTheHandOver(s: Setup): bool = s.phase == Away and s.progress.step == HandOverStep and not(graceThinks(s.facts))
 ```
@@ -1157,7 +1139,7 @@ pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool
 ### A backup belongs to the signed-in owner and has its own approval
 
 The native account host fixes one deployment for this distribution of
-Grace. Either app form can use shared Eliza Cloud production or standalone
+Grace. It can use shared Eliza Cloud production or standalone
 Grace Cloud production. Shared Eliza Cloud staging is for debug builds.
 Grace offers Backup and recovery when exactly one acknowledged native
 account on the selected deployment, the tablet's screen lock, and that
