@@ -369,9 +369,12 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
     try SubscriptionRef.update(wakeStatus, (status) => ({ ...status, armed: false }))
     return (tryPromise(() => wake.configure({ generation: null })) |> Effect.as(%, true)) catch () => false
   }
+  effect function pageVisible() {
+    return !(Effect.try(() => webView.hidden()) catch () => true)
+  }
   function eligibleWake(state: Workspace, status: WakeStatus) {
     const { device, assistant } = state
-    return status.available && status.permitted && status.disclosed && !webView.hidden() &&
+    return status.available && status.permitted && status.disclosed &&
       state.preferences.session.wakeEnabled && device.microphoneAllowed &&
       (device.readiness === "Ready" || device.readiness === "Sleeping") && state.wake.phase === "Dormant" &&
       !privateSurfaceActive(state) && !localPasswordCommands(device) && !assistant.conversation.voice &&
@@ -381,7 +384,7 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
     if (!wake) return
     const status = try SubscriptionRef.get(wakeStatus)
     const state = try workspace.get()
-    if (!eligibleWake(state, status) || (try Ref.get(mic)) !== null) {
+    if (!eligibleWake(state, status) || !(try pageVisible()) || (try Ref.get(mic)) !== null) {
       try pauseWake()
       return
     }
@@ -397,7 +400,7 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
     const previous = try SubscriptionRef.get(wakeStatus)
     const disclosed = try wakeDisclosed()
     try SubscriptionRef.set(wakeStatus, { ...status, disclosed, armed: previous.armed && status.available && status.permitted })
-    if (status.available || previous.available) try reportMic(status.permitted && !webView.hidden())
+    if (status.available || previous.available) try reportMic(status.permitted && (try pageVisible()))
   }
   effect function startWake(value: unknown) {
     if (!wake) return
@@ -408,7 +411,7 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
     try SubscriptionRef.update(wakeStatus, (status) => ({ ...status, armed: false }))
     const status = try SubscriptionRef.get(wakeStatus)
     const state = try workspace.get()
-    if (lease.interaction !== state.wake.generation || !eligibleWake(state, status)) return
+    if (lease.interaction !== state.wake.generation || !eligibleWake(state, status) || !(try pageVisible())) return
     const detection = {
       generation: lease.interaction, now: try Clock.currentTimeMillis,
       conversationVersion: listeningAfterWake(state).conversation.generation,
@@ -420,11 +423,11 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
     if (!accepted || accepted.state.wake.phase !== "AwaitingSpeech") return
     const exchange = accepted.state.wake
     const current = try workspace.get()
-    if (current.wake.generation !== exchange.generation || !current.assistant.conversation.voice || webView.hidden()) return
+    if (current.wake.generation !== exchange.generation || !current.assistant.conversation.voice || !(try pageVisible())) return
     const opened = timeout(tryPromise((signal) => openMicrophone(signal)), "4 seconds") catch () => null
     if (opened === null) return
     const after = try workspace.get()
-    if (after.wake.generation !== exchange.generation || !after.assistant.conversation.voice || webView.hidden()) {
+    if (after.wake.generation !== exchange.generation || !after.assistant.conversation.voice || !(try pageVisible())) {
       try Effect.ignore(tryPromise(() => opened.close()))
       return
     }

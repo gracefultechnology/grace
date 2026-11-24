@@ -1,4 +1,4 @@
-# Prepare a bill payment on any supported website
+# Prepare a task on any supported website
 
 The semantic journey is goal → verified destination and account → current bill → chosen amount/date/method → verified form → consequential review. These are facts to establish, not a fixed list of pages or clicks. A website may combine or repeat them. [Execution](./execution.md) discovers current controls and [payment](./commitment.md) owns authorization and durable outcomes. This preparation model cannot submit money. It never reads a bill's own fields: what it holds is one [kind's](./taskKinds.md) reading and the task's terms, and the [bill kind](./billKind.md) judges them. Booking a visit is prepared by the same steps, its reading and terms judged by the [booking kind](./bookingKind.md).
 
