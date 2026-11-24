@@ -107,6 +107,7 @@ const wakeLimit = 64 * 1024 * 1024;
 const apkPolicy = {
   exportedComponents: {
     [`${identity.appId}.MainActivity`]: null,
+    [`${identity.appId}.GraceDeviceOwner`]: "android.permission.BIND_DEVICE_ADMIN",
     "ai.eliza.plugins.passwords.ElizaPasswordAutofillService": "android.permission.BIND_AUTOFILL_SERVICE",
     "com.google.android.gms.auth.api.signin.RevocationBoundService": "com.google.android.gms.auth.api.signin.permission.REVOCATION_NOTIFICATION",
     "androidx.profileinstaller.ProfileInstallReceiver": "android.permission.DUMP",
@@ -537,9 +538,28 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
   }
 }
 
+function checkNetworkSecurity({ file, aapt, aapt2, manifestReference, episodeCertificate }: {
+  file: string; aapt: string; aapt2: string; manifestReference: string | null; episodeCertificate: boolean;
+}) {
+  const resourcePath = "res/xml/network_security.xml";
+  const resources = execFileSync(aapt2, ["dump", "resources", file], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
+  const resource = /^ {4}resource (0x[\da-f]+) xml\/network_security\n((?: {6}[^\n]+\n)*)/m.exec(resources);
+  if (!resource || `@${resource[1]}` !== manifestReference || resource[2]?.trim() !== `() (file) ${resourcePath} type=XML`) {
+    throw new Error(`${path.basename(file)} must use a single default network security resource`);
+  }
+  const xml = execFileSync(aapt, ["dump", "xmltree", file, resourcePath], { encoding: "utf8" })
+    .trimEnd().replace(/ \(line=\d+\)$/gm, "");
+  const base = "E: network-security-config\n  E: base-config\n    A: cleartextTrafficPermitted=(type 0x12)";
+  const valid = episodeCertificate
+    ? xml.startsWith(`${base}0x0\n`) && !xml.includes("cleartextTrafficPermitted=(type 0x12)0xffffffff")
+    : xml === `${base}0xffffffff`;
+  if (!valid) throw new Error(`${path.basename(file)} has an unexpected network security configuration`);
+}
+
 function writeCheckedManifest(cloudProfile: CloudProfile, directory: string, episodeCertificate: boolean) {
   const apksigner = buildTool("apksigner");
   const aapt = buildTool("aapt");
+  const aapt2 = buildTool("aapt2");
   const selected = cloudProfiles[cloudProfile];
   const callbackHost = new URL(selected.webOrigin).hostname;
   const apks = builtApks(directory);
@@ -558,6 +578,7 @@ function writeCheckedManifest(cloudProfile: CloudProfile, directory: string, epi
     const { facts, problems } = apkDistributionProblems({ ...apk, names: entries.filter((entry) => !allowedWake.has(entry)) }, apkPolicy,
       { mode: name.includes("-release") ? "release" : "debug" });
     if (problems.length) throw new Error(`${name} fails the distribution check: ${problems.join("; ")}`);
+    checkNetworkSecurity({ file, aapt, aapt2, manifestReference: facts.application.networkSecurityConfig, episodeCertificate });
     if (entries.includes("res/raw/billworld_episode_ca.pem") !== episodeCertificate) {
       throw new Error(`${name} has the wrong certificate resources for this build`);
     }
