@@ -3127,8 +3127,8 @@ pure def lawReplyControlStaleTurn(w: Workspace, reply: ReplyControlContext): boo
 ### No task step is taken while a website's question holds the person, and the task goes on after her answer
 
 The workspace keeps [what websites ask](./websiteRequests.md) as part of
-its own state: the host hands it each state those requests step to, and the
-workspace is held exactly while they hold the person (`holdsThePerson`: a
+its own state: it takes each state of those requests the host reports, and
+the workspace is held exactly while they hold the person (`holdsThePerson`: a
 question is presented, or a site permission she allowed is waiting for
 Android). While it holds her, the workspace refuses every step of a task: observing, preparing,
 dispatching or verifying an operation, progress reported for one, completing

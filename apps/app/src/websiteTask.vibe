@@ -1,6 +1,6 @@
 // spec/app/deviceKeys.md, "Story: Answer a website before Grace goes on"; spec/app/workspace.md, "Story: Wait for my answer to a website"
-import { decodeEvent as websiteEvent, machineOver as requestsOver, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe"
-import { decodeEvent as workspaceEvent, enabled, heldByWebsite, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { decodeEvent as websiteEvent, initial as noRequests, machineOver as requestsOver, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe"
+import { decodeEvent as workspaceEvent, enabled, heldByWebsite, step, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 
 export service WebsiteTask {
   readonly clear: boolean!!
@@ -23,7 +23,8 @@ export const websiteTask = Layer.unwrap(effect {
     while (true) {
       const sent = try serial(effect {
         const state = try workspace.get()
-        if (enabled(state, event, by) || !heldByWebsite(state)) return { result: try workspace.send(event, by, isCurrent) }
+        const answered = () => step(state, { type: "followWebsite", website: noRequests }, "Host").state
+        if (enabled(state, event, by) || !heldByWebsite(state) || !enabled(answered(), event, by)) return { result: try workspace.send(event, by, isCurrent) }
         return undefined
       })
       if (sent !== undefined) return sent.result
