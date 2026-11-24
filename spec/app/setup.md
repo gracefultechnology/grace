@@ -1140,26 +1140,34 @@ pure def lawDevicePasswordsNeedExplicitLink(scope: str, generationId: str): bool
 
 The native account host fixes one deployment for this distribution of
 Grace. It can use shared Eliza Cloud production or standalone
-Grace Cloud production. Shared Eliza Cloud staging is for debug builds.
+Grace Cloud production. Shared Eliza Cloud staging and standalone Grace
+Cloud staging are for debug builds only.
 Grace offers Backup and recovery when exactly one acknowledged native
 account on the selected deployment, the tablet's screen lock, and that
 deployment's backup service are ready. An unavailable deployment leaves
 the local vault available under its usual rules.
 
 ```quint
-type PasswordCloudProfile = SharedElizaProduction | SharedElizaStaging | StandaloneGraceProduction
+type PasswordCloudProfile = SharedElizaProduction | SharedElizaStaging | StandaloneGraceProduction | StandaloneGraceStaging
+pure def stagingPasswordCloud(profile: PasswordCloudProfile): bool =
+  profile == SharedElizaStaging or profile == StandaloneGraceStaging
+pure def standalonePasswordCloud(profile: PasswordCloudProfile): bool =
+  profile == StandaloneGraceProduction or profile == StandaloneGraceStaging
 pure def passwordCloudIssuer(profile: PasswordCloudProfile): str =
   match profile {
     | SharedElizaProduction => "https://cloud.eliza.app"
     | SharedElizaStaging => "https://cloud-staging.eliza.app"
     | StandaloneGraceProduction => "https://api.graceforseniors.com"
+    | StandaloneGraceStaging => "https://api-staging.graceforseniors.com"
   }
 pure def passwordRecoveryOffered(profile: PasswordCloudProfile, acknowledgedAccounts: int, debugBuild: bool, screenSecure: bool, serviceReady: bool): bool =
-  acknowledgedAccounts == 1 and (profile != SharedElizaStaging or debugBuild) and screenSecure and serviceReady
+  acknowledgedAccounts == 1 and (not(stagingPasswordCloud(profile)) or debugBuild) and screenSecure and serviceReady
 pure def lawAmbiguousAccountCannotOpenPasswordRecovery(profile: PasswordCloudProfile, debugBuild: bool): bool =
   not(passwordRecoveryOffered(profile, 2, debugBuild, true, true))
 pure def lawProductionBuildCannotOpenStagingPasswordRecovery(screenSecure: bool, serviceReady: bool): bool =
   not(passwordRecoveryOffered(SharedElizaStaging, 1, false, screenSecure, serviceReady))
+pure def lawProductionBuildCannotOpenStandaloneStagingPasswordRecovery(screenSecure: bool, serviceReady: bool): bool =
+  not(passwordRecoveryOffered(StandaloneGraceStaging, 1, false, screenSecure, serviceReady))
 ```
 
 ### Each deployment approves through its own sign-in
@@ -1196,16 +1204,16 @@ pure def samePasswordBackupBinding(a: PasswordBackupBinding, b: PasswordBackupBi
   a.generationId == b.generationId and a.requestId == b.requestId and a.purpose == b.purpose
 pure def passwordBackupApprovalMatches(approval: PasswordBackupApproval, binding: PasswordBackupBinding): bool =
   validPasswordBackupBinding(binding) and (match approval {
-    | StandaloneBrowserPasswordApproval(grant) => binding.profile == StandaloneGraceProduction and samePasswordBackupBinding(grant.binding, binding)
-    | SharedNativePasswordApproval(grant) => binding.profile != StandaloneGraceProduction and samePasswordBackupBinding(grant.binding, binding)
+    | StandaloneBrowserPasswordApproval(grant) => standalonePasswordCloud(binding.profile) and samePasswordBackupBinding(grant.binding, binding)
+    | SharedNativePasswordApproval(grant) => not(standalonePasswordCloud(binding.profile)) and samePasswordBackupBinding(grant.binding, binding)
   })
 pure def lawSharedCloudNeedsFreshNativeSignIn(sameAccount: bool, confirmed: bool): bool =
   not(mayApproveSharedPasswordBackup(false, sameAccount, confirmed))
 pure def lawSharedConsentCannotApproveStandalone(binding: PasswordBackupBinding): bool =
-  binding.profile == StandaloneGraceProduction implies
+  standalonePasswordCloud(binding.profile) implies
     not(passwordBackupApprovalMatches(SharedNativePasswordApproval({ binding: binding }), binding))
 pure def lawStandaloneConsentCannotApproveShared(binding: PasswordBackupBinding): bool =
-  binding.profile != StandaloneGraceProduction implies
+  not(standalonePasswordCloud(binding.profile)) implies
     not(passwordBackupApprovalMatches(StandaloneBrowserPasswordApproval({ binding: binding }), binding))
 ```
 
@@ -1251,6 +1259,7 @@ pure val bindingValues: Set[PasswordBackupBinding] = Set(sharedPasswordBackupSam
   .union(Set({ ...standalonePasswordBackupSample, organizationId: "" }))
   .union(Set({ ...sharedPasswordBackupSample, purpose: RestorePasswordBackup }))
   .union(Set({ ...standalonePasswordBackupSample, generationId: "old" }))
+  .union(Set({ ...standalonePasswordBackupSample, profile: StandaloneGraceStaging, issuer: "https://api-staging.graceforseniors.com" }))
 pure val approvedValues: Set[PasswordBackupBinding] = bindingValues
 pure val pendingValues: Set[PasswordBackupRequest] = Set(ClosedPasswordBackupRequest)
   .union(Set(PendingPasswordBackupRequest({ binding: sharedPasswordBackupSample })))
@@ -1272,7 +1281,7 @@ pure def lawPasswordBackupGrantNeedsVerifiedOrganization(binding: PasswordBackup
 pure def lawMatchingPasswordBackupGrantIsUsable(binding: PasswordBackupBinding): bool =
   validPasswordBackupBinding(binding) implies
     mayUsePasswordBackupGrant(PendingPasswordBackupRequest({ binding: binding }),
-      if (binding.profile == StandaloneGraceProduction) StandaloneBrowserPasswordApproval({ binding: binding })
+      if (standalonePasswordCloud(binding.profile)) StandaloneBrowserPasswordApproval({ binding: binding })
       else SharedNativePasswordApproval({ binding: binding }))
 pure def lawPasswordBackupGrantCannotBeReused(pending: PasswordBackupRequest, approval: PasswordBackupApproval): bool =
   mayUsePasswordBackupGrant(pending, approval) implies
