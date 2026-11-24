@@ -8,7 +8,10 @@ export function useSize<T extends Element>() {
     if (!element) return;
     const observer = new ResizeObserver(([entry]) => {
       const box = entry?.borderBoxSize[0];
-      if (box) setSize({ width: box.inlineSize, height: box.blockSize });
+      if (!box) return;
+      const width = box.inlineSize;
+      const height = box.blockSize;
+      setSize((prev) => (prev && prev.width === width && prev.height === height ? prev : { width, height }));
     });
     observer.observe(element);
     return () => observer.disconnect();

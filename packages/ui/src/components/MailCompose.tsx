@@ -340,7 +340,7 @@ export function MailCompose({
           <ul className="m-0 mt-2.5 flex list-none gap-3 p-0">
             {attachments.map((photo, i) => (
               <li key={photo.src} className="relative h-[110px] w-[150px] overflow-hidden rounded-xl shadow-attachment">
-                <img src={photo.src} alt={photo.alt} className="size-full object-cover" />
+                <img src={photo.src} alt={photo.alt} decoding="async" loading="lazy" className="size-full object-cover" />
                 {onRemoveAttachment && (
                   <Button variant="capsule" size="compact-icon" className="absolute top-1.5 right-1.5 size-9 text-chrome transition-none active:scale-96" aria-label={`${l.removeAttachment} ${photo.alt}`} onClick={() => onRemoveAttachment(i)}>
                     <X size={20} strokeWidth={2.4} aria-hidden />

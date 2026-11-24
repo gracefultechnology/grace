@@ -210,7 +210,7 @@ export function MailApp({
           ) : messages.length ? (
             <ul className="m-0 flex list-none flex-col gap-3 p-0">
               {messages.map(({ id, ...message }) => (
-                <li key={id}>
+                <li key={id} className={guide?.targetId === id ? undefined : "[content-visibility:auto] [contain-intrinsic-size:auto_96px]"}>
                   {guided(guide, id, <MailMessageRow {...message} onOpen={onOpen && (() => onOpen(id))} />, { radius: 22, placement: "below", className: "flex [&>div]:flex-1" })}
                 </li>
               ))}

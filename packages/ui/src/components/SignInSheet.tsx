@@ -53,8 +53,8 @@ export function SignInSheet({
         {...props}
       >
         <div className="relative flex items-center justify-between border-b border-primary/8 p-4">
-          <div className="flex h-16 items-center rounded-full bg-glass/62 p-1 shadow-capsule backdrop-blur-capsule backdrop-saturate-160">
-            <Button variant="glass" size="compact" className="bg-transparent px-[22px] active:bg-transparent" onClick={onCancel}>
+          <div className="flex h-16 items-center rounded-full bg-glass/82 p-1 shadow-capsule">
+            <Button variant="plain" size="compact" className="px-[22px] text-grace-ink active:bg-transparent" onClick={onCancel}>
               {cancelLabel}
             </Button>
           </div>

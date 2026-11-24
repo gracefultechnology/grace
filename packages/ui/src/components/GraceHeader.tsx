@@ -111,9 +111,9 @@ export function GraceHeader({
         <GracePill
           aria-expanded={expanded}
           onClick={() => onExpandedChange?.(!expanded)}
-          className={cn(nudge && "animate-guide-pulse motion-reduce:animate-none")}
-          style={nudge ? { boxShadow: "var(--shadow-guide-nudge)" } : undefined}
+          className={cn(nudge && "relative shadow-guide-nudge")}
         >
+          {nudge && <span aria-hidden className="pointer-events-none absolute inset-0 animate-guide-pulse rounded-full shadow-guide-peak motion-reduce:animate-none" />}
           <Size size={20} strokeWidth={2.2} aria-hidden />
           {expanded ? collapseLabel : expandLabel}
         </GracePill>

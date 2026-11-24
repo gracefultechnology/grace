@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import tokens from "@repo/design-system/tokens.json" with { type: "json" };
 
 export type TextScaleProps = {
@@ -18,10 +18,13 @@ const sizes = Object.entries(text).map(([name, token]) => [name, typeof token ==
  * @design packages/design-system/design.md
  */
 export function TextScale({ percent, children }: TextScaleProps) {
-  const scaled = sizes.map(([name, size]) => `--text-${name}:calc(${size} * ${percent / 100})`).join(";");
+  const css = useMemo(
+    () => (percent === 100 ? null : `:root:root{${sizes.map(([name, size]) => `--text-${name}:calc(${size} * ${percent / 100})`).join(";")}}`),
+    [percent],
+  );
   return (
     <>
-      <style>{`:root:root{${scaled}}`}</style>
+      {css && <style>{css}</style>}
       {children}
     </>
   );

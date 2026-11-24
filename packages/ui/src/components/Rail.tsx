@@ -81,7 +81,7 @@ export function RailButton({ icon, label, selected = false, type = "button", cla
       aria-current={selected || undefined}
       className={cn(
         focusRing,
-        "flex h-[76px] w-[116px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl text-body leading-6 font-bold text-chrome transition-[background-color,box-shadow] duration-press ease-css-default [&_svg]:shrink-0",
+        "flex h-[76px] w-[116px] cursor-pointer flex-col items-center justify-center gap-1 rounded-xl text-body leading-6 font-bold text-chrome transition-colors duration-press ease-css-default [&_svg]:shrink-0",
         selected ? "bg-card text-primary shadow-raised" : "active:bg-glass/72 active:shadow-tile-pressed",
         className,
       )}

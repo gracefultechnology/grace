@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import { memo, type ComponentProps } from "react";
 import { ChevronRight } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
 
@@ -33,7 +33,7 @@ export type CalendarEventRowProps = Omit<ComponentProps<"button">, "title" | "ch
  * @model spec/app/calendarView.md
  * @design packages/design-system/design.md#windows
  */
-export function CalendarEventRow({
+export const CalendarEventRow = memo(function CalendarEventRow({
   title,
   dayLabel,
   startLabel,
@@ -81,4 +81,4 @@ export function CalendarEventRow({
       <ChevronRight aria-hidden size={26} strokeWidth={2.4} className="ml-auto flex-none text-chevron" />
     </button>
   );
-}
+});
