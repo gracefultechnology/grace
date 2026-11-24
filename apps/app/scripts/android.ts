@@ -413,7 +413,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
       },
       manifestPlaceholders: { graceCloudCallbackHost: new URL(selected.webOrigin).hostname, graceCloudCallbackPath: selected.callbackPath },
       buildConfigFields: Object.entries({
-        CLOUD_PROFILE: cloudProfile, CLOUD_API_ORIGIN: selected.apiOrigin,
+        CLOUD_PROFILE: cloudProfile, CLOUD_ENVIRONMENT: selected.environment, CLOUD_API_ORIGIN: selected.apiOrigin,
         CLOUD_WEB_ORIGIN: selected.webOrigin, CLOUD_CALLBACK_PATH: selected.callbackPath,
       }).map(([name, value]) => ({ name, type: "String", value })),
       sourceSets: {
@@ -1453,7 +1453,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
 if (import.meta.main) {
   const options = parseArgs({ options: { "cloud-profile": { type: "string" }, release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" }, "billworld-passwords": { type: "string" }, "verify-billworld-run": { type: "string" }, benchmark: { type: "string" }, receipt: { type: "string" } } }).values;
   const { "cloud-profile": cloudProfile = standaloneProfile, verify, release = false, abi = "arm64-v8a", install, emulator, exercise, "billworld-passwords": billworld, "verify-billworld-run": fixtureRun, benchmark, receipt } = Schema.decodeUnknownSync(Arguments)(options);
-  if (cloudProfile === "shared-staging" && release) throw new Error("Shared Eliza Cloud staging is only available in debug APKs");
+  if (cloudProfiles[cloudProfile].environment === "staging" && release) throw new Error("Staging cloud profiles are only available in debug APKs");
   if (install && emulator) throw new Error("Give --install <emulator serial> or --emulator <avd>, not both");
   if (exercise && !install && !emulator) throw new Error("--exercise needs --install <emulator serial> or --emulator <avd>");
   if ((benchmark || receipt) && (!benchmark || !receipt || (!install && !emulator) || exercise || verify || release))
