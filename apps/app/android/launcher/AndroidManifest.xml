@@ -5,5 +5,9 @@
   <activity android:name=".MainActivity" android:exported="true">
    <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.HOME" /><category android:name="android.intent.category.DEFAULT" /></intent-filter>
   </activity>
+  <receiver android:name=".GraceDeviceOwner" android:exported="true" android:permission="android.permission.BIND_DEVICE_ADMIN">
+   <meta-data android:name="android.app.device_admin" android:resource="@xml/grace_device_owner" />
+   <intent-filter><action android:name="android.app.action.DEVICE_ADMIN_ENABLED" /><action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" /></intent-filter>
+  </receiver>
  </application>
 </manifest>

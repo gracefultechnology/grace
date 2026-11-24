@@ -322,9 +322,11 @@ otherwise.
 21. Browser details: offline shows "Needs the internet"; Reload stays; no Stop
     and no zoom control, websites follow Text size; a website's Google sign-in
     goes to Chrome; a mailto link opens Grace's Email.
-22. Wi-Fi: Grace joins open and password networks in her own screen; company
-    networks and hotel sign-in pages go to Android's panel. The password is
-    never stored or shown to Grace.
+22. Wi-Fi: Grace joins open and password networks in her own screen, with no
+    Android dialog; a hotel or café sign-in page opens in Grace's browser.
+    Company networks that need an account, and WEP, are not listed. Nothing
+    asks for location and nothing sends the person to Android's settings
+    (decision 43). The password is never stored or shown to Grace.
 23. Saved details: name, phone and address, saved only with her approval,
     listed in Settings with delete, used for the greeting and booking forms.
 24. Unused components and the prototype's rejected try-outs are deleted, the
@@ -373,6 +375,13 @@ otherwise.
     stays signed out until it is signed by a release signer.
 42. The microphone is asked for at first use, matching decision 11. The
     image grants nothing at first boot.
+43. Grace is the tablet's device owner, set when the tablet is set up for the
+    person (`adb shell dpm set-device-owner` on a reset tablet or emulator for
+    now; QR provisioning follows). As owner she grants herself location,
+    which Android requires to list Wi-Fi networks, keeps Location on, turns
+    Wi-Fi on and joins networks without a prompt. Locking the tablet to Grace
+    (lock task mode) follows as its own change and will supersede decisions
+    27 and 37.
 
 ### Gates that follow this delivery
 
@@ -785,7 +794,7 @@ services, cite the spec rule and assert no markup, wording or screenshots.
 | Voice | Exercise Talk and the “Hey Grace” wake phrase through the same cloud conversation. Confirm Settings set-up and permission, wake from Grace’s sleep screen, the chime and mute, and the return after silence. Turn wake off while Settings saves and verify that detection stops. Check that denying or revoking permission, leaving Grace, nearby non-wake speech and device playback do not start a conversation. Touch wakes the screen without opening a voice exchange. Inspect outbound traffic for the absence of pre-wake audio and verify that the APK’s on-device speech processing is limited to keyword detection. The pilot tablet has no screen lock (decision 27). Exercise question/statement endings, Type/mute precedence, silence, two unusable utterances, interruption, captions, draft retention, one IME send, Repeat, pace/volume, the daily voice allowance running out and speech-service failure on the emulator, then on the tablet in user QA. |
 | Privacy and diagnosis | Inspect redacted browser/audio/error traces and actual outbound payloads. Password/code/payment secrets are excluded before vision/model transmission or capture pauses. Accidental speech-secret handling makes no retroactive privacy promise. Correlate task, operation and source without logging secret values. |
 | Visual comparison | Compare every implemented Home carousel, Email, Calendar, Files, settings, browser, compact/expanded Grace and website-keyboard/caption state against `prototype/Grace Prototype.html`. Follow its selected default carousel/header treatment, not its hidden comparison controls. Inspect every supported text size, actual keyboard insets, focus, contrast, labels and touch controls; no screenshot-comparison tests. |
-| Connectivity and settings | Exercise actual Wi-Fi scanning, joining open and password networks in Grace's own screen, rejected credentials and the hand-off of company networks and captive portals to Android's panel (decision 22), plus Disconnect and Forget saved network; closing/reopening cannot invent connectivity. Verify brightness, volume/mute, text size and settings persistence against OS acknowledgment. With no internet nothing asks the agent or the speech service; Fix Wi-Fi shows written steps (decision 6). |
+| Connectivity and settings | Exercise actual Wi-Fi scanning, joining open and password networks in Grace's own screen, rejected credentials, captive-portal sign-in in Grace's browser and no location prompt (decisions 22 and 43), plus Disconnect and Forget saved network; closing/reopening cannot invent connectivity. Verify brightness, volume/mute, text size and settings persistence against OS acknowledgment. With no internet nothing asks the agent or the speech service; Fix Wi-Fi shows written steps (decision 6). |
 | Device and independence | Validate the launcher APK, Home role, Google sign-in and provisioning on the stock Android tablet in user QA (decision 7); the delivery walks every exercise on the `grace-tablet-2` emulator. Collect distinct preparation, payment completion and correct-failure rates in user QA. Formal models and controlled fixtures do not establish independent senior use, support reduction or pilot readiness. |
 | Set-up and account | Walk set-up from a wiped tablet: Wi-Fi, Sign in with Google and "Not now", her name, pace and text size with the live preview, the practice steps and the first question (decision 10). One Google sign-in opens her Gmail and Calendar and her Eliza Cloud account; an unfunded account shows "your account needs attention" (decision 9). Sign out and "Run set-up again" clear the former owner first (decision 28). |
 | Tasks and booking | Run a bill and a booking through the same task steps (decision 13). Booking starts from the clinic's email on a signed-in portal, explains a deposit and leaves it to her, and offers the calendar entry at the end. One task at a time, shown at its source with its outcome (decision 14). |

@@ -982,8 +982,15 @@ async function installGrace(serial: typeof EmulatorSerial.Type, apk: string) {
   });
 }
 
+async function makeDeviceOwner(serial: typeof EmulatorSerial.Type) {
+  if ((await shell(serial, "dpm list-owners")).includes(identity.appId)) return;
+  await shell(serial, `dpm set-device-owner ${identity.appId}/.GraceDeviceOwner`)
+    .catch(failing(`Making Grace the device owner of ${serial}, which Android allows only on an emulator with no accounts and no other owner`));
+}
+
 async function walk(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray<Step>, release: boolean, cloudProfile: CloudProfile, benchmark?: BenchmarkRun) {
   await installGrace(serial, path.join(app, apkOutput(cloudProfile), `${variant}-${release ? "release" : "debug"}.apk`));
+  await makeDeviceOwner(serial);
   await shell(serial, `cmd package set-home-activity ${activity}`);
   const resolveHome = "cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME | tail -n 1";
   await shell(serial, `until [ "$(${resolveHome})" = ${activity} ]; do sleep 1; done`, 600)

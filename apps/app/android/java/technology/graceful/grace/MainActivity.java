@@ -109,6 +109,7 @@ public class MainActivity extends ElizaBridgeActivity {
   String attachmentTicket = ManagedAttachmentImport.ticket(launch);
   if (ManagedAttachmentImport.targets(launch)) setIntent(new Intent(Intent.ACTION_MAIN));
   else if (accountCallback != null) setIntent(new Intent(launch).setData(null));
+  GraceDeviceOwner.apply(this);
   registerPlugin(EmbeddedAgentPlugin.class);
   registerPlugin(GraceAccount.class);
   registerPlugin(GraceFiles.class);
