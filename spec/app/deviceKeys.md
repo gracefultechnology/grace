@@ -150,19 +150,19 @@ Back. The Back after it is the one `backAction` chooses, as the rules above
 say.
 
 ```quint
-type DeviceBack = LeaveFullscreen | TakeBackAction(BackAction)
+type DeviceBack = LeaveFullscreen | TakeBackAction({ back: BackAction })
 pure def backLeavesFullscreen(shell: S::Shell, layer: P::PageLayer): bool =
   shell.readiness == S::Ready and P::canLeaveFullscreen(layer)
 pure def deviceBack(shell: S::Shell, a: A::Assistant, b: B::Browser, r: WR::WebsiteRequests,
   history: P::PrivateHistory, layer: P::PageLayer): DeviceBack =
-  if (backLeavesFullscreen(shell, layer)) LeaveFullscreen else TakeBackAction(backAction(shell, a, b, r, history))
+  if (backLeavesFullscreen(shell, layer)) LeaveFullscreen else TakeBackAction({ back: backAction(shell, a, b, r, history) })
 pure def lawBackLeavesFullscreenBeforeAnythingElse(shell: S::Shell, a: A::Assistant, b: B::Browser,
   r: WR::WebsiteRequests, history: P::PrivateHistory, layer: P::PageLayer): bool =
   (deviceBack(shell, a, b, r, history, layer) == LeaveFullscreen iff backLeavesFullscreen(shell, layer)) and
   (deviceBack(shell, a, b, r, history, layer) == LeaveFullscreen implies P::canLeaveFullscreen(layer))
 pure def lawBackAfterFullscreenIsTheBackAction(shell: S::Shell, a: A::Assistant, b: B::Browser,
   r: WR::WebsiteRequests, history: P::PrivateHistory, layer: P::PageLayer): bool =
-  deviceBack(shell, a, b, r, history, P::leaveFullscreen(layer)) == TakeBackAction(backAction(shell, a, b, r, history))
+  deviceBack(shell, a, b, r, history, P::leaveFullscreen(layer)) == TakeBackAction({ back: backAction(shell, a, b, r, history) })
 pure val layerValues = Set(P::initial, { ...P::initial, shown: true, fullscreen: true })
 ```
 

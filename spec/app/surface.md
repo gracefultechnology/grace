@@ -365,8 +365,14 @@ pure def appearGrace(l: PageLayer, a: A::Assistant, later: A::Assistant): PageLa
   if (graceAppears(a, later) and canLeaveFullscreen(l)) leaveFullscreen(l) else l
 pure def lawGraceNeverAppearsUnderAFullscreenVideo(l: PageLayer, a: A::Assistant, later: A::Assistant): bool =
   graceAppears(a, later) implies not(appearGrace(l, a, later).fullscreen)
+pure def sameTabs(x: Set[int], y: Set[int]): bool = x.subseteq(y) and y.subseteq(x)
 pure def lawAppearingChangesOnlyTheVideosSize(l: PageLayer, a: A::Assistant, later: A::Assistant): bool =
-  { ...appearGrace(l, a, later), fullscreen: l.fullscreen } == l
+  val m = appearGrace(l, a, later)
+  m.shown == l.shown and m.hostVisible == l.hostVisible and m.page == l.page and m.drawn == l.drawn and
+    m.routed == l.routed and m.requested == l.requested and m.routingReady == l.routingReady and
+    m.pending == l.pending and m.version == l.version and m.keyboard == l.keyboard and
+    sameTabs(m.reclaimed, l.reclaimed) and sameTabs(m.privateBack, l.privateBack) and
+    sameTabs(m.privateForward, l.privateForward)
 pure def lawAskGraceMakesHerAppear(a: A::Assistant): bool =
   A::canOpen(a, C::ConversationUser) implies graceAppears(a, A::open(a, C::ConversationUser))
 pure val speakingAssistant: A::Assistant =
