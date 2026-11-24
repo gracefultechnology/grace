@@ -140,9 +140,9 @@ pure def lawNextAppointmentsAreSavedAndFuture(registry: A::Accounts, calendars: 
 ### Home’s calendar card says Last updated only while it can’t update, and otherwise what is planned
 
 While the card can’t update, because the tablet is offline while an email’s
-calendar shows, or a shown email needs her to sign in again, it keeps the
-appointments it has and says "Last
-updated" with when it last did; Home’s banner says why
+calendar shows, or an email whose calendar shows needs her to sign in
+again, it keeps the appointments it has and says "Last updated" with when
+it last did; Home’s banner says why
 ([Notices](./notices.md)). Only then does it say "Last updated". Otherwise it
 says "Today" when a shown appointment is saved for today, "Nothing today"
 when the next is on a later day, and "Nothing planned" when none is coming
@@ -154,9 +154,12 @@ only it showing the card never says "Last updated".
 
 ```quint
 type HomeCalendarStatus = CalendarLastUpdated | CalendarToday | NothingToday | NothingPlanned
+pure def shownProviderCalendars(registry: A::Accounts, calendars: List[CalendarSource]): List[CalendarSource] =
+  calendars.select(s => s.key != tabletKey and showsCalendar(registry, s.key))
 pure def cantUpdate(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool): bool =
-  (not(online) and calendars.some(s => s.key != 0 and showsCalendar(registry, s.key))) or
-    M::signedOut(registry, sources).length() > 0
+  val shown = shownProviderCalendars(registry, calendars)
+  val signedOut = M::signedOut(registry, sources)
+  shown.some(s => not(online) or signedOut.some(mail => mail.account == s.key))
 pure def homeCalendarStatus(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool, fromTime: int, untilTime: int, dayStart: int, dayEnd: int): HomeCalendarStatus =
   if (cantUpdate(registry, calendars, sources, online)) CalendarLastUpdated
   else if (upcoming(registry, calendars, fromTime, untilTime).length() == 0) NothingPlanned
@@ -166,8 +169,7 @@ pure def homeCalendarHint(status: HomeCalendarStatus): bool = status == NothingP
 pure def lawLastUpdatedOnlyWhileItCantUpdate(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool, fromTime: int, untilTime: int, dayStart: int, dayEnd: int): bool =
   val status = homeCalendarStatus(registry, calendars, sources, online, fromTime, untilTime, dayStart, dayEnd)
   (status == CalendarLastUpdated iff cantUpdate(registry, calendars, sources, online)) and
-  (cantUpdate(registry, calendars, sources, online) implies
-    (M::signedOut(registry, sources).length() > 0 or calendars.some(s => s.key != 0 and showsCalendar(registry, s.key)))) and
+  (shownProviderCalendars(registry, calendars).length() == 0 implies status != CalendarLastUpdated) and
   (homeCalendarHint(status) implies upcoming(registry, calendars, fromTime, untilTime).length() == 0)
 ```
 

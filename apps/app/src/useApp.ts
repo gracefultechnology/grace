@@ -635,7 +635,7 @@ export function lastUpdated(at: number | undefined, now: number): string {
 
 const oldest = (kind: Updated, ids: readonly number[], updated: UpdatedAt) => {
   const stamps = ids.map((id) => updated(kind, id));
-  return stamps.some((at) => at === undefined) ? undefined : Math.min(...stamps.filter((at) => at !== undefined));
+  return stamps.length === 0 || stamps.some((at) => at === undefined) ? undefined : Math.min(...stamps.filter((at) => at !== undefined));
 };
 
 export function useMailFile() {

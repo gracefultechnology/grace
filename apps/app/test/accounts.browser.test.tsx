@@ -382,7 +382,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(page.getByRole("button", { name: "Back to Email & calendar" }));
   await expect.element(row(outlook)).toBeVisible();
 
-  // spec/app/accounts.md, "Signing in again renews the same account"
+  // spec/app/accounts.md, "Signing in again renews the same account"; spec/app/notices.md, "Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder"
   await Effect.runPromise(Effect.provide(expire(cloud, secret, outlook), client));
   await closeSettings();
   await tap(page.getByRole("button", { name: /^Email/ }));
@@ -391,10 +391,8 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await tap(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Outlook needs you to sign in again")).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Email" }));
-  await openEmailSettings();
-  await expect.element(row(outlook)).toHaveAccessibleName(/Outlook · Needs you to sign in again/);
-  await tap(row(outlook));
-  await tap(page.getByRole("button", { name: "Sign in again" }));
+  const homeBanner = page.getByRole("status").filter({ hasText: "Outlook needs you to sign in" });
+  await tap(homeBanner.getByRole("button", { name: "Sign in", exact: true }));
   await answerOutlook("allow");
   await expect.element(page.getByText("Outlook · Connected")).toBeVisible();
   await toasted("Outlook connected");
