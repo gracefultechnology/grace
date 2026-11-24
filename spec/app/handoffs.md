@@ -16,7 +16,7 @@ and so is opening an email's link over the device, Email and the Browser.
 
 ### Domain projections retain the same task subject
 
-Only a confirmed bill from the selected connected mailbox or a saved bill occurrence is a usable source from Email or Calendar. The mailbox resolves selection against its current owned message record, so Trash, purge or a stale reference cannot retain source authority. Calendar callers resolve the selected occurrence through the current collection, so a deleted entry or series cannot supply an old cached bill. The calendar must be open and outside its deletion flow; a hidden selection retained for a pending deletion is not an actionable bill. Email text and calendar titles are not destination authority. The browser still verifies origin and account through the preparation model before using personal data. A Browser tab, the saved file open in Files, or a request the person made to Grace in the conversation is a source only with a subject the host verified for that tab, file or request; page text, file names, document text and spoken words are not subject authority. A Files source stays tied to the file on screen and the library generation it was opened in, and a conversation source to the turn that asked.
+Only a confirmed bill from the selected connected mailbox or a saved bill occurrence is a usable source from Email or Calendar. The mailbox resolves selection against its current owned message record, so Trash, purge or a stale reference cannot retain source authority. Calendar callers resolve the selected occurrence through the current collection, so a deleted entry or series cannot supply an old cached bill. The calendar must be open and outside its deletion flow; a hidden selection retained for a pending deletion is not an actionable bill. Email text and calendar titles are not destination authority. The browser still verifies origin and account through the preparation model before using personal data. A Browser tab, the saved file open in Files, or a request the person made to Grace in the conversation is a source only with a subject the host verified for that tab, file or request; page text, file names, document text and spoken words are not subject authority. A Files source stays tied to the file on screen and the library generation it was opened in. A conversation source names the turn that asked, and the host vouches for that turn as it does for a Browser tab.
 
 ```quint
 import commitment as CM from "./commitment"
@@ -344,24 +344,29 @@ pure val commitmentValues = Set(CM::initial,
 
 ### Every entry point of one subject reaches the one commitment kept for it, and no other subject shares its record
 
-The registry and the commitments agree on one record per subject. Two
-usable sources of the same subject, such as a bill's email and its calendar
-entry, or a booking request in the conversation and the clinic's page, find
-the same record and show the same outcome and receipt from the one commitment
-kept for that subject. A subject with a record never shares it with another
-subject, whatever kind either is.
+The registry and the commitments agree on one record per subject: the
+commitments keep at most one commitment for any subject, and every subject the
+registry has bound has exactly one. A usable source of a bound subject, such as
+a bill's email or its calendar entry, or a booking request in the conversation
+or the clinic's page, therefore reaches that subject's only commitment and shows
+its actual outcome. A source of another subject never reaches the same record
+and never shows that commitment's receipt, whatever kind either subject is.
 
 ```quint
 pure def commitmentFor(commitments: List[CM::Commitment], key: T::Subject): CM::Commitment =
   commitments.foldl(CM::initial, (found, c) => if (c.key == key) c else found)
+pure def keptFor(commitments: List[CM::Commitment], key: T::Subject): List[CM::Commitment] =
+  commitments.select(c => c.key == key)
+pure def commitmentsMatchRegistry(r: Registry, commitments: List[CM::Commitment]): bool =
+  commitments.every(c => keptFor(commitments, c.key).length() == 1) and
+  r.bindings.every(row => keptFor(commitments, row.key).length() == 1)
 pure def lawOneRecordPerSubject(r: Registry, first: TaskSource, second: TaskSource, commitments: List[CM::Commitment]): bool =
-  val firstRecord = accessibleRecord(r, first.key)
-  val secondRecord = accessibleRecord(r, second.key)
-  (alwaysMappingsAreValid(r) and alwaysOneBillPerRecord(r) and usableSource(first) and usableSource(second)) implies
-    ((first.key == second.key implies (firstRecord == secondRecord and
-      visibleOutcome(first, commitmentFor(commitments, first.key)) == visibleOutcome(second, commitmentFor(commitments, second.key)) and
-      visibleReceipt(first, commitmentFor(commitments, first.key)) == visibleReceipt(second, commitmentFor(commitments, second.key)))) and
-    ((first.key != second.key and firstRecord != "") implies firstRecord != secondRecord))
+  val kept = commitmentFor(commitments, first.key)
+  (alwaysMappingsAreValid(r) and alwaysOneBillPerRecord(r) and commitmentsMatchRegistry(r, commitments) and
+    usableSource(first) and accessibleRecord(r, first.key) != "") implies
+    (keptFor(commitments, first.key) == List(kept) and visibleOutcome(first, kept) == kept.result and
+      (first.key != second.key implies
+        (accessibleRecord(r, second.key) != accessibleRecord(r, first.key) and visibleReceipt(second, kept) == "")))
 pure val commitmentsValues = Set(List(),
   List({ ...CM::initial, key: CM::exampleKey, proposal: CM::exampleTerms, stage: CM::Resolved, result: CM::Completed, reference: "receipt" },
     { ...CM::initial, key: CM::bookingKey, proposal: CM::bookingTerms, stage: CM::Resolved, result: CM::Scheduled, reference: "confirmation" }))
@@ -558,7 +563,9 @@ pure val linkValues = Set(emailLink, "https://elsewhere.example", "")
 
 ### A Home event row opens its own occurrence in Calendar, and a stale row opens nothing
 
-A Home event row names the calendar's owner, the calendar, the occurrence, its
+The prototype's Home (`prototype/Grace Prototype.html`, line 2420) opens
+Calendar on the tapped event's detail. A Home event row names the calendar's
+owner, the calendar, the occurrence, its
 revision and the calendar generation it was drawn from. Tapping it while the
 device is ready and on Home opens Calendar with that occurrence selected,
 through Calendar's own `openCalendar` and `openOccurrence`, and the device shows
@@ -566,7 +573,8 @@ Calendar. A row for another owner or calendar, from an older generation, for an
 occurrence that is gone, unsaved or at another revision, or one tapped while
 Calendar has a form open or a deletion under way opens nothing and leaves the
 device and Calendar as they were. Opening an event keeps every event and series;
-like Calendar's own open, it only marks a change made elsewhere as seen.
+like Calendar's own open, it only marks a change made elsewhere to the opened
+event as seen, and every other event stays exactly as it was.
 
 ```quint
 type EventRow = { owner: str, calendarId: str, occurrenceId: str, revision: int, generation: int }
@@ -606,7 +614,8 @@ pure def lawOpeningAnEventKeepsTheEvents(device: S::Shell, calendarView: V::Cale
   val handoff = openHomeEvent(device, calendarView, eventRow, by)
   match handoff {
     | EventDeclined => true
-    | OpenedEvent(result) => result.calendar.entries.length() == calendarView.entries.length() and
+    | OpenedEvent(result) => result.calendar.entries == calendarView.entries.listMap(c =>
+          if (c.identity.occurrenceId == eventRow.occurrenceId) C::noticed(c) else c) and
         result.calendar.series == calendarView.series and
         result.calendar.deletedSeries.subseteq(calendarView.deletedSeries) and calendarView.deletedSeries.subseteq(result.calendar.deletedSeries)
   }

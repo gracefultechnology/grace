@@ -82,20 +82,59 @@ lemma lawCurrentResolutionCanNavigate_ensures(r: Registry, expectedVersion: int,
 }
 
 // spec/app/handoffs.md, "Every entry point of one subject reaches the one commitment kept for it, and no other subject shares its record"
+lemma LookupCommitments(xs: seq<app__commitment_Commitment>, key: app__task_Subject, acc: app__commitment_Commitment)
+  ensures (forall c :: c in xs ==> c.key != key) ==>
+    Std.Collections.Seq.FoldLeft((found: app__commitment_Commitment, c: app__commitment_Commitment) => (if (c.key == key) then c else found), acc, xs) == acc
+  ensures (exists c :: c in xs && c.key == key) ==>
+    Std.Collections.Seq.FoldLeft((found: app__commitment_Commitment, c: app__commitment_Commitment) => (if (c.key == key) then c else found), acc, xs) in xs &&
+    Std.Collections.Seq.FoldLeft((found: app__commitment_Commitment, c: app__commitment_Commitment) => (if (c.key == key) then c else found), acc, xs).key == key
+  decreases |xs|
+{
+  if |xs| > 0 {
+    var next := if xs[0].key == key then xs[0] else acc;
+    LookupCommitments(xs[1..], key, next);
+    assert forall c :: c in xs ==> c == xs[0] || c in xs[1..];
+    assert forall c :: c in xs[1..] ==> c in xs;
+  }
+}
+
+lemma KeptForView(commitments: seq<app__commitment_Commitment>, key: app__task_Subject)
+  ensures keptFor(commitments, key) == ProofLib.Filter((c: app__commitment_Commitment) => (c.key == key), commitments)
+{
+}
+
 lemma lawOneRecordPerSubject_ensures(r: Registry, first: TaskSource, second: TaskSource, commitments: seq<app__commitment_Commitment>)
   ensures (lawOneRecordPerSubject(r, first, second, commitments) == true)
 {
-  if alwaysMappingsAreValid(r) && alwaysOneBillPerRecord(r) && first.key != second.key && accessibleRecord(r, first.key) != "" {
+  var kept := commitmentFor(commitments, first.key);
+  if alwaysMappingsAreValid(r) && alwaysOneBillPerRecord(r) && commitmentsMatchRegistry(r, commitments) &&
+    usableSource(first) && accessibleRecord(r, first.key) != "" {
     LookupBindings(r.bindings, first.key, noBinding);
-    LookupBindings(r.bindings, second.key, noBinding);
     var a := bindingFor(r, first.key);
-    var b := bindingFor(r, second.key);
-    if accessibleRecord(r, second.key) == accessibleRecord(r, first.key) {
-      assert a in r.bindings && b in r.bindings && a.recordRef == b.recordRef;
-      RegistryFilterView(r);
-      ProofLib.FilterMember((other: Binding) => (other.recordRef == a.recordRef), r.bindings, a);
-      ProofLib.FilterMember((other: Binding) => (other.recordRef == a.recordRef), r.bindings, b);
-      assert a == b;
+    assert a in r.bindings && a.key == first.key;
+    assert forall row :: row in r.bindings ==> |keptFor(commitments, row.key)| == 1;
+    assert |keptFor(commitments, a.key)| == 1;
+    var f := keptFor(commitments, first.key);
+    assert f == keptFor(commitments, a.key);
+    KeptForView(commitments, first.key);
+    ProofLib.FilterSubset((c: app__commitment_Commitment) => (c.key == first.key), commitments);
+    assert f[0] in commitments;
+    ProofLib.FilterMember((c: app__commitment_Commitment) => (c.key == first.key), commitments, f[0]);
+    LookupCommitments(commitments, first.key, app__commitment_initial);
+    assert kept in commitments && kept.key == first.key;
+    ProofLib.FilterMember((c: app__commitment_Commitment) => (c.key == first.key), commitments, kept);
+    assert kept in f;
+    assert f == [kept];
+    if first.key != second.key {
+      LookupBindings(r.bindings, second.key, noBinding);
+      var b := bindingFor(r, second.key);
+      if accessibleRecord(r, second.key) == accessibleRecord(r, first.key) {
+        assert b in r.bindings && a.recordRef == b.recordRef;
+        RegistryFilterView(r);
+        ProofLib.FilterMember((other: Binding) => (other.recordRef == a.recordRef), r.bindings, a);
+        ProofLib.FilterMember((other: Binding) => (other.recordRef == a.recordRef), r.bindings, b);
+        assert a == b;
+      }
     }
   }
 }
