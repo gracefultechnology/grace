@@ -27,7 +27,7 @@ describe('spec/app/notices.md, "Story: See one message at a time, in the order t
     const root = createRoot(document.body.appendChild(document.createElement("div")));
     const toasts: (string | null)[] = [null];
     const watcher = new MutationObserver(() => {
-      const shown = document.querySelector("[role=status]")?.textContent ?? null;
+      const shown = [...document.querySelectorAll("[role=status]")].find((x) => x.querySelector("b") === null)?.textContent ?? null;
       if (toasts.at(-1) !== shown) toasts.push(shown);
     });
     watcher.observe(document.body, { subtree: true, childList: true, characterData: true });
@@ -44,10 +44,12 @@ describe('spec/app/notices.md, "Story: See one message at a time, in the order t
     runtime.runFork(Effect.flatMap(Effect.service(NoticeHost), (host) => Stream.runForEach(host.replies, (reply) => Effect.sync(() => replies.push(reply)))));
 
     await expect.poll(connectivity).toBe("Online");
+    // spec/app/notices.md, "Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder"
+    await expect.element(page.getByRole("status").filter({ hasText: "Add your email" })).toBeVisible();
     reach(false);
     await expect.poll(connectivity).toBe("Offline");
     reach(true);
-    await expect.element(page.getByRole("status")).toHaveTextContent("Back online");
+    await expect.element(page.getByRole("status").filter({ hasText: "Back online" })).toBeVisible();
 
     await notices((host) => Effect.all([host.raise({ source: "Settings", offer: "Undo", subject: "Text size changed" }), host.raise({ source: "Files", offer: "NoOffer", subject: "Saved to Files" })]));
     await userEvent.click(page.getByRole("button", { name: "Undo" }));
@@ -69,7 +71,7 @@ describe('spec/app/notices.md, "Story: See one message at a time, in the order t
     await notices((host) => host.raise({ source: "Files", offer: "NoOffer", subject: "Moved to Files" }));
     await expect.element(page.getByRole("status")).not.toBeInTheDocument();
     await question({ type: "withdraw", interruption: "Cancellation" }, "Host");
-    await expect.element(page.getByRole("status")).toHaveTextContent("Moved to Files");
+    await expect.element(page.getByRole("status").filter({ hasText: "Moved to Files" })).toBeVisible();
     expect(toasts.slice(4)).toEqual([null, "Moved to Files"]);
   });
 });

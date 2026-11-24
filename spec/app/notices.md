@@ -3,8 +3,8 @@
 Every short message Grace puts in front of the person comes through this one
 owner: the toast at the bottom of the screen ("Moved to Trash" with Undo,
 "Saved to Files", "Back online", a due reminder on a screen other than Home),
-the banner at the top of Home (not connected to the internet, a due
-reminder) and the Android notification for a reminder that comes due while
+the banner at the top of Home (not connected to the internet, an email to
+sign in to again, no email added, a due reminder) and the Android notification for a reminder that comes due while
 Grace is not in front. The calendar, Email, Files, Settings and the
 connection raise notices here; each still owns what its notice is about.
 [The calendar view](./calendarView.md) owns whether a reminder is shown and
@@ -57,11 +57,13 @@ type Notice = { id: int, source: Source, offer: Offer, subject: str }
 type Notices = {
   shown: List[Notice], waiting: List[Notice], nextId: int,
   place: Place, expanded: bool, blocked: bool, online: bool,
+  signIn: str, noEmail: bool,
   reminders: List[str], androidNotifications: List[str], spoken: int
 }
 pure val initial: Notices = {
   shown: List(), waiting: List(), nextId: 0,
   place: Home, expanded: false, blocked: false, online: true,
+  signIn: "", noEmail: false,
   reminders: List(), androidNotifications: List(), spoken: 0
 }
 pure def offerFits(source: Source, offer: Offer): bool =
@@ -205,31 +207,56 @@ pure def sometimesAToastWaitsForADecision(n: Notices): bool = n.blocked and n.wa
 > As a person coming back to Home, I want to see at once if the internet is
 > down or something is coming up.
 
-### Home shows one banner: the connection first, then the first reminder to come due
+### Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder
 
 The banner sits at the top of Home, hidden while Grace is expanded, while
-the tablet sleeps and while a decision is open (`Grace Prototype.html:1865–1871`).
-When the tablet is not connected it reads "Not connected to the internet"
-over "Grace can help you reconnect.", with Fix Wi-Fi, which opens the
-written steps on the Wi-Fi page. Otherwise the reminder that came due first
-and is not yet dismissed is the banner, with its event's title, day, time and
-place, See details and Dismiss. A banner stays until what it reports ends; it
-has no timer.
+the tablet sleeps and while a decision is open (`Grace Prototype.html:1927–1936`).
+A cause that leaves several cards without news is said once, here, with its
+one fix, and the cards say only that they are not up to date. One banner
+shows at a time, the first of:
+
+- the tablet is not connected: "Not connected to the internet" over "Grace
+  can help you reconnect.", with Fix Wi-Fi, which opens the written steps on
+  the Wi-Fi page;
+- an email that shows its mail needs her to sign in again: "<Name> needs you
+  to sign in" over "Until you do, new email and appointments won't come
+  in.", with Sign in, which opens that account's sign-in;
+- no email shows its mail, because none was added or each one's Email is
+  off: "Add your email" over "Then your messages, appointments and photos
+  show up here.", with Add email, which opens Settings › Email & calendar;
+- the reminder that came due first and is not yet dismissed, with its
+  event's title, day, time and place, See details and Dismiss.
+
+The host tells this owner which account to name and whether any email shows
+its mail, as it tells it whether the tablet is online; [Email across
+accounts](./mailboxes.md) decides both. A banner stays until what it reports
+ends; it has no timer.
 
 ```quint
-type BannerKind = NoBanner | OfflineBanner | ReminderBanner
+type BannerKind = NoBanner | OfflineBanner | SignInBanner | AddEmailBanner | ReminderBanner
 type Banner = { kind: BannerKind, subject: str }
 pure def bannerOf(n: Notices): Banner =
   if (n.place != Home or n.expanded or n.blocked) { kind: NoBanner, subject: "" }
   else if (not(n.online)) { kind: OfflineBanner, subject: "" }
+  else if (n.signIn != "") { kind: SignInBanner, subject: n.signIn }
+  else if (n.noEmail) { kind: AddEmailBanner, subject: "" }
   else if (n.reminders.length() > 0) { kind: ReminderBanner, subject: n.reminders.head() }
   else { kind: NoBanner, subject: "" }
 pure def canExpand(n: Notices, expanded: bool, by: NoticeActor): bool = by == Host
 pure def expand(n: Notices, expanded: bool, by: NoticeActor): Notices = { ...n, expanded: expanded }
-pure def alwaysOfflineComesFirst(n: Notices): bool =
-  bannerOf(n).kind == ReminderBanner implies n.online
+pure def canObserveAccounts(n: Notices, signIn: str, noEmail: bool, by: NoticeActor): bool = by == Host
+pure def observeAccounts(n: Notices, signIn: str, noEmail: bool, by: NoticeActor): Notices =
+  { ...n, signIn: signIn, noEmail: noEmail }
+pure def alwaysOneCauseInOrder(n: Notices): bool =
+  val shown = bannerOf(n)
+  ((shown.kind != NoBanner and shown.kind != OfflineBanner) implies n.online) and
+  ((shown.kind == AddEmailBanner or shown.kind == ReminderBanner) implies n.signIn == "") and
+  (shown.kind == ReminderBanner implies not(n.noEmail))
 pure def sometimesOfflineBanner(n: Notices): bool = bannerOf(n).kind == OfflineBanner
+pure def sometimesSignInBanner(n: Notices): bool = bannerOf(n).kind == SignInBanner
+pure def sometimesAddEmailBanner(n: Notices): bool = bannerOf(n).kind == AddEmailBanner
 pure def sometimesReminderBanner(n: Notices): bool = bannerOf(n).kind == ReminderBanner
+pure val signInValues = Set("", "Gmail")
 ```
 
 ### Coming back online is told once, in a toast

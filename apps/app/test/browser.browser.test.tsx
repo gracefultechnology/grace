@@ -300,6 +300,30 @@ it('Enter a website and understand loading or failure (spec/app/browser.md, "Sto
   await arrive("http://example.com/plain");
   await expect.element(address).toHaveAccessibleDescription("");
 
+  // spec/app/browser.md, "Opened offline, the browser shows the offline page, never a blank page"; spec/app/shell.md, "Offline, Internet has no status and still opens the browser"
+  const network = { online: false };
+  Object.defineProperty(navigator, "onLine", { configurable: true, get: () => network.online });
+  onTestFinished(() => { Reflect.deleteProperty(navigator, "onLine"); });
+  const offlinePage = page.getByRole("heading", { name: "You’re offline" });
+  await userEvent.click(page.getByRole("button", { name: "Home", exact: true }));
+  window.dispatchEvent(new Event("offline"));
+  await expect.poll(() => workspace().device.connectivity).toBe("Offline");
+  await userEvent.click(page.getByRole("button", { name: "Internet" }));
+  await expect.element(offlinePage).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Fix Wi-Fi" })).toBeVisible();
+  await go("example.com/later", "https://example.com/later");
+  await expect.element(offlinePage).toBeVisible();
+  await later(loadWaitSeconds);
+  await expect.poll(at).toEqual({ url: "https://example.com/later", load: "LoadFailed", address: "https://example.com/later" });
+  await expect.element(offlinePage).toBeVisible();
+  const asked = count("reloadSurface") + count("navigate");
+  network.online = true;
+  window.dispatchEvent(new Event("online"));
+  await expect.element(offlinePage).not.toBeInTheDocument();
+  await expect.poll(() => count("reloadSurface") + count("navigate")).toBe(asked + 1);
+  await arrive("https://example.com/later");
+  await userEvent.click(page.getByRole("status").filter({ hasText: "Back online" }).getByRole("button", { name: "Close" }));
+
   const openings = () => runtime.runSync(Effect.flatMap(Effect.service(WebsiteRequests), (m) => m.get())).openings;
   const intent = "intent://pay#Intent;scheme=examplepay;package=com.example.pay;end";
   const fallback = "https://example.com/pay";

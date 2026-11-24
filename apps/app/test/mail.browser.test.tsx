@@ -303,11 +303,12 @@ it("See all my email in one place", async () => {
   // spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"
   const card = page.getByRole("button", { name: /^Email/ });
   await expect.element(card).toHaveAccessibleDescription(/Your Riverside Power bill is ready/);
-  // spec/app/mailboxes.md, "The Home Email card says Waiting for the internet, Not connected, or how many are new"
+  // spec/app/mailboxes.md, "The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new"
   await expect.element(card).toHaveAccessibleName(/5 new/);
   // spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"
   await host("Offline");
-  await expect.element(card).toHaveAccessibleName(/Waiting for the internet/);
+  await expect.element(card).toHaveAccessibleName(/Last updated a few minutes ago/);
+  await expect.element(card).toHaveAccessibleDescription(/Your Riverside Power bill is ready/);
   await host("Online");
   await expect.element(card).toHaveAccessibleDescription(/Your Riverside Power bill is ready/);
 
@@ -770,7 +771,7 @@ it("Write or reply and confirm before sending", async () => {
   await expect.poll(() => sentWith("Recital photos")).toHaveLength(1);
   await expect.element(row("Outbox")).not.toBeInTheDocument();
 
-  // spec/app/mailboxes.md, "The Home Email card says Waiting for the internet, Not connected, or how many are new"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"
+  // spec/app/mailboxes.md, "The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"
   await person({ type: "setUse", id: 1, use: { mail: false, calendar: true, contacts: true } });
   const card = page.getByRole("button", { name: /^Email/ });
   await click(page.getByRole("button", { name: "Close Email" }));
@@ -778,7 +779,7 @@ it("Write or reply and confirm before sending", async () => {
   await click(card);
   await opened(/St\. Mark’s Church Office/, "Thanksgiving dinner sign-up");
   await click(page.getByRole("button", { name: "Close Email" }));
-  await expect.element(card).toHaveAccessibleName(/No new email/);
+  await expect.element(card).toHaveAccessibleName(/All caught up/);
 }, 600_000);
 
 it(`Keep the latest draft count (spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open")`, async () => {

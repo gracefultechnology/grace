@@ -1,10 +1,14 @@
-// spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "Story: Never have a decision covered"; spec/app/notices.md, "No notice shows over a commitment review or a website's question"; spec/app/notices.md, "Story: See what needs me on Home"; spec/app/notices.md, "A toast stays its whole lifetime unless the person closes it or acts"; spec/app/notices.md, "Coming back online is told once, in a toast"; spec/app/notices.md, "Only reminders reach Android, and a new one only while Grace is in the background"
+// spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "Story: Never have a decision covered"; spec/app/notices.md, "No notice shows over a commitment review or a website's question"; spec/app/notices.md, "Story: See what needs me on Home"; spec/app/notices.md, "A toast stays its whole lifetime unless the person closes it or acts"; spec/app/notices.md, "Coming back online is told once, in a toast"; spec/app/notices.md, "Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder"; spec/app/mailboxes.md, "The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new"; spec/app/notices.md, "Only reminders reach Android, and a new one only while Grace is in the background"
 import { type Event, type Notice, type Place, Machine as Notices, type Rejected, initial, lifetimeMs, machine, queued } from "../gen/app__notices.effect.vibe"
 import { Machine as Proposals, asking } from "../gen/app__proposal.effect.vibe"
 import { Machine as WebsiteRequests, presented } from "../gen/app__websiteRequests.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import type { ReminderPlugin } from "./accountPlugin.ts"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { Machine as Accounts, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
+import { homeSignIn, type MailSource, showsConnect } from "../gen/app__mailboxes.effect.vibe"
+import { Instances } from "./instances.vibe"
+import { surfaceOwner } from "./managedReads.vibe"
 import { type WiFiPlugin, webView } from "./surfacePlugin.ts"
 
 export data Reply {
@@ -36,6 +40,9 @@ const host = (wifi: WiFiPlugin | undefined, reminderPort?: ReminderPlugin) => La
   const workspace = try Workspaces
   const requests = try WebsiteRequests
   const proposals = try Proposals
+  const accounts = try Accounts
+  const shelf = try Instances
+  const setups = try Setup
   const replies = try PubSub.unbounded<Reply>()
   const lock = try Semaphore.make(1)
   const serial = lock.withPermits(1)
@@ -74,6 +81,23 @@ const host = (wifi: WiFiPlugin | undefined, reminderPort?: ReminderPlugin) => La
 
   const connection = Stream.changes(Stream.concat(Stream.fromEffect(connected(wifi)), Stream.drop(Stream.changes(Stream.map(workspace.changes, (w) => w.device.connectivity === "Online")), 1)))
   try fork.scoped Stream.runForEach(connection, (online) => Effect.orDie(notices.send({ type: "observeConnection", online }, "Host")))
+  effect function causesOf(registry: Registry) {
+    const watched: Stream.Stream<MailSource>[] = []
+    for (const account of registry.accounts) {
+      if (!account.use.mail) continue
+      const box = shelf.mail(account.id) catch () => undefined
+      if (box !== undefined) watched.push(Stream.map(box.changes, (mailbox) => ({ account: account.id, mailbox })))
+    }
+    const sources: Stream.Stream<readonly MailSource[]> = watched.length === 0 ? Stream.make([]) : Stream.zipLatestAll(...watched)
+    return Stream.map(sources, (current) => {
+      const named = registry.accounts.find((a) => a.id === homeSignIn(registry, [...current]))
+      return { signIn: named === undefined ? "" : named.name || named.address, noEmail: showsConnect(registry) }
+    })
+  }
+  const ours = Stream.changes(Stream.map(setups.changes, (s) => surfaceOwner(s, webView.window.location.hash) === "Ours"))
+  const tablet = Stream.switchMap(accounts.changes, (registry) => Stream.unwrap(causesOf(registry)))
+  const causes = Stream.changesWith(Stream.switchMap(ours, (mine) => mine ? tablet : Stream.make({ signIn: "", noEmail: false })), (a, b) => a.signIn === b.signIn && a.noEmail === b.noEmail)
+  try fork.scoped Stream.runForEach(causes, ({ signIn, noEmail }) => Effect.orDie(notices.send({ type: "observeAccounts", signIn, noEmail }, "Host")))
   const workspaceView = Stream.changesWith(
     Stream.map(workspace.changes, ({ device, assistant }) => ({ surface: device.surface, readiness: device.readiness, expanded: assistant.presentation === "Expanded" })),
     (a, b) => a.surface === b.surface && a.readiness === b.readiness && a.expanded === b.expanded
@@ -92,7 +116,7 @@ const host = (wifi: WiFiPlugin | undefined, reminderPort?: ReminderPlugin) => La
 
   if (reminderPort !== undefined) {
     const port = reminderPort
-    const setup = try Setup
+    const setup = setups
     const known = new Map<string, string>()
     const listen = Stream.callback<void>((queue) => acquireRelease(
       Effect.option(tryPromise(() => port.addListener("managedDueChanged", () => { Queue.offerUnsafe(queue, undefined) }))),

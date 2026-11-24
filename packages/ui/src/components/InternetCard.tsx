@@ -9,8 +9,6 @@ export type InternetCardProps = Omit<LauncherCardProps, "title" | "children" | "
   preview?: string;
   /** The word on the card's indigo button. */
   openLabel?: string;
-  /** The tablet is offline: the button greys out. */
-  offline?: boolean;
   /**
    * A narrow column above Grace's compact window: the preview stands upright under the status at full size, and is
    * left out when the card is too short to keep it clear of the button.
@@ -26,7 +24,7 @@ const frame = "block h-[206px] w-[240px] rounded-tile bg-site shadow-preview rin
  * @model spec/app/browser.md
  * @design packages/design-system/design.md#glass
  */
-export function InternetCard({ title = "Internet", preview, openLabel = "Open", offline = false, compact = false, size = "medium", ...props }: InternetCardProps) {
+export function InternetCard({ title = "Internet", preview, openLabel = "Open", compact = false, size = "medium", ...props }: InternetCardProps) {
   return (
     <LauncherCard title={title} size={size} compact={compact} headClassName="w-[200px]" {...props}>
       <span className={cn("absolute inset-0", compact && "[container-type:size]")}>
@@ -43,7 +41,7 @@ export function InternetCard({ title = "Internet", preview, openLabel = "Open", 
           )}
         </span>
       </span>
-      <Button asChild variant="prominent" size="compact" className={cn("mt-auto mb-0.5 ml-1 self-start px-[26px] leading-none shadow-none active:scale-100", offline && "bg-primary/10 text-grace-ink/38 active:bg-primary/10")}>
+      <Button asChild variant="prominent" size="compact" className={cn("mt-auto mb-0.5 ml-1 self-start px-[26px] leading-none shadow-none active:scale-100")}>
         <span>{openLabel}</span>
       </Button>
     </LauncherCard>

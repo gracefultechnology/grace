@@ -106,8 +106,9 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   const eyePreview = card.getByRole("button", { name: /Eye check with Dr\. Patel/ });
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
 
-  // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
-  await expect.element(homeCalendarLauncher()).toHaveAccessibleName("Calendar Nothing else today");
+  // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/calendars.md, "Home’s calendar card says Last updated only while it can’t update, and otherwise what is planned"
+  await expect.element(homeCalendarLauncher()).toHaveAccessibleName("Calendar Nothing planned");
+  await expect.element(page.getByText("Ask Grace to add an appointment.")).toBeVisible();
   await expect.element(eyePreview).not.toBeInTheDocument();
   await reachable(true);
   await tapHomeCalendar();
@@ -590,7 +591,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await expect.element(reminded("Tea with Joan", "8 am")).toBeVisible();
   await expect.element(reminded("Pill pickup", "7 am")).not.toBeInTheDocument();
   await click("Home");
-  // spec/app/notices.md, "Home shows one banner: the connection first, then the first reminder to come due"
+  // spec/app/notices.md, "Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder"
   reach(false);
   await expect.element(page.getByText("Not connected to the internet")).toBeVisible();
   await expireToast("SeeDetails");
