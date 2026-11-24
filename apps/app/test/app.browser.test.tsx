@@ -2144,7 +2144,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     try {
       await Effect.runPromise(seriesRequested.await);
       await tap("Close Calendar");
-      await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true })));
+      await act(() => userEvent.click(page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: /^Calendar(?:$| )/ })));
       await expect.element(page.getByRole("button", { name: "Close Calendar", exact: true })).toBeVisible();
       await expect.element(page.getByRole("button", { name: /Therapy/ })).toBeVisible();
     } finally {
@@ -3946,7 +3946,8 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
   const pageReceipt = plan.getByText(/^Open page:/);
   const pending = (label: string) => plan.getByText(`Find and check “${label}”.`, { exact: true });
   try {
-    await routeTo(page.getByText(subject, { exact: true }));
+    await routeTo(button(/^Email/));
+    await expect.element(button(/^Email/)).toHaveAccessibleDescription(/Service desk follow-up appointment/);
     await tap(button("Internet"));
     await visitExampleSite(native);
     await tap(button("Ask Grace"));
@@ -4327,7 +4328,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await tap(button("Check email"));
     await expect.poll(receipts).toEqual([mailReceipt, mailReceipt]);
     await tap(button("Close Email"));
-    await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true }));
+    await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: /^Calendar(?:$| )/ }));
     await tap(button(/Managed calendar appointment/));
     await routeTo(page.getByRole("heading", { name: appointment.title, exact: true }));
 
@@ -4582,7 +4583,7 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
       expect(button("Resume Grace").query()).toBeNull();
       expect(button("Check saved appointment").query()).toBeNull();
       await tap(button("Home"));
-      await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByText("Calendar", { exact: true }));
+      await tap(page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: /^Calendar(?:$| )/ }));
       const save = page.getByRole("button", { name: "Save", exact: true });
       await routeTo(save);
       await expect.element(save).toBeDisabled();

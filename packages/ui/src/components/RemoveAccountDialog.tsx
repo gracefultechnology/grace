@@ -39,9 +39,9 @@ export function RemoveAccountDialog({ name, keeper, waiting = 0, discarding = 0,
         {discarding > 0 ? (
           <>
             <PageText className="mt-3.5">
-              {discarding === 1 ? "The email" : `The ${discarding} emails`} waiting in Outbox will be discarded and never sent. This can’t be undone.
+              {discarding === 1 ? "The pending email" : `The ${discarding} pending emails`} will be removed from this tablet. This can’t be undone.
             </PageText>
-            <PageText tone="secondary" className="mt-3">Your other emails stay safe with {keeper}.</PageText>
+            <PageText tone="secondary" className="mt-3">An email {keeper} has already received to send can still arrive.</PageText>
           </>
         ) : waiting > 0 ? (
           <PageText className="mt-3.5">

@@ -186,21 +186,15 @@ function manifest(account: AccountRef, ref: string, m: Message, all: readonly At
 const addresses = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
 const iso = (at: number) => new Date(at).toISOString()
 
-function wallClock(at: number, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" }).formatToParts(at)
-  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value)
-  return Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"))
-}
-
 function midnight(date: string, timeZone: string) {
-  const guess = Date.parse(`${date}T00:00:00Z`)
-  const first = guess - (wallClock(guess, timeZone) - guess)
-  return guess - (wallClock(first, timeZone) - first)
+  const start = Option.getOrUndefined(DateTime.makeZoned(`${date}T00:00:00Z`, { timeZone, adjustForTimeZone: true }))
+  return start !== undefined && DateTime.formatIsoDate(start) === date ? DateTime.toEpochMillis(start) : undefined
 }
 
 const dateIn = (at: number, timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(at)
 
 function exactly(zones: ReadonlySet<string>, text: string, allDay: boolean, timeZone: string) {
+  if (allDay && /^\d{4}-\d{2}-\d{2}$/.test(text)) return zones.has(timeZone) ? midnight(text, timeZone) : undefined
   const at = /(?:[zZ]|[+-]\d\d:?\d\d)$/.test(text) ? Date.parse(text) : Number.NaN
   if (Number.isNaN(at)) return undefined
   return allDay && !(zones.has(timeZone) && midnight(dateIn(at, timeZone), timeZone) === at) ? undefined : at
@@ -486,15 +480,16 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     const timezone = e.timezone ?? entry.committed.timezone
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
     const latest = details(e, startAt, endAt, timezone, entry.committed)
-    return verified && validDetails(latest) ? { latest, version: versionOf(e) } : undefined
+    const version = versionOf(e)
+    return verified && version !== "" && validDetails(latest) ? { latest, version } : undefined
   }
 
   effect function removed(entry: Calendar, id: string, absent: DeletionReceipt): DeletionReceipt!NeedsSignIn {
-    const status = Effect.as(call(removal(id, entry.identity.calendarId, entry.version)), 0) catch effect (e) => match (e) {
+    const status = entry.version === "" ? 412 : (Effect.as(call(removal(id, entry.identity.calendarId, entry.version)), 0) catch effect (e) => match (e) {
       when NeedsSignIn: throw e;
       when ProviderRefused: e.status;
       when Unreachable: -1;
-    }
+    })
     if (status === 0) return { succeeded: true, evidence: `deleted:${id}` }
     if (status === 404) return absent
     if (status === -1) return { succeeded: false, evidence: "" }
@@ -564,14 +559,14 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     },
     write: effect (entry, _view, dispatch) => {
       const revision = entry.revision
-      const status = Effect.map(stored(entry, dispatch), (saved): StoreReceipt => ({
+      const status = entry.hasSaved && entry.version === "" ? 412 : (Effect.map(stored(entry, dispatch), (saved): StoreReceipt => ({
         revision, succeeded: true, published: [], ...saved.version === "" ? {} : { version: saved.version },
         ...entry.hasSaved ? {} : { providerId: saved.id }
       })) catch effect (e) => match (e) {
         when NeedsSignIn: throw e;
         when ProviderRefused: e.status;
         default: 0;
-      }
+      })
       if (typeof status !== "number") return status
       const outdated = status === 412 && entry.hasSaved ? try reread(entry) : undefined
       return { revision, succeeded: false, published: [], ...outdated === undefined ? {} : { outdated } }

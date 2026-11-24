@@ -1,12 +1,13 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/email.md, "Story: Write or reply and confirm before sending"
 import { Effect, ManagedRuntime } from "effect";
 import { act } from "react";
-import { afterAll, beforeAll, beforeEach, expect, inject, it, onTestFinished } from "vitest";
+import { afterAll, beforeAll, beforeEach, assert, expect, inject, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import type { WiFiPlugin } from "../src/surfacePlugin.ts";
 import { client, expire, otherPassword, outage, ownerName, reply, sentMail, signIn } from "./cloud.vibe";
-import { mount, actOnScreen, captureSignedOutChat } from "./screen.tsx";
+import { actOnScreen, captureSignedOutChat, tabletView } from "./screen.tsx";
+import { parseState as parseAccounts } from "../gen/app__accounts.ts";
 import "../src/main.css";
 
 actOnScreen();
@@ -48,6 +49,8 @@ const network = { online: true };
 const wifi: Pick<WiFiPlugin, "getConnectivity"> = { getConnectivity: () => Promise.resolve({ online: network.online, validated: network.online, captivePortal: false, ssid: null }) };
 
 let secret = "";
+const connectTablet = () => tabletView(ManagedRuntime.make(application(undefined, wifi as WiFiPlugin, { url: cloud, key: secret })));
+let mounted: ReturnType<typeof connectTablet>;
 let firstListing: Promise<void> | undefined;
 const chatBodies: string[] = [];
 beforeEach(() => captureSignedOutChat(chatBodies, (url) => {
@@ -78,9 +81,12 @@ beforeEach(async () => {
   network.online = true;
   firstListing = undefined;
   secret = (await Effect.runPromise(Effect.provide(signIn(cloud), client))).secret;
-  const app = ManagedRuntime.make(application(undefined, wifi as WiFiPlugin, { url: cloud, key: secret }));
-  await mount(app);
-  onTestFinished(() => { localStorage.clear(); });
+  mounted = connectTablet();
+  await mounted.render();
+  onTestFinished(async () => {
+    await mounted.dispose();
+    localStorage.clear();
+  });
 });
 afterAll(() => {
   globalThis.fetch = fetched;
@@ -155,8 +161,8 @@ async function readOutlookFromHome() {
 
 it("Connect the email I already use", async () => {
   // spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"
-  await expect.element(page.getByText("Not connected", { exact: true })).toBeVisible();
-  await expect.element(page.getByText("Connect your email to see it here.")).toBeVisible();
+  await expect.element(emailCard()).toHaveAccessibleName("Email Not connected");
+  await expect.element(emailCard()).toHaveAccessibleDescription("Connect your email to see it here.");
 
   // spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"
   await openEmailSettings();
@@ -189,8 +195,8 @@ it("Connect the email I already use", async () => {
   await tap(use("Email"));
   await expect.element(use("Email")).not.toBeChecked();
   await closeSettings();
-  await expect.element(page.getByText("Not connected", { exact: true })).toBeVisible();
-  await expect.element(page.getByText("Connect your email to see it here.")).toBeVisible();
+  await expect.element(emailCard()).toHaveAccessibleName("Email Not connected");
+  await expect.element(emailCard()).toHaveAccessibleDescription("Connect your email to see it here.");
   await tap(emailCard());
   await expect.element(page.getByText("Get your email on this tablet")).toBeVisible();
   expect(page.getByRole("button", { name: "Write" }).query()).toBeNull();
@@ -313,7 +319,7 @@ it("Connect the email I already use", async () => {
   const leaving = page.getByRole("dialog", { name: "Remove Riverview from this tablet?" });
   await expect.element(leaving.getByText(/^An email is waiting in Outbox to go from Riverview\./)).toBeVisible();
   await tap(leaving.getByRole("button", { name: "Remove anyway" }));
-  await expect.element(leaving.getByText("The email waiting in Outbox will be discarded and never sent. This can’t be undone.")).toBeVisible();
+  await expect.element(leaving.getByText("The pending email will be removed from this tablet. This can’t be undone.")).toBeVisible();
   await tap(leaving.getByRole("button", { name: "Discard 1 email and remove" }));
   await expect.element(page.getByRole("button", { name: new RegExp(riverview) })).not.toBeInTheDocument();
   await toasted("Riverview removed from this tablet");
@@ -379,6 +385,19 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await act(() => userEvent.fill(message, "Thank you, I’ll be there."));
   await tap(page.getByRole("button", { name: "Send" }));
   await expect.element(page.getByRole("navigation", { name: "Folders" }).getByRole("button", { name: /^Outbox 1/ })).toBeVisible();
+
+  const saved = parseAccounts(JSON.parse(localStorage.getItem("accounts") ?? "null"));
+  assert(saved);
+  const legacy = {
+    ...saved,
+    discarding: undefined,
+    signIn: { ...saved.signIn, lookup: undefined, incoming: undefined, outgoing: undefined },
+    accounts: saved.accounts.map((account) => ({ ...account, fromName: undefined })),
+  };
+  const outlookId = saved.accounts.find((account) => account.address === outlook)?.id;
+  const outboxKey = `mail/${outlookId}`;
+  const waitingMail = localStorage.getItem(outboxKey);
+  expect(waitingMail).toContain("Thank you, I’ll be there.");
   await tap(page.getByRole("button", { name: "Close Email" }));
   await openEmailSettings();
   await tap(row(outlook));
@@ -392,7 +411,7 @@ it("Choose what each email brings and take it off the tablet", async () => {
   // spec/app/accounts.md, "Remove anyway discards the waiting email only after she confirms how much"
   await tap(page.getByRole("button", { name: "Remove from this tablet" }));
   await tap(question.getByRole("button", { name: "Remove anyway" }));
-  await expect.element(question.getByText("The email waiting in Outbox will be discarded and never sent. This can’t be undone.")).toBeVisible();
+  await expect.element(question.getByText("The pending email will be removed from this tablet. This can’t be undone.")).toBeVisible();
   await tap(question.getByRole("button", { name: "Keep it" }));
   await expect.element(question).not.toBeInTheDocument();
   await Effect.runPromise(Effect.provide(outage(cloud, secret, false), client));
@@ -422,8 +441,10 @@ it("Choose what each email brings and take it off the tablet", async () => {
   await readOutlookFromHome();
 
   // spec/app/accounts.md, "Signing in again renews the same account"
+  const oldProviderMessage = page.getByRole("button", { name: /Riverview Internet/ });
+  await expect.element(oldProviderMessage, { timeout: 12_000 }).toBeVisible();
   await Effect.runPromise(Effect.provide(expire(cloud, secret, riverview), client));
-  await tap(page.getByRole("button", { name: /Riverview Internet/ }));
+  await tap(oldProviderMessage);
   await expect.element(page.getByRole("alert")).toBeVisible();
   await tap(page.getByRole("button", { name: "Back to Inbox" }));
   await expect.element(page.getByText("Riverview needs you to sign in again")).toBeVisible();
@@ -445,4 +466,23 @@ it("Choose what each email brings and take it off the tablet", async () => {
   expect(told()).toContain("The person signed in to Riverview again.");
   expect(told()).toContain("The person chose Yahoo.");
   expect(told()).not.toContain(otherPassword);
+
+  await mounted.dispose();
+  localStorage.clear();
+  localStorage.setItem("accounts", JSON.stringify(legacy));
+  assert(waitingMail !== null);
+  localStorage.setItem(outboxKey, waitingMail);
+  network.online = false;
+  await Effect.runPromise(Effect.provide(outage(cloud, secret, true), client));
+  mounted = connectTablet();
+  await mounted.render();
+  await host(false);
+  await openEmailSettings();
+  await expect.element(row(riverview)).toBeVisible();
+  const upgraded = parseAccounts(JSON.parse(localStorage.getItem("accounts") ?? "null"));
+  expect(upgraded?.accounts).toEqual(saved.accounts.map((account) => ({ ...account, fromName: "" })));
+  expect(upgraded?.signIn).toMatchObject({ lookup: "NotLookedUp", incoming: "", outgoing: "" });
+  await tap(row(outlook));
+  await tap(page.getByRole("button", { name: "Remove from this tablet" }));
+  await expect.element(question.getByText(/^An email is waiting in Outbox to go from Outlook\./)).toBeVisible();
 }, 600_000);

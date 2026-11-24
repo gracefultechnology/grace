@@ -206,9 +206,12 @@ to an Other email uses the same form and renews that account.
 The name she gives on that form is the account’s From name: her email from
 that account goes out under it, and signing in again changes it to the name
 she gives then. The form starts with the From name of the account she is
-signing in to again, otherwise with the name of her Grace account. An Other
+signing in to again, otherwise with the name of her Grace account when it is
+available. A later name leaves what she has already typed in place. An Other
 email is never added without a From name; a company’s account has none here,
-because the company’s own page keeps her name.
+because the company’s own page keeps her name. A previously saved Other
+account without a From name stays on the tablet with its existing email and
+an unknown name until she next signs in to it.
 
 ```quint
 type OtherOutcome = OtherAllowed | OtherPasswordRefused | OtherNeedsServers | OtherRefused
@@ -241,7 +244,7 @@ pure def lawStaleCheckCannotConnect(a: Accounts, check: OtherReport, name: str, 
   check.attempt != a.signIn.attempt implies
     not(canOtherResult(a, check, name, fromName, by) or canServersResult(a, check, name, fromName, by))
 pure def alwaysOnlyOtherEmailKeepsAFromName(a: Accounts): bool =
-  a.accounts.every(x => (x.provider == OtherEmail) == (x.fromName != ""))
+  a.accounts.every(x => x.fromName != "" implies x.provider == OtherEmail)
 pure def sometimesOtherNeedsServers(a: Accounts): bool = a.page == MailServersPage and a.signIn.domain != ""
 pure def sometimesPasswordRefused(a: Accounts): bool = a.problem == PasswordRefused
 pure def sometimesCheckingOther(a: Accounts): bool = a.signIn.stage == CheckingOther
@@ -518,11 +521,11 @@ pure val waitingValues = Set(0, 1, 2)
 ### Remove anyway discards the waiting email only after she confirms how much
 
 While email waits, the question also offers Remove anyway. It first asks
-again, saying how many waiting emails will be discarded and never sent;
-Keep it closes both questions. Her yes there discards that account’s waiting
-email, never more than she was told about, and removes the account as
-Remove does. Only her taps remove an account or discard its email: Grace has
-no way to.
+again, saying how many pending emails will be removed from the tablet.
+An email its provider already accepted can still arrive. Keep it closes
+both questions. Her yes there discards that account’s waiting email, never
+more than she was told about, and removes the account as Remove does.
+Only her taps remove an account or discard its email: Grace has no way to.
 
 ```quint
 pure def canRemoveAnyway(a: Accounts, id: int, waiting: int, by: AccountActor): bool =

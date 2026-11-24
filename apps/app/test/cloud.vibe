@@ -949,7 +949,9 @@ effect function store(site: string) {
     const { eventId } = try HttpRouter.params
     const event = found.calendar.find((e) => e.externalId === eventId && e.calendarId === (query.calendarId?.trim() || "primary"))
     if (!event) throw new Missing()
-    return try HttpServerResponse.json({ event: shown(event, event.timezone ?? "UTC") }, { headers: { etag: event.etag } })
+    const zone = event.timezone ?? "UTC"
+    const wire = event.isAllDay ? { ...event, startAt: dateIn(event.startAt, zone), endAt: dateIn(event.endAt, zone), timezone: null } : event
+    return try HttpServerResponse.json({ event: wire }, { headers: { etag: event.etag } })
   }
 
   effect function moveAppointment(fixed?: Slug) {

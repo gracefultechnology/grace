@@ -225,8 +225,9 @@ pure def sometimesBillSaved(c: Calendar): bool =
 ### A change the company has since changed shows the company's version
 
 A change to an entry the company holds names the `version` the tablet last
-read. When the company answers that its event has changed since, the tablet
-does not overwrite it: the store reads the event again and the entry returns
+read. If an older tablet record has no provider version, it first reads the
+current event for the person to review. When the company says its event has
+changed, the store reads it again. In both cases the entry returns
 to Saved with the company's current details and version, its reminder
 scheduled from them, and `ChangedElsewhere` telling her that her change was
 not made. The reread details keep the tablet's own fields, such as the

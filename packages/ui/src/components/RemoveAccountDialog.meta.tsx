@@ -25,7 +25,7 @@ export const meta: ComponentMeta<RemoveAccountDialogProps> = {
       await expect(args.onKeep).toHaveBeenCalled();
     },
     "Discard waiting email": async ({ args }: { args: RemoveAccountDialogProps }) => {
-      await expect(await screen.findByText("The 2 emails waiting in Outbox will be discarded and never sent. This can’t be undone.")).toBeTruthy();
+      await expect(await screen.findByText("The 2 pending emails will be removed from this tablet. This can’t be undone.")).toBeTruthy();
       await expect(screen.queryByRole("button", { name: "Remove anyway" })).toBeNull();
       await userEvent.click(screen.getByRole("button", { name: "Discard 2 emails and remove" }));
       await expect(args.onDiscard).toHaveBeenCalled();

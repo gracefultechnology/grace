@@ -286,7 +286,7 @@ it('Gmail signup to Calendar (spec/app/calendars.md, "Story: Ask Grace to put an
   await expect.poll(sources).toEqual([[2, "Outlook follow-up"], [0, "Earlier appointment"], [3, title]]);
   await click(page.getByRole("button", { name: "Close Grace", exact: true }));
   await click(page.getByRole("button", { name: "Close Email", exact: true }));
-  await click(page.getByRole("group", { name: "Calendar", exact: true }).getByText(title, { exact: true }));
+  await click(page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: title }));
   await expect.element(page.getByText(/Visit form/)).toBeVisible();
   const requests = (await company()).googleRequests;
   expect(requests.slice(0, 4)).toEqual(["GET /o/oauth2/v2/auth", "POST /o/oauth2/v2/auth", "POST /token", "GET /oauth2/v3/userinfo"]);
@@ -465,6 +465,7 @@ it("See all my email in one place", async () => {
   await expect.element(page.getByText("Email discarded")).toBeVisible();
   await expect.element(row("Inbox")).toHaveAttribute("aria-current", "page");
   await click(page.getByRole("button", { name: "Close Email" }));
+  await click(page.getByRole("button", { name: "Page 2", exact: true }));
   await click(page.getByRole("button", { name: /^Files/ }));
   await click(piano);
   await expect.element(share).toBeVisible();
