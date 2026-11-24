@@ -206,10 +206,10 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   const grantId = "connected-google";
   const destination = "https://mail-link.example.test/appointment";
   let returnedGrant = grantId;
-  let historyId = "preview-revision";
+  let historyId = "510";
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
-  let labels: string[] | undefined = ["SPAM"];
+  let labels = ["SPAM"];
   const mail = { externalId: "welcome", from: "Ana", subject: "Mail kept after sign-in", receivedAt: now.toISOString(), isUnread: true };
   const appointment = { externalId: "checkup", title: "Calendar kept after sign-in", description: "Bring your notes.",
     location: "Clinic", startAt: start.toISOString(), endAt: new Date(start.getTime() + 3600000).toISOString(), isAllDay: false, editable: true, etag: "confirmed" };
@@ -333,13 +333,13 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   const warning = page.getByRole("dialog", { name: "Open this link?" });
   const address = page.getByRole("textbox", { name: "Address", exact: true });
   await expect.element(link).toBeVisible();
-  historyId = "changed-revision";
+  historyId = "511";
   await act(() => userEvent.click(link));
   await expect.element(page.getByText(/This link couldn’t open/)).toBeVisible();
   await expect.element(warning).not.toBeInTheDocument();
   await expect.element(address).not.toBeInTheDocument();
 
-  historyId = "preview-revision";
+  historyId = "510";
   await act(() => userEvent.click(link));
   await expect.element(warning.getByText(destination)).toBeVisible();
   await click("Stay in email");
@@ -364,7 +364,7 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   await act(() => userEvent.click(link));
   await expect.element(warning).toBeVisible();
   await act(() => {
-    labels = undefined;
+    labels = [];
     leaseVersion = "renewed-acknowledgment";
     notify?.(status());
     return Promise.resolve();
