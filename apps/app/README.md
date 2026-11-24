@@ -168,13 +168,19 @@ Shared builds write their APKs, verification manifest and intermediate files und
 `artifacts/cloud-profiles/<profile>/`. Use the same `--cloud-profile` with `--verify`.
 
 `--release` adds the release APK: `launcher-release.apk`, signed, when `GRACE_KEYSTORE`
-(absolute, or relative to the directory you ran the command from: `INIT_CWD` under pnpm, otherwise
-the working directory), `GRACE_KEYSTORE_PASSWORD`,
+(absolute, or relative to `apps/app`), `GRACE_KEYSTORE_PASSWORD`,
 `GRACE_KEY_ALIAS` and `GRACE_KEY_PASSWORD` are all set (`signing` in `android/host.json`; Gradle
 refuses a partial set, and the build fails if they are set and a release comes out unsigned),
-otherwise `launcher-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
-produced with its processor type, size, SHA-256 and the signer verified by `apksigner` from
-Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. The build
+otherwise `launcher-release-unsigned.apk`. Gradle gets only `PATH`, `HOME`, `TMPDIR`, `LANG`,
+`GRADLE_OPTS`, `GRADLE_USER_HOME`, these signing variables and the Android and Java locations, never
+the rest of the environment. `artifacts/apk-manifest.json` lists each APK this build
+produced with its processor type, size, SHA-256, requested permissions and the signer verified by `apksigner` from
+Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. Each APK
+passes upstream's distribution check (`apkDistributionProblems` in `@elizaos/os/android/apk-distribution.mjs`)
+with Grace's policy in `scripts/android.ts`: backups and cleartext traffic off, a network security
+configuration in a release, only the listed exported components with their permissions, no source
+maps, no test-only names, a version. A build whose check fails removes its APKs, so `artifacts/` never
+holds an APK without its manifest entry. The build
 fails unless an APK carries the agent (`assets/agent/agent.mjs`, `libeliza_node.so` for exactly
 one processor type, `assets/agent/inventory.json` and every file that inventory lists, which the
 service unpacks before it starts) and the pinned local keyword detector.

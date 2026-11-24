@@ -469,7 +469,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
         ...(fixture ? ["--verify-billworld-run", path.basename(fixture.output)] : ["--verify"])] },
     });
   } catch (error) {
-    for (const name of builtApks(path.join(app, output))) rmSync(path.join(app, output, name), { force: true });
+    for (const name of [...builtApks(path.join(app, output)), "apk-manifest.json"]) rmSync(path.join(app, output, name), { force: true });
     throw error;
   }
 }
