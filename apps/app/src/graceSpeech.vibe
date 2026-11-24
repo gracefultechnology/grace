@@ -365,9 +365,10 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
   }
   effect function pauseWake() {
     if (!wake || !arm) return true
-    arm = undefined
     try SubscriptionRef.update(wakeStatus, (status) => ({ ...status, armed: false }))
-    return (tryPromise(() => wake.configure({ generation: null })) |> Effect.as(%, true)) catch () => false
+    const stopped = (tryPromise(() => wake.configure({ generation: null })) |> Effect.as(%, true)) catch () => false
+    if (stopped) arm = undefined
+    return stopped
   }
   effect function pageVisible() {
     return !(Effect.try(() => webView.hidden()) catch () => true)
@@ -435,6 +436,7 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
   }
   if (wake !== undefined) {
     const nativeUpdates = Stream.callback<WakeUpdate>((queue) => Effect.ignore(effect {
+      try tryPromise(() => wake.configure({ generation: null }))
       for (const [event, kind] of [["wakeDetected", "detection"], ["wakeStatus", "status"]] as const) {
         try acquireRelease(
           tryPromise(() => wake.addListener(event, (value) => { Queue.offerUnsafe(queue, { kind, value }) })),

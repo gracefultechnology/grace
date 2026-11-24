@@ -100,6 +100,12 @@ const wakeRuntime = {
   ].map((name) => "com/k2fsa/sherpa/onnx/" + name),
 };
 const wakeAssets = "grace-wake";
+const wakeNotices = [
+  { name: "model-attribution.txt", sha256: "74e42d37d63acd2366b042151d576fcc0c4917a41de339414a37f1e79f4e80e2" },
+  { name: "onnxruntime-license.txt", sha256: "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c" },
+  { name: "onnxruntime-third-party-notices.txt", sha256: "0e07b95f3a8d6230037707c5c4a2b554d12c4cb67369669ac255635528ffcee2" },
+  { name: "sherpa-onnx-license.txt", sha256: "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30" },
+];
 const wakeKeywords = "▁HE Y ▁GRA CE @HEY_GRACE\n";
 const wakeDownload = "https://github.com/k2-fsa/sherpa-onnx/releases/download/";
 const wakeLimit = 64 * 1024 * 1024;
@@ -158,6 +164,12 @@ function stageWakeRuntime(abi: Abi) {
   }
   for (const item of wakeModel.files)
     verifyWakeBytes(readFileSync(path.join(assets, wakeAssets, item.name)), item.sha256, item.name);
+  for (const item of wakeNotices) {
+    const source = path.join(app, "android", "wake-notices", item.name);
+    const staged = path.join(assets, wakeAssets, item.name);
+    const bytes = verifyWakeBytes(readFileSync(source), item.sha256, item.name);
+    if (!existsSync(staged) || !readFileSync(staged).equals(bytes)) writeFileSync(staged, bytes);
+  }
   verifyWakeBytes(readFileSync(path.join(jniLibs, nativeEntry)), wakeRuntime.libraries[abi], nativeEntry);
   const stagedEntries = execFileSync("unzip", ["-Z1", archive], { encoding: "utf8" }).trim().split("\n");
   if (!isDeepStrictEqual(stagedEntries, classEntries)) throw new Error("Wake keyword Android bindings differ from their pin");
@@ -519,7 +531,7 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
     if (abis.length !== 1 || !entries.includes("assets/agent/inventory.json")) throw new Error(`${name} does not carry one agent runtime: libeliza_node.so for ${abis.join(", ") || "no processor type"}`);
     const abi = Schema.decodeUnknownSync(Abi)(abis[0]);
     const keywordRoot = `assets/${wakeAssets}/`;
-    const allowedWake = new Map(wakeModel.files.map((entry) => [keywordRoot + entry.name, entry.sha256]));
+    const allowedWake = new Map([...wakeModel.files, ...wakeNotices].map((entry) => [keywordRoot + entry.name, entry.sha256]));
     allowedWake.set(keywordRoot + "keywords.txt", sha256(Buffer.from(wakeKeywords)));
     allowedWake.set(`lib/${abi}/${wakeRuntime.library}`, wakeRuntime.libraries[abi]);
     const forbidden = entries.filter((entry) => (forbiddenEntry.test(entry) || entry.startsWith(keywordRoot)) && !entry.endsWith("/") && !allowedWake.has(entry));

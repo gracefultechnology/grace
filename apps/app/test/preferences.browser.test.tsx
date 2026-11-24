@@ -7,7 +7,7 @@ import { defaults } from "../gen/app__preferences.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { application } from "../src/app.vibe";
 import type { WakePort } from "../src/graceSpeechPlatform.ts";
-import { actOnScreen, mount, tabletView } from "./screen.tsx";
+import { actOnScreen, mount, tabletView, wakeBoundary } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -145,31 +145,9 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
 });
 
 it('Call Grace from any app or while the screen sleeps (spec/app/wake.md, "Story: Call Grace from any app or while the screen sleeps")', async () => {
-  const key = "grace/voice-disclosure/wake";
-  const previous = localStorage.getItem(key);
-  localStorage.removeItem(key);
-  onTestFinished(() => {
-    if (previous === null) localStorage.removeItem(key);
-    else localStorage.setItem(key, previous);
-  });
-  const listeners = new Map<string, (value: unknown) => void>();
-  let permit = false;
-  let generation: number | null = null;
-  const armed = (): number | null => generation;
-  const status = () => Promise.resolve({ available: true, permitted: permit });
-  const wake: WakePort = {
-    status,
-    requestPermission: () => { permit = true; return status(); },
-    configure: (choice) => { generation = choice.generation; return Promise.resolve(); },
-    chime: () => Promise.resolve(),
-    addListener: (event, listener) => {
-      listeners.set(event, listener);
-      return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
-    },
-  };
-  const detect = (value: number) => act(() => Promise.resolve(listeners.get("wakeDetected")?.({ generation: value })));
+  const wake = wakeBoundary();
   const click = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
-  const { start, saved, store } = tablet({ revision: 1, value: JSON.stringify({ ...defaults, wakeEnabled: false }) }, wake);
+  const { start, saved, store } = tablet({ revision: 1, value: JSON.stringify({ ...defaults, wakeEnabled: false }) }, wake.port);
   await mount(start());
   await click("Settings");
   await click("Grace’s voice");
@@ -179,15 +157,15 @@ it('Call Grace from any app or while the screen sleeps (spec/app/wake.md, "Story
   await expect.poll(saved).toMatchObject({ wakeEnabled: true });
   await click("Set up “Hey Grace”");
   await click("Cancel");
-  expect([armed(), permit]).toEqual([null, false]);
+  expect([wake.armed(), wake.permitted()]).toEqual([null, false]);
   await click("Set up “Hey Grace”");
   await click("Continue");
-  await expect.poll(armed).not.toBeNull();
-  const earlier = armed();
+  await expect.poll(wake.armed).not.toBeNull();
+  const earlier = wake.armed();
   if (earlier === null) throw new Error("Wake needs to be armed before it can be disabled");
   store.acceptsWrites = false;
   await act(() => userEvent.click(toggle));
-  await expect.poll(armed).toBeNull();
+  await expect.poll(wake.armed).toBeNull();
   await expect.poll(() => store.refused).toBe(1);
   expect(saved()).toMatchObject({ wakeEnabled: true });
   store.acceptsWrites = true;
@@ -196,17 +174,20 @@ it('Call Grace from any app or while the screen sleeps (spec/app/wake.md, "Story
   await click("Show sleep screen");
   const sleepScreen = page.getByRole("button", { name: "Wake Grace", exact: true });
   await expect.element(sleepScreen).toBeVisible();
-  await detect(earlier);
+  await wake.detect(earlier);
   await expect.element(sleepScreen).toBeVisible();
   await click("Wake Grace");
   await expect.element(page.getByRole("button", { name: "Close Grace" })).not.toBeInTheDocument();
   await act(() => userEvent.click(toggle));
+  await expect.poll(wake.armed).not.toBeNull();
+  const beforeSleep = wake.armed();
   await click("Show sleep screen");
   await expect.element(sleepScreen).toBeVisible();
-  await expect.poll(armed).not.toBeNull();
-  const current = armed();
-  if (current === null) throw new Error("Wake needs to be armed on the sleep screen");
-  await detect(current);
+  await expect.poll(() => {
+    const armed = wake.armed();
+    return armed !== null && armed !== beforeSleep;
+  }).toBe(true);
+  await wake.detect();
   await expect.element(sleepScreen).not.toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: "Close Grace" })).toBeVisible();
 });

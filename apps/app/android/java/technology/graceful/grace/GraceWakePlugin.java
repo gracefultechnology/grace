@@ -34,7 +34,6 @@ public final class GraceWakePlugin extends Plugin {
  private GraceWakeDetector detector;
  private GraceWakeDetector.Capture capture;
  private Long generation;
- private Long reportedGeneration;
  private MediaPlayer chime;
  private boolean modelReady;
  private boolean captureFailed;
@@ -171,7 +170,7 @@ public final class GraceWakePlugin extends Plugin {
  }
 
  private void reconcile() {
-  Long wanted = ready() && !java.util.Objects.equals(generation, reportedGeneration) ? generation : null;
+  Long wanted = ready() ? generation : null;
   if (capture != null) {
    if (wanted == null || capture.generation != wanted) capture.cancelled = true;
   } else if (wanted != null) {
@@ -209,8 +208,8 @@ public final class GraceWakePlugin extends Plugin {
     captureFailed = true;
     notifyListeners("wakeStatus", currentStatus());
    } else if (heard && ready() && !playbackActive()) {
-    reportedGeneration = generation;
-    notifyListeners("wakeDetected", new JSObject().put("generation", generation));
+    generation = null;
+    notifyListeners("wakeDetected", new JSObject().put("generation", session.generation));
    }
   }
   reconcile();
