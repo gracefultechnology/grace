@@ -6,8 +6,9 @@
   "scripts": {
     "build": "(node -e \"process.exit(process.env.TURBO_HASH ? 0 : 1)\" || pnpm -w all //#gen) && pnpm --dir ../../vendor/eliza --filter @elizaos/cloud run build:worker && vibelang -p tsconfig.json",
     "typecheck": "vibelang --noEmit -p .",
+    "test": "vitest run",
     "dev": "pnpm build && wrangler dev --local --port 8787",
-    "bundle": "pnpm build && pnpm --filter @repo/app build && wrangler deploy --env production --dry-run --outdir .wrangler/bundle",
+    "bundle": "pnpm build && pnpm --filter @repo/app build && wrangler deploy --env staging --dry-run --outdir .wrangler/bundle/staging && wrangler deploy --env production --dry-run --outdir .wrangler/bundle/production",
     "deploy": "pnpm build && pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Browse and return to the page I left' && pnpm --filter @repo/app build && wrangler deploy --env production",
     "migrate": "pnpm build && node --env-file-if-exists=.dev.vars dist/src/migrate.js"
   },
@@ -19,6 +20,9 @@
   },
   "devDependencies": {
     "wrangler": "4.164.0",
-    "vibelang": "0.0.13"
+    "vibelang": "0.0.13",
+    "vibestack": "workspace:*",
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }
