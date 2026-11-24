@@ -72,7 +72,7 @@ const host = (wifi: WiFiPlugin | undefined, reminderPort?: ReminderPlugin) => La
     return sent === undefined ? undefined : notice
   }
 
-  const connection = Stream.changes(Stream.concat(Stream.fromEffect(connected(wifi)), Stream.drop(Stream.map(workspace.changes, (w) => w.device.connectivity === "Online"), 1)))
+  const connection = Stream.changes(Stream.concat(Stream.fromEffect(connected(wifi)), Stream.drop(Stream.changes(Stream.map(workspace.changes, (w) => w.device.connectivity === "Online")), 1)))
   try fork.scoped Stream.runForEach(connection, (online) => Effect.orDie(notices.send({ type: "observeConnection", online }, "Host")))
   const workspaceView = Stream.changesWith(
     Stream.map(workspace.changes, ({ device, assistant }) => ({ surface: device.surface, readiness: device.readiness, expanded: assistant.presentation === "Expanded" })),
