@@ -22,6 +22,11 @@ and traces (SPEC.md, "One spec tree").
 
 ## Browser qualification
 
+The benchmark harness is its own workspace package, `apps/benchmark` (`@repo/benchmark`). It imports this
+app through the root barrel of `@repo/app`: the journey helpers in `test/journey.tsx` for Chromium and, for Node,
+the test project with its servers and site observation in `test/project.ts`. Its `test:browser` runs nothing until a
+benchmark input below is set.
+
 Dispatch the CI workflow with BillWorld enabled to run the Fleet cohorts and
 the released statement task. Fleet runs four deterministic shards against the
 same numbered cohort in the pinned catalog. The aggregate independently
@@ -38,7 +43,7 @@ dispatch runs the selected cohort. To run cohort 2 locally, set the fixture
 and hosted benchmark variables and use:
 
 ```sh
-GRACE_BILLWORLD_COHORT=2 pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' --passWithNoTests
+GRACE_BILLWORLD_COHORT=2 pnpm --filter @repo/benchmark test:browser -t 'Follow Grace to a benchmark link'
 ```
 
 To select an individual case, add its displayed ID or a unique prefix to
@@ -47,9 +52,8 @@ prefix and a hash in the Vitest title. The receipt retains the full task ID.
 
 To resume locally, set `GRACE_BILLWORLD_RESUME_DIR` to the existing
 `fleet-*` directory containing `cohort.json`. Keep the same Grace commit,
-BillWorld checkout, cohort, and shard setting. Use the browser command with
-`--passWithNoTests` so an already complete shard can validate without
-opening pages. To resume in CI, dispatch on the original Grace commit and
+BillWorld checkout, cohort, and shard setting. The same browser command
+lets an already complete shard validate without opening pages. To resume in CI, dispatch on the original Grace commit and
 supply its workflow run ID in `billworld_resume_run`. Each shard must have
 uploaded its receipt directory in that run.
 
@@ -80,7 +84,7 @@ credentials. CI uploads asset provenance and both grader receipts as
 `billworld-released-task-md9`.
 
 The same CI job runs the Fleet `view-bill` cases listed in
-`test/fleet.fixture.ts`. Manual CI defaults to the `reference` cohort. Select
+`apps/benchmark/test/fleet.fixture.ts`. Manual CI defaults to the `reference` cohort. Select
 `held-out` in `billworld_statement_cohort` to run the 25 disjoint assignments
 from the [preregistered run](https://github.com/gracefultechnology/grace/actions/runs/45240036784).
 That assignment takes the lowest SHA-256 of `Grace held-out statement 1/`
@@ -93,7 +97,7 @@ For a Fleet-only local run, set `GRACE_BILLWORLD_RELEASED_DIR` to the pinned
 checkout and optionally set `GRACE_BILLWORLD_STATEMENT_COHORT=held-out`:
 
 ```sh
-pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the Fleet .* BillWorld statement'
+pnpm --filter @repo/benchmark test:browser -t 'Read the Fleet .* BillWorld statement'
 ```
 
 Each Fleet case signs in to an isolated local simulator and reads its

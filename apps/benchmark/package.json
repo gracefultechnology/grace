@@ -1,0 +1,20 @@
+{
+  "name": "@repo/benchmark",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "vibelang --noEmit -p .",
+    "test": "vitest run",
+    "test:browser": "vitest run --project browser"
+  },
+  "devDependencies": {
+    "@repo/app": "workspace:*",
+    "@types/node": "catalog:",
+    "effect": "4.1.1",
+    "playwright": "catalog:",
+    "typescript": "catalog:",
+    "vibelang": "0.0.13",
+    "vitest": "catalog:"
+  }
+}

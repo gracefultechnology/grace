@@ -234,7 +234,7 @@ jobs:
             --retry-delay 1 --max-time 15 -o /dev/null -w '%{http_code}' "$SHOPPING_ORIGIN/")
           test "$status" = 200
       - name: Verify the published synthetic Shopping sign-in
-        working-directory: apps/app
+        working-directory: apps/benchmark
         env:
           WA_SHOPPING_FIXTURE_LOGIN: emma.lopez@gmail.com:Password.123
         run: |
@@ -285,7 +285,7 @@ jobs:
                    else "ReachNamedPage" end)} end)] |
                 select(map(.taskId | tonumber) == $tasks)' > "$GRACE_BROWSER_BENCHMARK_FILE"
           browser_exit=0
-          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' |
+          pnpm --filter @repo/benchmark test:browser -t 'Follow Grace to a benchmark link' |
             tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
           shopt -s nullglob
           receipts=("$WEBARENA_RESULTS"/task-*.json)
@@ -413,7 +413,7 @@ jobs:
                 receipt: ($results + "/task-386.json"), siteStorageState: $state, evaluator: "webarena",
                 exploratory: true, chat: "upstream"}] | select(length == 1)
             ' > "$GRACE_BROWSER_BENCHMARK_FILE"
-          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link 386' |
+          pnpm --filter @repo/benchmark test:browser -t 'Follow Grace to a benchmark link 386' |
             tee "$WEBARENA_RESULTS/grace-browser.log"
           jq -e '. as $receipt | .webArena |
             select(.noActionScore == 0 and .wrongAnswerScore == 0 and (.officialScore == 0 or .officialScore == 1) and
@@ -435,7 +435,7 @@ jobs:
                  evaluator: "webarena", chat: "upstream", requiredStep: "SortPublicListing"}] |
                 select(map(.taskId | tonumber) == $tasks)' > "$GRACE_BROWSER_BENCHMARK_FILE"
           browser_exit=0
-          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' 2>&1 |
+          pnpm --filter @repo/benchmark test:browser -t 'Follow Grace to a benchmark link' 2>&1 |
             tee "$WEBARENA_RESULTS/grace-browser.log" || browser_exit=$?
           jq -s 'sort_by(.taskId) | map({taskId, chatStatus, decisionProvider, decisionRequests,
             failure: .outcome.failure, wrongDirection: .outcome.wrongDirection, landing: .outcome.destination,
@@ -450,7 +450,6 @@ jobs:
       - name: Exercise the public search and its negative controls in Chromium
         if: ${{ !cancelled() && !inputs.webarena_rating_only && !inputs.webarena_sort_only && inputs.webarena_public_search && env.WEBARENA_RESULTS != '' }}
         run: |
-          unset GRACE_BROWSER_BENCHMARK_FILE
           pnpm --filter @repo/app test:browser test/app.browser.test.tsx -t 'Check a public search the person performs' \
             --reporter default --reporter json --outputFile.json="$WEBARENA_RESULTS/public-search-journey.json"
       - if: always()
@@ -566,7 +565,7 @@ jobs:
           fi
       - name: Verify the pinned GitLab synthetic sign-in
         id: gitlab_sign_in
-        working-directory: apps/app
+        working-directory: apps/benchmark
         run: |
           umask 077
           python - "$GRACE_WEBARENA_UPSTREAM/browser_env/env_config.py" > "$WEBARENA_PRIVATE/gitlab-login.json" <<'PY'
@@ -713,7 +712,7 @@ jobs:
                  siteStorageState: $state, evaluator: "webarena", chat: "upstream", requiredStep: "ReachNamedPage"}] |
               select(length == 1)' > "$GRACE_BROWSER_BENCHMARK_FILE"
           browser_exit=0
-          pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link 258' |
+          pnpm --filter @repo/benchmark test:browser -t 'Follow Grace to a benchmark link 258' |
             tee "$WEBARENA_PRIVATE/grace-browser.log" || browser_exit=$?
           jq -e '
             .taskId == "258" and .chatStatus == 200 and .outcome.chatProvider == "upstream" and
@@ -783,7 +782,7 @@ jobs:
           GRACE_BILLWORLD_SHARD: ${{ matrix.shard }}
           GRACE_BENCHMARK_CLEF_ORIGIN: ${{ vars.GRACE_BENCHMARK_CLEF_ORIGIN }}
           GRACE_BENCHMARK_CLEF_KEY: ${{ secrets.GRACE_BENCHMARK_CLEF_KEY }}
-        run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link' --passWithNoTests
+        run: pnpm --filter @repo/benchmark test:browser -t 'Follow Grace to a benchmark link'
       - if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -1061,7 +1060,7 @@ jobs:
           JS
       - run: pnpm gen
       - name: Read the released and Fleet statements through Grace
-        run: pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Read the .* BillWorld statement'
+        run: pnpm --filter @repo/benchmark test:browser -t 'Read the .* BillWorld statement'
       - name: Require the negative witness and six positive checks
         run: |
           node --input-type=module <<'JS'
@@ -1116,7 +1115,7 @@ jobs:
           node --input-type=module <<'JS'
           import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
           import { join } from "node:path";
-          import { fleetStatementCoverage } from "./apps/app/test/fleet.fixture.ts";
+          import { fleetStatementCoverage } from "./apps/benchmark/test/fleet.fixture.ts";
 
           const results = process.env.GRACE_BILLWORLD_RESULTS;
           const coverage = await fleetStatementCoverage({

@@ -11,7 +11,7 @@
 //   entry *.schema, *.contract              imported by the tests vibestack/testing/generate.ts writes under .cache/
 //   cloud entry worker.vibe, migrate.vibe   the Worker and migration that wrangler.jsonc and the migrate script name as dist/src/*.js
 //   apps @capacitor/android                 the Android host module scripts/android.ts resolves
-//   apps openssl                            the system binary test/fleet.fixture.ts runs for its local TLS certificate
+//   apps openssl                            the system binary test/tls.ts runs for a local TLS certificate
 //   design-system eslint, eslint-plugin-better-tailwindcss, typescript-eslint  loaded by name in vibestack/design/test/design.test.ts
 import vibelang from "vibelang/knip"
 
@@ -95,6 +95,11 @@ export default {
       ],
       "ignoreBinaries": [
         "openssl"
+      ]
+    },
+    "apps/benchmark": {
+      "entry": [
+        "test/**/*.test.ts"
       ]
     },
     "apps/cloud": {

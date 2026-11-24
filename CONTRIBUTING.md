@@ -8,7 +8,7 @@ Everything is built on [the stack](AGENTS.md#the-stack): Node 26, pnpm, VibeLang
 
 | Path | Holds |
 |---|---|
-| `apps/` | deployable applications; `apps/app` is the hello world to replace |
+| `apps/` | deployable applications; `apps/app` is the hello world to replace, and `apps/benchmark` runs the browser benchmarks against it |
 | `packages/` | what applications share: `@repo/ui` (components), `@repo/design-system` (tokens) |
 | `vibestack/` | the tools: the `spec` command, Studio, and what any project uses but does not own (`vibestack/testing`, `vibestack/design`, `vibestack/stories`) |
 | `vibestack/examples/` | standalone projects, each with its own install; never part of the workspace |

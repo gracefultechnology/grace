@@ -436,6 +436,7 @@ workspace.
 |---|---|
 | `spec/` | The one spec tree: the product, and a directory per app or package |
 | `apps/app` | A hello world application with one of each thing the stack offers, to replace with yours |
+| `apps/benchmark` | The BillWorld and WebArena browser benchmarks, which import `apps/app` |
 | `packages/design-system` | Design tokens, built into Tailwind's theme |
 | `packages/ui` | Shared React components, with generated stories |
 | `vibestack/` | The tools: generator, simulator, prover, Studio, testing and design helpers |
