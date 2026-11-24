@@ -1,5 +1,17 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"
+import { Capacitor, registerPlugin } from "@capacitor/core";
 import { webView } from "./surfacePlugin.ts";
+
+export interface WakePort {
+  status(): Promise<unknown>;
+  requestPermission(): Promise<unknown>;
+  configure(input: { generation: number | null }): Promise<void>;
+  chime(): Promise<void>;
+  addListener(event: "wakeDetected" | "wakeStatus", callback: (value: unknown) => void): Promise<{ remove(): Promise<void> }>;
+}
+
+export const wakePlugin = Capacitor.isPluginAvailable("GraceWake")
+  ? registerPlugin<WakePort>("GraceWake") : undefined;
 
 const utf8 = new TextDecoder();
 

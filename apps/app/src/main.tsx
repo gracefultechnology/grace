@@ -3,6 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App, createAppRuntime } from "./App.tsx";
+import { primeRuntime } from "./useApp.ts";
 import "./main.css";
 
 const root = createRoot(document.getElementById("root")!);
@@ -13,7 +14,10 @@ const mayBeApproval = !native && (
 );
 
 function renderApp() {
-  root.render(<StrictMode><App runtime={createAppRuntime(native)} /></StrictMode>);
+  const runtime = createAppRuntime(native);
+  void primeRuntime(runtime).then(() => {
+    root.render(<StrictMode><App runtime={runtime} /></StrictMode>);
+  });
 }
 
 if (!mayBeApproval) {

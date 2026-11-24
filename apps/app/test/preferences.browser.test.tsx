@@ -3,9 +3,11 @@ import { TestClock } from "effect/testing";
 import { act } from "react";
 import { expect, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
+import { defaults } from "../gen/app__preferences.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { application } from "../src/app.vibe";
-import { actOnScreen, mount, tabletView } from "./screen.tsx";
+import type { WakePort } from "../src/graceSpeechPlatform.ts";
+import { actOnScreen, mount, tabletView, wakeBoundary } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -68,7 +70,7 @@ function deferred() {
   return { promise, resolve: () => resolve() };
 }
 
-function tablet(stored: { revision: number; value: string | null }) {
+function tablet(stored: { revision: number; value: string | null }, wake?: WakePort) {
   const store = { acceptsWrites: true, refused: 0 };
   const audio = { step: 9, min: 0, max: 15, muted: false };
   const screen = { brightness: 100 };
@@ -79,6 +81,7 @@ function tablet(stored: { revision: number; value: string | null }) {
   const clock = Layer.effectDiscard(TestClock.setTime(new Date(2026, 10, 20, 12).getTime())).pipe(Layer.provideMerge(TestClock.layer()));
   const start = () => ManagedRuntime.make(application(undefined, undefined, {
     native: true,
+    wake,
     display: {
       getDevice: () => {
         const pending = nextRead;
@@ -139,6 +142,54 @@ it('Keep mute after a failed save and restart (spec/app/preferences.md, "Only th
   await expect.element(page.getByRole("slider", { name: "Volume" })).toHaveAttribute("aria-valuenow", "20");
   await expect.poll(saved).toMatchObject({ muted: false, volume: 20 });
   await expect.poll(() => audio.step).toBe(3);
+});
+
+it('Call Grace from any app or while the screen sleeps (spec/app/wake.md, "Story: Call Grace from any app or while the screen sleeps")', async () => {
+  const wake = wakeBoundary();
+  const click = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+  const { start, saved, store } = tablet({ revision: 1, value: JSON.stringify({ ...defaults, wakeEnabled: false }) }, wake.port);
+  await mount(start());
+  await click("Settings");
+  await click("Grace’s voice");
+  const toggle = page.getByRole("switch", { name: "Listen for “Hey Grace”" });
+  await expect.element(toggle).toBeEnabled();
+  await act(() => userEvent.click(toggle));
+  await expect.poll(saved).toMatchObject({ wakeEnabled: true });
+  await click("Set up “Hey Grace”");
+  await click("Cancel");
+  expect([wake.armed(), wake.permitted()]).toEqual([null, false]);
+  await click("Set up “Hey Grace”");
+  await click("Continue");
+  await expect.poll(wake.armed).not.toBeNull();
+  const earlier = wake.armed();
+  if (earlier === null) throw new Error("Wake needs to be armed before it can be disabled");
+  store.acceptsWrites = false;
+  await act(() => userEvent.click(toggle));
+  await expect.poll(wake.armed).toBeNull();
+  await expect.poll(() => store.refused).toBe(1);
+  expect(saved()).toMatchObject({ wakeEnabled: true });
+  store.acceptsWrites = true;
+  await click("Try again");
+  await expect.poll(saved).toMatchObject({ wakeEnabled: false });
+  await click("Show sleep screen");
+  const sleepScreen = page.getByRole("button", { name: "Wake Grace", exact: true });
+  await expect.element(sleepScreen).toBeVisible();
+  await wake.detect(earlier);
+  await expect.element(sleepScreen).toBeVisible();
+  await click("Wake Grace");
+  await expect.element(page.getByRole("button", { name: "Close Grace" })).not.toBeInTheDocument();
+  await act(() => userEvent.click(toggle));
+  await expect.poll(wake.armed).not.toBeNull();
+  const beforeSleep = wake.armed();
+  await click("Show sleep screen");
+  await expect.element(sleepScreen).toBeVisible();
+  await expect.poll(() => {
+    const armed = wake.armed();
+    return armed !== null && armed !== beforeSleep;
+  }).toBe(true);
+  await wake.detect();
+  await expect.element(sleepScreen).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Close Grace" })).toBeVisible();
 });
 
 it('Adjust Grace without losing my choices: follow the tablet\'s volume keys (spec/app/preferences.md, "Story: Adjust Grace without losing my choices")', async () => {

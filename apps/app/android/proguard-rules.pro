@@ -1,3 +1,4 @@
 -keep @interface com.getcapacitor.annotation.** { *; }
 -keep @interface com.getcapacitor.PluginMethod { *; }
 -keep @interface com.getcapacitor.NativePlugin { *; }
+-keep class com.k2fsa.sherpa.onnx.** { *; }
