@@ -700,6 +700,7 @@ target through `invalidateGuidance` before the changed controls can be shown.
 Page, keyboard, surface and task changes make old guidance unavailable immediately.
 Publication names the kind of ring, Look, Tap or Done, and the few words of
 its label. The UI renders the ring and label only through `guidanceVisible`.
+No guidance is published while a website's question holds the person.
 
 ```quint
 pure def guidanceIsCurrent(w: Workspace): bool =
@@ -1011,6 +1012,7 @@ load version it was running, and a report naming any other is refused. A
 payment progress callback must belong to the attached task and an active
 execution. A proof witness showed that an unrelated retained payment could
 otherwise create ordinary website work inside an active guided plan.
+No progress is received while a website's question holds the person.
 
 ```quint
 pure def canReceiveProgress(w: Workspace, progress: ProgressReport, by: WorkspaceActor): bool =
@@ -1090,6 +1092,7 @@ A late observation is rejected even if its task name still matches. It must
 match the current device context, current selected document revision, current
 task generation and current controller generation. The trusted host checks
 the actual origin, account and redaction before it supplies this evidence.
+No observation or operation is accepted while a website's question holds the person.
 
 ```quint
 pure def observationArrives(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
@@ -1184,6 +1187,7 @@ Readback reports success or a visible mismatch; a mismatch pauses for manual
 reconciliation. Neither outcome by itself declares the whole task completed.
 A successful readback may identify a manual step that needs the person. Grace
 then waits for Continue and observes the current page again before another step.
+Neither a dispatch nor a readback is accepted while a website's question holds the person.
 
 ```quint
 pure def canDispatch(w: Workspace, tokens: OperationTokens, by: WorkspaceActor): bool =
@@ -1250,6 +1254,7 @@ observation that quotes it. That report retires the
 ordinary controller and permits a later task without labelling this one
 abandoned. An attached payment must use its durable payment-result path;
 an ordinary completion report cannot bypass its unresolved ledger.
+No goal finishes while a website's question holds the person.
 
 ```quint
 pure def canCompleteOrdinary(w: Workspace, completion: GoalCompletion, by: WorkspaceActor): bool =
@@ -1334,6 +1339,7 @@ task, it explains that the appointment may already be saved. The person can
 return to the list to check the provider’s calendar, and the draft cannot
 submit again. A future calendar save needs
 fresh observation of the original mail receipt and its own separate approval.
+Resume binds no recovered public tab while a website's question holds the person.
 
 ```quint
 pure def guidedCheckpoint(w: Workspace): GuidedCheckpoint = {
@@ -1484,6 +1490,7 @@ does not finish that step. The person can ask for another highlight from
 the new page with the same step active.
 
 For a requested statement read, the host reads the current visible document locally, whatever its title, unless the title names it a past, previous or prior bill, statement, invoice or premium. A heading on the page, the statement section, or an enclosing section that identifies a past, paid, archived or closed statement or premium keeps the check open. Conflicting structural labels leave the source ambiguous. An ordinary link to earlier statements has no bearing on which statement is open. A section headed as the current statement or identifying one numbered invoice may supply its own due date and one explicitly labeled amount-due total from its own noninteractive line-items table. The browser identifies the row and the owning section. The total must agree with any labeled amount elsewhere. Two sibling rows, an account overview outside the section, and a table of separate records cannot establish this association. The amount due and due date each need a single distinct labeled value on the same statement, written after its label or on the next line, including an amount the page splits across text fragments. An amount whose cents the page shows apart with no decimal mark supplies no value. A labeled remaining statement balance, or remaining balance due, replaces the statement or new balance when the statement shows one; an amount due labeled beside it must agree with it. An amount the page marks CR keeps that mark, and one the page calls a credit supplies no value. A date labeled Payment due or Due by is still a due date when the value is on its own or separated from another field by a visible delimiter, with or without its year. Payment due and Premium due can label a currency amount. Current premium without a payable label does not supply an amount due. The connective “by” may give the due date immediately after a labeled amount due on the same line. When the browser exposes it separately from that amount, the host cannot use it as the due date. The check remains open unless an independent due-date label gives the same value. A distinct competing date keeps the check open. An account or current balance labeled as the amount due counts as that amount. An unqualified account or current balance supplies a different fact, as do a previous or running balance, minimum payment, a loan's remaining balance, credit limit, pending charge and statement issue date. A label with no value beside it supplies none. The amount and date must also occur together in one visible statement section on that document. A date elsewhere on the page cannot supply a missing field. Grace requests section evidence locally for the reviewed statement. Missing or incomplete section evidence leaves the check open. Several independently complete sections leave it open even when their amounts and dates coincide. The host rereads the document identity, address, section and values before confirming the step. Only those values are compared, so a time the page counts by itself, or any other change elsewhere in the document, may occur between the two reads. The confirmation repeats the statement's own labels. An ambiguous or incomplete statement, one whose values change between the reads, and one that is covered, still loading or no longer at its address leave the step open, and Grace says which.
+No plan is offered and no link is bound to a step while a website's question holds the person.
 
 ```quint
 pure def statementAmounts(due: Set[str], balances: Set[str], remaining: Set[str]): Set[str] =
@@ -1619,6 +1626,7 @@ tab, origin and direction. Checking again still requires the full sort
 observation and does not reuse this offer as the result. This correction
 belongs to the current browser session. After restart, the original category
 can be checked or corrected again on a freshly reviewed page.
+No correction is offered or approved while a website's question holds the person.
 
 ```quint
 pure def guidedNameCorrectionCurrent(w: Workspace, correction: GuidedNameCorrection): bool = {
@@ -1700,6 +1708,7 @@ The app adapter checks the actual outcome on the named subject under the authent
 
 
 For a requested public category price order, the person reviews the category and direction, opens the category and sets the order using the website’s own controls. Grace checks the category independently of the sort state on the same ready, secure document in the reviewed tab and site. The browser observation has to identify Price as selected and the current direction unambiguously on the category’s own sort control. A control that offers to switch to descending identifies ascending only if it is the opposite action of this price sort. A wrong category, wrong direction, covering blocker, private form, stale document or missing evidence leaves the step open. A generic page check cannot finish it.
+No check counts while a website's question holds the person.
 ```quint
 type GuidedPageField = PrivatePageField | UnknownPageField | NavigationPageField | IdleOptInField | IdleLoginField
 type GuidedEvidenceUse = GuidePublicLinks | CheckPublicDocument | CheckPublicSearchResult | CheckPublicSort | ReadGuidedContent
@@ -1877,6 +1886,7 @@ box can remain beside the results. Grace uses only the heading as query evidence
 The result is accepted only through this search check for the active reviewed
 step. The stored receipt describes the confirmed query and never stores the
 results address or other page content.
+No search check counts while a website's question holds the person.
 
 ```quint
 pure def isPublicSearch(guidedStep: GuidedStep): bool = match guidedStep {
@@ -1938,6 +1948,7 @@ provider identifiers. The reviewed checkpoint retains the collection and
 status from the request and, after confirmation, a generic receipt with an
 opaque reference. An interrupted selection needs a new collection observation
 after resuming.
+No record is selected or confirmed while a website's question holds the person.
 
 ```quint
 type RecordDatePick = { seen: int, index: int, ties: int }
@@ -2045,6 +2056,7 @@ those exact approved details under the same account. The host may retain
 the adopted occurrence during a surface switch. Checking the matching
 saved occurrence can retry the read and advance the resumed plan. A calendar feed item,
 wrong source, or unsaved appointment cannot count as a save.
+No email is recorded or rebound and no calendar approval, save or reconciliation is taken while a website's question holds the person.
 
 ```quint
 pure def canConfirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): bool =
@@ -2167,6 +2179,7 @@ An explicit bill selection attaches the existing record to a new task; an
 old payment result cannot silently finish an unrelated later conversation.
 The future storage adapter validates and decodes that record before creating
 its owning machine; event input cannot assign an arbitrary payment state.
+No review is recorded while a website's question holds the person.
 
 ```quint
 pure def canBindCommitment(w: Workspace, key: T::Subject, by: WorkspaceActor): bool =
@@ -2210,6 +2223,7 @@ store can acknowledge the unresolved window or report a write failure. A
 failed write leaves a visible retryable save error and never enables submit.
 Approval must be the person's completed, unambiguous response with no
 correction; it is not inferred from speech fragments or website content.
+No readback is acknowledged while a website's question holds the person.
 
 ```quint
 pure def canReadBackCommitment(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): bool =
@@ -2275,6 +2289,7 @@ its external effect. Every departure calls the payment's Stop transition,
 revoking freshness and approval. An interrupted journaled window stays
 Unknown; Resume cannot authorize or submit it again. It must be investigated.
 A directly observed website tap is recorded without an additional effect.
+No submission or tap is recorded while a website's question holds the person.
 
 ```quint
 pure def canSubmitCommitment(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): bool =
@@ -2326,6 +2341,7 @@ Discovered by the proof review: editing recent history is not a departure from
 the current page. Every browser-control edit preserves the payment attempt and
 durable record. Only a changed page or geometry revision revokes readiness;
 history-only edits retain the current readiness.
+While a website's question holds the person, an outcome, prior result or save is kept only where it leaves the task's activity and work version as they were.
 
 ```quint
 pure def terminalCommitment(result: CM::Outcome): bool =
@@ -2776,9 +2792,10 @@ starts or stops holding the person (`holdsThePerson`: a question is
 presented, or a site permission she allowed is waiting for Android). While it
 holds her, the workspace refuses every step of a task: observing, preparing,
 dispatching or verifying an operation, progress reported for one, completing
-an ordinary goal, publishing guidance, offering a read plan or a name
-correction, every step of a guided plan including its mail and calendar
-steps, and reviewing, reading back, authorizing, submitting or seeing her tap
+an ordinary goal, publishing guidance, offering a read plan, offering or
+approving a name correction, resuming a recovered public tab, every step of a
+guided plan including its mail and calendar steps, and reviewing, reading
+back, authorizing, submitting or seeing her tap
 on a commitment. Evidence of work already sent, a commitment's outcome, prior
 result or save, is kept only where it leaves the task's activity and version
 as they were; applying it to the task waits for her answer. Her answer, Stop,
