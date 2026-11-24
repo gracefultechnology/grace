@@ -400,9 +400,11 @@ and pauses unfinished work before a sanitized context can be used again.
 Submitting a message, by typing, speaking or tapping an answer, supersedes the
 task's current step: unfinished work that is not paused is rechecked against
 the new request, with any operation in flight fenced. `supersede` is that one
-fence, which can keep a step that waits for the person. A turn the host
-starts, such as an Ask Grace button, needs Grace open and supersedes nothing:
-it adds no message and is not the person's request.
+fence, which can keep a step that waits for the person. A turn started without
+her words (`hostTurn`) — by the host for a page event, elsewhere report or
+opening line, or by the person tapping an Ask Grace button — needs Grace open,
+adds no message and supersedes nothing; only the Ask Grace tap belongs to the
+person (and it gives no consent).
 Task identifiers and checkpoints are non-secret metadata, never copies of
 private field values or unfiltered message text.
 
@@ -499,13 +501,10 @@ pure def newConversation(a: Assistant, by: C::ConversationActor): Assistant =
 
 ### Hidden assistance is quiet and every task status has its necessary context
 
-Pausing a spoken reply turns the microphone off while the reply stays available to resume.
+The assistant keeps every rule of its conversation. Pausing a spoken reply turns the microphone off while the reply stays available to resume.
 
 ```quint
-pure def alwaysConversationRules(a: Assistant): bool =
-  C::alwaysListeningHasAnActiveExchange(a.conversation) and C::alwaysRecognitionRetriesAreBounded(a.conversation) and
-  C::alwaysReadingPositionExists(a.conversation) and C::alwaysGenerationsAreNonnegative(a.conversation) and
-  C::alwaysMessagesHaveContent(a.conversation) and C::alwaysPausedMicrophoneIsOff(a.conversation)
+pure def alwaysConversationRules(a: Assistant): bool = C::validConversation(a.conversation)
 pure def alwaysHiddenIsQuiet(a: Assistant): bool =
   a.presentation == Closed implies not(a.conversation.voice) and a.conversation.turn == C::Ready and
     (a.activity == NoTask or a.activity == Paused or a.activity == Finished)
@@ -526,6 +525,19 @@ pure def alwaysReplacementIsComplete(a: Assistant): bool =
 pure def stepWindowChangesKeepConversation(before: Assistant, via: str, after: Assistant): bool =
   (via == "open" or via == "resize" or via == "showChat" or via == "dismissKeyboard" or via == "focusWebsite") implies
     after.conversation == before.conversation
+```
+
+### An assistant is valid when it meets every rule above
+
+The [interaction](./interaction.md) law and the [workspace](./workspace.md) require `validAssistant` of an assistant, the conjunction of every `always` rule of this spec, rather than repeating them. Whoever adds an `always` rule here adds it to this conjunction too.
+
+```quint
+pure def validAssistant(a: Assistant): bool =
+  alwaysGraceWorksOnlyOnTheVisiblePage(a) and alwaysGuidanceIsNotAhead(a) and
+  alwaysDoneMeansVerifiedCompletion(a) and alwaysConversationRules(a) and
+  alwaysHiddenIsQuiet(a) and alwaysTaskContextExists(a) and alwaysOperationsBelongToWorkingTasks(a) and
+  alwaysOnlyVerifiedEndpointsClaimCompletion(a) and alwaysConversationOffersAndInterruptions(a) and
+  alwaysReplacementIsComplete(a)
 ```
 
 ### Pausing, reconciliation, replacement and verified outcomes are reachable

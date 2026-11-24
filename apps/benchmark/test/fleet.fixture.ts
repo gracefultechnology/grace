@@ -6,7 +6,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Schema } from "effect";
 import type { Page } from "playwright";
-import { selfSigned } from "./tls.ts";
+import { selfSigned } from "@repo/app";
 import { hasHostedNavigation } from "./browser-receipt.ts";
 import { routeFixtureContext } from "./fixture-context.ts";
 

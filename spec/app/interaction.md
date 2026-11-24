@@ -92,14 +92,8 @@ pure def interact(a: A::Assistant, input: Interaction, by: C::ConversationActor)
   | UnusableSpeech(data) => A::unusableSpeech(a, data.token, data.owner, by)
   | HostTurn(data) => A::hostTurn(a, data.turnOrigin, by)
 }
-pure def validAssistant(a: A::Assistant): bool =
-  A::alwaysGraceWorksOnlyOnTheVisiblePage(a) and A::alwaysGuidanceIsNotAhead(a) and
-  A::alwaysDoneMeansVerifiedCompletion(a) and A::alwaysConversationRules(a) and
-  A::alwaysHiddenIsQuiet(a) and A::alwaysTaskContextExists(a) and A::alwaysOperationsBelongToWorkingTasks(a) and
-  A::alwaysOnlyVerifiedEndpointsClaimCompletion(a) and A::alwaysConversationOffersAndInterruptions(a) and
-  A::alwaysReplacementIsComplete(a)
 pure def lawInteractionPreservesAssistant(a: A::Assistant, input: Interaction, by: C::ConversationActor): bool =
-  validAssistant(a) and canInteract(a, input, by) implies validAssistant(interact(a, input, by))
+  A::validAssistant(a) and canInteract(a, input, by) implies A::validAssistant(interact(a, input, by))
 ```
 
 ### The workspace can distinguish new requests, changed geometry and local reading

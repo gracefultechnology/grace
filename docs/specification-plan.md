@@ -107,7 +107,7 @@ The connector integration supplies the actual application composition and its sy
 | Required evidence | How to reproduce on the connector integration |
 |---|---|
 | Local Google sign-in, Gmail, Calendar and private sign-in handoff | Dispatch the CI workflow with `cross_app_only` to exercise the mock Google journeys and private mail handoff in Chromium. Run the app's normal Vitest browser project. Its resettable local provider requests synthetic consent, then serves the account-specific mail and calendar endpoints. Inspect the source message, the approval boundary and each account's saved events. These journeys answer Grace's Cloud requests from test fakes (`apps/app/test/cloud.vibe` and the fetch fakes inside the journeys), not from the pinned Eliza Cloud worker. `pnpm --filter @repo/app test` separately sends each managed Google route the web shell calls (the mail and calendar reads and changes in `managedReads.vibe`, and the status, connect and disconnect calls in `graceAccount.vibe`) to the pinned Eliza Cloud's Google router in `google.vibe`, called directly without the worker's prefix gate, and fails on any route it does not serve. The Connector's Google routes in `apps/app/src/google.vibe` are served only by `apps/app/test/cloud.vibe`. |
-| 100 Fleet billers | Check out the public BillWorld fixture at `8320228bccf0759f375b9633592612e0e570a526`. Set `GRACE_BILLWORLD_DIR` to its absolute path, `GRACE_BILLWORLD_RESULTS` to an output directory, and provide the benchmark's upstream-compatible Clef origin and test key as `GRACE_BENCHMARK_CLEF_ORIGIN` and `GRACE_BENCHMARK_CLEF_KEY`. Run `pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link'`. The manual `ci` workflow accepts the `billworld` input and checks out the public fixture at that commit with the workflow’s built-in token. The Fleet fixture samples distinct billers across portal families before any decision, starts a loopback HTTPS site and grades the destination from Chromium. Each run writes its own cohort and receipts. This cohort qualifies public support-page navigation. Full billing operations need the task's private state grader. |
+| 100 Fleet billers | Check out the public BillWorld fixture at `8320228bccf0759f375b9633592612e0e570a526`. Set `GRACE_BILLWORLD_DIR` to its absolute path, `GRACE_BILLWORLD_RESULTS` to an output directory, and provide the benchmark's upstream-compatible Clef origin and test key as `GRACE_BENCHMARK_CLEF_ORIGIN` and `GRACE_BENCHMARK_CLEF_KEY`. Run `pnpm --filter @repo/benchmark test:browser -t 'Follow Grace to a benchmark link'`. The manual `ci` workflow accepts the `billworld` input and checks out the public fixture at that commit with the workflow’s built-in token. The Fleet fixture samples distinct billers across portal families before any decision, starts a loopback HTTPS site and grades the destination from Chromium. Each run writes its own cohort and receipts. This cohort qualifies public support-page navigation. Full billing operations need the task's private state grader. |
 | WebArena browser baseline | Set `GRACE_BROWSER_BENCHMARK_FILE` to a sealed list of public task IDs, intents, loopback HTTPS start URLs and fresh receipt paths. Use the same browser command. For official cases include `evaluator: "webarena"`, `GRACE_WEBARENA_UPSTREAM` pointing to a clean checkout at `dce04686a56253aefba7b18a4fa0937cf1dc987b`, and `GRACE_WEBARENA_PYTHON` pointing to its prepared Python. Supply synthetic seeded site login where the task requires it. Set `chat: "upstream"` in a sealed case to exercise the live planner with a funded test tenant. Add `requiredStep: "ReachNamedPage"` when a named destination must appear in the actual reviewed plan. The benchmark records the target proposed by Grace and each observed hop. Score the landing URL independently of Grace’s verdict. Include failed attempts and manual controls in separate counts. |
 | Full model and installed device | Run `pnpm check`. Inspect `review` separately from simulation and proof. The existing Android runner can record sealed benchmark interactions on a dedicated emulator. Record an installed, signed-in run independently of desktop Chromium. |
 
@@ -383,7 +383,7 @@ Export `WA_SHOPPING_FIXTURE_LOGIN` with the published synthetic `email:password`
 
 ```sh
 (
-  cd apps/app
+  cd apps/benchmark
   umask 077
   node --input-type=module - "$fx/shopping-state.json" <<'JS'
 import { chromium } from "playwright";
@@ -426,7 +426,7 @@ git -C "$fx/upstream" show HEAD:config_files/test.raw.json |
     > "$fx/shopping-input.json"
 GRACE_WEBARENA_UPSTREAM="$fx/upstream" GRACE_WEBARENA_PYTHON="$fx/evaluator/bin/python" \
 GRACE_BROWSER_BENCHMARK_FILE="$fx/shopping-input.json" \
-  pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Follow Grace to a benchmark link'
+  pnpm --filter @repo/benchmark test:browser -t 'Follow Grace to a benchmark link'
 jq -es '
   (map(.taskId | tonumber) | sort) == [260,261,262,263,264,298,299] and
   all(.[]; .webArena.noActionScore == 0 and (.webArena.officialScore == 0 or .webArena.officialScore == 1)) and
