@@ -9,8 +9,8 @@ These preferences are kept on the tablet; set-up may offer them too. Grace's
 voice is her cloud speech service in English with one voice, so there is no
 language switch or voice catalog, and pace is the only voice choice.
 The user-approved “Hey Grace” preference controls whether the separate wake
-lifecycle may detect the wake phrase, including while the screen sleeps; the
-MVP has no detector, so its Settings row shows that it is not available.
+lifecycle may detect the wake phrase, including on Grace’s sleep screen. Voice
+Settings offers setup and permission when the Android detector is available.
 Conversation still owns active request capture; the wake model owns detection,
 permission and transient wake state. The UI uses design tokens
 and measures legibility on hardware; this model does not prescribe new pixels.

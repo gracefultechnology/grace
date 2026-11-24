@@ -1,5 +1,5 @@
-// spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"
-import { Duration, Effect, type Exit, type ManagedRuntime, Option, Stream } from "effect";
+// spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"; spec/app/wake.md, "Settings and the sleep screen say when wake detection is unavailable"
+import { Duration, Effect, type Exit, type ManagedRuntime, Option, Stream, SubscriptionRef } from "effect";
 import { createContext, createElement, type ReactNode, use, useMemo, useState, useSyncExternalStore } from "react";
 import type { Accounts as AccountsState, Event as AccountEvent } from "../gen/app__accounts.ts";
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe";
@@ -32,7 +32,7 @@ import { filesAccount } from "./files.vibe";
 import { ManagedReads, type HomeCards, type ManagedSnapshot } from "./managedReads.vibe";
 import type { AccountActions } from "./graceAccount.vibe";
 import { ReplyControls, type ReplyOffer } from "./replyControls.vibe";
-import type { SpeechActions } from "./graceSpeech.vibe";
+import { SpeechActions, type WakeStatus } from "./graceSpeech.vibe";
 import { Machine as PasswordView } from "../gen/app.effect.vibe";
 import type { PasswordGuide, PasswordView as PasswordViewState } from "../gen/app.ts";
 import { Passwords } from "./passwords.vibe";
@@ -228,6 +228,7 @@ const fileLibraryHomeChanges = Stream.unwrap(Effect.map(FileLibrary, (files) => 
 const managedReadsChanges = Stream.unwrap(Effect.map(ManagedReads, (reads) => reads.state));
 const managedHomeChanges = Stream.unwrap(Effect.map(ManagedReads, (reads) => reads.home));
 const replyOfferChanges = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
+const wakeStatusChanges = Stream.unwrap(Effect.map(SpeechActions, (speech) => SubscriptionRef.changes(speech.wakeStatus)));
 
 const workspaceStores = new WeakMap<Runtime, SubscriptionStore<Workspace | undefined>>();
 const setupStores = new WeakMap<Runtime, SubscriptionStore<SetupState | undefined>>();
@@ -241,6 +242,7 @@ const fileLibraryHomeStores = new WeakMap<Runtime, SubscriptionStore<FileHome | 
 const managedReadsStores = new WeakMap<Runtime, SubscriptionStore<ManagedSnapshot>>();
 const managedHomeStores = new WeakMap<Runtime, SubscriptionStore<HomeCards | undefined>>();
 const replyOfferStores = new WeakMap<Runtime, SubscriptionStore<ReplyOffer | undefined>>();
+const wakeStatusStores = new WeakMap<Runtime, SubscriptionStore<WakeStatus>>();
 const minuteStores = new WeakMap<Runtime, SubscriptionStore<Date>>();
 
 function workspaceStoreFor(runtime: Runtime) {
@@ -591,6 +593,17 @@ export function useFiles(): LibraryFiles {
     runtime,
     () => runtime.runSync(Effect.flatMap(Library, (library) => library.get())),
     libraryChanges,
+  );
+  return useSyncExternalStore(store.subscribe, store.get, store.get);
+}
+
+export function useWakeStatus(): WakeStatus {
+  const runtime = useRuntime();
+  const store = createReadStreamStore(
+    wakeStatusStores,
+    runtime,
+    () => runtime.runSync(Effect.flatMap(SpeechActions, (speech) => SubscriptionRef.get(speech.wakeStatus))),
+    wakeStatusChanges,
   );
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }

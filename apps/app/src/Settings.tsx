@@ -1,5 +1,7 @@
 // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/accounts.md, "Story: Connect the email I already use"
-import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, RetryNotice, SettingsAbout, SettingsApp, type SettingsAppProps, SettingsBrightness, SettingsTextSize, SettingsVoice, Spinner, type SettingsPage as PageName } from "@repo/ui";
+// spec/app/wake.md, "Settings and the sleep screen say when wake detection is unavailable"
+import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, RetryNotice, SettingsAbout, SettingsApp, type SettingsAppProps, SettingsBrightness, SettingsTextSize, SettingsVoice, Spinner, type SettingsPage as PageName, type WakeState } from "@repo/ui";
+import { Effect } from "effect";
 import { CircleAlert, Trash, X } from "lucide-react";
 import { type ComponentProps, useState } from "react";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
@@ -10,9 +12,11 @@ import { appointmentWeekday, type HostedAppointment, hostedAppointmentDisplay } 
 import { dayOf, relative } from "./calendar.vibe";
 import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
+import { SpeechActions, type VoiceNotice } from "./graceSpeech.vibe";
 import { surfaceOwner } from "./managedReads.vibe";
 import { retryPreferences, sampleVoice } from "./preferences.vibe";
-import { homeCalendar, shallowEqual, useAccounts, useCalendarKeys, useRuntime, useSetupSelector, useWebsiteRequests, useWorkspace, WithCalendars } from "./useApp.ts";
+import { homeCalendar, shallowEqual, useAccounts, useCalendarKeys, useRuntime, useSetupSelector, useWakeStatus, useWebsiteRequests, useWorkspace, WithCalendars } from "./useApp.ts";
+import { VoiceNoticeDialog } from "./VoiceNoticeDialog.tsx";
 import { Wifi } from "./Wifi.tsx";
 
 const names: Record<SettingsPage, PageName> = {
@@ -26,6 +30,7 @@ const textSizes: Readonly<Record<TextSize, string>> = { Smaller: "Smaller", Stan
 const textSizeEntries = Object.entries(textSizes) as [TextSize, string][];
 const textSizeOptions = Object.values(textSizes);
 const paceOptions: readonly Pace[] = ["Slower", "Normal", "Faster"];
+const sleepDevice = { type: "changeLifecycle", lifecycle: "SleepDevice" } as const;
 const speedOptions = paceOptions.map((pace) => ({ value: pace, label: pace }));
 const genericLocal = /^(?:owner|user|admin|test|info|mail|hello|support|noreply)$/i;
 
@@ -129,6 +134,35 @@ function AboutSettingsPage() {
   );
 }
 
+function VoiceSettings({ preferences, preview, personName, sampleAllowed }: {
+  preferences: DisplayPreferences;
+  preview: (settings: DisplayPreferences) => void;
+  personName?: string;
+  sampleAllowed: boolean;
+}) {
+  const runtime = useRuntime();
+  const status = useWakeStatus();
+  const [notice, setNotice] = useState<VoiceNotice>();
+  const wake: WakeState = !status.available ? "unavailable" : !preferences.wakeEnabled ? "off" :
+    !status.disclosed ? "needsSetup" : !status.permitted ? "noMicrophone" : "on";
+  const setUp = (acknowledged?: VoiceNotice) => {
+    if (acknowledged) setNotice(undefined);
+    runtime.runFork(Effect.flatMap(SpeechActions, (speech) =>
+      Effect.tap(speech.setUpWake(acknowledged), (pending) => Effect.sync(() => setNotice(pending)))));
+  };
+  return <>
+    <SettingsVoice speeds={speedOptions} speed={preferences.pace}
+      onPlaySample={sampleAllowed ? () => void runtime.runPromise(sampleVoice(personName)) : undefined}
+      onSpeedChange={(pace) => {
+        if (pace === "Slower" || pace === "Normal" || pace === "Faster") preview({ ...preferences, pace });
+      }}
+      speaks={preferences.voiceOutput} onSpeaksChange={(voiceOutput) => preview({ ...preferences, voiceOutput })}
+      wake={wake} onWakeChange={(wakeEnabled) => preview({ ...preferences, wakeEnabled })} onFixWake={() => setUp()} />
+    <PageText className="mt-4">{voiceDisclosure}</PageText>
+    <VoiceNoticeDialog notice={notice} continueWith={setUp} cancel={() => setNotice(undefined)} />
+  </>;
+}
+
 /** @model spec/app/websiteRequests.md
  * @model spec/app/accounts.md */
 export function Settings({ hostedAppointment, ...props }: Pick<ComponentProps<"div">, "inert" | "aria-hidden"> & { hostedAppointment?: HostedAppointment }) {
@@ -178,12 +212,10 @@ export function Settings({ hostedAppointment, ...props }: Pick<ComponentProps<"d
           nightDim={preferences.nightDimming} nightDimHint="From 9 pm to 7 am, easier on the eyes"
           onNightDimChange={(nightDimming) => preview({ ...preferences, nightDimming })} />
       ) : page === "VoiceSettings" ? (
-        <><SettingsVoice speeds={speedOptions} speed={preferences.pace}
-          onPlaySample={can({ type: "samplePreferences" }) ? () => void runtime.runPromise(sampleVoice(personName)) : undefined}
-          onSpeedChange={(value) => {
-            if (value === "Slower" || value === "Normal" || value === "Faster") preview({ ...preferences, pace: value });
-          }} speaks={preferences.voiceOutput} onSpeaksChange={(value) => preview({ ...preferences, voiceOutput: value })} wake="unavailable" />
-          <PageText className="mt-4">{voiceDisclosure}</PageText></>
+        <>
+          <VoiceSettings preferences={preferences} preview={preview} personName={personName} sampleAllowed={can({ type: "samplePreferences" })} />
+          {can(sleepDevice) && <Button variant="capsule" size="pill" className="mt-4" onClick={() => void send(sleepDevice)}>Show sleep screen</Button>}
+        </>
       ) : page === "NetworkSettings" ? (
         <Wifi />
       ) : page === "AboutSettings" ? (

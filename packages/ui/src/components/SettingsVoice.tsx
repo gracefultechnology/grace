@@ -19,21 +19,22 @@ export type SettingsVoiceProps = Omit<ComponentProps<"section">, "onChange"> & {
   /** Grace speaks her words aloud. */
   speaks: boolean;
   onSpeaksChange?: (on: boolean) => void;
-  /** Whether the tablet listens for "Hey Grace": on, off, not available yet, or waiting for the microphone. */
+  /** Whether "Hey Grace" is on, off, unavailable, or waiting for set-up. */
   wake: WakeState;
   onWakeChange?: (on: boolean) => void;
-  /** Called by "Allow microphone", shown while the microphone is not allowed. */
+  /** Opens set-up or asks for microphone permission, depending on what is missing. */
   onFixWake?: () => void;
 };
 
-export type WakeState = "on" | "off" | "unavailable" | "noMicrophone";
+export type WakeState = "on" | "off" | "unavailable" | "needsSetup" | "noMicrophone";
 
-const anyTime = "Works any time, even when the screen is asleep. Turn off to use Ask Grace only.";
+const foreground = "Works in Grace, including her sleep screen.";
 
 const wakeReasons: Record<WakeState, string | null> = {
   on: null,
   off: null,
-  unavailable: "Not available yet.",
+  unavailable: "Not available on this device.",
+  needsSetup: "Finish set-up to use “Hey Grace”.",
   noMicrophone: "Grace can’t listen until the tablet lets her use the microphone.",
 };
 
@@ -78,14 +79,14 @@ export function SettingsVoice({
       <SettingsSwitchRow
         className="mt-2.5"
         title="Listen for “Hey Grace”"
-        subtitle={reason ? <span className="text-label-ink">{reason}</span> : anyTime}
-        checked={wake === "on"}
+        subtitle={reason ? <span className="text-label-ink">{reason}</span> : foreground}
+        checked={wake === "on" || wake === "needsSetup" || wake === "noMicrophone"}
         onCheckedChange={onWakeChange}
-        disabled={reason != null}
+        disabled={wake === "unavailable" || onWakeChange === undefined}
       />
-      {wake === "noMicrophone" && (
+      {onFixWake && (wake === "needsSetup" || wake === "noMicrophone") && (
         <Button variant="capsule" size="pill" className="mt-3.5" onClick={onFixWake}>
-          Allow microphone
+          {wake === "needsSetup" ? "Set up “Hey Grace”" : "Allow microphone"}
         </Button>
       )}
     </section>
