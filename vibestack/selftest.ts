@@ -17,6 +17,7 @@ import { Miniflare } from "miniflare";
 import { violated } from "./action.ts";
 import { cacheCredentials, collectGarbage, isActionEntry, withFormalCache, type installedProgram as lookupTool } from "./cache.ts";
 import { LIB_FILE, isolatedCopies, parseProofFile, readVerdict, splice } from "./prove.ts";
+import { heading } from "./parse.ts";
 import { precomputeSimulations, prepareSimulationReceipts } from "./formal.ts";
 import { exec, run as tool, toolCpuSeconds } from "./run.ts";
 import { pendingSpecs, showPending, writeLedger } from "./review.ts";
@@ -4706,12 +4707,17 @@ test("the lint refuses, in a project's own code, a comment that is neither a cit
   const eslint = new ESLint({ cwd: project });
   const found = async (file: string, lines: string[]) => (await eslint.lintText(lines.join("\n"), { filePath: path.join(project, file) }))[0]!.messages
     .filter((m) => m.fatal || m.ruleId === "no-console" || m.ruleId?.startsWith("code/")).map((m) => `${m.line} ${m.ruleId ?? "inline config"}`);
-  const specFile = "spec/app/index.md";
+  const spec = readSpecs(project).find((s) => s.file.startsWith("spec/")
+    && s.stories.some((story) => !story.title.includes('"'))
+    && s.rules.some((rule) => !heading(rule).includes('"')));
+  const specFile = spec?.file ?? "spec/app/index.md";
+  const storyHeading = spec?.stories.find((story) => !story.title.includes('"'))?.title ?? "Story: Say hello";
+  const ruleHeading = spec ? heading(spec.rules.find((rule) => !heading(rule).includes('"'))!) : "The number of greetings is never negative";
   assert.deepEqual(await found("apps/app/src/probe.vibe", [
-    `// ${specFile}, "Story: Manage my saved passwords privately"; ${specFile}, "Passwords displays sign-in details only while the vault is available"`,
-    `/* ${specFile}, "Story: Manage my saved passwords privately" */`,
+    `// ${specFile}, "${storyHeading}"; ${specFile}, "${ruleHeading}"`,
+    `/* ${specFile}, "${storyHeading}" */`,
     "//@ ghost",
-    "/** @model spec/app/index.md */",
+    `/** @model ${specFile} */`,
     "/** @throws {never} */",
     "// a note",
     "/** What it is. */",
