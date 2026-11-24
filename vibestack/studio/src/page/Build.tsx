@@ -17,7 +17,7 @@ const elapsed = (job: JobView, now: number) => { const s = Math.round(((job.fini
 function Elapsed({ job }: { job: JobView }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { if (job.status !== "running") return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t); }, [job.status]);
-  return <span className="text-xs text-muted-foreground tabular-nums">{elapsed(job, now)}</span>;
+  return <span className="text-mark text-muted-foreground tabular-nums">{elapsed(job, now)}</span>;
 }
 
 type StageState = "idle" | "todo" | "active" | "running" | "ok" | "bad";
@@ -34,9 +34,9 @@ const PIPELINE_TEXT: Record<StageState, string> = {
 };
 
 const Stage = ({ name, state, mark, label }: { name: string; state: StageState; mark: string | number; label: string }) => (
-  <div className="relative flex flex-col items-center gap-1.5 text-xs text-muted-foreground">
+  <div className="relative flex flex-col items-center gap-1.5 text-mark text-muted-foreground">
     {state === "running" ? <Spinner label={`${name}: running`} className="rounded-full bg-card text-primary" />
-      : <div role="img" aria-label={`${name}: ${label}`} title={label} className={cn("grid size-6 place-items-center rounded-full border-2 bg-card text-xs font-bold tabular-nums", NODE[state])}>{mark}</div>}
+      : <div role="img" aria-label={`${name}: ${label}`} title={label} className={cn("grid size-6 place-items-center rounded-full border-2 bg-card text-mark font-bold tabular-nums", NODE[state])}>{mark}</div>}
     {name}
   </div>
 );
@@ -44,7 +44,7 @@ const Stage = ({ name, state, mark, label }: { name: string; state: StageState; 
 const MARK: Record<Exclude<StageMark, "running">, [string, string]> = { passed: ["✓", "text-ok"], failed: ["✗", "text-destructive"], skipped: ["–", "text-muted-foreground"], "": ["·", "text-muted-foreground"] };
 /** The stages of the last check, or the one running, as one row of marks. */
 const Stages = ({ running }: { running: boolean }) => (
-  <ol aria-label="Stages" className="m-0 flex list-none flex-wrap gap-x-2.5 gap-y-1 p-0 text-xs text-muted-foreground">
+  <ol aria-label="Stages" className="m-0 flex list-none flex-wrap gap-x-2.5 gap-y-1 p-0 text-mark text-muted-foreground">
     {stagesOf(S.snap?.check?.results ?? [], running).map(({ stage, mark, simulated }) => {
       const label = `${stage}: ${mark || "not run"}${simulated ? `, ${simulated} obligations simulated only` : ""}`;
       return (
@@ -91,7 +91,7 @@ export function PublishDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       action={<><Icon name="check" />Publish</>} disabled={unsound.length > 0} onConfirm={() => void publish()}>
       {unsound.length > 0 && <Alert variant="destructive">{unsound.join(", ")}</Alert>}
       {dirty.map((spec) => (
-        <div key={spec.file} className="overflow-auto rounded-md border border-border font-mono text-xs leading-normal">
+        <div key={spec.file} className="overflow-auto rounded-md border border-border font-mono text-mark leading-normal">
           <div className="border-b border-border bg-muted px-2.5 py-1.5 font-semibold">{spec.deleted ? `${spec.file} (deleted)` : spec.orig === null ? `${spec.file} (new)` : spec.file}</div>
           {!spec.deleted && diff(spec.orig ?? "", publishedText(spec)!)}
         </div>
@@ -164,15 +164,15 @@ export function TopBar({ onPublish }: { onPublish: () => void }) {
     <header className="flex h-12 flex-none items-center justify-between gap-2 border-b border-border bg-card px-3">
       <div className="flex min-w-0 items-center gap-2">
         <div className="flex items-center gap-2">
-          <span aria-hidden className="grid size-6 flex-none place-items-center rounded-sm bg-primary text-xs font-bold text-primary-foreground">S</span>
+          <span aria-hidden className="grid size-6 flex-none place-items-center rounded-sm bg-primary text-mark font-bold text-primary-foreground">S</span>
           {S.projects.length > 1 ? (
             <select aria-label="Project" value={S.project}
               onChange={(e) => { location.search = `?project=${encodeURIComponent(e.target.value)}`; }}
-              className={cn(focusRing, "max-w-36 truncate rounded-md border border-transparent bg-transparent py-1 pr-2 text-sm font-semibold text-foreground hover:bg-accent")}>
+              className={cn(focusRing, "max-w-36 truncate rounded-md border border-transparent bg-transparent py-1 pr-2 text-detail font-semibold text-foreground hover:bg-accent")}>
               {S.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           ) : (
-            <span className="max-w-36 truncate text-sm font-semibold">{activeProject}</span>
+            <span className="max-w-36 truncate text-detail font-semibold">{activeProject}</span>
           )}
         </div>
         <span aria-hidden className="h-5 w-px bg-border" />
@@ -184,7 +184,7 @@ export function TopBar({ onPublish }: { onPublish: () => void }) {
               <button key={m.id} type="button" role="tab" aria-selected={active} disabled={disabled}
                 title={disabled ? "No React component catalog in this project" : undefined}
                 onClick={() => setView(m.id)}
-                className={cn(focusRing, "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors duration-fast",
+                className={cn(focusRing, "rounded-sm px-2.5 py-1 text-mark font-medium transition-colors duration-fast",
                   active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
                   disabled && "pointer-events-none opacity-40")}>
                 {m.label}
@@ -196,7 +196,7 @@ export function TopBar({ onPublish }: { onPublish: () => void }) {
 
       {steps.length > 0 && (
         <button type="button" aria-label="Session pipeline" aria-expanded={S.drawer} onClick={() => setDrawer(!S.drawer)}
-          className={cn(focusRing, "hidden items-center gap-1.5 rounded-md px-2 py-1 text-xs hover:bg-accent xl:flex")}>
+          className={cn(focusRing, "hidden items-center gap-1.5 rounded-md px-2 py-1 text-mark hover:bg-accent xl:flex")}>
           {steps.map((st, i) => (
             <span key={st.name} className="flex items-center gap-1.5">
               {i > 0 && <span aria-hidden className="text-muted-foreground">·</span>}
@@ -215,11 +215,11 @@ export function TopBar({ onPublish }: { onPublish: () => void }) {
         {S.view === "specs" && (
           <div role="group" aria-label="Detail density" className="hidden items-center gap-0.5 rounded-md bg-muted p-0.5 md:flex">
             <button type="button" aria-pressed={S.density === "prose"} onClick={() => setDensity("prose")}
-              className={cn(focusRing, "rounded-sm px-2 py-0.5 text-xs font-medium", S.density === "prose" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              className={cn(focusRing, "rounded-sm px-2 py-0.5 text-mark font-medium", S.density === "prose" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
               Prose
             </button>
             <button type="button" aria-pressed={S.density === "quint"} onClick={() => setDensity("quint")}
-              className={cn(focusRing, "rounded-sm px-2 py-0.5 text-xs font-medium", S.density === "quint" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+              className={cn(focusRing, "rounded-sm px-2 py-0.5 text-mark font-medium", S.density === "quint" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
               + Quint
             </button>
           </div>
@@ -275,7 +275,7 @@ export function BuildDrawer() {
   return (
     <aside aria-label="Build" className="fixed top-12 right-0 bottom-0 z-30 flex w-90 max-w-[92vw] flex-col gap-5 overflow-auto border-l border-border bg-card p-4 shadow-lg">
       <div className="flex items-center justify-between border-b border-border pb-2.5">
-        <span className="text-sm font-semibold">Activity</span>
+        <span className="text-detail font-semibold">Activity</span>
         <IconButton name="close" label="Close activity drawer" onClick={() => setDrawer(false)} />
       </div>
 
@@ -286,30 +286,30 @@ export function BuildDrawer() {
       {manifest && (
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Waiting for sync</span>
+            <span className="text-mark font-medium text-muted-foreground">Waiting for sync</span>
             <Button variant="outline" size="sm" disabled={!can({ type: "markSynced" })} onClick={() => start("synced")}><Icon name="check" />Mark synced</Button>
           </div>
-          <ul className="m-0 flex max-h-52 list-none flex-col gap-1 overflow-auto rounded-md border border-border bg-background p-2 text-sm">
+          <ul className="m-0 flex max-h-52 list-none flex-col gap-1 overflow-auto rounded-md border border-border bg-background p-2 text-detail">
             {manifest.changes.map((c) => (
               <li key={`${c.action} ${c.kind} ${c.key}`} className="grid grid-cols-[14px_1fr] gap-1.5">
                 <span aria-label={c.action} className={cn("font-mono font-semibold", c.action === "added" ? "text-ok" : c.action === "deleted" ? "text-destructive" : "text-warn")}>{SIGN[c.action]}</span>
                 <span>{c.kind === "spec" ? c.key : c.key.replace(/^## /, "").replace(/^Story: /, "")}
-                  {c.what.length > 0 && <div className="text-xs text-muted-foreground">{c.what.join(" · ")}</div>}</span>
+                  {c.what.length > 0 && <div className="text-mark text-muted-foreground">{c.what.join(" · ")}</div>}</span>
               </li>
             ))}
           </ul>
-          {manifest.regenerate.length > 0 && <div className="text-xs text-muted-foreground">↻ {manifest.regenerate.map((r) => r.gen).join(", ")}</div>}
+          {manifest.regenerate.length > 0 && <div className="text-mark text-muted-foreground">↻ {manifest.regenerate.map((r) => r.gen).join(", ")}</div>}
         </div>
       )}
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-muted-foreground">Sync agents</span>
-          <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={copyPrompt}><Icon name="copy" className="size-3.5" />Copy prompt</Button>
+          <span className="text-mark font-medium text-muted-foreground">Sync agents</span>
+          <Button variant="ghost" size="sm" className="h-7 px-2 text-mark text-muted-foreground" onClick={copyPrompt}><Icon name="copy" className="size-3.5" />Copy prompt</Button>
         </div>
         {snap.agents.map((a) => (
           <div key={a.id} className="flex items-center gap-2">
-            <span className="flex-1 text-sm font-medium">{a.label}</span>
+            <span className="flex-1 text-detail font-medium">{a.label}</span>
             <Button variant="outline" size="sm" disabled={!a.available || !can({ type: "sync" })} title={a.available ? undefined : `${a.label} is not installed`} onClick={() => start("agent", { agent: a.id })}><Icon name="play" />Run</Button>
             {a.link && <Button variant="outline" size="sm" asChild><a href={a.link}><Icon name="open" />Open</a></Button>}
           </div>
@@ -320,7 +320,7 @@ export function BuildDrawer() {
         <div className="flex flex-col gap-2 border-t border-border pt-4">
           <div className="flex items-center gap-2">
             <Dot mark={snap.session.previewing ? "ok" : ""} label={snap.session.previewing ? "running" : "stopped"} />
-            <span className="flex-1 text-sm font-semibold">App {snap.app.script && <span className="font-mono text-xs font-normal text-muted-foreground">pnpm {snap.app.script}</span>}</span>
+            <span className="flex-1 text-detail font-semibold">App {snap.app.script && <span className="font-mono text-mark font-normal text-muted-foreground">pnpm {snap.app.script}</span>}</span>
             {snap.session.previewing && snap.app.url && <Button variant="outline" size="sm" asChild><a href={snap.app.url} target="_blank" rel="noreferrer"><Icon name="open" />Open</a></Button>}
             {snap.app.buildable && <Button variant="outline" size="sm" disabled={!can({ type: "build" })} onClick={() => start("build")}><Icon name="check" />Build</Button>}
             {snap.app.script && can({ type: "preview" }) && <Button variant="outline" size="sm" onClick={() => start("app", { start: true })}><Icon name="play" />Start</Button>}
@@ -332,18 +332,18 @@ export function BuildDrawer() {
 
       {job && (
         <div className="overflow-hidden rounded-lg border border-border">
-          <div className="flex items-center gap-2 border-b border-border py-1.5 pr-2 pl-3 text-sm">
+          <div className="flex items-center gap-2 border-b border-border py-1.5 pr-2 pl-3 text-detail">
             <Dot mark={job.status === "running" ? "dirty" : job.status === "passed" ? "ok" : "bad"} label={job.status} />
             <span className="flex-1 font-semibold">{job.label}</span>
             <Elapsed job={job} />
             {job.status === "running" && can({ type: "stop" }) && <IconButton name="stop" label="Stop" onClick={() => start("stop")} />}
           </div>
-          <pre ref={logRef} className="m-0 max-h-64 overflow-auto bg-muted px-3 py-2 font-mono text-xs leading-normal break-words whitespace-pre-wrap">{job.log.join("\n") || "…"}</pre>
+          <pre ref={logRef} className="m-0 max-h-64 overflow-auto bg-muted px-3 py-2 font-mono text-mark leading-normal break-words whitespace-pre-wrap">{job.log.join("\n") || "…"}</pre>
         </div>
       )}
 
       <div className="flex flex-col gap-2 border-t border-border pt-4">
-        <span className="text-xs font-medium text-muted-foreground">Check</span>
+        <span className="text-mark font-medium text-muted-foreground">Check</span>
         {check && (
           <div className="flex items-start gap-2">
             <div className="flex-1"><Stages running={running === "Checking"} /></div>
@@ -352,18 +352,18 @@ export function BuildDrawer() {
           </div>
         )}
         {jobs.check?.status === "failed" && !check?.finished && (
-          <details open className="text-xs"><summary className="cursor-pointer text-destructive">The check did not finish</summary><Code className="mt-1 max-h-65">{jobs.check.log.join("\n")}</Code></details>
+          <details open className="text-mark"><summary className="cursor-pointer text-destructive">The check did not finish</summary><Code className="mt-1 max-h-65">{jobs.check.log.join("\n")}</Code></details>
         )}
-        {check?.next && <div className="text-sm">{check.next}</div>}
+        {check?.next && <div className="text-detail">{check.next}</div>}
         {blocking.map((r) => {
           const at = locate(r);
-          return at ? <Button key={`${r.stage} ${r.summary}`} variant="ghost" size="sm" className="h-auto justify-start py-1 text-left text-xs whitespace-normal text-destructive" onClick={() => { setDrawer(false); reveal(at.file, at.key); }}>{r.stage}: {r.summary}</Button>
-            : <details key={`${r.stage} ${r.summary}`} className="text-xs"><summary className="cursor-pointer text-destructive">{r.stage}: {r.summary}</summary>{r.detail && <Code className="mt-1 max-h-65">{r.detail}</Code>}</details>;
+          return at ? <Button key={`${r.stage} ${r.summary}`} variant="ghost" size="sm" className="h-auto justify-start py-1 text-left text-mark whitespace-normal text-destructive" onClick={() => { setDrawer(false); reveal(at.file, at.key); }}>{r.stage}: {r.summary}</Button>
+            : <details key={`${r.stage} ${r.summary}`} className="text-mark"><summary className="cursor-pointer text-destructive">{r.stage}: {r.summary}</summary>{r.detail && <Code className="mt-1 max-h-65">{r.detail}</Code>}</details>;
         })}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <Button variant="outline" size="sm" disabled={!can({ type: "check" })} onClick={() => start("check")}><Icon name="play" />Run check</Button>
           <Button variant="outline" size="sm" disabled={!review} onClick={() => setReviewOpen(true)}><Icon name="check" />Review</Button>
-          {check?.finished !== undefined && <span className="text-xs text-muted-foreground">{new Date(check.finished).toLocaleTimeString()}</span>}
+          {check?.finished !== undefined && <span className="text-mark text-muted-foreground">{new Date(check.finished).toLocaleTimeString()}</span>}
         </div>
       </div>
 
@@ -437,14 +437,14 @@ export function CommandPalette() {
             }} />
         </div>
         <ul className="m-0 max-h-80 list-none overflow-auto p-1.5">
-          {items.length === 0 ? <li className="px-3 py-6 text-center text-sm text-muted-foreground">No matches</li>
+          {items.length === 0 ? <li className="px-3 py-6 text-center text-detail text-muted-foreground">No matches</li>
             : items.map((item, idx) => (
               <li key={item.id}>
                 <button type="button" onClick={() => pick(item)} onMouseEnter={() => setCursor(idx)}
-                  className={cn(focusRing, "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm", idx === active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50")}>
-                  <span className="w-18 flex-none font-mono text-xs text-muted-foreground">{item.kind}</span>
+                  className={cn(focusRing, "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-detail", idx === active ? "bg-accent text-accent-foreground" : "hover:bg-accent/50")}>
+                  <span className="w-18 flex-none font-mono text-mark text-muted-foreground">{item.kind}</span>
                   <span className="min-w-0 flex-1 truncate font-medium">{item.title}</span>
-                  <span className="max-w-36 truncate font-mono text-xs text-muted-foreground">{item.detail}</span>
+                  <span className="max-w-36 truncate font-mono text-mark text-muted-foreground">{item.detail}</span>
                 </button>
               </li>
             ))}

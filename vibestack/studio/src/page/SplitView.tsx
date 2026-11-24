@@ -116,7 +116,7 @@ export function SplitView({
         <section aria-label="Layout preview pane" className="flex min-h-0 flex-col bg-background">
           <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-2">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-foreground">Layout · {layoutRoot.name}</span>
+              <span className="text-mark font-semibold text-foreground">Layout · {layoutRoot.name}</span>
               <div role="group" aria-label="Layout presets" className="flex items-center gap-1">
                 {layoutRoot.stories.map((s, at) => (
                   <button
@@ -126,7 +126,7 @@ export function SplitView({
                     onClick={() => setPresetByRoot({ rootId: layoutRoot.id, at })}
                     className={cn(
                       focusRing,
-                      "rounded-sm px-2 py-0.5 text-xs transition-colors duration-fast hover:bg-accent",
+                      "rounded-sm px-2 py-0.5 text-mark transition-colors duration-fast hover:bg-accent",
                       at === presetIndex ? "bg-accent font-medium text-primary" : "text-muted-foreground hover:text-foreground",
                     )}
                   >
@@ -140,12 +140,12 @@ export function SplitView({
                 variant={inspect ? "primary" : "outline"}
                 size="sm"
                 aria-pressed={inspect}
-                className="h-7 px-2 text-xs"
+                className="h-7 px-2 text-mark"
                 onClick={() => setInspect((v) => !v)}
               >
                 Inspect {inspect ? "ON" : "OFF"}
               </Button>
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openComponent(inspected.id)}>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-mark" onClick={() => openComponent(inspected.id)}>
                 Layout ↗
               </Button>
             </div>
@@ -177,18 +177,18 @@ export function SplitView({
         <section aria-label="State graph pane" className="flex min-h-0 flex-col bg-background">
           <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-2">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold text-foreground">
+              <span className="text-mark font-semibold text-foreground">
                 States · {activeGraph?.stateType ?? activeGraph?.module ?? "Model"}
               </span>
               {activeGraph?.projectionLabel && (
-                <span className="font-mono text-xs text-muted-foreground">{activeGraph.projectionLabel}</span>
+                <span className="font-mono text-mark text-muted-foreground">{activeGraph.projectionLabel}</span>
               )}
             </div>
             {activeGraph && (
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 text-xs"
+                className="h-7 px-2 text-mark"
                 onClick={() => openStateFocus(activeGraph.file, { node: selectedNode, edge: selectedEdge })}
               >
                 States ↗

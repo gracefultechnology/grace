@@ -855,7 +855,7 @@ function uniqueRuleHeading(spec: Working, base: string): string {
 function InspectorSection({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="text-mark font-medium text-muted-foreground">{label}</div>
       {children}
     </div>
   );
@@ -881,7 +881,7 @@ function RuleLinkList({
           key={item.name}
           type="button"
           onClick={() => reveal(file, item.ruleKey)}
-          className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-xs hover:bg-accent"
+          className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-mark hover:bg-accent"
         >
           <span className={cn("truncate font-mono", tone)}>{glyph} {item.name}</span>
           {showCheck && <span className="shrink-0 text-ok">✓</span>}
@@ -902,7 +902,7 @@ function EdgeLinkList({
   describe: (e: GraphEdge) => string;
   empty?: string;
 }) {
-  if (!edges.length) return empty ? <div className="text-xs text-muted-foreground">{empty}</div> : null;
+  if (!edges.length) return empty ? <div className="text-mark text-muted-foreground">{empty}</div> : null;
   return (
     <div className="flex flex-col gap-1">
       {edges.map((e) => (
@@ -910,7 +910,7 @@ function EdgeLinkList({
           key={e.id}
           type="button"
           onClick={() => onSelectEdge(e.id)}
-          className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-xs hover:bg-accent"
+          className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-mark hover:bg-accent"
         >
           <span className="font-mono font-medium text-foreground">→ {e.name}</span>
           <span className="truncate font-mono text-muted-foreground">{describe(e)}</span>
@@ -937,8 +937,8 @@ function ComposerField({
 }) {
   return (
     <div className="flex flex-col gap-1">
-      <Label htmlFor={id} className="text-xs text-muted-foreground">{label}</Label>
-      <Input id={id} value={value} className={cn("h-8 text-xs", mono && "font-mono")} onChange={(e) => onChange(e.target.value)} />
+      <Label htmlFor={id} className="text-mark text-muted-foreground">{label}</Label>
+      <Input id={id} value={value} className={cn("h-8 text-mark", mono && "font-mono")} onChange={(e) => onChange(e.target.value)} />
       {children}
     </div>
   );
@@ -967,14 +967,14 @@ function ComposerShell({
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-0.5 border-b border-border pb-2.5">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-primary">{title}</h2>
+          <h2 className="text-label font-semibold text-primary">{title}</h2>
           <IconButton name="close" label={`Cancel ${title.toLowerCase()}`} onClick={onClose} />
         </div>
-        <div className="text-xs text-muted-foreground">{subtitle}</div>
+        <div className="text-mark text-muted-foreground">{subtitle}</div>
       </div>
       {children}
       <InspectorSection label={<span>Spec Diff Preview (<span className="font-mono">{file}</span>)</span>}>
-        <pre className="m-0 overflow-x-auto rounded-md border border-ok/40 bg-muted px-2.5 py-2 font-mono text-xs leading-relaxed break-words whitespace-pre-wrap text-ok">
+        <pre className="m-0 overflow-x-auto rounded-md border border-ok/40 bg-muted px-2.5 py-2 font-mono text-mark leading-relaxed break-words whitespace-pre-wrap text-ok">
           {diffPreview}
         </pre>
       </InspectorSection>
@@ -1001,22 +1001,22 @@ function EdgeInspector({ spec, graph, edge, sim }: { spec: Working; graph: SpecM
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1 border-b border-border pb-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="truncate font-mono text-base font-semibold text-foreground">→ {edge.name}</h2>
-          <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => reveal(spec.file, edge.ruleKey)}>
+          <h2 className="truncate font-mono text-label font-semibold text-foreground">→ {edge.name}</h2>
+          <Button variant="outline" size="sm" className="h-7 px-2 text-mark" onClick={() => reveal(spec.file, edge.ruleKey)}>
             View in Story <Icon name="external" className="size-3.5" />
           </Button>
         </div>
-        <div className="font-mono text-xs text-muted-foreground">
+        <div className="font-mono text-mark text-muted-foreground">
           {fromLabel} → {toLabel}{edge.condition ? ` · if ${edge.condition}` : ""}
         </div>
       </div>
 
-      <div className="flex flex-col gap-1 text-sm">
+      <div className="flex flex-col gap-1 text-detail">
         <div className="font-medium text-foreground">{edge.ruleHeading}</div>
-        {prose && <Markdown text={prose} file={spec.file} className="text-xs text-muted-foreground" />}
+        {prose && <Markdown text={prose} file={spec.file} className="text-mark text-muted-foreground" />}
       </div>
 
-      <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-1 rounded-md border border-border bg-muted/50 px-2.5 py-2 text-xs">
+      <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-1 rounded-md border border-border bg-muted/50 px-2.5 py-2 text-mark">
         <span className="text-muted-foreground">Story</span>
         <span className="truncate font-medium text-foreground">{edge.story}</span>
         {edge.sender && (
@@ -1050,7 +1050,7 @@ function EdgeInspector({ spec, graph, edge, sim }: { spec: Working; graph: SpecM
                 simEv?.allowed,
               );
               return (
-                <div key={`${edge.id}-${clause}`} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs">
+                <div key={`${edge.id}-${clause}`} className="flex items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-mark">
                   <span className="min-w-0 font-mono break-all text-foreground">{clause}</span>
                   {ev.label && (
                     <span className={cn("shrink-0 font-mono", ev.status === "ok" ? "text-ok" : ev.status === "bad" ? "text-destructive" : "text-muted-foreground")}>
@@ -1066,7 +1066,7 @@ function EdgeInspector({ spec, graph, edge, sim }: { spec: Working; graph: SpecM
 
       {edge.liveness && (
         <InspectorSection label="Liveness">
-          <div className="flex items-center justify-between rounded-md border border-warn/40 bg-background px-2.5 py-1.5 font-mono text-xs text-warn">
+          <div className="flex items-center justify-between rounded-md border border-warn/40 bg-background px-2.5 py-1.5 font-mono text-mark text-warn">
             <span>↝ {edge.liveness.rule}</span>
             <span>{edge.liveness.within !== undefined ? `within ${edge.liveness.within}` : edge.liveness.fair ?? "fair"}</span>
           </div>
@@ -1133,24 +1133,24 @@ function NodeInspector({
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1 border-b border-border pb-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="truncate text-base font-semibold text-foreground">{node.label}</h2>
-          <div className="flex items-center gap-1.5 font-mono text-xs">
+          <h2 className="truncate text-label font-semibold text-foreground">{node.label}</h2>
+          <div className="flex items-center gap-1.5 font-mono text-mark">
             {node.initial && <span className="text-primary">init</span>}
             {activeNode === node.id && <span className="text-primary">● live</span>}
             {node.goal && <span className="text-ok">⚑ goal</span>}
           </div>
         </div>
-        {node.predicate && <div className="font-mono text-xs text-muted-foreground">{node.predicate}</div>}
+        {node.predicate && <div className="font-mono text-mark text-muted-foreground">{node.predicate}</div>}
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={scaffoldInvariant}>
+        <Button variant="outline" size="sm" className="h-7 px-2.5 text-mark" onClick={scaffoldInvariant}>
           <Icon name="plus" className="size-3.5" /> Invariant
         </Button>
-        <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={scaffoldGoal}>
+        <Button variant="outline" size="sm" className="h-7 px-2.5 text-mark" onClick={scaffoldGoal}>
           <Icon name="plus" className="size-3.5" /> Goal
         </Button>
-        <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => onStartTransition(node.id)}>
+        <Button variant="outline" size="sm" className="h-7 px-2.5 text-mark" onClick={() => onStartTransition(node.id)}>
           <Icon name="plus" className="size-3.5" /> Transition
         </Button>
       </div>
@@ -1177,17 +1177,17 @@ function NodeInspector({
         {node.invariants.length ? (
           <div className="flex flex-col gap-1">
             {node.invariants.map((inv) => (
-              <div key={inv} className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground">∀ {inv}</div>
+              <div key={inv} className="rounded-md border border-border bg-background px-2.5 py-1.5 text-mark text-foreground">∀ {inv}</div>
             ))}
           </div>
         ) : (
-          <div className="text-xs text-muted-foreground">No state-scoped invariants</div>
+          <div className="text-mark text-muted-foreground">No state-scoped invariants</div>
         )}
       </InspectorSection>
 
       {node.goal && (
         <InspectorSection label="Reachability Goal">
-          <div className="rounded-md border border-ok/40 bg-background px-2.5 py-1.5 text-xs text-ok">⚑ {node.goal}</div>
+          <div className="rounded-md border border-ok/40 bg-background px-2.5 py-1.5 text-mark text-ok">⚑ {node.goal}</div>
         </InspectorSection>
       )}
     </div>
@@ -1294,7 +1294,7 @@ function TransitionComposer({
           >
             <div className="flex flex-wrap gap-1">
               {graph.roles.map((r) => (
-                <Button key={r} variant={sender === r ? "secondary" : "ghost"} size="sm" className="h-5 px-1.5 font-mono text-xs"
+                <Button key={r} variant={sender === r ? "secondary" : "ghost"} size="sm" className="h-5 px-1.5 font-mono text-mark"
                   onClick={() => { setSender(r); updateDraft({ name, from, to, sender: r }); }}>
                   {r}
                 </Button>
@@ -1315,7 +1315,7 @@ function TransitionComposer({
           >
             <div className="flex flex-wrap gap-1">
               {nodeIds.slice(0, 5).map((id) => (
-                <Button key={id} variant={from === id ? "secondary" : "ghost"} size="sm" className="h-5 px-1.5 font-mono text-xs"
+                <Button key={id} variant={from === id ? "secondary" : "ghost"} size="sm" className="h-5 px-1.5 font-mono text-mark"
                   onClick={() => { setFrom(id); updateDraft({ name, from: id, to, sender: sender || undefined }); }}>
                   {id}
                 </Button>
@@ -1331,7 +1331,7 @@ function TransitionComposer({
           >
             <div className="flex flex-wrap gap-1">
               {nodeIds.slice(0, 5).map((id) => (
-                <Button key={id} variant={to === id ? "secondary" : "ghost"} size="sm" className="h-5 px-1.5 font-mono text-xs"
+                <Button key={id} variant={to === id ? "secondary" : "ghost"} size="sm" className="h-5 px-1.5 font-mono text-mark"
                   onClick={() => { setTo(id); updateDraft({ name, from, to: id, sender: sender || undefined }); }}>
                   {id}
                 </Button>
@@ -1345,7 +1345,7 @@ function TransitionComposer({
         {storyTitles.length > 1 && (
           <div className="flex flex-wrap gap-1">
             {storyTitles.slice(0, 4).map((t) => (
-              <Button key={t} variant={story === t ? "secondary" : "ghost"} size="sm" className="h-5 px-1.5 text-xs" onClick={() => setStory(t)}>
+              <Button key={t} variant={story === t ? "secondary" : "ghost"} size="sm" className="h-5 px-1.5 text-mark" onClick={() => setStory(t)}>
                 {truncateText(t.replace(/^Story:\s*/, ""), 18)}
               </Button>
             ))}
@@ -1415,13 +1415,13 @@ function OverviewInspector({
   return (
     <div className="flex flex-col gap-4">
       <div className="border-b border-border pb-3">
-        <h2 className="text-base font-semibold text-foreground">{graph.stateType ?? graph.module}</h2>
-        <div className="font-mono text-xs text-muted-foreground">{graph.projectionLabel}</div>
+        <h2 className="text-label font-semibold text-foreground">{graph.stateType ?? graph.module}</h2>
+        <div className="font-mono text-mark text-muted-foreground">{graph.projectionLabel}</div>
       </div>
 
       {graph.stateFields.length > 0 && (
         <InspectorSection label="State Fields">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-md border border-border bg-muted/50 px-2.5 py-2 font-mono text-xs">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-md border border-border bg-muted/50 px-2.5 py-2 font-mono text-mark">
             {graph.stateFields.map((f) => (
               <div key={f.name} className="contents">
                 <span className="text-foreground">{f.name}</span>
@@ -1436,7 +1436,7 @@ function OverviewInspector({
         <InspectorSection label={`States (${graph.nodes.length})`}>
           <div className="flex flex-wrap gap-1.5">
             {graph.nodes.map((n) => (
-              <Button key={n.id} variant="outline" size="sm" className="h-7 px-2 font-mono text-xs" onClick={() => onSelectNode(n.id)}>
+              <Button key={n.id} variant="outline" size="sm" className="h-7 px-2 font-mono text-mark" onClick={() => onSelectNode(n.id)}>
                 {n.label}
               </Button>
             ))}
@@ -1490,14 +1490,14 @@ function SimulatorDock({
 }) {
   if (sim.kind === "loading") {
     return (
-      <div className="flex items-center justify-between border-t border-border bg-card px-4 py-2.5 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between border-t border-border bg-card px-4 py-2.5 text-mark text-muted-foreground">
         <span>Loading simulator for <span className="font-mono">{graph.module}</span>…</span>
       </div>
     );
   }
   if (sim.kind === "unavailable") {
     return (
-      <div className="flex items-center justify-between border-t border-border bg-card px-4 py-2.5 text-xs text-muted-foreground">
+      <div className="flex items-center justify-between border-t border-border bg-card px-4 py-2.5 text-mark text-muted-foreground">
         <span>Simulation available after check</span>
         {sim.reason && <span className="truncate font-mono">{sim.reason}</span>}
       </div>
@@ -1510,7 +1510,7 @@ function SimulatorDock({
 
   return (
     <div className="flex flex-col gap-2 border-t border-border bg-card px-4 py-2.5">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-mark">
         <div className="min-w-0 flex-1 truncate font-mono text-foreground" title={JSON.stringify(data.state)}>
           <span className="text-muted-foreground">state = </span>
           {formatStateCompact(data.state)}
@@ -1538,7 +1538,7 @@ function SimulatorDock({
                     aria-label={`${ev.name} ${p.name}`}
                     value={val}
                     type={p.type === "int" ? "number" : "text"}
-                    className="h-7 w-16 px-1.5 font-mono text-xs"
+                    className="h-7 w-16 px-1.5 font-mono text-mark"
                     onChange={(e) => onParamChange(k, e.target.value)}
                   />
                 );
@@ -1546,7 +1546,7 @@ function SimulatorDock({
               <Button
                 variant={idx === 0 ? "primary" : "outline"}
                 size="sm"
-                className="h-7 px-2.5 font-mono text-xs"
+                className="h-7 px-2.5 font-mono text-mark"
                 disabled={stepping}
                 onClick={() => onStep(ev)}
               >
@@ -1555,10 +1555,10 @@ function SimulatorDock({
             </div>
           );
         }) : (
-          <span className="text-xs text-muted-foreground">No enabled transitions from this state</span>
+          <span className="text-mark text-muted-foreground">No enabled transitions from this state</span>
         )}
         <span className="flex-1" />
-        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" disabled={stepping} onClick={onReset}>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-mark" disabled={stepping} onClick={onReset}>
           <Icon name="undo" className="size-3.5" /> Reset
         </Button>
       </div>
@@ -1706,8 +1706,8 @@ export function StateGraph({ spec, graph }: { spec: Working; graph: SpecModelGra
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-background">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-foreground">{graph.projectionLabel}</span>
-            <span className="text-xs text-muted-foreground tabular-nums">
+            <span className="text-mark font-semibold text-foreground">{graph.projectionLabel}</span>
+            <span className="text-mark text-muted-foreground tabular-nums">
               {graph.nodes.length} states · {uniqueTransitionCount} transitions
             </span>
             <span className="h-3.5 w-px bg-border" aria-hidden />
@@ -1716,7 +1716,7 @@ export function StateGraph({ spec, graph }: { spec: Working; graph: SpecModelGra
                 key={key}
                 variant={overlays[key] ? "outline" : "ghost"}
                 size="sm"
-                className="h-7 px-2 text-xs capitalize"
+                className="h-7 px-2 text-mark capitalize"
                 onClick={() => setOverlays((o) => ({ ...o, [key]: !o[key] }))}
               >
                 {overlays[key] ? "✓ " : ""}{key}
@@ -1724,10 +1724,10 @@ export function StateGraph({ spec, graph }: { spec: Working; graph: SpecModelGra
             ))}
           </div>
           <div className="flex items-center gap-1.5">
-            <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs" onClick={() => setInspector({ kind: "compose-state" })}>
+            <Button variant="outline" size="sm" className="h-7 px-2.5 text-mark" onClick={() => setInspector({ kind: "compose-state" })}>
               <Icon name="plus" className="size-3.5" /> State
             </Button>
-            <Button variant="primary" size="sm" className="h-7 px-2.5 text-xs" onClick={() => openTransitionComposer()}>
+            <Button variant="primary" size="sm" className="h-7 px-2.5 text-mark" onClick={() => openTransitionComposer()}>
               <Icon name="plus" className="size-3.5" /> Transition
             </Button>
           </div>

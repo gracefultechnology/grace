@@ -64,7 +64,7 @@ const GLYPH: Record<RuleRole, { symbol: string; title: string; color: string }> 
 
 const RuleGlyph = ({ role }: { role: RuleRole | undefined }) => {
   const g = GLYPH[role ?? "domain"];
-  return <span aria-hidden title={g.title} className={cn("w-4 flex-none text-center font-mono text-xs font-semibold", g.color)}>{g.symbol}</span>;
+  return <span aria-hidden title={g.title} className={cn("w-4 flex-none text-center font-mono text-mark font-semibold", g.color)}>{g.symbol}</span>;
 };
 
 /** The keys on a focused story or rule, beside opening it: move up or down with Alt, delete with Ctrl or ⌘. */
@@ -80,7 +80,7 @@ function MoveMenu({ id, kind }: { id: string; kind: "story" | "rule" }) {
   const specs = S.specs.filter((s) => !s.deleted);
   return (
     <select title="Move to…" aria-label="Move to" value="" onClick={(e) => e.stopPropagation()}
-      className="h-6 cursor-pointer rounded-sm bg-transparent px-1 text-xs text-muted-foreground hover:bg-accent"
+      className="h-6 cursor-pointer rounded-sm bg-transparent px-1 text-mark text-muted-foreground hover:bg-accent"
       onChange={(e) => { const [type, value] = e.target.value.split("|"); move(id, type === "spec" ? { spec: value } : { uid: value, where: "after" }); }}>
       <option value="" disabled>Move ▾</option>
       {kind === "rule"
@@ -93,7 +93,7 @@ function MoveMenu({ id, kind }: { id: string; kind: "story" | "rule" }) {
 /** A text box that grows with what it holds; in code, Tab indents. */
 const TextBox = ({ value, onChange, code = false, placeholder, label, className }: { value: string; onChange: (v: string) => void; code?: boolean; placeholder?: string; label: string; className?: string }) => (
   <Textarea value={value} rows={1} spellCheck={!code} placeholder={placeholder} aria-label={label}
-    className={cn("min-h-10", code && "rounded-none border-0 bg-muted font-mono text-xs leading-relaxed shadow-none focus-visible:ring-0", className)}
+    className={cn("min-h-10", code && "rounded-none border-0 bg-muted font-mono text-mark leading-relaxed shadow-none focus-visible:ring-0", className)}
     onChange={(e) => onChange(e.target.value)}
     onKeyDown={(e) => {
       if (!code || e.key !== "Tab" || e.shiftKey) return;
@@ -105,7 +105,7 @@ const TextBox = ({ value, onChange, code = false, placeholder, label, className 
 );
 
 const Status = ({ mark, children }: { mark: "review" | "bad"; children: ReactNode }) => (
-  <div className={cn("text-xs", mark === "review" ? "text-warn" : "text-destructive")}>{children}</div>
+  <div className={cn("text-mark", mark === "review" ? "text-warn" : "text-destructive")}>{children}</div>
 );
 
 /** A failing check result: its stage and summary, and what it found, such as a counterexample trace. */
@@ -130,7 +130,7 @@ function ModelSummaryStrip({ spec, graph, failingCount }: { spec: Working; graph
   const verdict = S.snap?.session.verdict;
 
   return (
-    <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-card px-3.5 py-2 text-xs">
+    <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-border bg-card px-3.5 py-2 text-mark">
       {graph.nodes.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="font-medium text-muted-foreground">{graph.projectionKind === "projected" ? "State" : "States"}</span>
@@ -188,7 +188,7 @@ function StoryTraceStrip({ spec, meta, review }: { spec: Working; meta: StoryMet
   if (!hasData) return null;
 
   return (
-    <div className="mx-3 mb-2 ml-9 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+    <div className="mx-3 mb-2 ml-9 flex flex-wrap items-center gap-x-2 gap-y-1 text-mark text-muted-foreground">
       {meta.states.length > 0 && (
         <button type="button" onClick={() => openStateFocus(spec.file, { node: meta.states[0] })}
           className={cn(focusRing, "rounded-sm font-medium text-primary hover:underline")}>
@@ -236,13 +236,13 @@ function StoryEditor({ id, story, review }: { id: string; story: Story; review: 
     <div data-edit className="flex flex-col gap-2 px-3 py-2.5">
       <div className="flex items-center gap-2">
         <Input data-heading value={story.title} aria-label="Story: As a … I want …" placeholder="Story: As a … I want …" invalid={!story.title.trim()}
-          className="h-9 flex-1 border-transparent bg-transparent px-1.5 text-base font-semibold shadow-none focus-visible:border-input focus-visible:bg-background"
+          className="h-9 flex-1 border-transparent bg-transparent px-1.5 text-label font-semibold shadow-none focus-visible:border-input focus-visible:bg-background"
           onChange={(e) => editStory(id, e.target.value, story.body)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.closest("[data-edit]")?.querySelector("textarea")?.focus(); } }} />
         <Button variant="outline" size="sm" onClick={() => doneEditing(id)}><Icon name="check" />Done</Button>
       </div>
       <TextBox value={draftBody} label="Story text" placeholder="As a …, I want …, so that …"
-        className="border-transparent bg-muted/50 px-2.5 py-2 text-sm shadow-none focus-visible:border-input focus-visible:bg-background"
+        className="border-transparent bg-muted/50 px-2.5 py-2 text-detail shadow-none focus-visible:border-input focus-visible:bg-background"
         onChange={(v) => { setDraftBody(v); editStory(id, story.title, useQuote ? quoteBody(v) : textBody(v)); }} />
       {review && <Status mark="review">{review}</Status>}
     </div>
@@ -271,12 +271,12 @@ function StoryCard({ spec, story, s, byKey, graph }: { spec: Working; story: Sto
           <div className="group flex min-h-10 items-center gap-2 px-2.5 py-1.5">
             <span aria-hidden className="cursor-grab text-muted-foreground"><Icon name="grip" /></span>
             <button data-row type="button" aria-expanded={open} onClick={() => toggle(id)} onDoubleClick={() => editNode(id)} onKeyDown={(e) => keys(e, id)}
-              className={cn(focusRing, "flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-base font-semibold",
+              className={cn(focusRing, "flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-label font-semibold",
                 !story.title.startsWith("Story:") && "text-muted-foreground", !unique && "text-destructive")}>
               <Icon name="chev" className={cn("text-muted-foreground transition-transform duration-fast", open && "rotate-90")} />
               <span className="truncate">{story.title.trim() || "Untitled"}</span>
             </button>
-            <span title="rules" className="text-xs text-muted-foreground tabular-nums">{story.rules.length} {story.rules.length === 1 ? "rule" : "rules"}</span>
+            <span title="rules" className="text-mark text-muted-foreground tabular-nums">{story.rules.length} {story.rules.length === 1 ? "rule" : "rules"}</span>
             <Dot mark={mark} label={label} />
             <span className="flex items-center gap-0.5 opacity-0 transition-opacity duration-fast group-focus-within:opacity-100 group-hover:opacity-100">
               <IconButton name="edit" label="Edit story" onClick={() => editNode(id)} />
@@ -286,7 +286,7 @@ function StoryCard({ spec, story, s, byKey, graph }: { spec: Working; story: Sto
             </span>
           </div>
           {story.body.trim() && (
-            <div onDoubleClick={() => editNode(id)} className="px-4 pb-2 pl-9 text-sm text-muted-foreground">
+            <div onDoubleClick={() => editNode(id)} className="px-4 pb-2 pl-9 text-detail text-muted-foreground">
               <Markdown text={story.body} file={spec.file} />
             </div>
           )}
@@ -337,19 +337,19 @@ function RuleItem({ spec, story, rule, r, byKey, ruleMeta }: { spec: Working; st
         <span aria-hidden className="cursor-grab text-muted-foreground opacity-50 group-hover:opacity-100"><Icon name="grip" className="size-3.5" /></span>
         <RuleGlyph role={ruleMeta?.role} />
         <button data-row type="button" aria-expanded={showQuint} onClick={() => toggle(id)} onDoubleClick={() => editNode(id)} onKeyDown={(e) => keys(e, id)}
-          className={cn(focusRing, "flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-sm font-medium", !unique && "text-destructive")}>
+          className={cn(focusRing, "flex min-w-0 flex-1 items-center gap-2 rounded-sm text-left text-detail font-medium", !unique && "text-destructive")}>
           <span className="min-w-0 flex-1">{rule.title.trim() || "Untitled"}</span>
         </button>
         {!showQuint && ruleMeta?.exprPreview && (
-          <code className="hidden max-w-60 truncate rounded-sm bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground lg:inline">{ruleMeta.exprPreview}</code>
+          <code className="hidden max-w-60 truncate rounded-sm bg-muted px-1.5 py-0.5 font-mono text-mark text-muted-foreground lg:inline">{ruleMeta.exprPreview}</code>
         )}
         {transitionHint && (
           <button type="button" onClick={() => openStateFocus(spec.file, { edge: ruleMeta?.transition?.name })}
-            className={cn(focusRing, "hidden rounded-sm font-mono text-xs text-muted-foreground hover:text-primary sm:inline")}>
+            className={cn(focusRing, "hidden rounded-sm font-mono text-mark text-muted-foreground hover:text-primary sm:inline")}>
             {transitionHint}
           </button>
         )}
-        {!items.some((i) => i.quint) && <span role="img" aria-label="no Quint" title="no Quint" className="font-mono text-xs text-warn">∅</span>}
+        {!items.some((i) => i.quint) && <span role="img" aria-label="no Quint" title="no Quint" className="font-mono text-mark text-warn">∅</span>}
         <Dot mark={mark} label={label} />
         <span className="flex items-center gap-0.5 opacity-0 transition-opacity duration-fast group-focus-within:opacity-100 group-hover:opacity-100">
           <IconButton name="edit" label="Edit rule" onClick={() => editNode(id)} />
@@ -360,13 +360,13 @@ function RuleItem({ spec, story, rule, r, byKey, ruleMeta }: { spec: Working; st
 
       {Boolean(visibleItems.length > 0 || review || fails?.length || ruleMeta?.components.length) && (
         <div data-body className="flex flex-col gap-2 px-3 pb-2.5 pl-11">
-          {visibleItems.map((i) => (i.quint ? <Quint key={`q${i.text}`} code={i.text} /> : <Markdown key={`p${i.text}`} text={i.text} file={spec.file} className="text-sm text-muted-foreground" />))}
+          {visibleItems.map((i) => (i.quint ? <Quint key={`q${i.text}`} code={i.text} /> : <Markdown key={`p${i.text}`} text={i.text} file={spec.file} className="text-detail text-muted-foreground" />))}
           {ruleMeta && ruleMeta.components.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-xs text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-mark text-muted-foreground">
               <span>Used by</span>
               {ruleMeta.components.map((c) => (
                 <button key={c.id} type="button" onClick={() => peekComponent(c.name)}
-                  className={cn(focusRing, "rounded-sm px-1.5 py-0.5 font-mono text-xs transition-colors duration-fast",
+                  className={cn(focusRing, "rounded-sm px-1.5 py-0.5 font-mono text-mark transition-colors duration-fast",
                     S.peekComponent === c.name ? "bg-accent text-primary" : "bg-muted text-primary hover:bg-accent")}>
                   {c.name}{c.symbols.length ? ` (${c.symbols.join(", ")})` : ""}
                 </button>
@@ -395,14 +395,14 @@ function RuleEditor({ id, rule, role }: { id: string; rule: Rule; role: RuleRole
       <div className="flex items-center gap-2">
         <RuleGlyph role={role} />
         <Input data-heading value={rule.title} aria-label="One checkable sentence" placeholder="One checkable sentence" invalid={!rule.title.trim()}
-          className="h-8 flex-1 border-transparent bg-transparent px-1.5 text-sm font-semibold shadow-none focus-visible:border-input focus-visible:bg-background"
+          className="h-8 flex-1 border-transparent bg-transparent px-1.5 text-detail font-semibold shadow-none focus-visible:border-input focus-visible:bg-background"
           onChange={(e) => editRule(id, e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.closest("[data-edit]")?.querySelector("textarea")?.focus(); } }} />
         <Button variant="outline" size="sm" onClick={() => doneEditing(id)}><Icon name="check" />Done</Button>
       </div>
       {items.map((item, k) => (
         <div key={keyOf(item)} className={item.quint ? "overflow-hidden rounded-md border border-border bg-muted" : "group relative flex flex-col gap-1"}>
-          <div className={cn("flex items-center justify-between text-xs text-muted-foreground", item.quint && "border-b border-border px-2.5 py-1")}>
+          <div className={cn("flex items-center justify-between text-mark text-muted-foreground", item.quint && "border-b border-border px-2.5 py-1")}>
             <span className={cn(item.quint && "font-mono")}>{item.quint ? "Quint" : "Prose"}</span>
             <div className={cn("flex items-center gap-1", !item.quint && "opacity-70 group-focus-within:opacity-100 group-hover:opacity-100")}>
               {k > 0 && <IconButton name="up" label="Move up" onClick={() => set([...items.slice(0, k - 1), item, items[k - 1], ...items.slice(k + 1)])} />}
@@ -413,11 +413,11 @@ function RuleEditor({ id, rule, role }: { id: string; rule: Rule; role: RuleRole
             onChange={(v) => { item.text = v; set([...items]); }} />
         </div>
       ))}
-      <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2 text-xs text-muted-foreground">
-        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => set([...items, { quint: false, text: "" }])}><Icon name="plus" className="size-3.5" />Prose</Button>
-        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => { set([...items, { quint: true, text: "" }]); focusLater(`[data-uid="${id}"] textarea[aria-label="Quint"]:last-of-type`); }}><Icon name="plus" className="size-3.5" />Quint</Button>
+      <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2 text-mark text-muted-foreground">
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-mark" onClick={() => set([...items, { quint: false, text: "" }])}><Icon name="plus" className="size-3.5" />Prose</Button>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-mark" onClick={() => { set([...items, { quint: true, text: "" }]); focusLater(`[data-uid="${id}"] textarea[aria-label="Quint"]:last-of-type`); }}><Icon name="plus" className="size-3.5" />Quint</Button>
         <MoveMenu id={id} kind="rule" />
-        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-destructive hover:text-destructive" onClick={() => removeNode(id)}>Remove</Button>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-mark text-destructive hover:text-destructive" onClick={() => removeNode(id)}>Remove</Button>
         <span className="ml-auto font-mono">Esc finish · ⌘Z undo</span>
       </div>
     </div>
@@ -431,25 +431,25 @@ function ComponentPeek({ component, spec, graph }: { component: Component; spec:
     <aside aria-label="Component peek" className="flex w-88 flex-none flex-col gap-4 overflow-auto border-l border-border bg-card p-4 max-lg:hidden">
       <div className="flex flex-col gap-1 border-b border-border pb-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="truncate text-base font-semibold">{component.name}</h2>
+          <h2 className="truncate text-label font-semibold">{component.name}</h2>
           <div className="flex items-center gap-1">
-            <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => openComponent(component.id)}>
+            <Button variant="outline" size="sm" className="h-7 px-2 text-mark" onClick={() => openComponent(component.id)}>
               Open in Layout <Icon name="external" className="size-3" />
             </Button>
             <IconButton name="close" label="Close peek" onClick={() => peekComponent(undefined)} />
           </div>
         </div>
-        <div className="font-mono text-xs text-muted-foreground">{component.source.file}:{component.source.line}</div>
+        <div className="font-mono text-mark text-muted-foreground">{component.source.file}:{component.source.line}</div>
       </div>
 
-      {component.description && <div className="text-xs text-muted-foreground"><InlineMarkdown text={component.description} file={spec.file} /></div>}
+      {component.description && <div className="text-mark text-muted-foreground"><InlineMarkdown text={component.description} file={spec.file} /></div>}
 
       {component.stories.length > 0 && (
         <div className="flex flex-col gap-2">
-          <div className="text-xs font-medium text-muted-foreground">Stories ({component.stories.length})</div>
+          <div className="text-mark font-medium text-muted-foreground">Stories ({component.stories.length})</div>
           <div className="flex flex-col gap-1.5">
             {component.stories.slice(0, 6).map((st) => (
-              <div key={st.id} className="rounded-md border border-border bg-background p-2.5 text-xs">
+              <div key={st.id} className="rounded-md border border-border bg-background p-2.5 text-mark">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium text-foreground">{st.name}</span>
                   <span className="font-mono text-muted-foreground">{st.kind}</span>
@@ -467,10 +467,10 @@ function ComponentPeek({ component, spec, graph }: { component: Component; spec:
 
       {component.uses && component.uses.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <div className="text-xs font-medium text-muted-foreground">Wired Guards & Symbols</div>
+          <div className="text-mark font-medium text-muted-foreground">Wired Guards & Symbols</div>
           <div className="flex flex-col gap-1">
             {component.uses.map((sym) => (
-              <div key={sym} className="rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-xs text-primary">{sym}</div>
+              <div key={sym} className="rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-mark text-primary">{sym}</div>
             ))}
           </div>
         </div>
@@ -478,11 +478,11 @@ function ComponentPeek({ component, spec, graph }: { component: Component; spec:
 
       {wiredRules.length > 0 && (
         <div className="flex flex-col gap-1.5">
-          <div className="text-xs font-medium text-muted-foreground">Linked Rules</div>
+          <div className="text-mark font-medium text-muted-foreground">Linked Rules</div>
           <div className="flex flex-col gap-1">
             {wiredRules.map((rm) => (
               <button key={rm.key} type="button" onClick={() => reveal(spec.file, rm.key)}
-                className={cn(focusRing, "flex items-start gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-xs hover:bg-accent")}>
+                className={cn(focusRing, "flex items-start gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-mark hover:bg-accent")}>
                 <RuleGlyph role={rm.role} />
                 <span className="min-w-0 flex-1">{rm.heading}</span>
               </button>
@@ -540,7 +540,7 @@ export function Spec({ spec }: { spec: Working }) {
               <div data-edit className="flex flex-col gap-2 rounded-lg border border-primary/40 border-l-4 border-l-primary bg-card p-3">
                 <div className="flex items-center gap-2">
                   <Input data-heading value={o.title} aria-label="Title" placeholder="Title" invalid={!o.title.trim()}
-                    className="h-9 flex-1 border-transparent bg-transparent px-1.5 text-2xl font-semibold shadow-none focus-visible:border-input focus-visible:bg-background"
+                    className="h-9 flex-1 border-transparent bg-transparent px-1.5 text-lead font-semibold shadow-none focus-visible:border-input focus-visible:bg-background"
                     onChange={(e) => retitle(spec, e.target.value, o.body)}
                     onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.closest("[data-edit]")?.querySelector("textarea")?.focus(); } }} />
                   <Button variant="outline" size="sm" onClick={() => doneEditing(headId)}><Icon name="check" />Done</Button>
@@ -550,15 +550,15 @@ export function Spec({ spec }: { spec: Working }) {
             ) : (
               <>
                 <div className="mb-1.5 flex items-baseline justify-between gap-3">
-                  <h1 onDoubleClick={() => editNode(headId)} className="group flex items-center gap-2 text-2xl font-semibold">
+                  <h1 onDoubleClick={() => editNode(headId)} className="group flex items-center gap-2 text-lead font-semibold">
                     {o.title || specLabel(spec.file)}
                     <span className="opacity-0 transition-opacity duration-fast group-focus-within:opacity-100 group-hover:opacity-100">
                       <IconButton name="edit" label="Edit title and introduction" onClick={() => editNode(headId)} />
                     </span>
                   </h1>
-                  <span className="font-mono text-xs text-muted-foreground">{spec.file}</span>
+                  <span className="font-mono text-mark text-muted-foreground">{spec.file}</span>
                 </div>
-                {o.body.trim() && <Markdown text={o.body} file={spec.file} className="text-sm text-muted-foreground" />}
+                {o.body.trim() && <Markdown text={o.body} file={spec.file} className="text-detail text-muted-foreground" />}
               </>
             )}
           </div>

@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { relative, sep } from "node:path"
 import js from "@eslint/js"
+import designTokens from "@repo/design-system/tokens.json" with { type: "json" }
 import react from "@eslint-react/eslint-plugin"
 import tailwind from "eslint-plugin-better-tailwindcss"
 import boundaries from "eslint-plugin-boundaries"
@@ -10,30 +11,32 @@ import tseslint from "typescript-eslint"
 import vibelang from "vibelang/eslint"
 import { designSystem } from "./vibestack/design/eslint.ts"
 import { parseTokens } from "./vibestack/design/tokens.ts"
-import { withWorkspaceBarrels } from "./vibestack/eslint.ts"
 
 const stack = 'AGENTS.md, "The stack"'
 const monorepo = 'CONTRIBUTING.md, "The monorepo"'
 const banned = ["redux", "react-redux", "zustand", "mobx", "jotai", "recoil", "valtio", "xstate", "vue", "svelte", "jest"]
 const scopes = ["reduxjs", "angular", "xstate", "vue", "sveltejs", "jest"]
+// Each workspace package's `exports` beyond its root: "@repo/design-system/theme.css".
+const exported = readdirSync("packages").filter((dir) => existsSync(`packages/${dir}/package.json`)).flatMap((dir) => {
+  const { name, exports = {} } = JSON.parse(readFileSync(`packages/${dir}/package.json`, "utf8"))
+  return Object.keys(exports).filter((key) => key !== ".").map((key) => RegExp.escape(`${name}/${key.slice(2)}`))
+})
 const imports = {
   patterns: [
     // A package, its subpaths and its family: zustand/middleware, redux-saga, @angular/core.
     { regex: `^(?:@(?:${scopes.join("|")})/|(?:${banned.join("|")})(?:[/-]|$))`, message: `Not part of the stack: ${stack}.` },
+    { regex: `^(?!(?:${exported.join("|")})$)@repo/[^/]+/`, message: `Import a workspace package by a path its "exports" names: ${monorepo}.` },
   ],
 }
 const noReact = { patterns: [...imports.patterns, { regex: "^react(?:-dom)?(?:/|$)", message: `Tool and domain code does not import React: ${monorepo}.` }] }
 // What no tsconfig.json includes, so the type-aware rules cannot see it.
 const untyped = ["*.{js,ts}", "**/.storybook/**", "packages/design-system/**", "vibestack/design/test/**", "vibestack/stories/test/**"]
-const studioPage = "vibestack/studio/src/page/**/*.{ts,tsx}"
 // Every React interface: Studio's page is built on the same theme (vibestack/studio/vite.config.ts).
-const tsx = ["packages/ui/**/*.{ts,tsx}", "apps/**/*.{ts,tsx}", studioPage]
+const tsx = ["packages/ui/**/*.{ts,tsx}", "apps/**/*.{ts,tsx}", "vibestack/studio/src/page/**/*.{ts,tsx}"]
 const design = "packages/design-system"
-const tokens = parseTokens(JSON.parse(readFileSync(`${design}/tokens.json`, "utf8")))
-const theme = `${import.meta.dirname}/${design}/generated/theme.css`
 const writing = 'AGENTS.md, "Writing code"'
 const citation = String.raw`spec\/\S+\.md, "[^"]+"`
-const suppressible = String.raw`(?!code\/|barrel\/|no-console\b)[\w@/-]+`
+const suppressible = String.raw`(?!code\/|no-console\b)[\w@/-]+`
 const cited = new RegExp(String.raw`^\s*${citation}(?:; ${citation})*\s*$`)
 const suppression = new RegExp(String.raw`^ eslint-disable(?:-next-line|-line)? ${suppressible}(?:, ${suppressible})* -- \S`)
 const configs = [suppression, /^ eslint-enable\b/]
@@ -50,7 +53,7 @@ const guarded = (parser) => ({
   parseForESLint: (text, options) => {
     const parsed = parser.parseForESLint(text, options)
     const loose = parsed.ast.comments.find((comment) => inline.test(comment.value) && !configs.some((form) => form.test(comment.value)))
-    if (loose) throw Object.assign(new SyntaxError(`Inline config here is only "eslint-disable[-next-line|-line] <rule>, … -- <reason>", never for code/*, barrel/* or no-console, and "eslint-enable" (${writing}).`), { lineNumber: loose.loc.start.line, column: loose.loc.start.column + 1 })
+    if (loose) throw Object.assign(new SyntaxError(`Inline config here is only "eslint-disable[-next-line|-line] <rule>, … -- <reason>", never for code/* or no-console, and "eslint-enable" (${writing}).`), { lineNumber: loose.loc.start.line, column: loose.loc.start.column + 1 })
     return parsed
   },
 })
@@ -86,7 +89,7 @@ const scheduled = { "apps/app/scripts/android.ts": 1, "apps/app/src/App.tsx": 4,
 // The tool reads Quint's JSON and the TypeScript compiler API as `any` at its boundaries; packages and apps stay strict.
 const loose = Object.fromEntries(["no-explicit-any", "no-unsafe-argument", "no-unsafe-assignment", "no-unsafe-call", "no-unsafe-member-access", "no-unsafe-return"].map((rule) => [`@typescript-eslint/${rule}`, "off"]))
 
-export default withWorkspaceBarrels(defineConfig(
+export default defineConfig(
   // Generated, disposable or vendored, and .claude/worktrees holds other checkouts of this repository.
   globalIgnores(["vendor/", "apps/app/artifacts/", "**/gen/", "!vibestack/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.wrangler/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
   { linterOptions: { reportUnusedDisableDirectives: "error", reportUnusedInlineConfigs: "error" } },
@@ -169,13 +172,7 @@ export default withWorkspaceBarrels(defineConfig(
   // vibestack/design/eslint.ts: token classes only, read from the theme `pnpm --filter @repo/design-system build` writes.
   {
     files: tsx,
-    ignores: [studioPage],
-    extends: [designSystem({ tailwind, tokens, entryPoint: theme })],
-    settings: { "better-tailwindcss": { cwd: design } },
-  },
-  {
-    files: [studioPage],
-    extends: [designSystem({ tailwind, tokens: { ...tokens, text: {} }, entryPoint: theme })],
+    extends: [designSystem({ tailwind, tokens: parseTokens(designTokens), entryPoint: `${import.meta.dirname}/${design}/generated/theme.css` })],
     settings: { "better-tailwindcss": { cwd: design } },
   },
   // @repo/ui holds the form controls and dialogs every interface uses.
@@ -195,4 +192,4 @@ export default withWorkspaceBarrels(defineConfig(
     files: ["apps/app/src/**/*.{vibe,ts}"],
     rules: { "no-restricted-syntax": ["error", ...["Literal[value=/\\bMargaret\\b/]", "TemplateElement[value.raw=/\\bMargaret\\b/]"].map((selector) => ({ selector, message: "What Grace is told names the person, never a fixed name." }))] },
   },
-), { root: import.meta.dirname })
+)

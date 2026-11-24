@@ -254,8 +254,8 @@ function linkedRulesFor(component: Component, graph: SpecModelGraph | undefined)
 
 const FileLink = ({ path }: { path: string }) => (
   S.specs.some((s) => s.file === path)
-    ? <Button variant="ghost" size="sm" className="h-auto px-1 py-0 font-mono text-xs text-primary" onClick={() => select(path)}>{path}</Button>
-    : <a href={encodeURI(`vscode://file/${S.snap?.project.root.replaceAll("\\", "/").replace(/^\/+/, "")}/${path.replace(/#.*$/, "")}`)} className="font-mono text-xs text-primary hover:underline">{path}</a>
+    ? <Button variant="ghost" size="sm" className="h-auto px-1 py-0 font-mono text-mark text-primary" onClick={() => select(path)}>{path}</Button>
+    : <a href={encodeURI(`vscode://file/${S.snap?.project.root.replaceAll("\\", "/").replace(/^\/+/, "")}/${path.replace(/#.*$/, "")}`)} className="font-mono text-mark text-primary hover:underline">{path}</a>
 );
 
 function StructuredFallback({
@@ -281,11 +281,11 @@ function StructuredFallback({
     <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-sm font-semibold text-foreground">{target.name}</span>
-          {story && <span className="rounded-sm bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">{story.name}</span>}
+          <span className="font-mono text-detail font-semibold text-foreground">{target.name}</span>
+          {story && <span className="rounded-sm bg-muted px-2 py-0.5 font-mono text-mark text-muted-foreground">{story.name}</span>}
         </div>
         {onTryStorybook && story && (
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" onClick={onTryStorybook}>
+          <Button variant="ghost" size="sm" className="h-7 text-mark text-muted-foreground" onClick={onTryStorybook}>
             Use Storybook (:6006)
           </Button>
         )}
@@ -293,7 +293,7 @@ function StructuredFallback({
 
       {descendants.length > 0 && (
         <div className="flex flex-col gap-2 rounded-md border border-dashed border-border bg-background p-3">
-          <div className="text-xs font-medium text-muted-foreground">Component composition</div>
+          <div className="text-mark font-medium text-muted-foreground">Component composition</div>
           <div className="flex flex-wrap gap-2">
             {descendants.map((child) => {
               const active = inspected.name === child.name;
@@ -304,13 +304,13 @@ function StructuredFallback({
                   onClick={() => onSelectComponent?.(child.name)}
                   className={cn(
                     focusRing,
-                    "rounded-md border px-2.5 py-1.5 text-left text-xs transition-colors duration-fast",
+                    "rounded-md border px-2.5 py-1.5 text-left text-mark transition-colors duration-fast",
                     active ? "border-primary bg-accent font-medium text-primary" : "border-border bg-card text-foreground hover:bg-accent",
                   )}
                 >
                   <div className="font-mono">{child.name}</div>
                   {child.uses?.length ? (
-                    <div className="mt-0.5 font-mono text-xs text-muted-foreground">{child.uses.join(", ")}</div>
+                    <div className="mt-0.5 font-mono text-mark text-muted-foreground">{child.uses.join(", ")}</div>
                   ) : null}
                 </button>
               );
@@ -320,7 +320,7 @@ function StructuredFallback({
       )}
 
       {argEntries.length > 0 ? (
-        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-md bg-muted/60 p-3 font-mono text-xs">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-md bg-muted/60 p-3 font-mono text-mark">
           {argEntries.map(([k, v]) => (
             <div key={k} className="contents">
               <span className="text-muted-foreground">{k}</span>
@@ -329,7 +329,7 @@ function StructuredFallback({
           ))}
         </div>
       ) : (
-        <p className="text-xs text-muted-foreground">Structured preview — interactive controls and metadata are active below.</p>
+        <p className="text-mark text-muted-foreground">Structured preview — interactive controls and metadata are active below.</p>
       )}
     </div>
   );
@@ -349,7 +349,7 @@ export function CompositionStrip({
   const descendants = descendantsOf(root, hierarchy);
   if (!descendants.length) return null;
   return (
-    <div role="group" aria-label="Layout elements" className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs">
+    <div role="group" aria-label="Layout elements" className="flex flex-wrap items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-mark">
       <span className="text-muted-foreground">Elements</span>
       <button
         type="button"
@@ -537,7 +537,7 @@ export function SimStateBar({
   const sortedEvents = [...allowedEvents].sort((a, b) => Number(highlighted.has(b.name)) - Number(highlighted.has(a.name)));
 
   return (
-    <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-t border-border bg-card px-4 py-2 text-xs">
+    <div className="flex flex-none flex-wrap items-center justify-between gap-2 border-t border-border bg-card px-4 py-2 text-mark">
       <div className="flex min-w-0 flex-wrap items-center gap-2 font-mono">
         <Dot mark={sim?.available ? (sim.inv === false ? "bad" : "ok") : ""} label={sim?.available ? (sim.inv === false ? "invariant violated" : "live simulation") : "simulation unavailable"} />
         <span className="font-semibold text-foreground">{label}</span>
@@ -568,13 +568,13 @@ export function SimStateBar({
               variant={highlighted.has(ev.name) ? "primary" : "outline"}
               size="sm"
               disabled={busy}
-              className="h-7 px-2 font-mono text-xs"
+              className="h-7 px-2 font-mono text-mark"
               onClick={() => onStep(ev.sampleEvent, ev.sender)}
             >
               ▶ {ev.name}
             </Button>
           ))}
-          <Button variant="ghost" size="sm" disabled={busy} className="h-7 px-2 text-xs" onClick={onReset}>
+          <Button variant="ghost" size="sm" disabled={busy} className="h-7 px-2 text-mark" onClick={onReset}>
             Reset
           </Button>
         </div>
@@ -602,7 +602,7 @@ function PropControl({
 }) {
   if (prop.kind === "boolean") {
     return (
-      <label className="inline-flex items-center gap-2 text-xs text-foreground">
+      <label className="inline-flex items-center gap-2 text-mark text-foreground">
         <Checkbox checked={current === true} aria-label={prop.name} onCheckedChange={(on) => onChange(on === true)} />
         <span className="font-mono text-muted-foreground">{current === true ? "true" : "false"}</span>
       </label>
@@ -617,7 +617,7 @@ function PropControl({
             variant={o === current ? "secondary" : "ghost"}
             size="sm"
             aria-pressed={o === current}
-            className="h-7 px-2 font-mono text-xs"
+            className="h-7 px-2 font-mono text-mark"
             onClick={() => onChange(o)}
           >
             {String(o)}
@@ -630,7 +630,7 @@ function PropControl({
     return (
       <Input
         key={`${story?.id} ${prop.name}`}
-        className={cn("h-8 font-mono text-xs", compact ? "w-full" : "w-44")}
+        className={cn("h-8 font-mono text-mark", compact ? "w-full" : "w-44")}
         type={prop.kind === "number" ? "number" : "text"}
         aria-label={prop.name}
         defaultValue={isArg(current) ? String(current) : ""}
@@ -638,7 +638,7 @@ function PropControl({
       />
     );
   }
-  return <span className="font-mono text-xs text-muted-foreground">—</span>;
+  return <span className="font-mono text-mark text-muted-foreground">—</span>;
 }
 
 function PropsTable({
@@ -654,10 +654,10 @@ function PropsTable({
   onEdit: (name: string, value: Arg) => void;
   compact?: boolean;
 }) {
-  if (!component.props.length) return <p className="text-xs text-muted-foreground">No props declared.</p>;
+  if (!component.props.length) return <p className="text-mark text-muted-foreground">No props declared.</p>;
   if (compact) {
     return (
-      <div className="flex flex-col divide-y divide-border rounded-md border border-border bg-background text-xs">
+      <div className="flex flex-col divide-y divide-border rounded-md border border-border bg-background text-mark">
         {component.props.map((p) => {
           const current = edits[p.name] ?? story?.args[p.name] ?? p.default;
           return (
@@ -682,7 +682,7 @@ function PropsTable({
   }
   return (
     <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <table aria-label="Props and live controls" className="w-full border-collapse text-left text-xs">
+      <table aria-label="Props and live controls" className="w-full border-collapse text-left text-mark">
         <thead>
           <tr className="border-b border-border bg-muted/50 text-muted-foreground">
             <th className="px-3 py-2 font-medium whitespace-nowrap">Prop</th>
@@ -753,20 +753,20 @@ function ElementInspector({
     <aside aria-label="Element inspector" className="flex min-h-0 flex-col gap-4 overflow-auto border-l border-border bg-card p-4 max-xl:border-t max-xl:border-l-0">
       <div className="flex flex-col gap-1.5 border-b border-border pb-3">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="truncate text-base font-semibold text-foreground">{component.name}</h2>
+          <h2 className="truncate text-label font-semibold text-foreground">{component.name}</h2>
           {component.model && (
             <div className="flex items-center gap-1">
-              <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => select(component.model!.spec)}>
+              <Button variant="outline" size="sm" className="h-7 px-2 text-mark" onClick={() => select(component.model!.spec)}>
                 Spec ↗
               </Button>
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openStateFocus(component.model!.spec)}>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-mark" onClick={() => openStateFocus(component.model!.spec)}>
                 States
               </Button>
             </div>
           )}
         </div>
         {crumb.length > 1 && (
-          <nav aria-label="Element breadcrumb" className="flex flex-wrap items-center gap-1 font-mono text-xs text-muted-foreground">
+          <nav aria-label="Element breadcrumb" className="flex flex-wrap items-center gap-1 font-mono text-mark text-muted-foreground">
             {crumb.map((c, idx) => (
               <span key={c.id} className="inline-flex items-center gap-1">
                 {idx > 0 && <span>›</span>}
@@ -787,19 +787,19 @@ function ElementInspector({
       </div>
 
       {component.description && (
-        <p className="text-xs leading-relaxed text-muted-foreground">
+        <p className="text-mark leading-relaxed text-muted-foreground">
           <InlineMarkdown text={component.description} />
         </p>
       )}
-      {component.diagnostics.map((d) => <p key={d} role="alert" className="text-xs text-destructive">{d}</p>)}
+      {component.diagnostics.map((d) => <p key={d} role="alert" className="text-mark text-destructive">{d}</p>)}
 
       {component.model && (
         <section className="flex flex-col gap-2">
-          <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+          <div className="flex items-center justify-between text-mark font-medium text-muted-foreground">
             <span>Model State & Live Guards</span>
             <span className="font-mono">{component.model.state}</span>
           </div>
-          <div className="flex flex-col divide-y divide-border rounded-md border border-border bg-background text-xs">
+          <div className="flex flex-col divide-y divide-border rounded-md border border-border bg-background text-mark">
             {fields.map((f) => (
               <div key={f.key} className="flex items-center justify-between gap-2 px-2.5 py-1.5 font-mono">
                 <span className="text-muted-foreground">{component.model!.module}.{f.key}</span>
@@ -832,14 +832,14 @@ function ElementInspector({
 
       {(rules.length > 0 || (component.citations?.length ?? 0) > 0) && (
         <section className="flex flex-col gap-2">
-          <div className="text-xs font-medium text-muted-foreground">Linked Stories & Rules</div>
+          <div className="text-mark font-medium text-muted-foreground">Linked Stories & Rules</div>
           <div className="flex flex-col gap-1">
             {rules.length > 0 ? rules.map((rule) => (
               <button
                 key={rule.key}
                 type="button"
                 onClick={() => reveal(graph!.file, rule.key)}
-                className={cn(focusRing, "flex items-baseline gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-xs transition-colors duration-fast hover:bg-accent")}
+                className={cn(focusRing, "flex items-baseline gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-mark transition-colors duration-fast hover:bg-accent")}
               >
                 <span className="font-mono text-primary">{ROLE_GLYPH[rule.role]}</span>
                 <span className="min-w-0 flex-1 text-foreground">{rule.heading}</span>
@@ -849,7 +849,7 @@ function ElementInspector({
                 key={`${cit.spec}:${cit.heading}`}
                 type="button"
                 onClick={() => select(cit.spec)}
-                className={cn(focusRing, "flex items-baseline gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-xs transition-colors duration-fast hover:bg-accent")}
+                className={cn(focusRing, "flex items-baseline gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-left text-mark transition-colors duration-fast hover:bg-accent")}
               >
                 <span className="font-mono text-primary">↗</span>
                 <span className="min-w-0 flex-1 text-foreground">{cit.heading}</span>
@@ -860,7 +860,7 @@ function ElementInspector({
       )}
 
       <section className="flex flex-col gap-2">
-        <div className="text-xs font-medium text-muted-foreground">Props</div>
+        <div className="text-mark font-medium text-muted-foreground">Props</div>
         <PropsTable component={component} story={story} edits={edits} onEdit={onEdit} compact />
       </section>
     </aside>
@@ -918,7 +918,7 @@ function StoryButtons({
           onClick={() => onChoose(at)}
           className={cn(
             focusRing,
-            "rounded-md px-2.5 py-1 text-xs transition-colors duration-fast hover:bg-accent",
+            "rounded-md px-2.5 py-1 text-mark transition-colors duration-fast hover:bg-accent",
             s === activeStory ? "bg-accent font-medium text-primary" : "text-muted-foreground hover:text-foreground",
           )}
         >
@@ -946,7 +946,7 @@ function ViewportToggle({
           onClick={() => onChange(vp)}
           className={cn(
             focusRing,
-            "rounded-sm px-2 py-0.5 text-xs capitalize transition-colors duration-fast",
+            "rounded-sm px-2 py-0.5 text-mark capitalize transition-colors duration-fast",
             viewport === vp ? "bg-accent font-medium text-foreground" : "text-muted-foreground hover:text-foreground",
           )}
         >
@@ -997,7 +997,7 @@ function LayoutViewer({
 
           <div className="flex flex-wrap items-center gap-2">
             {root !== component && (
-              <Button variant="ghost" size="sm" className="h-7 px-2 font-mono text-xs" onClick={() => setIsolate((v) => !v)}>
+              <Button variant="ghost" size="sm" className="h-7 px-2 font-mono text-mark" onClick={() => setIsolate((v) => !v)}>
                 {isolate ? `Show in ${root.name}` : `Isolate ${component.name}`}
               </Button>
             )}
@@ -1005,7 +1005,7 @@ function LayoutViewer({
               variant={inspect ? "primary" : "outline"}
               size="sm"
               aria-pressed={inspect}
-              className="h-7 px-2.5 text-xs"
+              className="h-7 px-2.5 text-mark"
               onClick={() => setInspect((v) => !v)}
             >
               Inspect {inspect ? "ON" : "OFF"}
@@ -1080,20 +1080,20 @@ function PrimitiveViewer({
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <div className="flex items-baseline gap-2">
-              <h2 className="text-xl font-semibold text-foreground">{component.name}</h2>
-              <span className="font-mono text-xs text-muted-foreground">{component.package}</span>
+              <h2 className="text-body font-semibold text-foreground">{component.name}</h2>
+              <span className="font-mono text-mark text-muted-foreground">{component.package}</span>
             </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               {fileLinks.map((path) => <FileLink key={path} path={path} />)}
             </div>
           </div>
           {component.description && (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-detail text-muted-foreground">
               <InlineMarkdown text={component.description} />
             </p>
           )}
           {parts.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-xs">
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 text-mark">
               <span className="text-muted-foreground">Parts:</span>
               {parts.map((part) => (
                 <button
@@ -1107,11 +1107,11 @@ function PrimitiveViewer({
               ))}
             </div>
           )}
-          {component.diagnostics.map((d) => <p key={d} role="alert" className="text-xs text-destructive">{d}</p>)}
+          {component.diagnostics.map((d) => <p key={d} role="alert" className="text-mark text-destructive">{d}</p>)}
         </div>
 
         <div className="overflow-hidden rounded-lg border border-border bg-card">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2 text-mark">
             <span className="font-mono text-foreground">Story: {story?.name ?? "None"}</span>
             <div className="flex items-center gap-2">
               <span className="text-muted-foreground">
@@ -1242,7 +1242,7 @@ export function Components({ index }: { index: ComponentIndex }) {
                 onClick={() => choose({ type: "chooseComponent", at })}
                 className={cn(
                   focusRing,
-                  "rounded-md px-2.5 py-1 text-xs transition-colors duration-fast hover:bg-accent",
+                  "rounded-md px-2.5 py-1 text-mark transition-colors duration-fast hover:bg-accent",
                   isCurrent ? "bg-accent font-medium text-primary" : "text-foreground",
                 )}
               >
@@ -1260,7 +1260,7 @@ export function Components({ index }: { index: ComponentIndex }) {
               aria-label="Search components"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-7 w-44 text-xs"
+              className="h-7 w-44 text-mark"
             />
           </div>
         )}
