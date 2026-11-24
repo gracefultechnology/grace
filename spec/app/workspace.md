@@ -1474,7 +1474,7 @@ highlight does not record a read or navigate the page. Visiting a
 different destination does not finish the pointed step. A highlighted link
 whose page sends her on while it loads, such as from "Sign in" to the
 website's sign-in address, is followed where that load ends: the step's
-destination moves with the load that started at it. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. Grace asks its Cloud decision service under the signed-in Grace account. For a statement read it asks the service to prefer a page that shows the bill, statement or account activity, and to avoid a link that only starts a payment. The service receives the reviewed goal and bounded visible labels with temporary candidate identifiers. A signed-out session cannot ask for a choice. A choice can guide only while that account, task and document are current. The highlight uses an observation of that document taken after the choice, and one more if the page moved in between, so a clock the page counts by itself does not stop it. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
+destination moves with the load that started at it. Links to the same destination share one candidate. Visible link names and section relationships can help distinguish a topic index from its articles. Grace asks its Cloud decision service under the signed-in Grace account. For a statement read it asks the service to prefer a different page showing a current bill or an account summary, and to avoid statement history, account switching and starting a payment. A guidance link never proves the new page has the requested values. The service receives the reviewed goal and bounded visible labels with temporary candidate identifiers. A signed-out session cannot ask for a choice. A choice can guide only while that account, task and document are current. The highlight uses an observation of that document taken after the choice, and one more if the page moved in between, so a clock the page counts by itself does not stop it. A temporary decision-service failure permits one fresh observation and retry while the same person and step are current.
 
 When the person permits observation and a secure site is loaded, the chat planner can see that the current tab already has a website open and the public hostname. The browser keeps the full address and document contents local when reporting that context.
 
@@ -2581,6 +2581,118 @@ pure val eval_witness_sometimesOperationDispatched = (
   ("observe", observed, Host),
   ("prepare", operation, Host),
   ("dispatch", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 }, Actuator)
+)
+pure val eval_witness_sometimesOperationVerified = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("prepare", operation, Host),
+  ("dispatch", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 }, Actuator),
+  ("verify", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, website: X::goodVerification, checkpoint: "Current account read", needsUser: false }, Host)
+)
+pure val eval_witness_sometimesGuidedGoalIsObserved = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("beginGuided", { owner: "owner", task: "task", goal: "Read the appointment", steps: List(sampleStep) }, Person),
+  ("confirmGuided", { ...sampleReport, deviceVersion: 5 }, Host)
+)
+pure val eval_witness_sometimesCommitmentAuthorized = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person)
+)
+pure val eval_witness_sometimesSpokenApprovalIsRecorded = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person)
+)
+pure val eval_witness_sometimesCommitmentDispatched = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person),
+  ("submitCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Actuator)
+)
+pure val eval_witness_sometimesCommitmentResultFinishesTask = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person),
+  ("submitCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Actuator),
+  ("recordCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: CM::exampleOutcome }, Host),
+  ("saveCommitment", { key: CM::exampleKey, revision: 3, succeeded: true }, Store)
+)
+pure val eval_witness_sometimesInterruptedCommitmentIsUncertain = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("talk", Person),
+  ("approveSpokenCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, { token: 4, text: "Yes, pay this bill.", owner: C::HumanAudio, complete: true, approves: true, correction: false }, Person),
+  ("submitCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Actuator),
+  ("changeLifecycle", SleepDevice, Host)
 )
 pure val weight_setAvailability = 4
 pure val weight_visit = 16
