@@ -2173,8 +2173,8 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
     await expect.element(page.getByText("Appointment removed.")).toBeVisible();
     expect(changed).toEqual(["update", "delete", "create", "update", "delete"]);
     await tap("Close Calendar");
-    await expect.element(page.getByText("Lunch", { exact: true })).toBeVisible();
-    await expect.element(page.getByText("Your receipt", { exact: true })).toBeVisible();
+    await expect.element(page.getByRole("group", { name: "Calendar", exact: true }).getByRole("button", { name: /Lunch/ })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: /^Email/ })).toHaveAccessibleDescription(/Your receipt/);
     await tap("Settings");
     await act(() => page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Email & calendar" }).click());
     await expect.element(page.getByText(person.email, { exact: true })).toBeVisible();
