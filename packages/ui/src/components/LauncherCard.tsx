@@ -12,14 +12,10 @@ export type LauncherCardProps = Omit<ComponentProps<"button">, "title"> & {
   art?: ReactNode;
   /** Laid out flat above Grace's compact window rather than on Home's drum: the glass's own edge light and shadow. */
   compact?: boolean;
-  /** On Home's drum: the card keeps a blurred copy of itself for its far side, which `showTurn` fades in as it turns away. */
-  turns?: boolean;
   /** Classes for the title and status, such as a width that keeps them clear of a preview. */
   headClassName?: string;
   /** Classes for the title alone, such as the smaller title of a narrow card above Grace's compact window. */
   titleClassName?: string;
-  /** What the blurred far side shows in place of `children`, when the card's live content lies beside it: a picture of the Calendar's rows. */
-  picture?: ReactNode;
   /** What the card shows under its title: rows, photos, a preview. */
   children?: ReactNode;
 };
@@ -29,10 +25,10 @@ const heads = {
   medium: { head: "top-[22px] left-[26px]", title: "text-title-sm leading-8", body: "inset-x-[22px] top-[100px] bottom-[22px]" },
 };
 
-const fading = "transition-[opacity,visibility] duration-slow ease-out-cubic will-change-[opacity] group-data-dragging/home:transition-none motion-reduce:transition-none";
+const fading = "transition-opacity duration-slow ease-out-cubic will-change-[opacity] group-data-dragging/home:transition-none motion-reduce:transition-none";
 
 export const turnsNear = { "data-turn": "near", className: fading } as const;
-const turnsFar = { "data-turn": "far", className: cn("opacity-0", fading) } as const;
+export const turnsFar = { "data-turn": "far", className: cn("invisible opacity-0 group-data-dragging/home:visible group-data-turning/home:visible", fading) } as const;
 
 export type Turning = { near: HTMLElement[]; far: HTMLElement[] };
 
@@ -44,45 +40,26 @@ export function showTurn({ near, far }: Turning, away: number, side: 1 | -1) {
   const shown = Math.max(0, 1 - away * 3).toFixed(3);
   const blurred = away.toFixed(3);
   const toward = side > 0 ? "90deg" : "270deg";
-  for (const part of near) {
-    part.style.opacity = shown;
-    part.style.visibility = away * 3 < 1 ? "" : "hidden";
-  }
+  for (const part of near) part.style.opacity = shown;
   for (const part of far) {
     part.style.opacity = blurred;
-    part.style.setProperty("--far", toward);
+    if (part.style.getPropertyValue("--far") !== toward) part.style.setProperty("--far", toward);
   }
 }
 
 /**
  * A Home launcher card: clear glass that opens its app, with the app's name, a status line and a preview of what is
- * in it. A slow sheen crosses it. Its name is its title and status; the preview describes it. A card that `turns`
- * keeps one blurred copy of itself, masked to its far side. `showTurn` shows it `away` round the drum's edge, from 0 (flat,
- * in view) to 1 (turned off it), on its left (-1) or right (1): the copy fades in and what `turnsNear` marks (art,
- * sheen, live rows) fades out at three times the pace. Only opacity changes, so a turning card repaints nothing.
+ * in it. A slow sheen crosses it. Its name is its title and status; the preview describes it. On Home's drum,
+ * `showTurn` shows a card `away` round the edge, from 0 (flat, in view) to 1 (turned off it), on its left (-1) or
+ * right (1): what `turnsFar` marks, the blur Home lays over the card's far side while its cards move, fades in, and
+ * what `turnsNear` marks (art, sheen) fades out at three times the pace. Only opacity changes, so a turning card
+ * repaints nothing.
  * @model spec/app/shell.md
  * @design packages/design-system/design.md#glass
  */
-export function LauncherCard({ title, status, size = "large", art, compact = false, turns = false, headClassName, titleClassName, picture, type = "button", className, children, ...props }: LauncherCardProps) {
+export function LauncherCard({ title, status, size = "large", art, compact = false, headClassName, titleClassName, type = "button", className, children, ...props }: LauncherCardProps) {
   const head = heads[size];
   const previewId = useId();
-  const content = (far: boolean) => {
-    const preview = far ? picture ?? children : children;
-    return (
-      <>
-        {art && !far ? <span {...turnsNear} className={cn("absolute", compact ? "top-2 right-2" : "-top-[34px] -right-5", turnsNear.className)}>{art}</span> : null}
-        <span className={cn("absolute", head.head, headClassName)}>
-          <span className={cn("block font-bold", head.title, titleClassName)}>{title}</span>
-          {status && <span className="mt-0.5 block text-body leading-[26px] font-medium text-muted-foreground">{status}</span>}
-        </span>
-        {preview ? (
-          <span id={far ? undefined : previewId} aria-hidden className={cn("absolute flex flex-col", head.body)}>
-            {preview}
-          </span>
-        ) : null}
-      </>
-    );
-  };
   return (
     <button
       type={type}
@@ -98,19 +75,16 @@ export function LauncherCard({ title, status, size = "large", art, compact = fal
       <span aria-hidden {...turnsNear} className={cn("pointer-events-none absolute inset-0 overflow-hidden rounded-card", turnsNear.className)}>
         <span className="absolute inset-0 animate-sheen-pan bg-gradient-sheen bg-size-[400%_100%] bg-position-[50%_0] bg-no-repeat group-data-dragging/home:[animation-play-state:paused] motion-reduce:animate-none" />
       </span>
-      {content(false)}
-      {turns && (
-        <span
-          aria-hidden
-          inert
-          {...turnsFar}
-          className={cn("pointer-events-none absolute -inset-20 blur-soft", turnsFar.className)}
-          // eslint-disable-next-line design-system/no-literal-colors -- a mask reads only the alpha of its stops; no one sees this black.
-          style={{ maskImage: "linear-gradient(var(--far, 90deg), transparent 30%, black 80%)" }}
-        >
-          <span className="absolute inset-20">{content(true)}</span>
+      {art ? <span {...turnsNear} className={cn("absolute", compact ? "top-2 right-2" : "-top-[34px] -right-5", turnsNear.className)}>{art}</span> : null}
+      <span className={cn("absolute", head.head, headClassName)}>
+        <span className={cn("block font-bold", head.title, titleClassName)}>{title}</span>
+        {status && <span className="mt-0.5 block text-body leading-[26px] font-medium text-muted-foreground">{status}</span>}
+      </span>
+      {children ? (
+        <span id={previewId} aria-hidden className={cn("absolute flex flex-col", head.body)}>
+          {children}
         </span>
-      )}
+      ) : null}
     </button>
   );
 }

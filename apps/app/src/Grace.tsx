@@ -3,7 +3,7 @@
 // right of the rail. The workspace owns the composer and its active turn.
 import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
 import { Effect, Exit, Stream } from "effect";
-import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { CalendarNews } from "./calendar.vibe";
 import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, resumeAvailable, type GuidedStep } from "../gen/app__workspace.ts";
@@ -20,6 +20,8 @@ import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import { privateFormRecovery } from "./nativePage.vibe";
 import { guidedAuthority, guidedOwner } from "./managedReads.vibe";
 
+const Said = memo(UserBubble);
+const Answered = memo(GraceBubble);
 const replyOffers = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
 
 function keyedSteps(steps: readonly GuidedStep[]) {
@@ -216,7 +218,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
     <OverPage className={cn(besideRail, "z-[3]")} style={{ bottom: 6 + keyboard }}>
       <GraceWindow size={expanded ? "expanded" : "compact"} onHeightChange={onHeightChange}
         // Prototype `sizeCompact()`: an explicit height at both sizes, so every change animates.
-        style={expanded ? { height: `calc(100dvh - ${12 + keyboard}px)` } : undefined}
+        expandedHeight={`calc(100dvh - ${12 + keyboard}px)`}
         header={
           <GraceHeader pause={paused ? "paused" : pausable ? "live" : conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
             onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void resumeReadPlan() : interact({ tag: "ResumeSpeech" })}
@@ -245,7 +247,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
         <GraceMessages>
           {conversation.messages.map((message, index) =>
             // eslint-disable-next-line @eslint-react/no-array-index-key -- the transcript only grows at its end
-            message.author === "HumanMessage" ? <UserBubble key={index}>{message.text}</UserBubble> : <GraceBubble key={index}>{message.text}</GraceBubble>)}
+            message.author === "HumanMessage" ? <Said key={index}>{message.text}</Said> : <Answered key={index}>{message.text}</Answered>)}
           {currentOffer && currentOffer.labels.length > 0 && (
             <AnswerChips>{currentOffer.labels.map((label, index) =>
               <AnswerChip key={label} onClick={() => choose(currentOffer.id, index)}>{label}</AnswerChip>)}</AnswerChips>

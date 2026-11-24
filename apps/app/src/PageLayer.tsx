@@ -1,6 +1,6 @@
 // spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/surface.md, "The page fills the rect the interface measured for it"
 import tokens from "@repo/design-system/tokens.json" with { type: "json" };
-import { cn } from "@repo/ui";
+import { cn, settles } from "@repo/ui";
 import { Effect } from "effect";
 import { type ComponentProps, type ReactNode, createContext, use, useCallback, useMemo, useState } from "react";
 import { PageHost, Part } from "./page.vibe";
@@ -35,7 +35,7 @@ export function PageArea({ className }: { className?: string }) {
 export function OverPage({ className, ...props }: ComponentProps<"div">) {
   const [drawn, setDrawn] = useState(false);
   const ref = useWatch(useMemo(() => Part.Control({ show: setDrawn }), []));
-  return <div ref={ref} inert={!drawn} className={cn("pointer-events-auto", !drawn && "invisible", className)} {...props} />;
+  return <div ref={ref} inert={!drawn} className={cn(settles, "pointer-events-auto", !drawn && "invisible", className)} {...props} />;
 }
 
 const r = parseFloat(tokens.rounded.window);

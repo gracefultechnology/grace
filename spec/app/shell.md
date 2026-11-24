@@ -1,9 +1,12 @@
 # Grace device and Home
 
 Home uses the progressive-blur carousel from `prototype/Grace Prototype.html`.
-Calendar, Email and Internet share the main page. Files comes next, then
-Passwords. The person can move through these pages with arrows or horizontal
-swipes, and with page dots when Home fills the screen. The rail keeps Ask
+Its cards form one carousel whose pages overlap: each shows two neighbouring
+sections and the next steps on by one. Calendar stands with Email and
+Internet on the main page, Email and Internet with Files on the next, and
+Files with Passwords on the last. The person can move through these pages
+with arrows or horizontal swipes, and with page dots when Home fills the
+screen. The rail keeps Ask
 Grace available and provides separate Home and Close browser controls. Apps
 use icon headers. Settings contains Text size, Brightness, Grace's voice, Wi-Fi,
 Account, Email & calendar and About this tablet; Volume and Wi-Fi also open rail
@@ -81,8 +84,8 @@ pure def sometimesStartupCanFail(s: Shell): bool = s.readiness == StartupFailed
 Calendar displays real upcoming occurrences, Email displays real unread
 messages, and Internet previews the retained browser state. Sample names,
 dates, messages and balances from the prototype are not product defaults.
-The Files and Passwords cards open from their own Home pages. Paging keeps
-the person on Home. Opening a card changes the navigation context and
+The Files card opens from the second and third Home pages and the Passwords
+card from the third, beside Files. Paging keeps the person on Home. Opening a card changes the navigation context and
 preserves permissions.
 
 ```quint

@@ -33,8 +33,18 @@ const contact = (name: string, address: string): MailContact => ({ name, tone: t
 const unshown = "This attachment couldn’t be shown";
 const unrendered = "This PDF can’t be shown on this tablet.";
 
+const dataUrls = new WeakMap<Attached, string>();
+
+function dataUrl(held: Attached) {
+  const known = dataUrls.get(held);
+  if (known !== undefined) return known;
+  const url = `data:${held.mimeType};base64,${held.data}`;
+  dataUrls.set(held, url);
+  return url;
+}
+
 function picture(file: SavedFile, held: Attached | undefined): MailPhoto {
-  return held ? { src: `data:${held.mimeType};base64,${held.data}`, alt: file.name } : thumbnail(file);
+  return held ? { src: dataUrl(held), alt: file.name } : thumbnail(file);
 }
 
 function saverOf(box: MailInstance, mail: MailWriter | undefined, files: Files | undefined): Saver {
@@ -55,13 +65,16 @@ const notices: Record<MailBanner["kind"], (b: MailBanner, name: string, onSignIn
   SyncingRow: (b, name) => <MailSyncingRow key={`syncing-${b.account}`} name={name} />,
 };
 
+const mailClock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const mailDay = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+
 function when(at: number, now: Date) {
   if (now.getTime() - at < 60_000) return "Just now";
   const day = new Date(at);
   const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-  if (day.toDateString() === now.toDateString()) return day.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (day.toDateString() === now.toDateString()) return mailClock.format(day);
   if (day.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return day.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return mailDay.format(day);
 }
 
 const parts = (text: string) => {
@@ -324,7 +337,7 @@ function Attachment({ box, held, saver, sender, subject, toast, frame }: Attachm
     return (
       <>
         <PdfViewer title={file.name} pageLabel={`Page 1 of ${file.pages}`} savable={save.onSave !== undefined || save.saveStatus !== undefined} {...save} onRetryAction={save.onSave} {...leave}>
-          {shown ? <object data={`data:${shown.mimeType};base64,${shown.data}`} type={shown.mimeType} aria-label={file.name} className="h-[640px] w-full">{unrendered}</object> : unrendered}
+          {shown ? <object data={dataUrl(shown)} type={shown.mimeType} aria-label={file.name} className="h-[640px] w-full">{unrendered}</object> : unrendered}
         </PdfViewer>
         {toast}
       </>
