@@ -325,7 +325,7 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     const v = try box.get()
     const row = entryAt(v, id)
     if (row.phase !== "Saved" || (latest === undefined && row.version === version)) return
-    const incoming = latest === undefined ? { ...row, version, revision: row.revision + 1 } : withCurrent(row, latest, version)
+    const incoming = latest === undefined ? { ...row, version, revision: row.revision + 1 } : withCurrent(latest, row, version)
     box.send({ type: "publishOccurrence", incoming, seriesVersion: incoming.committed.seriesId === "" ? 0 : seriesAt(v, incoming.committed.seriesId).version, scheduleVerified: true }, "ViewStore") catch () => undefined
   }
   effect function removedBy(v: CalendarView, plan: Removal) {
