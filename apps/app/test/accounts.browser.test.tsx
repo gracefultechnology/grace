@@ -146,9 +146,11 @@ const bill = "Re: Your November bill is ready";
 const sentBills = async () => (await Effect.runPromise(Effect.provide(sentMail(cloud, secret), client))).filter((m) => m.labels.includes("SENT") && m.subject === bill);
 
 async function replyToBill(said: string) {
+  const composer = page.getByRole("textbox", { name: "Write your message, or ask Grace to help" });
   await expect.element(page.getByText(/your November bill of \$54\.99 is ready/)).toBeVisible();
   await tap(page.getByRole("button", { name: "Reply" }));
-  await act(() => userEvent.fill(page.getByRole("textbox", { name: "Write your message, or ask Grace to help" }), said));
+  await expect.element(composer).toBeVisible();
+  await act(() => userEvent.fill(composer, said));
   await tap(page.getByRole("button", { name: "Send" }));
 }
 const emailCard = () => page.getByRole("button", { name: /^Email/ });
