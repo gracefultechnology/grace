@@ -19,7 +19,7 @@ const onPageChange = fn();
 
 const home: HomeScreenProps = { greeting: "Good evening", name: "Margaret", line: "Here’s your day", calendar, email, internet, files, passwords, onPageChange };
 
-const newTablet: HomeScreenProps = { ...home, calendar: calendarEmpty, email: { ...email, notConnectedStatus: "No email added yet", notConnected: true, messages: [] }, files: filesEmpty, passwords: passwordsEmpty,
+const newTablet: HomeScreenProps = { ...home, calendar: calendarEmpty, email: { ...email, notConnected: true, messages: [] }, files: filesEmpty, passwords: passwordsEmpty,
   banner: <Banner icon={<Mail aria-hidden size={30} strokeWidth={2} />} title="Add your email" line="Then your messages, appointments and photos show up here." actions={<Button variant="prominent" size="compact">Add email</Button>} />,
 };
 
