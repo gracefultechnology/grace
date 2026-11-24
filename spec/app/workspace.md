@@ -587,6 +587,12 @@ pure def canOpenReleasedEmailLink(w: Workspace, release: ReleasedEmailLink, by: 
 pure def openReleasedEmailLink(w: Workspace, release: ReleasedEmailLink, by: WorkspaceActor): Workspace =
   val target = H::showEmailDestination(w.device, w.browser, release.link)
   interrupted(target.device, target.browser, w)
+
+pure val eval_witness_canOpenReleasedEmailLink = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("visit", S::Email, Person),
+  ("openReleasedEmailLink", { link: "https://mail.example/bill", deviceVersion: 2, browserRevision: 0 }, Host)
+)
 ```
 
 ### Conversation input and geometry use the same owned assistant state
@@ -702,6 +708,8 @@ pure val eval_witness_canReplaceTask = (
   ("visit", S::Browser, Person),
   ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
   ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("requestReplacement", "other", "Read another account", Person),
+  ("keepTask", Person),
   ("requestReplacement", "other", "Read another account", Person),
   ("replaceTask", { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" }, Person)
 )
@@ -918,6 +926,13 @@ pure val eval_witness_canWakeReturn = (
   ("detectWake", { ...W::exampleDetection, generation: 2 }, Host),
   ("wakeNoSpeech", { generation: 3, conversationVersion: 1, now: 8000 }, Host),
   ("wakeReturn", { generation: 3, conversationVersion: 2, now: 16000 }, Host)
+)
+
+pure val eval_witness_sometimesWakeExplainsSilence = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("detectWake", { ...W::exampleDetection, generation: 2 }, Host),
+  ("wakeNoSpeech", { generation: 3, conversationVersion: 1, now: 8000 }, Host)
 )
 ```
 
@@ -1316,6 +1331,18 @@ pure def sometimesResumeRequiresObservation(w: Workspace): bool =
   w.assistant.activity == A::Rechecking and w.execution.phase == X::NeedObservation
 pure def sometimesOperationDispatched(w: Workspace): bool = w.execution.phase == X::InFlight
 pure def sometimesOperationVerified(w: Workspace): bool = w.execution.phase == X::Verified
+
+pure val eval_witness_sometimesResumeRequiresObservation = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("stop", Person),
+  ("resume", Person)
+)
 ```
 
 ### An ordinary website goal finishes only on an observation quoting its fact
