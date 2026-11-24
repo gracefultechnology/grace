@@ -84,8 +84,9 @@ pure def sometimesStartupCanFail(s: Shell): bool = s.readiness == StartupFailed
 Calendar displays real upcoming occurrences, Email displays real unread
 messages, and Internet previews the retained browser state. Sample names,
 dates, messages and balances from the prototype are not product defaults.
-The Files card opens from the second and third Home pages and the Passwords
-card from the third, beside Files. Paging keeps the person on Home. Opening a card changes the navigation context and
+A card opens from every Home page that shows it, one that only peeks in at
+the edge too. Files stands whole on the second and third pages and Passwords
+on the third, beside Files. Paging keeps the person on Home. Opening a card changes the navigation context and
 preserves permissions.
 
 ```quint

@@ -134,8 +134,8 @@ const keyArt = <KeyRound aria-hidden className="m-auto size-24 text-primary" str
  * window the cards stand in narrow columns that slide flat, three to a page. With the keyboard up as well, only the
  * greeting stays. It lies under the rail, which is glass, so a card rolling off the left shows through it. Place it on the
  * `TabletScreen` beside the `Rail`. A swipe moves the cards by their transforms until it settles on a page: the
- * nearest, or the next one in the direction of a quick flick. The far side of a turning card blurs under one overlay
- * that only fades, so the card's content is in the page once.
+ * nearest, or the next one in the direction of a quick flick. The far side of a turning card dims under one haze
+ * that only fades, so the card's content is in the page once and nothing repaints.
  * The prototype's `#home[data-hmode]` control-panel modes A–F and H are experiments; only mode G, progressive blur and
  * its default, is the design.
  * @model spec/app/shell.md
@@ -184,9 +184,10 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     const rail = railRef.current;
     if (!swipe || !rail || event.pointerId !== swipe.pointer || event.buttons === 0) return;
     if (!swipe.moved) {
-      if (Math.abs(event.clientX - swipe.x) / swipe.k <= SWIPE.threshold) return;
+      const travelled = (event.clientX - swipe.x) / swipe.k;
+      if (Math.abs(travelled) <= SWIPE.threshold) return;
       swipe.moved = true;
-      swipe.x = event.clientX;
+      swipe.x += Math.sign(travelled) * SWIPE.threshold * swipe.k;
       event.currentTarget.setPointerCapture(event.pointerId);
       rail.stage.dataset.dragging = "";
     }
@@ -206,8 +207,9 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     swipedRef.current = true;
     delete rail.stage.dataset.dragging;
     const near = nearestTo(swipe.shift);
-    const flicked = event.timeStamp - swipe.at <= SWIPE.stale && Math.abs(swipe.speed) >= SWIPE.flick ? shown[shown.indexOf(committed) + Math.sign(swipe.speed)] : undefined;
-    const over = cancelled ? committed : near === committed && flicked ? flicked : near;
+    const flick = event.timeStamp - swipe.at <= SWIPE.stale && Math.abs(swipe.speed) >= SWIPE.flick ? Math.sign(swipe.speed) : 0;
+    const onward = near === committed ? shown[shown.indexOf(committed) + flick] ?? committed : near;
+    const over = cancelled ? committed : flick === 0 ? near : flick === Math.sign(swipe.shift - swipe.from) ? onward : committed;
     const to = over === committed || onPageChange?.(over) !== false ? over : committed;
     turnTo(rail, full, stop(to));
   };
@@ -233,15 +235,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
       <div key={slot} aria-hidden={offPage || undefined} inert={offPage} className="absolute" style={frame}>
         <div data-home-card={slot} className="size-full origin-top-left backface-hidden transition-transform duration-slow ease-out-cubic will-change-transform group-data-dragging/home:transition-none motion-reduce:transition-none">
           {cards[slot]}
-          {full && (
-            <span
-              aria-hidden
-              {...turnsFar}
-              className={cn("pointer-events-none absolute -inset-20 backdrop-blur-soft", turnsFar.className)}
-              // eslint-disable-next-line design-system/no-literal-colors -- a mask reads only the alpha of its stops; no one sees this black.
-              style={{ maskImage: "linear-gradient(var(--far, 90deg), transparent 30%, black 80%)" }}
-            />
-          )}
+          {full && <span aria-hidden {...turnsFar} className={cn("pointer-events-none absolute inset-0 rounded-card bg-linear-to-r from-glass/0 from-30% to-glass/70 to-90% data-[side=left]:bg-linear-to-l", turnsFar.className)} />}
         </div>
       </div>
     );

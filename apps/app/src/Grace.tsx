@@ -215,7 +215,7 @@ export function Grace({ onHeightChange }: { onHeightChange: (height: number) => 
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace": compact over a
   // shown page, and expanded over one the host has not hidden yet. One window at both sizes, so resizing keeps its focus.
   return (
-    <OverPage className={cn(besideRail, "z-[3]")} style={{ bottom: 6 + keyboard }}>
+    <OverPage className={cn(besideRail, "pointer-events-none z-[3]")} style={{ bottom: 6 + keyboard }}>
       <GraceWindow size={expanded ? "expanded" : "compact"} onHeightChange={onHeightChange}
         // Prototype `sizeCompact()`: an explicit height at both sizes, so every change animates.
         expandedHeight={`calc(100dvh - ${12 + keyboard}px)`}

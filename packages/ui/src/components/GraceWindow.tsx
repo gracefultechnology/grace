@@ -38,10 +38,12 @@ function fitted(section: HTMLElement): number {
 
 /**
  * Grace's window: the header and the answer row float over her conversation, which scrolls beneath them
- * (prototype `#gwin`, `.chat-white`). Its size changes in one layout. Growing, it is laid out at its new size at once,
- * and once what holds it is `data-settled` there (the `settles` group) its top edge rises to it; shrinking, the edge
- * falls first and the layout follows. Only two transforms move, the window's and the conversation's against it, so
- * the conversation and the answer row stay where they are and every control stays inside the window's laid-out box.
+ * (prototype `#gwin`, `.chat-white`). Its size changes in one layout. Growing, it is laid out at its new size at once;
+ * until what holds it is `data-settled` there (the `settles` group) it shows its header over its answer row, as the
+ * compact window did, and then its top edge rises. Shrinking, the edge falls first and the layout follows. Only two
+ * transforms move, the window's and the conversation's against it, so the conversation and the answer row stay where
+ * they are and every control stays inside the window's laid-out box. It takes taps only on the window itself, so what
+ * lies above a falling edge is in reach at once. With reduced motion it changes size in one step.
  * @model spec/app/assistant.md
  * @design packages/design-system/design.md#grace
  * @design packages/design-system/design.md#screens
@@ -50,7 +52,7 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
   const still = useReducedMotion();
   const [asked, setAsked] = useState(size);
   const [laid, setLaid] = useState(size);
-  const [motion, setMotion] = useState<Motion | undefined>({ kind: "rise", travel: ENTER });
+  const [motion, setMotion] = useState<Motion | undefined>(still ? undefined : { kind: "rise", travel: ENTER });
   const expanded = laid === "expanded";
   const fits = !expanded && height === undefined;
   const [fit, setFit] = useState(COMPACT);
@@ -69,8 +71,12 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
       setMotion(undefined);
     } else setMotion({ kind: "fall", travel });
   }
+  if (still && motion) {
+    if (motion.kind === "fall") setLaid("compact");
+    setMotion(undefined);
+  }
   const ended = (event: AnimationEvent<HTMLElement>) => {
-    if (event.target !== event.currentTarget || motions[event.animationName] !== motion?.kind) return;
+    if (!motion || event.target !== event.currentTarget || motions[event.animationName] !== motion.kind) return;
     if (motion.kind === "fall") setLaid("compact");
     setMotion(undefined);
   };
@@ -87,6 +93,7 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
   );
   const vars = { "--grace-dock-height": `${dockHeight}px`, "--grace-travel": motion?.travel };
   const rising = motion?.kind === "rise";
+  const growing = rising && motion.travel !== ENTER;
   const falling = motion?.kind === "fall";
   return (
     <section
@@ -95,7 +102,7 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
       data-size={laid}
       onAnimationEnd={ended}
       className={cn(
-        "group/grace relative isolate flex w-full flex-col overflow-hidden rounded-device bg-background p-4 font-sans text-grace-ink shadow-window motion-reduce:animate-none",
+        "group/grace pointer-events-auto relative isolate flex w-full flex-col overflow-hidden rounded-device bg-background p-4 font-sans text-grace-ink shadow-window",
         expanded && !expandedHeight && "h-full",
         rising && "group-data-settled/settles:animate-grace-rise",
         falling && "animate-grace-fall",
@@ -104,7 +111,19 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
       style={{ ...vars, height: expanded ? expandedHeight : compactHeight, ...style }}
       {...props}
     >
-      <div className={cn("absolute inset-0 flex flex-col p-4 motion-reduce:animate-none", rising && "group-data-settled/settles:animate-grace-rise-hold", falling && "animate-grace-fall-hold")}>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[100px] rounded-t-device bg-linear-to-b from-background/55 via-background/15 via-70% to-transparent mask-b-from-50% backdrop-blur-soft"
+      />
+      {header}
+      <div
+        className={cn(
+          "absolute inset-0 flex flex-col p-4",
+          rising && "group-data-settled/settles:animate-grace-rise-hold",
+          growing && "group-[:not([data-settled])]/settles:[translate:0_calc(-1*var(--grace-travel))]",
+          falling && "animate-grace-fall-hold",
+        )}
+      >
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</div>
         {dock != null && (
           <>
@@ -116,11 +135,6 @@ export function GraceWindow({ size = "expanded", height, expandedHeight, onHeigh
           </>
         )}
       </div>
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-[100px] rounded-t-device bg-linear-to-b from-background/55 via-background/15 via-70% to-transparent mask-b-from-50% backdrop-blur-soft"
-      />
-      {header}
     </section>
   );
 }

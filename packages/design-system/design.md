@@ -378,7 +378,7 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `keyframes.glow` | 0%,100%{transform:scale(1.05);opacity:.75}50%{transform:scale(1.45);opacity:1} |
 | `keyframes.glow-ring` | 0%{transform:scale(1);opacity:.9}100%{transform:scale(1.75);opacity:0} |
 | `keyframes.sheen` | 0%,55%{left:-40%}100%{left:140%} |
-| `keyframes.sheen-pan` | 0%,55%{transform:translateX(-150%)}100%{transform:translateX(150%)} |
+| `keyframes.sheen-pan` | 0%,55%{background-position:100% 0}100%{background-position:0% 0} |
 | `keyframes.sway` | 0%,100%{transform:rotate(-6deg) translate(-2%,1.5%)}50%{transform:rotate(6deg) translate(2%,-1.5%)} |
 | `keyframes.grace-rise` | from{transform:translateY(var(--grace-travel))}to{transform:none} |
 | `keyframes.grace-rise-hold` | from{transform:translateY(calc(-1 * var(--grace-travel)))}to{transform:none} |
