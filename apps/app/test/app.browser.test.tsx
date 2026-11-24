@@ -613,7 +613,7 @@ it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday
   await expect.element(button("Passwords")).not.toBeInTheDocument();
   await tap("More apps");
   await expect.element(button("Passwords")).toBeVisible();
-  await expect.element(page.getByRole("button", { name: /^Files\b/ })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: /^Files\b/ })).toBeVisible();
   await tap("Previous page");
   await tap("Previous page");
   await tap("Close Grace");
@@ -2541,7 +2541,8 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
   await expect.element(page.getByRole("button", { name: "Passwords", exact: true })).not.toBeInTheDocument();
   await swipe("left");
   await expect.element(page.getByRole("button", { name: "Page 3", exact: true })).toHaveAttribute("aria-current", "true");
-  await expect.element(page.getByRole("button", { name: /^Files\b/ })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: /^Files\b/ })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Passwords", exact: true })).toBeVisible();
   await swipe("right");
   await expect.element(filesPage).toHaveAttribute("aria-current", "true");
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));

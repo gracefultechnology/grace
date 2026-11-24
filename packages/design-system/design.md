@@ -378,8 +378,12 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `keyframes.glow` | 0%,100%{transform:scale(1.05);opacity:.75}50%{transform:scale(1.45);opacity:1} |
 | `keyframes.glow-ring` | 0%{transform:scale(1);opacity:.9}100%{transform:scale(1.75);opacity:0} |
 | `keyframes.sheen` | 0%,55%{left:-40%}100%{left:140%} |
-| `keyframes.sheen-pan` | 0%,55%{transform:translateX(-150%)}100%{transform:translateX(150%)} |
+| `keyframes.sheen-pan` | 0%,55%{background-position:100% 0}100%{background-position:0% 0} |
 | `keyframes.sway` | 0%,100%{transform:rotate(-6deg) translate(-2%,1.5%)}50%{transform:rotate(6deg) translate(2%,-1.5%)} |
+| `keyframes.grace-rise` | from{transform:translateY(var(--grace-travel))}to{transform:none} |
+| `keyframes.grace-rise-hold` | from{transform:translateY(calc(-1 * var(--grace-travel)))}to{transform:none} |
+| `keyframes.grace-fall` | from{transform:none}to{transform:translateY(var(--grace-travel))} |
+| `keyframes.grace-fall-hold` | from{transform:none}to{transform:translateY(calc(-1 * var(--grace-travel)))} |
 | `animate.rise` | rise .3s ease-out |
 | `animate.eq` | eq .9s ease-in-out infinite |
 | `animate.breathe` | breathe 1.8s ease-in-out infinite |
@@ -398,6 +402,10 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `animate.sheen` | sheen 9s ease-in-out infinite |
 | `animate.sheen-pan` | sheen-pan 9s ease-in-out infinite |
 | `animate.sway` | sway 10s ease-in-out infinite |
+| `animate.grace-rise` | grace-rise 280ms cubic-bezier(0.3, 0.7, 0.3, 1) 40ms both |
+| `animate.grace-rise-hold` | grace-rise-hold 280ms cubic-bezier(0.3, 0.7, 0.3, 1) 40ms both |
+| `animate.grace-fall` | grace-fall 280ms cubic-bezier(0.4, 0, 0.2, 1) both |
+| `animate.grace-fall-hold` | grace-fall-hold 280ms cubic-bezier(0.4, 0, 0.2, 1) both |
 | `animate.spin-slow` | spin 14s linear infinite |
 | `duration.fast` | 100ms |
 | `duration.base` | 150ms |
