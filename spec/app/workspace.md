@@ -2694,6 +2694,41 @@ pure val eval_witness_sometimesInterruptedCommitmentIsUncertain = (
   ("submitCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Actuator),
   ("changeLifecycle", SleepDevice, Host)
 )
+pure val eval_witness_sometimesStepLeftToPerson = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("leaveToPerson", { ...operation, target: "booking-frame", kind: X::Choose }, Host)
+)
+pure val eval_witness_sometimesOrdinaryGoalCompletes = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", { ...observed, checkpoint: "Account read",
+    website: { ...X::goodObservation, facts: List({ name: "Read the account", valueRef: "account-value", quoteRef: "account-quote" }) } }, Host),
+  ("completeOrdinary", { ...completedGoal, taskVersion: 1, observation: 1 }, Host)
+)
+pure val eval_witness_sometimesGuidanceShown = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("visit", S::Browser, Person),
+  ("openGrace", Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 0 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("publishGuidance", { target: "control", revision: 0, workVersion: 1, conversationVersion: 2,
+    deviceVersion: 7, browserRevision: 1, verified: true }, A::Tap, "Read the account", Host)
+)
 pure val weight_setAvailability = 4
 pure val weight_visit = 16
 pure val weight_setBrowserObservation = 100
