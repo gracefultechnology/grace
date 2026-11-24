@@ -42,6 +42,7 @@ rm -rf "$AOSP/vendor/grace" && cp -R artifacts/aosp/grace-<sha> "$AOSP/vendor/gr
 # 3. Android 17 Cuttlefish ignores Android.mk, so the native libraries need build/soong's
 #    prebuilt_app_native rule: check that the tree is the one aosp.lock.json pins (the cuttlefish
 #    profile, manifest android-17.0.0_r1) and that build/soong is at the patch's revision, then apply it
+#    (step 1 already refused a patch whose SHA-256 differs from the one upstream pins)
 P=../../vendor/eliza/packages/os/aosp/patches/soong-app-native
 test "$(git -C "$AOSP/.repo/manifests" rev-parse HEAD)" = "$(node -p 'require("../../vendor/eliza/packages/os/aosp/aosp.lock.json").profiles.cuttlefish.manifest.commit')"
 test "$(git -C "$AOSP/build/soong" rev-parse HEAD)" = "$(node -p "require('$P/manifest.json').revision")"
@@ -83,4 +84,7 @@ adb shell settings get secure location_mode
 #   the image does not set it; 0 is off, and Grace's Wi-Fi scan needs it on (Android's Settings, Location)
 pnpm android --abi x86_64 --install 0.0.0.0:6520
 #   on a --development image: the walk of README.md, "Android", on Cuttlefish instead of an emulator
+#   it installs a fresh APK over the system app, which then runs from /data with its own libraries,
+#   so the ls check above is what covers /product/app/Grace/lib/x86_64; a signer mismatch cannot be
+#   fixed by uninstalling a system app, so build the APK with the key the image was staged with
 ```
