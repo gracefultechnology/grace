@@ -15,7 +15,7 @@ import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
 import { SpeechActions, type VoiceNotice } from "./graceSpeech.vibe";
 import { surfaceOwner } from "./managedReads.vibe";
 import { retryPreferences, sampleVoice } from "./preferences.vibe";
-import { homeCalendar, shallowEqual, useAccounts, useCalendarKeys, useRuntime, useSetupSelector, useWakeStatus, useWebsiteRequests, useWorkspace, WithCalendars } from "./useApp.ts";
+import { homeEvents, shallowEqual, useAccounts, useCalendarKeys, useRuntime, useSetupSelector, useWakeStatus, useWebsiteRequests, useWorkspace, WithCalendars } from "./useApp.ts";
 import { VoiceNoticeDialog } from "./VoiceNoticeDialog.tsx";
 import { Wifi } from "./Wifi.tsx";
 
@@ -77,7 +77,7 @@ function TextSizePanel({ personName, owner, hostedAppointment, value, onChange }
   if (owner === "Ours" && accounts) {
     return (
       <WithCalendars keys={calKeys}>{(calendars) => {
-        const first = homeCalendar(accounts, calendars, now, undefined).events[0];
+        const first = homeEvents(accounts, calendars, now, undefined)[0];
         const preview = first ? {
           eventWhen: `${first.weekday} ${first.time}`,
           eventTitle: first.title,

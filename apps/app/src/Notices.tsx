@@ -1,7 +1,7 @@
-// spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "Story: See what needs me on Home"; spec/app/notices.md, "Home shows one banner: the connection first, then the first reminder to come due"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
-import { Banner, BellIcon, Button, Toast, WifiSlash } from "@repo/ui";
-import { Effect } from "effect";
-import { Wifi, X } from "lucide-react";
+// spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "Story: See what needs me on Home"; spec/app/notices.md, "Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder"; spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
+import { Banner, BellIcon, Button, MailIcon, Toast, WifiSlash } from "@repo/ui";
+import { Effect, Exit } from "effect";
+import { CircleAlert, Wifi, X } from "lucide-react";
 import { type Notice, bannerOf, isBackOnline } from "../gen/app__notices.ts";
 import { useMachine } from "../gen/app__notices.react.ts";
 import type { Setup } from "../gen/app__setup.ts";
@@ -17,9 +17,11 @@ export type Reminders = HomeReminders;
 const words = (notice: Notice, told?: ReminderNotice) => (isBackOnline(notice) ? "Back online" : notice.offer === "SeeDetails" ? `Reminder: ${told?.toast ?? notice.subject}` : notice.subject);
 const toastButton = "h-11 px-3.5 text-body font-bold text-frame-lilac bg-glass/14 active:bg-glass/24";
 const wifiSettings = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
+const emailSettings = { type: "chooseSettingsPage", page: "EmailCalendarSettings" } as const;
 const visitCalendar = { type: "visit", destination: "Calendar" } as const;
 
 const selectCanOpenWifi = (workspace: Workspace | undefined) => workspace !== undefined && enabled(workspace, wifiSettings, "Person");
+const selectCanOpenEmailSettings = (workspace: Workspace | undefined) => workspace !== undefined && enabled(workspace, emailSettings, "Person");
 const selectReminderVisit = (workspace: Workspace | undefined) =>
   workspace !== undefined && (workspace.device.surface === "Calendar" || enabled(workspace, visitCalendar, "Person"));
 const selectOurs = (setup: Setup | undefined) => surfaceOwner(setup, window.location.hash) === "Ours";
@@ -100,6 +102,29 @@ function OfflineBanner() {
   );
 }
 
+function SignInBanner({ name }: { name: string }) {
+  const { accounts, can, send } = useAccounts();
+  const canOpen = useWorkspaceSelector(selectCanOpenEmailSettings);
+  const workspace = useWorkspaceActions();
+  const account = accounts?.accounts.find((a) => (a.name || a.address) === name);
+  const signIn = account === undefined ? undefined : ({ type: "signInAgain", id: account.id } as const);
+  const ready = signIn !== undefined && can(signIn) && canOpen;
+  return (
+    <Banner icon={<CircleAlert aria-hidden size={30} strokeWidth={2.2} className="text-warn" />} title={`${name} needs you to sign in`} line="Until you do, new email and appointments won’t come in."
+      actions={<Button variant="prominent" size="compact" disabled={!ready}
+        onClick={() => { if (signIn !== undefined) void send(signIn).then((exit) => { if (Exit.isSuccess(exit)) void workspace.send(emailSettings); }); }}>Sign in</Button>} />
+  );
+}
+
+function AddEmailBanner() {
+  const canOpen = useWorkspaceSelector(selectCanOpenEmailSettings);
+  const { send } = useWorkspaceActions();
+  return (
+    <Banner icon={<MailIcon size={30} strokeWidth={2} />} title="Add your email" line="Then your messages, appointments and photos show up here."
+      actions={<Button variant="prominent" size="compact" disabled={!canOpen} onClick={() => void send(emailSettings)}>Add email</Button>} />
+  );
+}
+
 export function NoticeBanner({ reminders }: { reminders?: Reminders }) {
   const { state, host } = useNotices();
   if (state === undefined) return null;
@@ -109,6 +134,10 @@ export function NoticeBanner({ reminders }: { reminders?: Reminders }) {
       return null;
     case "OfflineBanner":
       return <OfflineBanner />;
+    case "SignInBanner":
+      return <SignInBanner name={banner.subject} />;
+    case "AddEmailBanner":
+      return <AddEmailBanner />;
     case "ReminderBanner": {
       const told = reminders?.(banner.subject);
       return (

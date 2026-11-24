@@ -137,6 +137,40 @@ pure def lawNextAppointmentsAreSavedAndFuture(registry: A::Accounts, calendars: 
       s.view.entries.some(c => c.identity == r.identity and c.hasSaved and c.phase != C::Deleted)))
 ```
 
+### Home’s calendar card says Last updated only while it can’t update, and otherwise what is planned
+
+While the card can’t update, because the tablet is offline while an email’s
+calendar shows, or a shown email needs her to sign in again, it keeps the
+appointments it has and says "Last
+updated" with when it last did; Home’s banner says why
+([Notices](./notices.md)). Only then does it say "Last updated". Otherwise it
+says "Today" when a shown appointment is saved for today, "Nothing today"
+when the next is on a later day, and "Nothing planned" when none is coming
+(`prototype/Grace Prototype.html:1942–1945`). With nothing planned, faded rows
+keep the card’s shape and Grace’s hint under her sparkle reads "Ask Grace to
+add an appointment."; the card has no hint while it can’t update, since the
+banner speaks for it. The tablet’s own calendar needs no internet, so with
+only it showing the card never says "Last updated".
+
+```quint
+type HomeCalendarStatus = CalendarLastUpdated | CalendarToday | NothingToday | NothingPlanned
+pure def cantUpdate(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool): bool =
+  (not(online) and calendars.some(s => s.key != 0 and showsCalendar(registry, s.key))) or
+    M::signedOut(registry, sources).length() > 0
+pure def homeCalendarStatus(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool, fromTime: int, untilTime: int, dayStart: int, dayEnd: int): HomeCalendarStatus =
+  if (cantUpdate(registry, calendars, sources, online)) CalendarLastUpdated
+  else if (upcoming(registry, calendars, fromTime, untilTime).length() == 0) NothingPlanned
+  else if (upcoming(registry, calendars, dayStart, dayEnd).length() > 0) CalendarToday
+  else NothingToday
+pure def homeCalendarHint(status: HomeCalendarStatus): bool = status == NothingPlanned
+pure def lawLastUpdatedOnlyWhileItCantUpdate(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool, fromTime: int, untilTime: int, dayStart: int, dayEnd: int): bool =
+  val status = homeCalendarStatus(registry, calendars, sources, online, fromTime, untilTime, dayStart, dayEnd)
+  (status == CalendarLastUpdated iff cantUpdate(registry, calendars, sources, online)) and
+  (cantUpdate(registry, calendars, sources, online) implies
+    (M::signedOut(registry, sources).length() > 0 or calendars.some(s => s.key != 0 and showsCalendar(registry, s.key)))) and
+  (homeCalendarHint(status) implies upcoming(registry, calendars, fromTime, untilTime).length() == 0)
+```
+
 ### A switched-off account’s appointments and reminders show nowhere, to her or to Grace
 
 A calendar that does not show has no row in the chosen days, on Home, on
@@ -599,7 +633,8 @@ pure val calendarsValues = Set(List(),
 pure val sourcesValues = Set(List(), List({ account: 1, mailbox: M::gmailOpen }), List({ account: 1, mailbox: gmailFlagged }),
   List({ account: 1, mailbox: M::gmailListed }), List({ account: 1, mailbox: M::gmailExpired }),
   List({ account: 2, mailbox: M::outlookListed }, { account: 1, mailbox: M::gmailOpen }),
-  List({ account: 2, mailbox: outlookComposing }, { account: 1, mailbox: M::gmailOpen }))
+  List({ account: 2, mailbox: outlookComposing }, { account: 1, mailbox: M::gmailOpen }),
+  List({ account: 1, mailbox: M::gmailExpired }, { account: 2, mailbox: M::outlookListed }))
 pure val reviewValues = Set(clinicReview, tabletClinicReview,
   { ...clinicReview, entry: { ...clinicReview.entry, details: { ...clinicDetails, important: true } } },
   { ...clinicReview, calendarGeneration: 1 },
@@ -624,4 +659,6 @@ pure val keyValues = Set(-1, 0, 1, 2, 3)
 pure val accountValues = Set(0, 1, 2, 3)
 pure val fromTimeValues = Set(0, 3, 4, 6)
 pure val untilTimeValues = Set(0, 4, 5, 10)
+pure val dayStartValues = Set(0, 3)
+pure val dayEndValues = Set(4, 6)
 ```

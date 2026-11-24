@@ -16,7 +16,7 @@ export const email: HomeEmailCardProps = {
   ],
 };
 
-export const emailOffline: HomeEmailCardProps = { ...email, status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." };
+export const emailOffline: HomeEmailCardProps = { ...email, status: "Last updated 9:02 am" };
 
 export const meta: ComponentMeta<HomeEmailCardProps> = {
   args: { ...email, className: "h-[290px] w-[470px]" },
@@ -25,7 +25,7 @@ export const meta: ComponentMeta<HomeEmailCardProps> = {
   },
   states: {
     Offline: { ...emailOffline, className: "h-[290px] w-[470px]" },
-    Empty: { ...email, className: "h-[290px] w-[470px]", status: "No new email", messages: [] },
+    Empty: { ...email, className: "h-[290px] w-[470px]", status: "All caught up", messages: [] },
     "Not connected": { ...email, className: "h-[290px] w-[470px]", notConnected: true, messages: [] },
   },
   decorator: (story) => <div className="bg-gradient-frame-soft p-12">{story()}</div>,

@@ -162,9 +162,9 @@ async function readOutlookFromHome() {
 }
 
 it("Connect the email I already use", async () => {
-  // spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"
-  await expect.element(emailCard()).toHaveAccessibleName("Email Not connected");
-  await expect.element(emailCard()).toHaveAccessibleDescription("Connect your email to see it here.");
+  // spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"; spec/app/mailboxes.md, "The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new"; spec/app/notices.md, "Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder"
+  await expect.element(emailCard()).toHaveAccessibleName("Email No email added yet");
+  await expect.element(page.getByText("Add your email")).toBeVisible();
 
   // spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"
   await openEmailSettings();
@@ -197,8 +197,8 @@ it("Connect the email I already use", async () => {
   await tap(use("Email"));
   await expect.element(use("Email")).not.toBeChecked();
   await closeSettings();
-  await expect.element(emailCard()).toHaveAccessibleName("Email Not connected");
-  await expect.element(emailCard()).toHaveAccessibleDescription("Connect your email to see it here.");
+  await expect.element(emailCard()).toHaveAccessibleName("Email No email added yet");
+  await expect.element(page.getByText("Add your email")).toBeVisible();
   await tap(emailCard());
   await expect.element(page.getByText("Get your email on this tablet")).toBeVisible();
   expect(page.getByRole("button", { name: "Write" }).query()).toBeNull();

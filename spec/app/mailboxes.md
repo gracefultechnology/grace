@@ -98,41 +98,53 @@ pure def lawLastEmailOffShowsConnect(registry: A::Accounts, account: int, use: A
     mailScreen(A::setUse(registry, account, use, A::AccountPerson)) == ConnectEmail
 ```
 
-### The Home Email card says Waiting for the internet, Not connected, or how many are new
+### The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new
 
-While the tablet is offline, the Home Email card says "New email will arrive
-when you’re back online." and "Waiting for the internet", whether or not an
-account has Email on. Otherwise, with no account’s Email on, it says "Connect
-your email to see it here." and "Not connected". Otherwise it shows "N new",
-the unread count of the shown accounts’ inboxes, or "No new email". Its rows
-come from what Grace is shown of the inboxes: the unread ones when there are
-any, else every inbox row; the shell shows the first two in the list’s
-newest-first order (`prototype/Grace Prototype.html:1940–1944`). A hidden account’s unread email
+With no account’s Email on, the Home Email card shows faded rows where its
+emails would be and says "No email added yet", and Home’s banner asks her to
+add email ([Notices](./notices.md)). Otherwise, while the card can’t update,
+because the tablet is offline or a shown account needs her to sign in again,
+it keeps the email it has and says "Last updated" with when it last did; the
+banner says why, so the card has no note or button of its own. Only then does
+it say "Last updated". Otherwise it shows "N new", the unread count of the
+shown accounts’ inboxes, or "All caught up". Its rows come from what Grace is
+shown of the inboxes: the unread ones when there are any, else every inbox
+row; the shell shows the first two in the list’s newest-first order
+(`prototype/Grace Prototype.html:1946–1949`). A hidden account’s unread email
 is never counted and never shown. Tapping the card while offline is the
-notices’ concern, not this card’s.
+notices’ concern, not this card’s. The first shown account that needs her to
+sign in again is the one Home’s banner names, and no email added is the
+banner’s Add email.
 
 ```quint
-type HomeMailStatus = NotConnected | WaitingForInternet | NewCount({ count: int }) | NoNew
+type HomeMailStatus = NoEmailAdded | LastUpdated | NewCount({ count: int }) | AllCaughtUp
+pure def signedOut(registry: A::Accounts, sources: List[MailSource]): List[MailSource] =
+  shown(registry, sources).select(s => needsSignIn(s.mailbox))
+pure def homeSignIn(registry: A::Accounts, sources: List[MailSource]): int =
+  signedOut(registry, sources).nthOr(0, noSource).account
 pure def homeStatus(registry: A::Accounts, sources: List[MailSource], online: bool): HomeMailStatus =
   val count = unreadIn(registry, shown(registry, sources), 0)
-  if (not(online)) WaitingForInternet
-  else if (showsConnect(registry)) NotConnected
+  if (showsConnect(registry)) NoEmailAdded
+  else if (not(online) or signedOut(registry, sources).length() > 0) LastUpdated
   else if (count > 0) NewCount({ count: count })
-  else NoNew
-pure def notConnected(status: HomeMailStatus): bool = match status { | NotConnected => true | _ => false }
-pure def waitingForInternet(status: HomeMailStatus): bool = match status { | WaitingForInternet => true | _ => false }
+  else AllCaughtUp
+pure def noEmailAdded(status: HomeMailStatus): bool = match status { | NoEmailAdded => true | _ => false }
+pure def lastUpdated(status: HomeMailStatus): bool = match status { | LastUpdated => true | _ => false }
 pure def homeRows(registry: A::Accounts, sources: List[MailSource]): List[Row] =
   val inbox = mailContext(registry, sources).select(r => r.record.folder == I::InboxFolder)
   val unread = inbox.select(r => r.record.unread)
   if (unread.length() > 0) unread else inbox
 pure def lawHomeAgreesWithEmail(registry: A::Accounts, sources: List[MailSource], online: bool): bool =
   val status = homeStatus(registry, sources, online)
-  (not(online) implies waitingForInternet(status)) and
-  (notConnected(status) implies mailScreen(registry) == ConnectEmail) and
-  ((online and mailScreen(registry) == ConnectEmail) implies notConnected(status))
+  (noEmailAdded(status) iff mailScreen(registry) == ConnectEmail) and
+  (lastUpdated(status) iff (mailScreen(registry) == MailFolders and
+    (not(online) or signedOut(registry, sources).length() > 0)))
 pure def lawHomeCountsOnlyShownMail(registry: A::Accounts, sources: List[MailSource], online: bool): bool =
   homeStatus(registry, sources, online) == homeStatus(registry, shown(registry, sources), online) and
   homeRows(registry, sources).every(r => showsMail(registry, r.account) and r.record.folder == I::InboxFolder)
+pure def lawBannerNamesASignedOutShownAccount(registry: A::Accounts, sources: List[MailSource]): bool =
+  val account = homeSignIn(registry, sources)
+  account != 0 implies signedOut(registry, sources).some(s => s.account == account and showsMail(registry, account))
 ```
 
 ### All inboxes is the union of the shown accounts’ inboxes
