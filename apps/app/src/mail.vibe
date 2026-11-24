@@ -5,7 +5,7 @@ import type { SavedFile } from "../gen/app__files.effect.vibe"
 import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.vibe"
 import { contactAccounts, Machine as MailChoices, moveDraft as movedDraft, told, undoable } from "../gen/app__mailboxes.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
-import { Connector, sendableAttachment, sendableAttachments, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome } from "./connector.vibe"
+import { Connector, sendableAttachment, sendableAttachments, type Contact, type MailConnection, type NeedsSignIn, type SendOutcome, type Unsendable } from "./connector.vibe"
 import { Library } from "./files.vibe"
 import { type Held, followAccounts, Instances } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
@@ -19,8 +19,10 @@ function noticeSource(id: number, { owner, provider, account }: Mailbox): MailNo
 
 export type Board = {
   readonly note: Note | undefined; readonly undeleted: ReadonlySet<number>; readonly replies: ReadonlyMap<number, ReplyHeader>; readonly unsaved: ReadonlySet<string>
-  readonly unsendable: ReadonlyMap<number, readonly string[]>
+  readonly unsendable: ReadonlyMap<number, readonly Unsendable[]>; readonly people: People | undefined
 }
+
+export type People = { readonly sources: string; readonly contacts: readonly Contact[] }
 
 export type Boards = { readonly subscribe: (listener: () => void) => () => void; readonly current: () => Board }
 
@@ -43,8 +45,20 @@ export type Replied = { readonly id: number; readonly ref: string }
 
 const address = /^[^@\s,;]+@[^@\s,;]+$/
 export const recipientsOf = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
-export const keptOnTablet = (names: readonly string[]) => names.length === 0 ? undefined :
-  `${names.join(" and ")} can’t go by email, so this email is kept on the tablet. Remove ${names.length === 1 ? "it" : "them"} to save it to Drafts.`
+const why: Record<Unsendable["reason"], (names: readonly string[]) => string> = {
+  Unsupported: (names) => `${names.join(" and ")} can’t go by email`,
+  TooLarge: (names) => `${names.join(" and ")} ${names.length === 1 ? "is" : "are"} too large to go by email`,
+  Unreadable: (names) => `${names.join(" and ")} couldn’t be read again from ${names.length === 1 ? "its" : "their"} email`,
+}
+const keyOf = (list: readonly Unsendable[]) => list.map((u) => `${u.reason}:${u.name}`).join("/")
+export const keptOnTablet = (unsendable: readonly Unsendable[]) => {
+  if (unsendable.length === 0) return undefined
+  const reasons = (["Unsupported", "TooLarge", "Unreadable"] as const).flatMap((reason) => {
+    const names = unsendable.filter((u) => u.reason === reason).map((u) => u.name)
+    return names.length === 0 ? [] : [why[reason](names)]
+  })
+  return `${reasons.join("; ")}, so this email is kept on the tablet. Remove ${unsendable.length === 1 ? "it" : "them"} to save it to Drafts.`
+}
 export const recipientsValid = (c: DraftContent) => c.to !== "" && [...recipientsOf(c.to), ...c.cc, ...c.bcc].every((a) => address.test(a))
 const folderNames: Record<string, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Drafts" }
 export const headerFor = (board: Board, held: Held | undefined, id: number, m: Mailbox): ReplyHeader | undefined => {
@@ -200,28 +214,32 @@ effect function fetched(shelf: Instances.Shape, mail: MailConnection, id: number
 
 error AttachmentChanged
 
-function nameIn(names: ReadonlyMap<string, string>, shelf: Instances.Shape, to: string, replied?: Replied) {
+function nameIn(people: readonly Contact[], shelf: Instances.Shape, to: string, replied?: Replied) {
   const first = recipientsOf(to)[0] ?? ""
   const held = replied === undefined || replied.ref === "" ? undefined : shelf.held(replied.id, replied.ref)
   const sender = held !== undefined && [held.content.fromAddress, held.reply?.address].some((a) => a?.toLowerCase() === first.toLowerCase()) ? held.content.from : ""
-  return names.get(first.toLowerCase()) ?? (sender || first)
+  return people.find((c) => c.address.toLowerCase() === first.toLowerCase())?.name ?? (sender || first)
 }
 
-effect function contactsFor(registry: Accounts.Shape, connectionOf: (account: Account) => MailConnection, names: Map<string, string>) {
+effect function contactsFor(registry: Accounts.Shape, connectionOf: (account: Account) => MailConnection, known: People | undefined, remember: (people: People) => void) {
   const a = try registry.get()
-  const found: Contact[] = []
-  names.clear()
-  for (const id of contactAccounts(a)) {
+  const ids = contactAccounts(a)
+  if (known?.sources === ids.join(",")) return known.contacts
+  const lists = try Effect.forEach(ids, effect (id) => {
     const account = a.accounts.find((x) => x.id === id)
-    if (account === undefined) continue
-    for (const c of (connectionOf(account).contacts() catch () => [])) {
-      const key = c.address.toLowerCase()
-      if (names.has(key)) continue
-      names.set(key, c.name)
-      found.push(c)
-    }
-  }
-  return found
+    return account === undefined ? [] : (connectionOf(account).contacts() catch () => undefined)
+  })
+  if (lists.some((list) => list === undefined)) return known?.contacts ?? []
+  const found = lists.flat().filter((c): c is Contact => c !== undefined)
+  const contacts = found.filter((c, i) => found.findIndex((f) => f.address.toLowerCase() === c.address.toLowerCase()) === i)
+  remember({ sources: ids.join(","), contacts })
+  return contacts
+}
+
+effect function ownedIn(registry: Accounts.Shape, shelf: Instances.Shape, id: number) {
+  const account = (try registry.get()).accounts.find((a) => a.id === id)
+  const box = shelf.mail(id) catch () => undefined
+  return account && box ? { account, box, m: try box.get() } : undefined
 }
 
 effect function prepareReplyHeader(
@@ -248,22 +266,22 @@ export const mailing = Layer.effect(Mail, effect {
   const workspace = try Workspaces
   const scope = try Scope.Scope
   const quiet = new Set<number>()
-  const names = new Map<string, string>()
   const listeners = new Set<() => void>()
   const counter = { next: 1 }
-  let board: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set(), unsendable: new Map() }
+  let board: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set(), unsendable: new Map(), people: undefined }
 
   const post = (next: Partial<Board>) => {
     board = { ...board, ...next }
     listeners.forEach((listener) => listener())
   }
-  const nameOf = (to: string, replied?: Replied) => nameIn(names, shelf, to, replied)
+  const nameOf = (to: string, replied?: Replied) => nameIn(board.people?.contacts ?? [], shelf, to, replied)
   const undeleted = (id: number, failed: boolean) => { if (board.undeleted.has(id) !== failed) post({ undeleted: new Set(failed ? [...board.undeleted, id] : [...board.undeleted].filter((x) => x !== id)) }) }
-  const refused = (id: number, names: readonly string[]) => { if ((board.unsendable.get(id) ?? []).join("/") !== names.join("/")) post({ unsendable: new Map(board.unsendable).set(id, names) }) }
+  const refused = (id: number, unsendable: readonly Unsendable[]) => { if (keyOf(board.unsendable.get(id) ?? []) !== keyOf(unsendable)) post({ unsendable: new Map(board.unsendable).set(id, unsendable) }) }
   const reachable = effect () => (try workspace.get()).device.connectivity === "Online"
-  const accountOf = effect (id: number) => (try registry.get()).accounts.find((a) => a.id === id)
+  const ownedMailbox = (id: number) => ownedIn(registry, shelf, id)
   const connectionOf = (account: Account) => connector.mail({ provider: account.provider, address: account.address })
 
+  const people = () => contactsFor(registry, connectionOf, board.people, (found) => post({ people: found }))
   effect function show(source: MailNoticeSource, text: string) {
     const owned = try ownedMailbox(source.id)
     if (!owned?.account.use.mail || source.owner === "" || owned.m.owner !== source.owner ||
@@ -286,6 +304,7 @@ export const mailing = Layer.effect(Mail, effect {
     prepareReplyHeader(shelf, id, mail, box, m, (header) => post({ replies: new Map(board.replies).set(id, header) }))
 
   effect function heard(account: Account, mail: MailConnection, box: MailMachine.Shape, before: Mailbox, after: Mailbox) {
+    if (after.composeVisible && !before.composeVisible) try fork.in(scope) people()
     const opened = after.view === "Message" && (before.view !== "Message" || before.messageRef !== after.messageRef || before.generation !== after.generation)
     if (opened && replyable(after) && headerFor(board, shelf.held(account.id, after.messageRef), account.id, after) === undefined) try fork.in(scope) prepareReply(account.id, mail, box, after)
     if (opened && after.folder === "DraftsFolder") try fork.in(scope) reopen(mail, box, after)
@@ -376,6 +395,7 @@ export const mailing = Layer.effect(Mail, effect {
   effect function watch(account: Account, box: MailMachine.Shape) {
     const mail = connectionOf(account)
     const first = try box.get()
+    if (first.composeVisible) try fork.in(scope) people()
     for (const record of undoable(first)) try closeUndo(box, record)
     const seen = try Ref.make(first)
     const online = Stream.changes(Stream.map(workspace.changes, (w) => w.device.connectivity === "Online"))
@@ -391,12 +411,6 @@ export const mailing = Layer.effect(Mail, effect {
   try fork.in(scope) forgetOutboxOnLeaving(workspace, try MailChoices)
   const selections = Stream.map(registry.changes, ({ accounts }) => accounts)
   try fork.in(scope) followAccounts(selections, effect (account) => try watch(account, try shelf.mail(account.id)))
-
-  effect function ownedMailbox(id: number) {
-    const account = try accountOf(id)
-    const box = shelf.mail(id) catch () => undefined
-    return account && box ? { account, box, m: try box.get() } : undefined
-  }
 
   effect function reply(id: number) {
     const owned = try ownedMailbox(id)
@@ -497,7 +511,7 @@ export const mailing = Layer.effect(Mail, effect {
     capture: (id) => asBuilt(capture(id)),
     camera: library.camera,
     share: (photo) => asBuilt(share(photo)),
-    contacts: () => asBuilt(contactsFor(registry, connectionOf, names)),
+    contacts: () => asBuilt(people()),
     hush: (id) => { quiet.add(id) },
     nameOf,
     board: {
