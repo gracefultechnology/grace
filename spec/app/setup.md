@@ -548,9 +548,12 @@ shell](./shell.md)'s "Settings and rail popovers preserve the surface
 underneath": no connectivity check gates opening Settings. Account details
 stay private by keeping them out of captures: whenever Settings shows the
 Account page, the tablet's window is closed to screenshots, screen recording
-and the recent-apps preview, from the moment the page opens until another
+and the recent-apps preview, as soon as the page opens and until another
 page or surface replaces it, while a rail popover covers part of it, while
-the tablet sleeps on it and whatever the network does. Account settings offers to clear the old tablet
+the tablet sleeps on it and whatever the network does. The rules below check
+that the device shell keeps the Account page shown through each of these;
+the shell closes the window whenever accountDetailsShown holds, and a tablet
+that refuses is logged. Account settings offers to clear the old tablet
 sign-in when the device reports that it needs cleanup. Until the person
 confirms and the tablet reports an ordinary signed-out state, new sign-in
 is unavailable. Cleanup does not verify an owner.
