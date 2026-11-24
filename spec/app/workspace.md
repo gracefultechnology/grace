@@ -840,6 +840,12 @@ pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace
       (if (localPasswordCommands(before.device) != localPasswordCommands(after.device)) ""
        else before.assistant.conversation.draft) and
     not(after.assistant.conversation.voice)
+
+pure val eval_witness_canDismissPopover = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("togglePopover", S::WifiPopover, Person),
+  ("dismissPopover", Person)
+)
 ```
 
 ### An enabled wake phrase listens without resuming a website task
@@ -933,6 +939,13 @@ pure val eval_witness_sometimesWakeExplainsSilence = (
   ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
   ("detectWake", { ...W::exampleDetection, generation: 2 }, Host),
   ("wakeNoSpeech", { generation: 3, conversationVersion: 1, now: 8000 }, Host)
+)
+
+pure val eval_witness_canCancelWake = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("detectWake", { ...W::exampleDetection, generation: 2 }, Host),
+  ("cancelWake", Person)
 )
 ```
 
