@@ -88,3 +88,26 @@ pnpm android --abi x86_64 --install 0.0.0.0:6520
 #   so the ls check above is what covers /product/app/Grace/lib/x86_64; a signer mismatch cannot be
 #   fixed by uninstalling a system app, so build the APK with the key the image was staged with
 ```
+
+## Boot record
+
+Each attempt at the build and boot above is recorded here, newest first, with the output of the
+checks after first boot once one boots.
+
+**2026-11-24, not built.** The run had only an Apple Silicon Mac (arm64, no KVM, under 10 GB of
+free disk), which cannot build AOSP or run `launch_cvd`. The one x86_64 host with nested
+virtualization and enough disk in reach is a stopped cloud builder kept for another project;
+starting it for the hours a sync and build take is a spend that needs the owner's approval, so it
+was not started. What could be checked without a tree was, against android.googlesource.com:
+
+| Check | Result |
+|---|---|
+| `platform/manifest` `android-17.0.0_r1` | tag `7a9e46ba`, commit `5bc9a7ce`: the `cuttlefish` profile of `aosp.lock.json` |
+| `device/google/cuttlefish` at the tag | commit `283645aa`, the profile's pin; `vsoc_x86_64_only/phone/aosp_cf.mk` exists |
+| `build/soong` at the tag | commit `6722dd88`, the revision `soong-app-native` applies to |
+| `build/release` at the tag | `release_configs/cp2a.textproto` exists, so `grace_cf_x86_64_tablet-cp2a-userdebug` lunches |
+
+Next attempt: an x86_64 Linux host with KVM, about 300 GB free and 64 GB of memory runs steps 1
+to 5 and the checks after first boot, then
+`adb shell dmesg | grep avc` (expected: no `denied` line for Grace or its agent) and the agent
+reaching `running` in Grace's own status, and records them here.
