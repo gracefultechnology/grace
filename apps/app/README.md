@@ -144,8 +144,8 @@ pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser
 ## Android
 
 From the repository root, run `git submodule update --init vendor/eliza` and then Eliza's own
-install from the [root setup](../../README.md#run-grace-cloud); without it Eliza's Core does not compile. Grace uses the Android
-consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
+install from the [root setup](../../README.md#run-grace-cloud); without it Eliza's Core does not
+compile. Grace uses the Android consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
 The Android build generates Eliza's Core, Cloud and Agent models from the pinned checkout.
 It builds Core and the browser-safe Cloud client before compiling the Android Agent entry.
 The verified device bundle is written to `vendor/eliza/packages/agent/dist/bundle`. The build
@@ -215,6 +215,10 @@ signing block and so the size.
 | `launcher-release.apk` | `arm64-v8a` | 165,856,583 | depends on the key |
 | `launcher-debug.apk` | `x86_64` | 182,359,724 | `86658017a8f512f79816d83ac0748e387781394806e43e90f69a43169c509223` |
 | `launcher-release.apk` | `x86_64` | 169,198,913 | depends on the key |
+
+The last release built with the Grace release key came from Grace `ace4d8e` and Eliza `3423598`,
+before this pin; it passed the release certificate and 16 KiB alignment checks
+([release source](https://github.com/gracefultechnology/grace-new/pull/90)).
 
 ### On the tablet
 
@@ -326,9 +330,9 @@ then run `--install emulator-<port> --exercise wifi-password`. Both Wi-Fi walks 
 location access and, for `wifi.json`, AndroidWifi saved. A walk that stops after `forget` leaves the
 AVD's quickboot snapshot without either, so boot it once with `-wipe-data` before walking it again.
 
-A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
-average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
-bytes, the cold boot took 5 minutes, the WebView was `com.google.android.webview` 133.0.6943.137,
+A run of `develop` at `c8849b1`, before the APK carried the agent payload, with this check, on an
+AVD made as above on a host with a load average between 140 and 370: both debug APKs of that time
+passed the content check at 11,203,659 and 11,203,523 bytes (see the table above for today's), the cold boot took 5 minutes, the WebView was `com.google.android.webview` 133.0.6943.137,
 all 19 steps of `home.json` passed, and it ended `Grace is Home and responding; other processes
 raised 32 am_anr events since the install` and exited 0 in 14 minutes. Booted again with the current
 script, the same AVD passed in 7 minutes with 5 other events. With `--install`, Grace stopped
