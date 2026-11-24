@@ -137,6 +137,20 @@ pure val rValues = Set(WR::initial, WR::exampleShown, WR::exampleTwoAsk, WR::exa
   { ...askedOnTab1(WR::BlockedSignIn({ provider: "Google" })), shown: false })
 ```
 
+### Back leaves a fullscreen video before anything else
+
+While a website's video is fullscreen over Grace on a ready device, Back
+only leaves fullscreen, by the surface's own event, and is consumed. The
+Back after it is chosen as the rules above say.
+
+```quint
+pure def backLeavesFullscreen(shell: S::Shell, layer: P::PageLayer): bool =
+  shell.readiness == S::Ready and P::canLeaveFullscreen(layer)
+pure def lawBackLeavesFullscreenOnce(shell: S::Shell, layer: P::PageLayer): bool =
+  backLeavesFullscreen(shell, layer) implies not(backLeavesFullscreen(shell, P::leaveFullscreen(layer)))
+pure val layerValues = Set(P::initial, { ...P::initial, shown: true, fullscreen: true })
+```
+
 ### Each Back action is one event its guard allows
 
 | Back action | Event | What else that event does |
