@@ -2,9 +2,9 @@
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 // The tablet: the rail, the selected surface right of it, and Grace's window over both.
 import { AppWindow, AskGraceButton, besideRail, Button, CaptionStrip, type CaptionStripProps, HomeScreen, ListRow, Rail, RailButton, RailPopover, ScreenDim, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
-import { Effect, Stream } from "effect";
+import { Effect } from "effect";
 import { CalendarDays, Check, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
-import { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Suspense, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { type Assistance, keyboardCaptionVisible } from "../gen/app__assistant.ts";
 import { activeTab, tabUrl } from "../gen/app__browser.ts";
 import type { Turn } from "../gen/app__conversation.ts";
@@ -27,7 +27,7 @@ import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { PasswordsApp } from "./PasswordsApp.tsx";
 import { Settings } from "./Settings.tsx";
 import { androidHost, wifiPlugin } from "./surfacePlugin.ts";
-import { RuntimeContext, type Runtime, useAccounts, useRuntime, useKeyboardHeight, useMailContent, useWebsiteRequests, useWorkspace, WithCalendars, WithMailboxes } from "./useApp.ts";
+import { RuntimeContext, type Runtime, startOf, useAccounts, useHomeCards, useRuntime, useKeyboardHeight, useMailContent, useWebsiteRequests, useWorkspace, WithCalendars, WithMailboxes } from "./useApp.ts";
 import { site } from "./WebsiteRequests.tsx";
 
 // spec/app/deviceKeys.md, "Each Back action is one event its guard allows": the two that end what websites ask,
@@ -49,31 +49,15 @@ const backEvents: Record<Exclude<BackAction, "Unconsumed" | "PrivatePageBack" | 
 /** A window right of the rail, 6px from the screen's edges (design.md, "Windows"); its bottom follows Grace's compact window and the keyboard (prototype `layout()`). */
 const lifted = "absolute top-1.5 right-1.5";
 /** What expanded Grace covers is out of reach, for touch and for assistive technology. */
-const homeUpdates = Stream.unwrap(Effect.map(ManagedReads, (managed) => managed.home));
 const appointmentClock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 const appointmentDay = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const railClock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const railDate = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
 const sleepDate = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
-const startOf = (event: HomeCards["events"][number]) => new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
 const managedNext = (cards: HomeCards | undefined, now: Date) => {
   const next = cards?.events[0];
   return next && `${relative(dayOf(startOf(next).getTime()), dayOf(now.getTime()))}: ${next.title || "Untitled appointment"}, ${next.isAllDay ? "All day" : timeLabel(startOf(next).getTime())}`;
 };
-
-function useHomeCards() {
-  const runtime = useRuntime();
-  const account = useSetup(runtime).state;
-  const subscribe = useCallback((changed: () => void) => {
-    const fiber = runtime.runFork(Stream.runForEach(homeUpdates, () => Effect.sync(changed)));
-    return () => fiber.interruptUnsafe();
-  }, [runtime]);
-  return useSyncExternalStore(subscribe, () => {
-    if (account?.graceAccount.tag !== "GraceSignedIn" || account.googleLink.tag !== "GoogleLinkConnected") return undefined;
-    const snapshot = runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards()));
-    return snapshot?.accountId === account.graceAccount.accountId && snapshot.grant === account.googleLink.grant ? snapshot : undefined;
-  });
-}
 
 const under = (covered: boolean) => (covered ? { inert: true, "aria-hidden": true } as const : {});
 

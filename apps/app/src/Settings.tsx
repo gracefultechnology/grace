@@ -1,8 +1,7 @@
 // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/accounts.md, "Story: Connect the email I already use"
 import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, RetryNotice, SettingsAbout, SettingsApp, SettingsBrightness, SettingsTextSize, SettingsVoice, Spinner, type SettingsPage as PageName } from "@repo/ui";
-import { Effect, Stream } from "effect";
 import { CircleAlert, Trash, X } from "lucide-react";
-import { type ComponentProps, useCallback, useState, useSyncExternalStore } from "react";
+import { type ComponentProps, useState } from "react";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { brightnessChoice, type DisplayPreferences, type Pace, type TextSize } from "../gen/app__preferences.ts";
 import { useMachine as useSetup } from "../gen/app__setup.react.ts";
@@ -11,9 +10,9 @@ import { calendarKeys, homeCalendar } from "./Calendar.tsx";
 import { dayOf, relative } from "./calendar.vibe";
 import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
-import { type HomeCards, ManagedReads, surfaceOwner } from "./managedReads.vibe";
+import { surfaceOwner } from "./managedReads.vibe";
 import { retryPreferences, sampleVoice } from "./preferences.vibe";
-import { useAccounts, useRuntime, useWebsiteRequests, useWorkspace, WithCalendars } from "./useApp.ts";
+import { startOf, useAccounts, useHomeCards, useRuntime, useWebsiteRequests, useWorkspace, WithCalendars } from "./useApp.ts";
 import { Wifi } from "./Wifi.tsx";
 
 const names: Record<SettingsPage, PageName> = {
@@ -24,10 +23,8 @@ const navTargets = new Map((Object.keys(names) as SettingsPage[]).map((p) => [`n
 
 const textSizes: Readonly<Record<TextSize, string>> = { Smaller: "Smaller", StandardText: "Normal", Larger: "Larger", Largest: "Largest" };
 const paceOptions: readonly Pace[] = ["Slower", "Normal", "Faster"];
-const homeUpdates = Stream.unwrap(Effect.map(ManagedReads, (managed) => managed.home));
 const appointmentClock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 const appointmentDay = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-const startOf = (event: HomeCards["events"][number]) => new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
 const genericLocal = /^(?:owner|user|admin|test|info|mail|hello|support|noreply)$/i;
 
 function firstNameFromEmail(email: string | undefined): string | undefined {
@@ -38,19 +35,9 @@ function firstNameFromEmail(email: string | undefined): string | undefined {
 }
 
 function TextSizePanel({ personName, owner, value, onChange }: { personName?: string; owner: ReturnType<typeof surfaceOwner>; value: string; onChange: (value: string) => void }) {
-  const runtime = useRuntime();
-  const setup = useSetup(runtime).state;
   const { accounts } = useAccounts();
   const [now] = useState(() => Date.now());
-  const subscribe = useCallback((changed: () => void) => {
-    const fiber = runtime.runFork(Stream.runForEach(homeUpdates, () => Effect.sync(changed)));
-    return () => fiber.interruptUnsafe();
-  }, [runtime]);
-  const cards = useSyncExternalStore(subscribe, () => {
-    if (owner !== "Hosted" || setup?.graceAccount.tag !== "GraceSignedIn" || setup.googleLink.tag !== "GoogleLinkConnected") return undefined;
-    const snapshot = runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards()));
-    return snapshot?.accountId === setup.graceAccount.accountId && snapshot.grant === setup.googleLink.grant ? snapshot : undefined;
-  });
+  const cards = useHomeCards();
   const hour = new Date(now).getHours();
   const baseGreeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const greeting = personName ? `${baseGreeting}, ${personName}` : baseGreeting;

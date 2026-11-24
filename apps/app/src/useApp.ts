@@ -29,8 +29,9 @@ import type { Guide, GuidePointing } from "@repo/ui";
 import type { Help } from "./context.vibe";
 import { useMachine as useWorkspaceMachine } from "../gen/app__workspace.react.ts";
 import type { Machine as Setup } from "../gen/app__setup.effect.vibe";
+import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import type { FileLibrary } from "./fileLibrary.vibe";
-import type { ManagedReads } from "./managedReads.vibe";
+import { type HomeCards, ManagedReads } from "./managedReads.vibe";
 import type { AccountActions } from "./graceAccount.vibe";
 import type { ReplyControls } from "./replyControls.vibe";
 import type { SpeechActions } from "./graceSpeech.vibe";
@@ -314,4 +315,23 @@ export function useKeyboardHeight(): number {
     return () => fiber.interruptUnsafe();
   }, [runtime]);
   return height;
+}
+
+const homeUpdates = Stream.unwrap(Effect.map(ManagedReads, (managed) => managed.home));
+
+export const startOf = (event: HomeCards["events"][number]) => new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
+
+/** The hosted account's Home mail and appointments, while it is the signed-in account and its Google link. */
+export function useHomeCards(): HomeCards | undefined {
+  const runtime = useRuntime();
+  const account = useSetup(runtime).state;
+  const subscribe = useCallback((changed: () => void) => {
+    const fiber = runtime.runFork(Stream.runForEach(homeUpdates, () => Effect.sync(changed)));
+    return () => fiber.interruptUnsafe();
+  }, [runtime]);
+  return useSyncExternalStore(subscribe, () => {
+    if (account?.graceAccount.tag !== "GraceSignedIn" || account.googleLink.tag !== "GoogleLinkConnected") return undefined;
+    const snapshot = runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards()));
+    return snapshot?.accountId === account.graceAccount.accountId && snapshot.grant === account.googleLink.grant ? snapshot : undefined;
+  });
 }
