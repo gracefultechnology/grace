@@ -370,7 +370,7 @@ pure def canChangeOccurrence(v: CalendarView, id: str, command: OccurrenceAction
 pure def changeOccurrence(v: CalendarView, id: str, command: OccurrenceAction, by: ViewActor): CalendarView =
   val updated = ownedEntryResult(v, entryAt(v, id), command)
   { ...v, entries: if (updated.phase == C::Empty) v.entries.select(c => c.identity.occurrenceId != id)
-      else v.entries.listMap(c => if (c.identity.occurrenceId == id) updated else c),
+      else v.entries.listMap(c => if (c.identity.owner == v.owner and c.identity.calendarId == v.calendarId and c.identity.occurrenceId == id and c.phase != C::Deleted) updated else c),
     cancelledIds: if (updated.phase == C::Empty) v.cancelledIds.union(Set(id)) else v.cancelledIds,
     selectedId: if (v.selectedId == id and (updated.phase == C::Empty or
       (not(v.opened) and updated.phase != C::Editing))) "" else v.selectedId,
@@ -845,13 +845,14 @@ expanded or the tablet sleeps. On any other screen it arrives as the toast
 with no comma (`Grace Prototype.html:2275`). See details opens
 Calendar on that exact occurrence's detail (`Grace Prototype.html:2228`). It is
 refused while a form is being edited or a deletion is being stored, so it never
-discards an edit. It leaves the reminder shown; Dismiss on the banner, toast or
-detail dismisses it, and Snooze in the detail hides it and shows it again ten
-minutes later. This deliberately departs from the prototype, whose See
-details also clears the banner (`X.banner=null`, `Grace Prototype.html:2228`):
-the story asks that opening the event not dismiss its reminder, so the banner is
-back on Home until the person dismisses it. The detail is the ordinary one, so
-Back returns to the calendar.
+discards an edit. It leaves the reminder shown (clearing only any
+`ChangedElsewhere` note on that occurrence, like `openOccurrence`); Dismiss on
+the banner, toast or detail dismisses it, and Snooze in the detail hides it and
+shows it again ten minutes later. This deliberately departs from the prototype,
+whose See details also clears the banner (`X.banner=null`,
+`Grace Prototype.html:2228`): the story asks that opening the event not dismiss
+its reminder, so the banner is back on Home until the person dismisses it. The
+detail is the ordinary one, so Back returns to the calendar.
 
 ```quint
 pure def shownReminders(v: CalendarView): List[C::Calendar] = v.entries.select(c => c.reminder == C::ReminderShown)
@@ -861,10 +862,12 @@ pure def canOpenReminder(v: CalendarView, id: str, owner: str, calendarId: str, 
 pure def openReminder(v: CalendarView, id: str, owner: str, calendarId: str, timezone: str, by: ViewActor): CalendarView =
   openOccurrence(openCalendar(v, owner, calendarId, timezone, by), id, by)
 pure def lawSeeDetailsKeepsReminder(v: CalendarView, id: str, owner: str, calendarId: str, timezone: str, by: ViewActor): bool =
+  val after = openReminder(v, id, owner, calendarId, timezone, by)
   canOpenReminder(v, id, owner, calendarId, timezone, by) implies
-    (openReminder(v, id, owner, calendarId, timezone, by).entries == v.entries and
-      openReminder(v, id, owner, calendarId, timezone, by).selectedId == id and
-      openReminder(v, id, owner, calendarId, timezone, by).opened)
+    (after.entries == v.entries.listMap(c => if (c.identity.occurrenceId == id) C::noticed(c) else c) and
+      after.entries.listMap(c => c.reminder) == v.entries.listMap(c => c.reminder) and
+      after.selectedId == id and
+      after.opened)
 pure def sometimesReminderOpened(v: CalendarView): bool =
   v.opened and selectedOccurrence(v).reminder == C::ReminderShown
 ```

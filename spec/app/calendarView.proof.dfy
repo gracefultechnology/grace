@@ -1229,7 +1229,7 @@ lemma CalendarProviderReceipt(before: CalendarView, saved: CalendarView, localId
 }
 
 lemma CalendarConsumedCreation(v: CalendarView, localId: string)
-  requires forall c :: c in v.entries && c.identity.occurrenceId == localId && !c.phase.Deleted? ==> c.hasSaved
+  requires forall c :: c in v.entries && c.identity.owner == v.owner && c.identity.calendarId == v.calendarId && c.identity.occurrenceId == localId && !c.phase.Deleted? ==> c.hasSaved
   ensures entryAt(v, localId).phase.Empty? || entryAt(v, localId).hasSaved
 {
   CalendarEntryAtView(v, localId);
@@ -1307,11 +1307,15 @@ lemma lawCreatedReceiptIsSpent_ensures(v: CalendarView, created: CreatedReceipt)
     var id := created.localId;
     var saved := changeOccurrence(v, id, EntryStored(created.revision, true), ViewActor.ViewStore);
     var after := storeCreated(v, created, ViewActor.ViewStore);
-    forall c | c in after.entries && c.identity.occurrenceId == id && !c.phase.Deleted?
+    forall c | c in after.entries && c.identity.owner == after.owner && c.identity.calendarId == after.calendarId && c.identity.occurrenceId == id && !c.phase.Deleted?
       ensures c.hasSaved
     {
       var i :| 0 <= i < |after.entries| && after.entries[i] == c;
+      assert saved.entries[i].identity.owner == v.owner;
+      assert saved.entries[i].identity.calendarId == v.calendarId;
       assert saved.entries[i].identity.occurrenceId == id;
+      assert v.entries[i].identity.owner == v.owner;
+      assert v.entries[i].identity.calendarId == v.calendarId;
       assert v.entries[i].identity.occurrenceId == id;
     }
     CalendarConsumedCreation(after, id);
@@ -1378,5 +1382,54 @@ lemma hidePicker_ensures(v: CalendarView, picker: FormPicker, by_: ViewActor)
 {
   if inv(v) && canHidePicker(v, picker, by_) {
     CalendarSameEntries(v, hidePicker(v, picker, by_));
+  }
+}
+
+lemma lawOutdatedChangeShowsTheCompanysVersion_ensures(v: CalendarView, id: string, revision: int, latest: app__calendar_EntryDetails, version: string)
+  ensures (lawOutdatedChangeShowsTheCompanysVersion(v, id, revision, latest, version) == true)
+{
+  var command := EntryOutdated(revision, latest, version);
+  if canChangeOccurrence(v, id, command, ViewActor.ViewStore) {
+    var p := (c: app__calendar_Calendar) => ((((c.identity.owner == v.owner) && (c.identity.calendarId == v.calendarId)) && (c.identity.occurrenceId == id)) && (!c.phase.Deleted?));
+    var before := entryAt(v, id);
+    var afterView := changeOccurrence(v, id, command, ViewActor.ViewStore);
+    var updated := ownedEntryResult(v, before, command);
+    CalendarEntryAtView(v, id);
+    CalendarEntryAtView(afterView, id);
+    var matches := ProofLib.Filter(p, v.entries);
+    assert |matches| == 1 && matches[0] == before;
+    ProofLib.FilterMember(p, v.entries, before);
+    var idx :| 0 <= idx < |v.entries| && v.entries[idx] == before;
+    assert p(before);
+    assert updated == app__calendar_saveOutdated(before, revision, latest, version, app__calendar_CalendarActor.CalendarStore);
+    assert p(updated);
+    assert afterView.entries[idx] == updated;
+    forall j | 0 <= j < |afterView.entries| && j != idx
+      ensures !p(afterView.entries[j])
+    {
+      if p(v.entries[j]) {
+        if idx < j {
+          ProofLib.FilterTwo(p, v.entries, idx, j);
+        } else {
+          ProofLib.FilterTwo(p, v.entries, j, idx);
+        }
+      }
+      assert afterView.entries[j] == v.entries[j];
+    }
+    ProofLib.FilterOne(p, afterView.entries, idx);
+    ProofLib.FilterMember(p, afterView.entries, updated);
+    ProofLib.FilterSamePredicate(p, (c: app__calendar_Calendar) => ((((c.identity.owner == afterView.owner) && (c.identity.calendarId == afterView.calendarId)) && (c.identity.occurrenceId == id)) && (!c.phase.Deleted?)), afterView.entries);
+    assert entryAt(afterView, id) == updated;
+  }
+}
+
+lemma lawSeeDetailsKeepsReminder_ensures(v: CalendarView, id: string, owner: string, calendarId: string, timezone: string, by_: ViewActor)
+  ensures (lawSeeDetailsKeepsReminder(v, id, owner, calendarId, timezone, by_) == true)
+{
+  if canOpenReminder(v, id, owner, calendarId, timezone, by_) {
+    var after := openReminder(v, id, owner, calendarId, timezone, by_);
+    var expected := seq(|v.entries|, i requires 0 <= i < |v.entries| => if v.entries[i].identity.occurrenceId == id then app__calendar_noticed(v.entries[i]) else v.entries[i]);
+    assert after.entries == expected;
+    assert forall i :: 0 <= i < |v.entries| ==> after.entries[i].reminder == v.entries[i].reminder;
   }
 }
