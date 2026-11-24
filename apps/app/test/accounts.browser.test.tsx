@@ -6,7 +6,7 @@ import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import type { WiFiPlugin } from "../src/surfacePlugin.ts";
 import { client, expire, otherPassword, outage, ownerName, reply, sentMail, signIn } from "./cloud.vibe";
-import { actOnScreen, captureSignedOutChat, tabletView } from "./screen.tsx";
+import { actOnScreen, browserAccountResponse, captureSignedOutChat, tabletView } from "./screen.tsx";
 import { parseState as parseAccounts } from "../gen/app__accounts.ts";
 import "../src/main.css";
 
@@ -28,7 +28,10 @@ const riverviewSettings = `<?xml version="1.0" encoding="UTF-8"?>
 </emailProvider></clientConfig>`;
 const settingsSources = (domain: string) => [
   `https://autoconfig.${domain}/mail/config-v1.1.xml`, `https://${domain}/.well-known/autoconfig/mail/config-v1.1.xml`, `https://autoconfig.thunderbird.net/v1.1/${domain}`,
+  `https://dns.google/resolve?name=_imaps._tcp.${domain}&type=SRV`, `https://dns.google/resolve?name=_submission._tcp.${domain}&type=SRV`,
 ];
+const unanswered: (() => void)[] = [];
+const grace = { signedIn: true };
 const settingsWeb = (url: string) => {
   const { hostname, pathname } = new URL(url);
   if (hostname === "autoconfig.thunderbird.net") return pathname === "/v1.1/riverview.net" ? new Response(riverviewSettings, { headers: { "content-type": "text/xml" } }) : new Response(null, { status: 404 });
@@ -61,10 +64,14 @@ beforeEach(() => captureSignedOutChat(chatBodies, (url) => {
 beforeAll(() => {
   globalThis.fetch = (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
+    if (!grace.signedIn && new URL(url, location.href).pathname === "/api/auth/session") return Promise.resolve(new Response(null, { status: 401 }));
     const answer = settingsWeb(url);
     if (answer === undefined) return fetched(input, init);
     lookups.push(url);
-    return Promise.resolve(answer);
+    return new Promise((resolve) => {
+      unanswered.push(() => resolve(answer));
+      if (unanswered.length === settingsSources("").length) for (const reply of unanswered.splice(0)) reply();
+    });
   };
   window.open = (url, ...rest) => {
     providerPages.push(String(url));
@@ -77,6 +84,8 @@ beforeEach(async () => {
   toasts.length = 0;
   otherChecks.length = 0;
   lookups.length = 0;
+  unanswered.length = 0;
+  grace.signedIn = true;
   providerPages.length = 0;
   network.online = true;
   firstListing = undefined;
@@ -161,7 +170,25 @@ async function readOutlookFromHome() {
   await expect.element(page.getByRole("button", { name: /St\. Mark’s Church Office/ })).toBeVisible();
 }
 
+async function signedOutOfGrace() {
+  await mounted.dispose();
+  const network = globalThis.fetch;
+  grace.signedIn = false;
+  globalThis.fetch = (input, init) => {
+    const account = grace.signedIn ? browserAccountResponse(new URL(input instanceof Request ? input.url : String(input), location.href), "margaret") : undefined;
+    return account ? Promise.resolve(account) : network(input, init);
+  };
+  onTestFinished(() => { globalThis.fetch = network; });
+  mounted = connectTablet();
+  await mounted.render();
+  return async () => {
+    grace.signedIn = true;
+    await act(() => Promise.resolve(document.dispatchEvent(new Event("visibilitychange"))));
+  };
+}
+
 it("Connect the email I already use", async () => {
+  const signInToGrace = await signedOutOfGrace();
   // spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"
   await expect.element(emailCard()).toHaveAccessibleName("Email Not connected");
   await expect.element(emailCard()).toHaveAccessibleDescription("Connect your email to see it here.");
@@ -242,7 +269,11 @@ it("Connect the email I already use", async () => {
   await expect.element(page.getByRole("heading", { name: "Other email", level: 1 })).toBeVisible();
   const form = page.getByRole("form", { name: "Other email" });
   // spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"
+  await expect.element(form.getByLabelText("Your name")).toHaveValue("");
+  await act(() => form.getByLabelText("Email address").fill(riverview));
+  await signInToGrace();
   await expect.element(form.getByLabelText("Your name")).toHaveValue(ownerName);
+  await expect.element(form.getByLabelText("Email address")).toHaveValue(riverview);
   await act(() => form.getByLabelText("Email address").fill("margaret@yahoo.com"));
   await act(() => form.getByLabelText("Password").fill(wrongPassword));
   await tap(form.getByRole("button", { name: "Next" }));
@@ -280,7 +311,7 @@ it("Connect the email I already use", async () => {
   await expect.element(servers.getByRole("status")).toHaveTextContent("Grace found the mail settings for riverview.net. Check them, then tap Connect.");
   await expect.element(servers.getByLabelText("Incoming mail server")).toHaveValue("mail.riverview.net");
   await expect.element(servers.getByLabelText("Outgoing mail server")).toHaveValue("smtp.riverview.net");
-  expect(lookups).toEqual(settingsSources("riverview.net"));
+  expect(lookups.toSorted()).toEqual(settingsSources("riverview.net").toSorted());
   await expect.element(page.getByRole("heading", { name: "Mail settings", level: 1 })).toBeVisible();
   await tap(servers.getByRole("button", { name: "Connect" }));
   await expect.element(page.getByRole("heading", { name: "Riverview", level: 1 })).toBeVisible();
