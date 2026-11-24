@@ -39,7 +39,7 @@ export function RailPopover({ icon, title, value, onClose, closeLabel = "Close",
       style={{ top, "--arrow": `${arrowTop}px`, ...style } as CSSProperties}
       {...props}
     >
-      <span aria-hidden className="absolute top-(--arrow) -left-2.5 size-5 rotate-45 bg-glass/86 shadow-arrow" />
+      <span aria-hidden className="absolute top-(--arrow) -left-2.5 size-5 -translate-y-1/2 rotate-45 bg-glass/86 shadow-arrow" />
       <div className="relative flex items-center gap-3 text-title-sm leading-8 font-bold text-chrome">
         <span aria-hidden className="flex">{icon}</span>
         {title}

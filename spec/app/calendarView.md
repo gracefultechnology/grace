@@ -192,9 +192,12 @@ the adapter's current local day. Moving a week preserves weekday selection;
 moving a month preserves the selected day until the user chooses another date.
 These calendar calculations arrive as validated reports; the host derives
 `verified`, never the planner or untrusted page. Navigation does not modify
-entries, reminders, bill identity or payment state. A store-verified save can
-align the day without clearing a selected appointment. This report is only a
-Week day selection and cannot change a form or a deletion in progress.
+entries, reminders, bill identity or payment state, except that opening an
+occurrence clears its note that its company had changed it (Calendar,
+`ChangedElsewhere`), so the note shows only on the detail she was taken back
+to when her change was not made. A store-verified save can align the day
+without clearing a selected appointment. This report is only a Week day
+selection and cannot change a form or a deletion in progress.
 
 ```quint
 pure def canNavigate(v: CalendarView, report: NavigationReport, by: ViewActor): bool =
@@ -212,7 +215,8 @@ pure def lawStoreDayKeepsSelection(v: CalendarView, report: NavigationReport): b
 pure def canOpenOccurrence(v: CalendarView, id: str, by: ViewActor): bool =
   by == ViewUser and v.opened and v.deletion != DeletionPending and not(hasEditing(v)) and entryAt(v, id).hasSaved
 pure def openOccurrence(v: CalendarView, id: str, by: ViewActor): CalendarView =
-  { ...v, selectedId: id, deletion: NoDeletion }
+  { ...v, selectedId: id, deletion: NoDeletion,
+    entries: v.entries.listMap(c => if (c.identity.occurrenceId == id) C::noticed(c) else c) }
 pure def canBackToCalendar(v: CalendarView, by: ViewActor): bool =
   by == ViewUser and v.opened and v.selectedId != "" and v.deletion != DeletionPending and not(hasEditing(v))
 pure def backToCalendar(v: CalendarView, by: ViewActor): CalendarView =
@@ -270,13 +274,14 @@ approved revision, and clock events target the canonical occurrence ID rather
 than a captured state. Reminder changes need no artificial content revision.
 The Add form makes a New appointment only (`Grace Prototype.html:1918`); the
 person cannot make up a bill's identity. A bill occurrence enters only by a
-verified import. A new entry, from Add or from Grace's confirmed proposal, is
-never marked important, since nothing but its source can mark it, and has a
-positive length, the prototype's one hour by default (`Grace Prototype.html:2172`),
+verified import. A new entry, from Add or from Grace's confirmed proposal, may
+be marked important, by the form's Important switch or by the proposal she
+agreed to, and has a positive length, the prototype's one hour by default (`Grace Prototype.html:2172`),
 which edits then keep. A form change applies through Calendar's `formDetails`.
 Editing a repeating event starts from its series' settings but keeps the
-occurrence's own important mark, and a series save writes each member's own
-mark back, so one occurrence's mark never spreads to the others.
+occurrence's own important mark, and a series save writes each other member's
+own mark back, so the mark she sets on one occurrence never spreads to the
+others.
 
 Dismiss on the Home banner or the reminder toast reaches the row whether or not
 Calendar is open or that event is selected, and even while a Save of that event
@@ -291,6 +296,7 @@ result.
 type EntrySeed = { identity: C::EntryIdentity, details: C::EntryDetails }
 type OccurrenceAction = BeginEditing | ChangeDetails({ details: C::EntryDetails }) | CancelEditing |
   ApproveEntry({ revision: int }) | EntryStored({ revision: int, succeeded: bool }) |
+  EntryOutdated({ revision: int, latest: C::EntryDetails, version: str }) |
   AdvanceClock({ now: int }) | ShowDueReminder | SnoozeReminder({ until: int }) | DismissReminder
 pure def mayChangeEntry(c: C::Calendar, command: OccurrenceAction, by: ViewActor): bool = match command {
   | BeginEditing => by == ViewUser and C::canBeginEdit(c, C::CalendarUser)
@@ -300,6 +306,7 @@ pure def mayChangeEntry(c: C::Calendar, command: OccurrenceAction, by: ViewActor
   | EntryStored(report) => by == ViewStore and
       (if (report.succeeded) C::canSave(c, report.revision, true, C::CalendarStore)
        else C::canSaveFailed(c, report.revision, C::CalendarStore))
+  | EntryOutdated(report) => by == ViewStore and C::canSaveOutdated(c, report.revision, report.latest, report.version, C::CalendarStore)
   | AdvanceClock(request) => by == ViewClock and C::canAdvanceTime(c, request.now, C::CalendarClock)
   | ShowDueReminder => by == ViewClock and C::canShowReminder(c, C::CalendarClock)
   | SnoozeReminder(request) => by == ViewUser and C::canSnooze(c, request.until, C::CalendarUser)
@@ -312,6 +319,7 @@ pure def changeEntry(c: C::Calendar, command: OccurrenceAction): C::Calendar = m
   | ApproveEntry(request) => C::approveSave(c, request.revision, C::CalendarUser)
   | EntryStored(report) => if (report.succeeded) C::save(c, report.revision, true, C::CalendarStore)
       else C::saveFailed(c, report.revision, C::CalendarStore)
+  | EntryOutdated(report) => C::saveOutdated(c, report.revision, report.latest, report.version, C::CalendarStore)
   | AdvanceClock(request) => C::advanceTime(c, request.now, C::CalendarClock)
   | ShowDueReminder => C::showReminder(c, C::CalendarClock)
   | SnoozeReminder(request) => C::snooze(c, request.until, C::CalendarUser)
@@ -329,8 +337,7 @@ pure def lawEditingKeepsOwnMark(v: CalendarView, c: C::Calendar): bool =
   ownedEntryResult(v, c, BeginEditing).draft.important == c.committed.important
 pure def freshEntryAllowed(v: CalendarView, entry: EntrySeed): bool =
   v.deletion == NoDeletion and not(hasEditing(v)) and
-  C::canCreate(C::initial, entry.identity, C::CalendarUser) and
-  not(entry.details.important) and entry.details.endAt > entry.details.startAt and
+  C::canCreate(C::initial, entry.identity, C::CalendarUser) and entry.details.endAt > entry.details.startAt and
   entry.identity.owner == v.owner and entry.identity.calendarId == v.calendarId and
   not(v.cancelledIds.contains(entry.identity.occurrenceId)) and
   v.entries.every(c => c.identity.occurrenceId != entry.identity.occurrenceId) and
@@ -356,6 +363,8 @@ pure def canChangeOccurrence(v: CalendarView, id: str, command: OccurrenceAction
         (if (c.hasSaved and c.committed.seriesId != "") request.details.seriesId == c.committed.seriesId
          else request.details.seriesId == "" or seriesAt(v, request.details.seriesId).version == -1)
     | EntryStored(_) => c.committed.seriesId == "" and c.draft.seriesId == "" and c.draft.recurrence == C::Once
+    | EntryOutdated(report) => c.committed.seriesId == "" and c.draft.seriesId == "" and c.draft.recurrence == C::Once and
+        report.latest.seriesId == "" and report.latest.recurrence == C::Once
     | _ => true
   })
 pure def changeOccurrence(v: CalendarView, id: str, command: OccurrenceAction, by: ViewActor): CalendarView =
@@ -375,6 +384,7 @@ pure def closesPicker(command: OccurrenceAction): bool = match command {
 pure def sometimesEntryEditing(v: CalendarView): bool = hasEditing(v)
 pure def sometimesUnsavedEntryCancelled(v: CalendarView): bool = v.cancelledIds.size() > 0
 pure def sometimesEntrySaveFailed(v: CalendarView): bool = v.entries.some(c => c.storageError == C::SaveFailure)
+pure def sometimesEntryChangedElsewhere(v: CalendarView): bool = v.entries.some(c => c.storageError == C::ChangedElsewhere)
 pure def sometimesOwnedReminderShown(v: CalendarView): bool = v.entries.some(c => c.reminder == C::ReminderShown)
 pure def sometimesOwnedReminderDismissed(v: CalendarView): bool = v.entries.some(c => c.reminder == C::ReminderDismissed)
 ```
@@ -393,7 +403,7 @@ its company sent, which is all the form's Repeats offers for it. Only the
 tablet's own calendar, the collection bound to the calendar `tablet`, makes,
 changes or stops a repetition. A reminder on any calendar is the tablet's
 own: the tablet reminds her, and the company keeps whatever reminders it
-had.
+had, and so is the important mark, which the company never receives.
 
 ```quint
 pure val tabletCalendarId: str = "tablet"
@@ -405,6 +415,28 @@ pure def lawAccountCalendarStartsNoRepetition(v: CalendarView, entry: EntrySeed)
 pure def lawAccountCalendarKeepsItsRepetition(v: CalendarView, c: C::Calendar, details: C::EntryDetails): bool =
   (not(keepsRepetition(v)) and c.hasSaved and repetitionAllowed(v, c, details)) implies
     details.recurrence == c.committed.recurrence
+```
+
+### A change at the company names the revision it read and never overwrites a newer one
+
+A change or deletion at an email account's company names, as its one exact
+If-Match, the event's revision the tablet last read (Calendar's `version`),
+so neither overwrites a change made elsewhere since. When the company refuses
+one for that reason (`412`), the tablet reads the event again and shows it as
+it is now, saying her change was not made: `EntryOutdated` answers the save
+of one appointment, and a refused deletion is answered by publishing
+Calendar's `withCurrent` of the saved entry, which closes the deletion
+question. It asks the company again only when she does. A repeating
+appointment's change refused this way stays a failed save, which she can
+cancel; the next read shows the company's version.
+
+```quint
+pure def lawOutdatedChangeShowsTheCompanysVersion(v: CalendarView, id: str, revision: int, latest: C::EntryDetails, version: str): bool =
+  val command = EntryOutdated({ revision: revision, latest: latest, version: version })
+  val after = entryAt(changeOccurrence(v, id, command, ViewStore), id)
+  canChangeOccurrence(v, id, command, ViewStore) implies
+    (after.phase == C::Saved and after.committed == latest and after.version == version and
+      after.storageError == C::ChangedElsewhere and after.identity == entryAt(v, id).identity)
 ```
 
 ### The form opens its Day or its Time list, one at a time
@@ -566,8 +598,8 @@ yes to that exact question. The review names the occurrence, its complete new
 details, the revision of the saved appointment she was shown and the calendar
 generation. The change applies only while that occurrence is still a saved
 appointment of this calendar at that revision, with the reviewed details,
-valid, keeping its own important mark and the series rules of the person's
-own form; while no form is being edited and no deletion question is open; and
+valid, with the series rules of the person's own form, and with the important
+mark it proposes, which she agrees to with the rest; while no form is being edited and no deletion question is open; and
 while an open Calendar shows the week or that same event, never another. A
 refresh from the store or a form she opened and closed moves the revision and
 voids the yes.
@@ -589,8 +621,7 @@ pure def canConfirmChange(v: CalendarView, changeRequest: ConfirmedChange, by: V
   c.hasSaved and c.identity.kind == C::Appointment and C::canBeginEdit(c, C::CalendarUser) and
   v.deletion == NoDeletion and not(hasEditing(v)) and
   (not(v.opened) or v.selectedId == "" or v.selectedId == changeRequest.id) and
-  C::validDetails(details) and details.important == c.committed.important and
-  not(v.deletedSeries.contains(details.seriesId)) and repetitionAllowed(v, c, details) and
+  C::validDetails(details) and not(v.deletedSeries.contains(details.seriesId)) and repetitionAllowed(v, c, details) and
   (if (c.committed.seriesId != "") details.seriesId == c.committed.seriesId
    else details.seriesId == "" or seriesAt(v, details.seriesId).version == -1)
 pure def changedEntry(c: C::Calendar, details: C::EntryDetails): C::Calendar =
@@ -1025,8 +1056,11 @@ pure val commandValues = Set(BeginEditing, ChangeDetails({ details: C::timedDeta
   EntryStored({ revision: 1, succeeded: true }), EntryStored({ revision: 2, succeeded: true }),
   EntryStored({ revision: 3, succeeded: true }), EntryStored({ revision: 4, succeeded: true }),
   EntryStored({ revision: 1, succeeded: false }), EntryStored({ revision: 2, succeeded: false }),
+  EntryOutdated({ revision: 2, latest: { ...C::timedDetails, title: "Changed elsewhere" }, version: "v2" }),
   AdvanceClock({ now: 3 }), AdvanceClock({ now: 5 }), AdvanceClock({ now: 8 }), ShowDueReminder, SnoozeReminder({ until: 7 }), DismissReminder)
 pure val seriesVersionValues = Set(-1, 0, 1, 2)
+pure val latestValues = C::latestValues
+pure val versionValues = C::versionValues
 pure val receiptValues = Set(
   { occurrenceId: "periodA", revision: 1, definitionVersion: -1, schedules: List({ id: "periodA", include: true, startAt: 5, endAt: 6 }), verified: true, persisted: true },
   { occurrenceId: "periodA", revision: 2, definitionVersion: 0, schedules: List({ id: "periodA", include: true, startAt: 5, endAt: 6 }), verified: true, persisted: true },

@@ -44,7 +44,7 @@ it.live("Connect the email I already use and write from it, from the app's own p
       const added = try calendar.write(fresh, view)
       const [saved] = (try Stream.runCollect(calendar.feed(view))).map((p) => p.incoming)
       const changed = try calendar.write(edit(beginEdit(saved, "CalendarUser"), { ...saved.committed, title: "Thanksgiving dinner at 5" }, "CalendarUser"), view)
-      const removed = try calendar.remove(saved.identity, "ThisOccurrence")
+      const removed = try calendar.remove({ ...saved, version: changed.version ?? "" }, "ThisOccurrence")
       try Effect.try(() => assert.deepStrictEqual({ page: page.outcome, sends: sends.map((s) => s.resultStatus), same: sends[0].evidence === sends[1].evidence, stored: [added.succeeded, changed.succeeded], removed: removed.succeeded }, {
         page: "Allowed", sends: ["Sent", "Sent"], same: true, stored: [true, true], removed: true
       }))

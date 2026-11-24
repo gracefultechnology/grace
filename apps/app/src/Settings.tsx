@@ -1,16 +1,18 @@
 // spec/app/shell.md, "Settings and rail popovers preserve the surface underneath"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/websiteRequests.md, "Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation"; spec/app/accounts.md, "Story: Connect the email I already use"
-import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, RetryNotice, SettingsApp, type SettingsAppProps, SettingsBrightness, SettingsTextSize, SettingsVoice, Spinner, type SettingsPage as PageName } from "@repo/ui";
+import { Alert, Button, Dialog, DialogContent, DialogTitle, EmptyState, ListRow, PageHeading, PageText, RetryNotice, SettingsAbout, SettingsApp, type SettingsAppProps, SettingsBrightness, SettingsTextSize, SettingsVoice, Spinner, type SettingsPage as PageName } from "@repo/ui";
 import { CircleAlert, Trash, X } from "lucide-react";
-import type { ComponentProps } from "react";
+import { type ComponentProps, useState } from "react";
 import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { brightnessChoice, type DisplayPreferences, type Pace, type TextSize } from "../gen/app__preferences.ts";
 import type { Setup } from "../gen/app__setup.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
+import { appointmentWeekday, type HostedAppointment, hostedAppointmentDisplay } from "./Calendar.tsx";
+import { dayOf, relative } from "./calendar.vibe";
 import { EmailAccounts } from "./EmailAccounts.tsx";
 import { GraceAccountSettings } from "./GraceAccountSettings.tsx";
 import { surfaceOwner } from "./managedReads.vibe";
-import { retryPreferences } from "./preferences.vibe";
-import { shallowEqual, useRuntime, useSetupSelector, useWebsiteRequests, useWorkspace } from "./useApp.ts";
+import { retryPreferences, sampleVoice } from "./preferences.vibe";
+import { homeCalendar, shallowEqual, useAccounts, useCalendarKeys, useRuntime, useSetupSelector, useWebsiteRequests, useWorkspace, WithCalendars } from "./useApp.ts";
 import { Wifi } from "./Wifi.tsx";
 
 const names: Record<SettingsPage, PageName> = {
@@ -25,15 +27,28 @@ const textSizeEntries = Object.entries(textSizes) as [TextSize, string][];
 const textSizeOptions = Object.values(textSizes);
 const paceOptions: readonly Pace[] = ["Slower", "Normal", "Faster"];
 const speedOptions = paceOptions.map((pace) => ({ value: pace, label: pace }));
+const genericLocal = /^(?:owner|user|admin|test|info|mail|hello|support|noreply)$/i;
 
-const selectEmailCalendarSetup = (setup: Setup | undefined) => ({
+function firstNameFromEmail(email: string | undefined): string | undefined {
+  if (!email) return undefined;
+  const head = email.split("@")[0]?.split(/[._+-]/)[0]?.trim() ?? "";
+  if (!/^[A-Za-z]{2,}$/.test(head) || genericLocal.test(head)) return undefined;
+  return head[0].toUpperCase() + head.slice(1).toLowerCase();
+}
+
+const selectSettingsSetup = (setup: Setup | undefined) => ({
   owner: surfaceOwner(setup, window.location.hash),
   connectedEmail: setup?.graceAccount.tag === "GraceSignedIn" && setup.googleLink.tag === "GoogleLinkConnected"
     ? setup.googleLink.email : undefined,
+  accountEmail: setup?.graceAccount.tag === "GraceSignedIn" && setup.graceAccount.email
+    ? setup.graceAccount.email
+    : setup?.googleLink.tag === "GoogleLinkConnected" && setup.googleLink.email
+      ? setup.googleLink.email
+      : undefined,
 });
 
 function EmailCalendarSettingsPage({ frame, choose }: { frame: Omit<SettingsAppProps, "children">; choose: (name: PageName) => void }) {
-  const { owner, connectedEmail } = useSetupSelector(selectEmailCalendarSetup, shallowEqual);
+  const { owner, connectedEmail } = useSetupSelector(selectSettingsSetup, shallowEqual);
   if (owner === "Ours") return <EmailAccounts {...frame} />;
   return (
     <SettingsApp {...frame}>
@@ -46,6 +61,43 @@ function EmailCalendarSettingsPage({ frame, choose }: { frame: Omit<SettingsAppP
   );
 }
 
+function TextSizePanel({ personName, owner, hostedAppointment, value, onChange }: { personName?: string; owner: ReturnType<typeof surfaceOwner>; hostedAppointment?: HostedAppointment; value: string; onChange: (value: string) => void }) {
+  const { accounts } = useAccounts();
+  const calKeys = useCalendarKeys();
+  const [now] = useState(() => Date.now());
+  const hour = new Date(now).getHours();
+  const baseGreeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const greeting = personName ? `${baseGreeting}, ${personName}` : baseGreeting;
+  const fallback = { eventWhen: "SAT 10 am", eventTitle: "Your appointment", graceMessage: "Your appointment is tomorrow at 10 am." };
+  if (owner === "Ours" && accounts) {
+    return (
+      <WithCalendars keys={calKeys}>{(calendars) => {
+        const first = homeCalendar(accounts, calendars, now, undefined).events[0];
+        const preview = first ? {
+          eventWhen: `${first.weekday} ${first.time}`,
+          eventTitle: first.title,
+          graceMessage: first.weekday === "TODAY" ? `${first.title} is today at ${first.time}.` : `${first.title} is coming up at ${first.time}.`,
+        } : fallback;
+        return <SettingsTextSize sizes={textSizeOptions} value={value} greeting={greeting} {...preview} onValueChange={onChange} />;
+      }}</WithCalendars>
+    );
+  }
+  const hostedPreview = hostedAppointment ? (() => {
+    const { date, time } = hostedAppointmentDisplay(hostedAppointment);
+    const today = dayOf(now);
+    const day = dayOf(date.getTime());
+    const dayText = relative(day, today);
+    const dayLabel = day === today ? "TODAY" : appointmentWeekday(date);
+    const title = hostedAppointment.title || "Your appointment";
+    return {
+      eventWhen: `${dayLabel} ${time}`,
+      eventTitle: title,
+      graceMessage: hostedAppointment.isAllDay ? `${title} is ${dayText.toLowerCase()}.` : `${title} is ${dayText.toLowerCase()} at ${time}.`,
+    };
+  })() : fallback;
+  return <SettingsTextSize sizes={textSizeOptions} value={value} greeting={greeting} {...hostedPreview} onValueChange={onChange} />;
+}
+
 function AboutSettingsPage() {
   const website = useWebsiteRequests();
   const clear = (confirmed: boolean) => {
@@ -54,7 +106,7 @@ function AboutSettingsPage() {
   };
   return (
     <>
-      <PageHeading>About this tablet</PageHeading>
+      <SettingsAbout device="Grace tablet · 0.1" status="Everything is up to date." />
       <ListRow className="mt-6" title="Clear browsing data" leading={<Trash size={26} strokeWidth={2} aria-hidden />}
         onClick={() => { if (website.can({ type: "requestClearBrowsingData" })) void website.send({ type: "requestClearBrowsingData" }); }} />
       {website.requests?.clearing === "ClearFailed" && (
@@ -79,12 +131,15 @@ function AboutSettingsPage() {
 
 /** @model spec/app/websiteRequests.md
  * @model spec/app/accounts.md */
-export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidden">) {
+export function Settings({ hostedAppointment, ...props }: Pick<ComponentProps<"div">, "inert" | "aria-hidden"> & { hostedAppointment?: HostedAppointment }) {
   const { workspace, can, send, guide } = useWorkspace();
   const runtime = useRuntime();
+  const { owner, accountEmail } = useSetupSelector(selectSettingsSetup, shallowEqual);
+  const { accounts } = useAccounts();
   if (!workspace) return null;
   const page = workspace.device.settingsPage;
   const preferences = workspace.preferences.session;
+  const personName = firstNameFromEmail(accountEmail ?? accounts?.accounts[0]?.address);
   const preview = (settings: DisplayPreferences) => {
     const event = { type: "changePreferences", settings } as const;
     if (can(event)) void send(event);
@@ -112,9 +167,8 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
     <SettingsApp {...frame}>
       {workspace.preferences.saving === "SaveFailed" && <RetryNotice onRetry={() => void runtime.runPromise(retryPreferences())}>Your settings weren’t saved.</RetryNotice>}
       {page === "AccountSettings" ? <GraceAccountSettings /> : page === "TextSizeSettings" ? (
-        <SettingsTextSize sizes={textSizeOptions} value={textSizes[preferences.textSize]}
-          greeting="Good morning" eventWhen="SAT 10 am" eventTitle="Your appointment" graceMessage="Your appointment is tomorrow at 10 am."
-          onValueChange={(value) => {
+        <TextSizePanel personName={personName} owner={owner} hostedAppointment={hostedAppointment} value={textSizes[preferences.textSize]}
+          onChange={(value) => {
             const found = textSizeEntries.find((entry) => entry[1] === value);
             if (found) preview({ ...preferences, textSize: found[0] });
           }} />
@@ -125,10 +179,11 @@ export function Settings(props: Pick<ComponentProps<"div">, "inert" | "aria-hidd
           onNightDimChange={(nightDimming) => preview({ ...preferences, nightDimming })} />
       ) : page === "VoiceSettings" ? (
         <><SettingsVoice speeds={speedOptions} speed={preferences.pace}
+          onPlaySample={can({ type: "samplePreferences" }) ? () => void runtime.runPromise(sampleVoice(personName)) : undefined}
           onSpeedChange={(value) => {
             if (value === "Slower" || value === "Normal" || value === "Faster") preview({ ...preferences, pace: value });
           }} speaks={preferences.voiceOutput} onSpeaksChange={(value) => preview({ ...preferences, voiceOutput: value })} wake="unavailable" />
-          <PageText>{voiceDisclosure}</PageText></>
+          <PageText className="mt-4">{voiceDisclosure}</PageText></>
       ) : page === "NetworkSettings" ? (
         <Wifi />
       ) : page === "AboutSettings" ? (

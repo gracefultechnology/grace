@@ -252,7 +252,11 @@ pure def lawLastSentEmailLeavesOutbox(registry: A::Accounts, sources: List[MailS
 ### Each account’s banner shows its own state, and offline is not a broken account
 
 While the tablet is offline, Email says "No internet right now" first; she
-can still read, and what she sends waits in Outbox. Each shown account that
+can still read, and what she sends waits in Outbox. Its Fix Wi-Fi asks Grace
+for help, as the prototype does (`prototype/Grace Prototype.html:2394`):
+Grace opens and walks her through Wi-Fi, pointing at what to tap, on a turn
+that may act but never consents. The Home banner's Fix Wi-Fi opens the
+written steps on the Wi-Fi page instead ([Notices](./notices.md)). Each shown account that
 needs her to sign in again has its own banner naming it, which adds "Your
 other email is fine." when another shown account is not broken. Each shown
 account getting its email has a "Getting your <Name> email…" row. Being

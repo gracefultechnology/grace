@@ -1,4 +1,4 @@
-// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/email.md, "A scam warning needs current evidence and holds that message's links"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/email.md, "A scam warning needs current evidence and holds that message's links"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/calendarView.md, "A change at the company names the revision it read and never overwrites a newer one"
 import type { WebsiteTask } from "./websiteTask.vibe"
 import { Digest } from "effect/crypto"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
@@ -8,7 +8,7 @@ import { seriesAt, type CalendarView, type DeleteScope } from "../gen/app__calen
 import type { DraftSnapshot, ListingScope, ReadReceipt, Recipient, ReplyHeader, SendStatus } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt, Folder, MessageChange, MessageIdentity, MetadataReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
-import { AttachmentContent, ContactList, DraftList, DraftRead, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, ReadResponse, ReconnectRefusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
+import { AttachmentContent, ContactList, DraftList, DraftRead, DraftSaved, Feed, Grants, Listing, Operation, OtherCheck, OwnerSession, ReadResponse, ReconnectRefusal, Session, SessionOutcome, Stored } from "./connector.schema.ts"
 import type { WireAttachment, WireEvent, WireMessage } from "./connector.schema.ts"
 import type { CloudLink } from "./conversation.vibe"
 import { google } from "./google.vibe"
@@ -24,7 +24,7 @@ export const secretPassword = (typed: string): SecretPassword => branded(Redacte
 
 export type AccountRef = { readonly provider: Provider; readonly address: string }
 export type SignInRequest = { readonly provider: Provider; readonly attempt: number; readonly renewing: string }
-export type OtherForm = { readonly attempt: number; readonly address: string; readonly password: SecretPassword }
+export type OtherForm = { readonly attempt: number; readonly name?: string; readonly address: string; readonly password: SecretPassword }
 export type ServersForm = OtherForm & { readonly incoming: string; readonly outgoing: string }
 export schema MailContent {
   readonly ref: string; readonly from: string; readonly fromAddress: string; readonly subject: string
@@ -37,11 +37,12 @@ export type Contact = { readonly name: string; readonly address: string }
 export type Attached = { readonly mimeType: string; readonly data: string }
 export type Restored = { readonly snapshot: DraftSnapshot; readonly verified: boolean }
 export type ChangeOp = { readonly identity: MessageIdentity; readonly change: Exclude<MessageChange, "NoMessageChange">; readonly revision: number; readonly version: string }
-export type DraftStored = { readonly draftId: string; readonly persisted: boolean }
+export type DraftStored = { readonly draftId: string; readonly persisted: boolean; readonly unsendable?: readonly string[] }
 export type SendOutcome = { readonly resultStatus: Extract<SendStatus, "Sent" | "SendFailed" | "SendUnknown">; readonly evidence: string }
 export type Published = { readonly incoming: Calendar; readonly seriesVersion: number; readonly scheduleVerified: boolean }
-export type StoreReceipt = { readonly revision: number; readonly succeeded: boolean; readonly providerId?: string; readonly published: readonly Published[] }
-export type DeletionReceipt = { readonly succeeded: boolean; readonly evidence: string }
+export type Current = { readonly latest: EntryDetails; readonly version: string }
+export type StoreReceipt = { readonly revision: number; readonly succeeded: boolean; readonly providerId?: string; readonly version?: string; readonly outdated?: Current; readonly published: readonly Published[] }
+export type DeletionReceipt = { readonly succeeded: boolean; readonly evidence: string; readonly outdated?: Current }
 
 export error NeedsSignIn
 export error Unreachable
@@ -78,14 +79,15 @@ export type CalendarConnection = {
   readonly fenceGuidedCreate: (identity: Calendar["identity"], task: string) => boolean!!
   readonly write: (entry: Calendar, view: CalendarView, dispatch?: GuidedDispatch) => StoreReceipt!NeedsSignIn
   readonly verifySaved: (view: CalendarView, occurrence: string, expected: EntryDetails) => (EntryDetails | undefined)!ConnectorFailure
-  readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!NeedsSignIn
-  readonly removeRepetition: (series: Calendar["identity"], occurrence: EntryDetails) => DeletionReceipt!NeedsSignIn
+  readonly remove: (entry: Calendar, scope: DeleteScope) => DeletionReceipt!NeedsSignIn
+  readonly removeRepetition: (series: Calendar, occurrence: EntryDetails) => DeletionReceipt!NeedsSignIn
 }
 
 export service Connector {
   signIn(request: SignInRequest): SheetReport!!
   connectOther(form: OtherForm): OtherReport!Unreachable
   connectServers(form: ServersForm): OtherReport!Unreachable
+  ownerName(): string!Unreachable
   readonly shown: Stream.Stream<ShownPage | undefined>
   readonly mail: (account: AccountRef) => MailConnection
   readonly calendar: (account: AccountRef) => CalendarConnection
@@ -184,24 +186,10 @@ function manifest(account: AccountRef, ref: string, m: Message, all: readonly At
 const addresses = (to: string) => to.split(/[,;]/).map((a) => a.trim()).filter((a) => a !== "")
 const iso = (at: number) => new Date(at).toISOString()
 
-const wallClockFormats = new Map<string, Intl.DateTimeFormat>()
 const dateInFormats = new Map<string, Intl.DateTimeFormat>()
-
-function wallClock(at: number, timeZone: string) {
-  let formatter = wallClockFormats.get(timeZone)
-  if (formatter === undefined) {
-    formatter = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" })
-    wallClockFormats.set(timeZone, formatter)
-  }
-  const parts = formatter.formatToParts(at)
-  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value)
-  return Date.UTC(part("year"), part("month") - 1, part("day"), part("hour"), part("minute"), part("second"))
-}
-
 function midnight(date: string, timeZone: string) {
-  const guess = Date.parse(`${date}T00:00:00Z`)
-  const first = guess - (wallClock(guess, timeZone) - guess)
-  return guess - (wallClock(first, timeZone) - first)
+  const start = Option.getOrUndefined(DateTime.makeZoned(`${date}T00:00:00Z`, { timeZone, adjustForTimeZone: true }))
+  return start !== undefined && DateTime.formatIsoDate(start) === date ? DateTime.toEpochMillis(start) : undefined
 }
 
 function dateIn(at: number, timeZone: string) {
@@ -214,6 +202,7 @@ function dateIn(at: number, timeZone: string) {
 }
 
 function exactly(zones: ReadonlySet<string>, text: string, allDay: boolean, timeZone: string) {
+  if (allDay && /^\d{4}-\d{2}-\d{2}$/.test(text)) return zones.has(timeZone) ? midnight(text, timeZone) : undefined
   const at = /(?:[zZ]|[+-]\d\d:?\d\d)$/.test(text) ? Date.parse(text) : Number.NaN
   if (Number.isNaN(at)) return undefined
   return allDay && !(zones.has(timeZone) && midnight(dateIn(at, timeZone), timeZone) === at) ? undefined : at
@@ -274,14 +263,17 @@ function sameDetails(a: EntryDetails, b: EntryDetails) {
 
 const seriesVersionOf = (view: CalendarView, seriesId: string) => seriesId === "" ? 0 : Math.max(0, seriesAt(view, seriesId).version)
 
+const versionOf = (e: ProviderEvent) => e.etag ?? ""
+
 function refreshed(known: Calendar | undefined, view: CalendarView, e: ProviderEvent, entry: EntryDetails, source: Calendar | undefined): Calendar | undefined {
+  const version = versionOf(e)
   if (known === undefined) {
     const identity = { owner: view.owner, calendarId: view.calendarId, occurrenceId: e.externalId, sourceRef: source?.identity.sourceRef ?? "", sourceAccount: source?.identity.sourceAccount ?? 0, kind: "Appointment" as const, billRef: "", billOrigin: "", billAccount: "" }
-    return validIdentity(identity) ? save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore") : undefined
+    return validIdentity(identity) ? { ...save(approveSave(create(noEntry, identity, entry, "CalendarUser"), 1, "CalendarUser"), 1, true, "CalendarStore"), version } : undefined
   }
-  if (known.phase !== "Saved" || sameDetails(known.committed, entry)) return undefined
+  if (known.phase !== "Saved" || (sameDetails(known.committed, entry) && known.version === version)) return undefined
   const edited = edit(beginEdit(known, "CalendarUser"), entry, "CalendarUser")
-  return save(approveSave(edited, edited.revision, "CalendarUser"), edited.revision, true, "CalendarStore")
+  return { ...save(approveSave(edited, edited.revision, "CalendarUser"), edited.revision, true, "CalendarStore"), version }
 }
 
 const deleted = (known: Calendar) => confirmDelete(approveDelete(requestDelete(known, "CalendarUser"), "CalendarUser"), true, "CalendarStore")
@@ -377,7 +369,7 @@ data CreateBinding {
   Unknown
   Pending
   Held
-  Received { providerId: string }
+  Received { providerId: string; version: string }
 }
 
 schema CalendarCreateClaim { grantId: Schema.NonEmptyString; mutation: Schema.NonEmptyString; fingerprint: Schema.NonEmptyString; providerId?: Schema.NonEmptyString }
@@ -444,7 +436,7 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
       const fenceValue = storage.get(fenceKey(scope)) catch effect () => { throw new Unreachable() }
       const fenced = fenceValue !== undefined
       if (dispatch !== undefined && (!fenced || previous !== undefined)) return CreateBinding.Pending()
-      if (previous?.providerId !== undefined) return CreateBinding.Received({ providerId: previous.providerId })
+      if (previous?.providerId !== undefined) return CreateBinding.Received({ providerId: previous.providerId, version: "" })
       if (dispatch === undefined && fenced) return CreateBinding.Pending()
       if (previous !== undefined && account.provider !== "Gmail") return CreateBinding.Pending()
       const claim = previous ?? { fingerprint, grantId, mutation: try providerKey(entry.revision) }
@@ -462,7 +454,7 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
       }
       if (saved.calendarId !== calendarId || saved.externalId === "") throw new ProviderRefused({ status: 409 })
       journal.set(at, { ...claim, providerId: saved.externalId }) catch effect () => { throw new Unreachable() }
-      return CreateBinding.Received({ providerId: saved.externalId })
+      return CreateBinding.Received({ providerId: saved.externalId, version: versionOf(saved) })
     }
     return try Effect.scoped(effect {
       (try locks).hold(at) catch effect () => { throw new Unreachable() }
@@ -482,14 +474,41 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     const request = HttpClientRequest.setHeader(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(url("/events")), body), "Idempotency-Key", key)
     return (try fetched(Effect.succeed(request), Stored)).event
   })
-  const removal = effect (id: string, calendarId: string) =>
-    HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
-  const removed = effect (id: string, calendarId: string, absent: DeletionReceipt) =>
-    Effect.as(call(removal(id, calendarId)), { succeeded: true, evidence: `deleted:${id}` }) catch effect (e) => match (e) {
-      when NeedsSignIn: throw e;
-      when ProviderRefused: e.status === 404 ? absent : { succeeded: false, evidence: `refused:${e.status}` };
-      when Unreachable: { succeeded: false, evidence: "" };
+  const atRevision = (request: HttpClientRequest.HttpClientRequest, version: string) => HttpClientRequest.setHeader(request, "If-Match", version)
+  const removal = effect (id: string, calendarId: string, version: string) =>
+    atRevision(HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId }), version)
+
+  effect function reread(entry: Calendar): (Current | undefined)!NeedsSignIn {
+    const { calendarId, occurrenceId: id } = entry.identity
+    const read = effect {
+      const request = HttpClientRequest.setUrlParams(HttpClientRequest.get(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
+      return (try fetched(Effect.succeed(request), Stored)).event
     }
+    const e = read catch effect (cause) => match (cause) {
+      when NeedsSignIn: throw cause;
+      default: undefined;
+    }
+    if (e === undefined || e.externalId !== id || e.calendarId !== calendarId) return undefined
+    const timezone = e.timezone ?? entry.committed.timezone
+    const { startAt, endAt, verified } = schedule(zones, e, timezone)
+    const latest = details(e, startAt, endAt, timezone, entry.committed)
+    const version = versionOf(e)
+    return verified && version !== "" && validDetails(latest) ? { latest, version } : undefined
+  }
+
+  effect function removed(entry: Calendar, id: string, absent: DeletionReceipt): DeletionReceipt!NeedsSignIn {
+    const status = entry.version === "" ? 412 : (Effect.as(call(removal(id, entry.identity.calendarId, entry.version)), 0) catch effect (e) => match (e) {
+      when NeedsSignIn: throw e;
+      when ProviderRefused: e.status;
+      when Unreachable: -1;
+    })
+    if (status === 0) return { succeeded: true, evidence: `deleted:${id}` }
+    if (status === 404) return absent
+    if (status === -1) return { succeeded: false, evidence: "" }
+    if (status !== 412 || id !== entry.identity.occurrenceId) return { succeeded: false, evidence: `refused:${status}` }
+    const outdated = try reread(entry)
+    return { succeeded: false, evidence: `changed:${id}`, ...outdated === undefined ? {} : { outdated } }
+  }
 
 
   effect function stored(entry: Calendar, dispatch: GuidedDispatch | undefined) {
@@ -503,14 +522,14 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
         bound = try createBinding(entry, grantId, true, dispatch)
       }
       if (bound._tag !== "Received") throw new ProviderRefused({ status: 409 })
-      return bound.providerId
+      return { id: bound.providerId, version: bound.version }
     }
     const fields = event(entry)
     if (fields === undefined) throw new ProviderRefused({ status: 422 })
-    const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), { ...fields, calendarId, grantId })
+    const request = atRevision(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), { ...fields, calendarId, grantId }), entry.version)
     const { event: saved } = try fetched(Effect.succeed(request), Stored)
     if (saved.calendarId !== calendarId || saved.externalId !== id) throw new ProviderRefused({ status: 409 })
-    return id
+    return { id, version: versionOf(saved) }
   }
 
   effect function readEvents(view: CalendarView, from: number, until: number, grantId: string) {
@@ -552,21 +571,26 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     },
     write: effect (entry, _view, dispatch) => {
       const revision = entry.revision
-      return Effect.map(stored(entry, dispatch), (saved): StoreReceipt => ({
-        revision, succeeded: true, published: [],
-        ...entry.hasSaved ? {} : { providerId: saved }
+      const status = entry.hasSaved && entry.version === "" ? 412 : (Effect.map(stored(entry, dispatch), (saved): StoreReceipt => ({
+        revision, succeeded: true, published: [], ...saved.version === "" ? {} : { version: saved.version },
+        ...entry.hasSaved ? {} : { providerId: saved.id }
       })) catch effect (e) => match (e) {
         when NeedsSignIn: throw e;
-        default: { revision, succeeded: false, published: [] };
-      }
+        when ProviderRefused: e.status;
+        default: 0;
+      })
+      if (typeof status !== "number") return status
+      const outdated = status === 412 && entry.hasSaved ? try reread(entry) : undefined
+      return { revision, succeeded: false, published: [], ...outdated === undefined ? {} : { outdated } }
     },
-    remove: effect ({ calendarId, occurrenceId: id }, scope) => {
+    remove: effect (entry, scope) => {
       if (scope === "EntireSeries") return { succeeded: false, evidence: "series-unsupported" }
-      return try removed(id, calendarId, { succeeded: false, evidence: "refused:404" })
+      return try removed(entry, entry.identity.occurrenceId, { succeeded: false, evidence: "refused:404" })
     },
-    removeRepetition: effect ({ calendarId, occurrenceId: id }, { startAt, allDay, timezone }) => {
+    removeRepetition: effect (series, { startAt, allDay, timezone }) => {
+      const id = series.identity.occurrenceId
       const instance = `${id}_${allDay ? dateIn(startAt, timezone).replaceAll("-", "") : iso(startAt).replace(/[-:]|\.\d+/g, "")}`
-      return try removed(instance, calendarId, { succeeded: true, evidence: `kept-here:${instance}` })
+      return try removed(series, instance, { succeeded: true, evidence: `kept-here:${instance}` })
     }
   }
 }
@@ -690,10 +714,26 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       return { name: file.name, mimeType: got.mimeType, dataBase64: got.data }
     }
 
-    effect function uploads(attachments: readonly SavedFile[], held: ReadonlyMap<string, Attached>) {
+    effect function prepared(attachments: readonly SavedFile[], held: ReadonlyMap<string, Attached>) {
       if (!sendableAttachments(attachments)) throw new ProviderRefused({ status: 422 })
-      const files = try Effect.forEach(attachments, (file) => uploaded(file, held.get(file.id)))
-      if (files.reduce((length, file) => length + file.dataBase64.length, 0) >= maxMailMimeBytes) throw new ProviderRefused({ status: 413 })
+      const tried = try Effect.forEach(attachments, effect (file) => {
+        const part = uploaded(file, held.get(file.id)) catch effect (e) => match (e) {
+          when ProviderRefused: undefined;
+          when NeedsSignIn: throw e;
+          when Unreachable: throw e;
+        }
+        return { file, part }
+      })
+      const files = tried.flatMap(({ part }) => part === undefined ? [] : [part])
+      const refused = tried.filter(({ part }) => part === undefined).map(({ file }) => file.name)
+      const largest = files.toSorted((a, b) => b.dataBase64.length - a.dataBase64.length).slice(0, 1).map((file) => file.name)
+      const tooLarge = files.reduce((length, file) => length + file.dataBase64.length, 0) >= maxMailMimeBytes
+      return { files, unsendable: refused.length > 0 ? refused : tooLarge ? largest : [], status: refused.length > 0 ? 422 : 413 }
+    }
+
+    effect function uploads(attachments: readonly SavedFile[], held: ReadonlyMap<string, Attached>) {
+      const { files, unsendable, status } = try prepared(attachments, held)
+      if (unsendable.length > 0) throw new ProviderRefused({ status })
       return files
     }
 
@@ -776,7 +816,9 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       },
       saveDraft: effect ({ id, content: c, attachments }, held) => {
         const stored = effect {
-          const body = { draftId: id, to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, attachments: try uploads(attachments, held) }
+          const { files, unsendable } = try prepared(attachments, held)
+          if (unsendable.length > 0) return { draftId: id, persisted: false, unsendable } satisfies DraftStored
+          const body = { draftId: id, to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, attachments: files }
           const { draftId } = try fetched(posted("/drafts", body), DraftSaved)
           return { draftId, persisted: draftId === id } satisfies DraftStored
         }
@@ -824,8 +866,12 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       const refused: SheetReport = { attempt: request.attempt, outcome: "Refused", address: "", granted: nothing }
       return request.provider === "OtherEmail" ? refused : (visit(request) catch () => refused)
     },
-    connectOther: (form) => check(form.attempt, { address: form.address, password: Redacted.value(form.password) }),
-    connectServers: (form) => check(form.attempt, { address: form.address, password: Redacted.value(form.password), incoming: form.incoming, outgoing: form.outgoing }),
+    connectOther: (form) => check(form.attempt, { name: form.name, address: form.address, password: Redacted.value(form.password) }),
+    connectServers: (form) => check(form.attempt, { name: form.name, address: form.address, password: Redacted.value(form.password), incoming: form.incoming, outgoing: form.outgoing }),
+    ownerName: effect () => {
+      const { account } = fetched(get("/api/auth/session", {}), OwnerSession) catch effect () => { throw new Unreachable() }
+      return account?.name ?? ""
+    },
     shown: SubscriptionRef.changes(shown),
     mail,
     calendar: (account) => connectedCalendar(link, account, zones, creates, transport, grantOf)

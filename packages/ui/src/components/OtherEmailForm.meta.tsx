@@ -10,6 +10,9 @@ export const meta: ComponentMeta<OtherEmailFormProps> = {
   args: { defaultName: "Margaret Hill", onNext: next, onCancel: cancel, accepts: () => true },
   examples: {
     "Listed provider": { defaultAddress: "margaret@outlook.com", problem: { kind: "listedProvider", provider: "outlook" } },
+    "Listed iCloud": { defaultAddress: "margaret@icloud.com", problem: { kind: "listedProvider", provider: "icloud" } },
+    "Listed AOL": { defaultAddress: "margaret@aol.com", problem: { kind: "listedProvider", provider: "aol" } },
+    "Listed Yahoo": { defaultAddress: "margaret@yahoo.com", problem: { kind: "listedProvider", provider: "yahoo" } },
     "Wrong password": { defaultAddress: "margaret@riverview.net", problem: { kind: "passwordRefused" } },
     "Next refused": { defaultAddress: "margaret@riverview.net", onNext: undefined, onCancel: undefined },
     "Address refused": { defaultAddress: "margaret@riverview.net", accepts: (address: string) => !address.endsWith("@riverview.net") },
@@ -49,7 +52,13 @@ export const meta: ComponentMeta<OtherEmailFormProps> = {
       await expect(go.disabled).toBe(false);
     },
     "Listed provider": ({ canvasElement }: { canvasElement: HTMLElement }) =>
-      expect(within(canvasElement).getByText(/This is an Outlook address/)).toBeTruthy(),
+      expect(within(canvasElement).getByRole("alert")).toHaveTextContent("This is an Outlook address. Go back and choose Outlook, so you can sign in on Outlook’s own page."),
+    "Listed iCloud": ({ canvasElement }: { canvasElement: HTMLElement }) =>
+      expect(within(canvasElement).getByRole("alert")).toHaveTextContent("This is an iCloud address. Go back and choose iCloud, so you can sign in on iCloud’s own page."),
+    "Listed AOL": ({ canvasElement }: { canvasElement: HTMLElement }) =>
+      expect(within(canvasElement).getByRole("alert")).toHaveTextContent("This is an AOL address. Go back and choose AOL, so you can sign in on AOL’s own page."),
+    "Listed Yahoo": ({ canvasElement }: { canvasElement: HTMLElement }) =>
+      expect(within(canvasElement).getByRole("alert")).toHaveTextContent("This is a Yahoo address. Go back and choose Yahoo, so you can sign in on Yahoo’s own page."),
     "Wrong password": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Cancel" }));
       await expect(cancel).toHaveBeenCalled();

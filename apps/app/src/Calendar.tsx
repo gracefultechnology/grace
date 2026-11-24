@@ -1,4 +1,4 @@
-// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"; spec/app/calendarView.md, "The form opens its Day or its Time list, one at a time"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/calendar.md, "Story: See a reminder and choose what to do"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"; spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/workspace.md, "Guidance is visible only on its current surface and target"
+// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"; spec/app/calendarView.md, "The form opens its Day or its Time list, one at a time"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/calendar.md, "Story: See a reminder and choose what to do"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"; spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/workspace.md, "Guidance is visible only on its current surface and target"; spec/app/calendarView.md, "A change at the company names the revision it read and never overwrites a newer one"
 import { Banner, BannerButton, CalendarApp, type CalendarAppProps, CalendarDeleteDialog, type CalendarEventItem, CalendarGlyph } from "@repo/ui";
 import { Effect } from "effect";
 import { useMemo } from "react";
@@ -9,7 +9,24 @@ import { type Event as CalendarEvent, type FormPicker, keepsRepetition, type Vie
 import type { Pending } from "../gen/app__proposal.ts";
 import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { adding, CalendarNews, dayOf, editingPlan, hour, instant, midnight, minutesOf, navigation, shownDays, timeLabel } from "./calendar.vibe";
+import type { HomeCards } from "./managedReads.vibe";
 import { type CalendarInstance, useAccounts, useCalendarActions, useCalendarKeys, useCalendarNote, useDraft, useProposal, useRecoveredCalendarDrafts, useRuntime, useWorkspace, WithCalendars } from "./useApp.ts";
+
+const shortWeekday = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const shortTime = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+
+export type HostedAppointment = HomeCards["events"][number];
+
+export const appointmentWeekday = (date: Date) => shortWeekday.format(date).toUpperCase();
+
+export function hostedAppointmentDate({ isAllDay, startAt }: HostedAppointment): Date {
+  return new Date(isAllDay && startAt.length === 10 ? `${startAt}T12:00:00` : startAt);
+}
+
+export function hostedAppointmentDisplay(event: HostedAppointment) {
+  const date = hostedAppointmentDate(event);
+  return { date, time: event.isAllDay ? "All day" : shortTime.format(date) };
+}
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
 
@@ -18,6 +35,21 @@ const repeatLines: Record<Recurrence, string> = { Once: "Doesn’t repeat", Week
 const reminders: readonly (readonly [string, number])[] = [["Day before", 24 * hour], ["1 hour before", hour]];
 const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const snoozeFor = 10 * 60 * 1000;
+const shortWeekday = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const shortTime = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+
+export type HostedAppointment = HomeCards["events"][number];
+
+export const appointmentWeekday = (date: Date) => shortWeekday.format(date).toUpperCase();
+
+export function hostedAppointmentDate({ isAllDay, startAt }: HostedAppointment): Date {
+  return new Date(isAllDay && startAt.length === 10 ? `${startAt}T12:00:00` : startAt);
+}
+
+export function hostedAppointmentDisplay(event: HostedAppointment) {
+  const date = hostedAppointmentDate(event);
+  return { date, time: event.isAllDay ? "All day" : shortTime.format(date) };
+}
 
 const monthYearFmt = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
 const monthLongFmt = new Intl.DateTimeFormat("en-US", { month: "long" });
@@ -215,12 +247,14 @@ function Shown({ registry, canAccount, sendAccount, pending, views, now, ...prop
     const id = entry.identity.occurrenceId;
     const showing = entry.reminder === "ReminderShown";
     const reminderCommand = (command: Extract<CalendarEvent, { type: "changeOccurrence" }>["command"]) => (showing ? offer(open, { type: "changeOccurrence", id, command }) : undefined);
+    const calendarName = open.key === tabletKey ? "On this tablet" : registry.accounts.find((a) => a.id === open.key)?.name ?? "";
     return (
       <>
         <CalendarApp {...emptyBrowsing} {...closeProps} view="detail" onBack={offer(open, { type: "backToCalendar" })}
           event={{
             title: d.title, when: `${formatLongDate(dayOf(d.startAt))} · ${span(d)}`, where: d.location || undefined, who: d.participant || undefined,
             reminder: reminderLine(d), repeat: repeatLines[d.recurrence], note: d.notes || undefined,
+            notice: entry.storageError === "ChangedElsewhere" ? `${calendarName} has a newer version of this appointment, so the tablet didn’t change it. This is how it is now.` : undefined,
             onDismissReminder: reminderCommand({ tag: "DismissReminder" }), onSnoozeReminder: reminderCommand({ tag: "SnoozeReminder", until: now + snoozeFor }),
             onEdit: actions && editingPlan(open.state, id) ? () => actions.edit(open.key, id) : undefined, onDelete: offer(open, { type: "requestDeletion" }),
           }} />
@@ -357,6 +391,7 @@ function Form({ box, entry, today, closeProps, uncertain }: {
           options: ["No", ...leads.map(leadLabel)], value: d.reminderEnabled ? leadLabel(d.leadTime) : "No",
           onChange: (v) => { const at = leads.find((l) => leadLabel(l) === v); change({ reminderEnabled: at !== undefined, leadTime: at ?? 0 }); },
         },
+        important: { checked: d.important, onCheckedChange: (important) => change({ important }) },
       }} />
   );
 }

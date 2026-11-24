@@ -81,6 +81,10 @@ effect function upgradedCalendar(text: string, account: number) {
       changed = true
       return { ...value, picker: "NoPicker" }
     }
+    if (typeof value === "object" && value !== null && "approvedRevision" in value && !("version" in value)) {
+      changed = true
+      return { ...value, version: "" }
+    }
     if (key !== "identity" || typeof value !== "object" || value === null || !("occurrenceId" in value) ||
         !("kind" in value) || !("sourceRef" in value) || "sourceAccount" in value) return value
     const sourceAccount = value.kind === "Appointment" && typeof value.sourceRef === "string" && value.sourceRef !== "" ? account : 0
@@ -100,6 +104,18 @@ function reviewedRead(known: Held | undefined, content: MailContent, observed: O
   if (observed.kind === "opened") return { generation, version: content.version, evidence: suspicion }
   return sameHeader && prior.body === content.body && known.read?.generation === generation &&
     known.read.evidence === suspicion ? known.read : undefined
+}
+
+export function compatibleStore<E>(store: KeyValueStore.KeyValueStore, key: string, upgrade: (raw: string) => string!E) {
+  let last: { raw: string; compatible: string } | undefined
+  return Layer.succeed(KeyValueStore.KeyValueStore, {
+    ...store, get: effect (name: string) => {
+      const raw = try store.get(name)
+      if (name !== key || raw === undefined) return raw
+      if (last?.raw !== raw) last = { raw, compatible: try Effect.orDie(upgrade(raw)) }
+      return last.compatible
+    }
+  })
 }
 
 export const instances = Layer.effect(Instances, effect {
@@ -131,27 +147,16 @@ export const instances = Layer.effect(Instances, effect {
     })
   }
 
-  function compatibleStore<E>(key: string, upgrade: (raw: string) => string!E) {
-    let last: { raw: string; compatible: string } | undefined
-    return Layer.succeed(KeyValueStore.KeyValueStore, {
-      ...store, get: effect (name: string) => {
-        const raw = try store.get(name)
-        if (name !== key || raw === undefined) return raw
-        if (last?.raw !== raw) last = { raw, compatible: try Effect.orDie(upgrade(raw)) }
-        return last.compatible
-      }
-    })
-  }
   const openMail = (id: number) => effect {
     const key = mailKey(id)
-    const compatible = compatibleStore(key, (raw) => Effect.succeed(currentMailRecord(raw)))
+    const compatible = compatibleStore(store, key, (raw) => Effect.succeed(currentMailRecord(raw)))
     const box = try Effect.orDie(Effect.provide(effect { return try MailMachine }, Layer.provide(storedMail(key), compatible)))
     try Effect.orDie(box.send({ type: "restartMailbox" }, "MailHost"))
     return box
   }
   const openCalendar = (account: number) => {
     const key = calendarKey(account)
-    const compatible = compatibleStore(key, (text) => upgradedCalendar(text, account))
+    const compatible = compatibleStore(store, key, (text) => upgradedCalendar(text, account))
     return Effect.orDie(Effect.provide(effect { return try CalendarMachine }, Layer.provide(storedCalendar(key), compatible)))
   }
   const mail = (id: number) => id === tablet ? Effect.fail(new NotAnAccount({ id })) : ensure(mails, id, openMail(id))

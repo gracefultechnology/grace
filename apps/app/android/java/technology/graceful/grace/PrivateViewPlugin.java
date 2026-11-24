@@ -12,20 +12,21 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 public final class PrivateViewPlugin extends Plugin {
  private boolean vault;
  private boolean browser;
+ private boolean account;
  @PluginMethod public void protect(PluginCall call) {
   String view = call.getString("view");
   Boolean active = call.getBoolean("active");
-  if (active == null || !("vault".equals(view) || "browser".equals(view))) {
+  if (active == null || !("vault".equals(view) || "browser".equals(view) || "account".equals(view))) {
    call.reject("Invalid private view");
    return;
   }
   getActivity().runOnUiThread(() -> {
-   if ("vault".equals(view)) {
-    vault = active;
-   } else {
-    browser = active;
+   switch (view) {
+    case "vault" -> vault = active;
+    case "browser" -> browser = active;
+    default -> account = active;
    }
-   if (vault || browser) getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+   if (vault || browser || account) getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
    else getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
    call.resolve();
   });

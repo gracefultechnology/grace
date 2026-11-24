@@ -1,30 +1,33 @@
 // spec/app/index.md, "Story: Manage my saved passwords privately"
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
-import { AppWindow, AskGraceButton, besideRail, Button, HomeScreen, ListRow, Rail, RailButton, RailPopover, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
+import { AppWindow, AskGraceButton, besideRail, Button, CaptionStrip, type CaptionStripProps, HomeScreen, ListRow, Rail, RailButton, RailPopover, ScreenDim, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
 import { Effect, ManagedRuntime } from "effect";
-import { CalendarDays, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
-import { type ReactNode, Suspense, useCallback, useMemo, useState } from "react";
-import { agentPlugin } from "./agentPlugin.ts";
-import { application } from "./app.vibe";
-import { Browser } from "./Browser.tsx";
-import { Calendar } from "./Calendar.tsx";
-import { Email } from "./Email.tsx";
-import { Files } from "./Files.tsx";
-import { ManagedRead } from "./ManagedRead.tsx";
-import { PasswordsApp } from "./PasswordsApp.tsx";
-import { Settings } from "./Settings.tsx";
-import { devicePlugin, passwordClient, wifiPlugin } from "./surfacePlugin.ts";
+import { CalendarDays, Check, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
+import { type ReactNode, Suspense, useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { type Assistance, keyboardCaptionVisible } from "../gen/app__assistant.ts";
+import { activeTab, tabUrl } from "../gen/app__browser.ts";
+import type { Turn } from "../gen/app__conversation.ts";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
-import { muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
+import { effectiveBrightness, muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Setup } from "../gen/app__setup.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
 import { canChangeLifecycle, enabled, privateSurfaceActive, type Event as WorkspaceEvent, type Workspace } from "../gen/app__workspace.ts";
+import { agentPlugin } from "./agentPlugin.ts";
+import { application } from "./app.vibe";
+import { Browser } from "./Browser.tsx";
+import { appointmentWeekday, Calendar, hostedAppointmentDate, hostedAppointmentDisplay } from "./Calendar.tsx";
 import { dayOf, relative, timeLabel } from "./calendar.vibe";
-import { type HomeCards, ManagedReads, surfaceOwner } from "./managedReads.vibe";
+import { Email } from "./Email.tsx";
+import { Files } from "./Files.tsx";
 import { Grace } from "./Grace.tsx";
+import { ManagedRead } from "./ManagedRead.tsx";
+import { type HomeCards, ManagedReads, surfaceOwner } from "./managedReads.vibe";
 import { NoticeBanner, Notices } from "./Notices.tsx";
 import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
+import { PasswordsApp } from "./PasswordsApp.tsx";
+import { Settings } from "./Settings.tsx";
+import { androidHost, devicePlugin, passwordClient, wifiPlugin } from "./surfacePlugin.ts";
 import {
   RuntimeContext,
   type Runtime,
@@ -52,6 +55,7 @@ import {
   WithMailboxes,
   workspaceActionsFor,
 } from "./useApp.ts";
+import { site } from "./WebsiteRequests.tsx";
 
 // spec/app/deviceKeys.md, "Each Back action is one event its guard allows"
 const websiteBackEvents: Record<"CancelClearData" | "DismissWebsiteRequest", (r: WebsiteRequests) => WebsiteEvent> = {
@@ -70,16 +74,15 @@ const backEvents: Record<Exclude<BackAction, "Unconsumed" | "PrivatePageBack" | 
 };
 
 const lifted = "absolute top-1.5 right-1.5";
-const appointmentClock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
-const appointmentDay = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const railClock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const railDate = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
 const sleepDate = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
 
-const startOf = (event: HomeCards["events"][number]) => new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
 const managedNext = (cards: HomeCards | undefined, now: Date) => {
   const next = cards?.events[0];
-  return next && `${relative(dayOf(startOf(next).getTime()), dayOf(now.getTime()))}: ${next.title || "Untitled appointment"}, ${next.isAllDay ? "All day" : timeLabel(startOf(next).getTime())}`;
+  if (!next) return undefined;
+  const at = hostedAppointmentDate(next).getTime();
+  return `${relative(dayOf(at), dayOf(now.getTime()))}: ${next.title || "Untitled appointment"}, ${next.isAllDay ? "All day" : timeLabel(at)}`;
 };
 
 const under = (covered: boolean) => (covered ? { inert: true, "aria-hidden": true } as const : {});
@@ -101,6 +104,47 @@ const toggleWifiEvent: WorkspaceEvent = { type: "togglePopover", popover: "WifiP
 const toggleVolumeEvent: WorkspaceEvent = { type: "togglePopover", popover: "VolumePopover" };
 const dismissPopoverEvent: WorkspaceEvent = { type: "dismissPopover" };
 const networkSettingsEvent: WorkspaceEvent = { type: "chooseSettingsPage", page: "NetworkSettings" };
+const showChatEvent: WorkspaceEvent = { type: "interact", input: { tag: "ShowChat" } };
+
+type BatteryManager = EventTarget & { readonly level: number };
+type BatteryNavigator = Navigator & { readonly getBattery?: () => Promise<BatteryManager> };
+
+let batteryLevel: number | undefined;
+const batteryListeners = new Set<() => void>();
+let batteryObserved = false;
+
+function subscribeBattery(listener: () => void) {
+  batteryListeners.add(listener);
+  if (!batteryObserved) {
+    batteryObserved = true;
+    const getBattery = (navigator as BatteryNavigator).getBattery;
+    if (typeof getBattery === "function") {
+      void getBattery.call(navigator).then((manager) => {
+        const update = () => {
+          const next = Math.round(manager.level * 100);
+          if (next === batteryLevel) return;
+          batteryLevel = next;
+          for (const notify of batteryListeners) notify();
+        };
+        update();
+        manager.addEventListener("levelchange", update);
+      }, () => undefined);
+    }
+  }
+  return () => { batteryListeners.delete(listener); };
+}
+
+function useBattery() {
+  return useSyncExternalStore(subscribeBattery, () => batteryLevel);
+}
+
+function captionActivity(turn: Turn, activity: Assistance): CaptionStripProps["activity"] {
+  if (turn === "Listening") return "listening";
+  if (turn === "Speaking") return "speaking";
+  if (turn === "Thinking") return "thinking";
+  if (activity === "DoingWork" || activity === "WebsiteWait" || activity === "Rechecking") return "working";
+  return undefined;
+}
 
 function clockParts(now: Date) {
   let hour = "";
@@ -139,15 +183,29 @@ function TextScaleBridge({ children }: { children: ReactNode }) {
   return <TextScale percent={percent}>{children}</TextScale>;
 }
 
+const selectPreferencesSession = (workspace: Workspace | undefined) => workspace?.preferences.session;
+
+function ScreenDimBridge() {
+  const volume = useWorkspaceSelector(selectPreferencesSession);
+  const now = useMinute();
+  if (androidHost || !volume) return null;
+  return <ScreenDim brightness={effectiveBrightness(volume, now.getHours())} />;
+}
+
 const selectRailSlice = (workspace: Workspace | undefined) => {
   if (!workspace) return undefined;
   const { device, assistant, preferences } = workspace;
+  const privateSurface = privateSurfaceActive(workspace);
+  const websiteKeyboard = !privateSurface && assistant.presentation !== "Closed" && assistant.keyboard === "WebsiteKeyboard";
+  const covered = !privateSurface && !websiteKeyboard && assistant.presentation === "Expanded";
   return {
     surface: device.surface,
     online: device.connectivity === "Online",
     muted: preferences.session.muted,
     railPopover: device.railPopover,
-    privateSurface: privateSurfaceActive(workspace),
+    privateSurface,
+    websiteKeyboard,
+    covered,
     graceOpen: assistant.presentation !== "Closed",
     canHome: enabled(workspace, visitHome, "Person"),
     canSettings: enabled(workspace, visitSettings, "Person"),
@@ -160,18 +218,26 @@ const selectRailSlice = (workspace: Workspace | undefined) => {
 const sameOptionalSlice = <T extends Record<string, unknown>>(a: T | undefined, b: T | undefined) =>
   a === b || (a !== undefined && b !== undefined && shallowEqual(a, b));
 
+function popoverLayout(anchor: number) {
+  const top = anchor > 0 ? Math.max(20, Math.min(anchor - 58, window.innerHeight - 300)) : 20;
+  const arrowTop = anchor > 0 ? Math.max(38, anchor - top) : 58;
+  return { top, arrowTop };
+}
+
 function VolumePopover({ anchor }: { anchor: number }) {
-  const volume = useWorkspaceSelector((w) => w?.preferences.session);
+  const volume = useWorkspaceSelector(selectPreferencesSession);
   const canDismiss = useWorkspaceSelector((w) => w !== undefined && enabled(w, dismissPopoverEvent, "Person"));
   const canMuteToggle = useWorkspaceSelector((w) => w !== undefined && enabled(w, { type: "changePreferences", settings: muteChoice(w.preferences.session, !w.preferences.session.muted) }, "Person"));
   const { current, send } = useWorkspaceActions();
   if (!volume) return null;
+  const { top, arrowTop } = popoverLayout(anchor);
   const muteEvent: WorkspaceEvent = { type: "changePreferences", settings: muteChoice(volume, !volume.muted) };
   return (
-    <RailPopover className="left-3" top={Math.max(6, anchor - 58)} icon={volume.muted ? <VolumeX size={30} strokeWidth={2} /> : <Volume2 size={30} strokeWidth={2} />} title="Volume"
+    <RailPopover className="left-3" top={top} arrowTop={arrowTop} icon={volume.muted ? <VolumeX size={30} strokeWidth={2} /> : <Volume2 size={30} strokeWidth={2} />} title="Volume"
       value={volume.muted ? "Muted" : `${volume.volume}%`} onClose={() => { if (canDismiss) void send(dismissPopoverEvent); }}
-      actions={<Button variant="capsule" size="pill" disabled={!canMuteToggle} onClick={() => void send(muteEvent)}>{volume.muted ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}{volume.muted ? "Unmute" : "Mute"}</Button>}>
-      <Slider className="mt-5 gap-4" label="Volume" decreaseLabel="Quieter" increaseLabel="Louder" step={10} value={volume.muted ? 0 : volume.volume}
+      note={volume.muted ? "Grace will show her words on screen while you’re muted." : "Grace’s voice, videos and sounds all use this volume."}
+      actions={<Button variant={volume.muted ? "prominent" : "capsule"} size="pill" disabled={!canMuteToggle} onClick={() => void send(muteEvent)}>{volume.muted ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}{volume.muted ? "Unmute" : "Mute"}</Button>}>
+      <Slider className="mt-5 gap-4" label="Volume" decreaseLabel="Quieter" increaseLabel="Louder" step={10} value={volume.volume}
         onStep={(amount) => void send({ type: "adjustPreferenceLevel", levelStep: { tag: "VolumeBy", amount } })}
         onValueChange={(level) => {
           const event: WorkspaceEvent = { type: "changePreferences", settings: volumeChoice(volume, level) };
@@ -186,15 +252,23 @@ const selectWifiPopoverSlice = (workspace: Workspace | undefined) => workspace &
   canNetworkSettings: enabled(workspace, networkSettingsEvent, "Person"),
 };
 
-function WifiPopover({ anchor }: { anchor: number }) {
+function WifiPopover({ anchor, wifiSsid }: { anchor: number; wifiSsid: string | null }) {
   const slice = useWorkspaceSelector(selectWifiPopoverSlice, sameOptionalSlice);
   const { send } = useWorkspaceActions();
   if (!slice) return null;
   const online = slice.connectivity === "Online";
+  const { top, arrowTop } = popoverLayout(anchor);
   return (
-    <RailPopover className="left-3" top={Math.max(6, anchor - 58)} icon={online ? <Wifi size={30} strokeWidth={2} /> : <WifiSlash size={30} />} title="Wi-Fi"
+    <RailPopover className="left-3" top={top} arrowTop={arrowTop} icon={online ? <Wifi size={30} strokeWidth={2} /> : <WifiSlash size={30} />} title="Wi-Fi"
       value={wifiWords[slice.connectivity]} onClose={() => void send(dismissPopoverEvent)}
-      actions={<Button variant="capsule" size="pill" disabled={!slice.canNetworkSettings} onClick={() => void send(networkSettingsEvent)}>Wi-Fi settings</Button>} />
+      note={online ? undefined : "Email and the internet need it. Grace can help you reconnect."}
+      actions={online ? (
+        <Button variant="capsule" size="pill" disabled={!slice.canNetworkSettings} onClick={() => void send(networkSettingsEvent)}>Choose another network</Button>
+      ) : (
+        <Button variant="prominent" size="pill" disabled={!slice.canNetworkSettings} onClick={() => void send(networkSettingsEvent)}><Wifi aria-hidden size={22} strokeWidth={2.2} />Fix Wi-Fi</Button>
+      )}>
+      {online && <ListRow className="mt-[18px] bg-glass/70" leading={<Check size={30} strokeWidth={2.6} aria-hidden className="shrink-0 text-ok" />} title={wifiSsid ?? "Internet connection"} subtitle="Strong signal" />}
+    </RailPopover>
   );
 }
 
@@ -202,52 +276,106 @@ function WifiPopover({ anchor }: { anchor: number }) {
 function RailSection() {
   const slice = useWorkspaceSelector(selectRailSlice, sameOptionalSlice);
   const now = useMinute();
+  const battery = useBattery();
   const { send } = useWorkspaceActions();
   const [anchor, setAnchor] = useState(0);
+  const [wifiSsid, setWifiSsid] = useState<string | null>(null);
   if (!slice) return null;
   const { time, period } = clockParts(now);
+  const popoverOpen = slice.railPopover !== "NoPopover";
   const toggle = (popover: Popover, canToggle: boolean) => ({
     selected: slice.railPopover === popover,
     disabled: !canToggle,
     onClick: (event: { currentTarget: HTMLElement }) => {
       const { top, height } = event.currentTarget.getBoundingClientRect();
       setAnchor(top + height / 2);
+      if (popover === "WifiPopover" && wifiPlugin) {
+        void wifiPlugin.getConnectivity().then((status) => setWifiSsid(status.ssid ?? null), () => setWifiSsid(null));
+      }
       void send({ type: "togglePopover", popover });
     },
   });
   return (
     <>
-      <Rail aria-label="Rail" time={time} period={period}
+      <Rail aria-label="Rail" battery={battery} time={time} period={period}
         date={railDate.format(now)}
         status={<RailButton icon={slice.online ? <Wifi {...tile} /> : <WifiSlash />} label="Wi-Fi" aria-label={slice.online ? "Wi-Fi" : "Wi-Fi, not connected"} {...toggle("WifiPopover", slice.canWifi)} />}
-        footer={<RailButton icon={<Gear {...tile} />} label="Settings" selected={slice.surface === "DeviceSettings"} disabled={!slice.canSettings} onClick={() => void send(visitSettings)} />}
-        ask={slice.privateSurface ? undefined : <AskGraceButton selected={slice.graceOpen} glow={slice.graceOpen ? "off" : "rest"} onClick={() => { if (slice.canOpenGrace) void send(openGraceEvent); }} />}>
-        <RailButton icon={<House {...tile} />} label="Home" selected={slice.surface === "Home"} disabled={!slice.canHome} onClick={() => void send(visitHome)} />
+        footer={<RailButton icon={<Gear {...tile} />} label="Settings" selected={!popoverOpen && !slice.covered && slice.surface === "DeviceSettings"} disabled={!slice.canSettings} onClick={() => void send(visitSettings)} />}
+        ask={slice.privateSurface ? undefined : <AskGraceButton selected={!slice.websiteKeyboard && slice.graceOpen} glow={slice.graceOpen ? "off" : "rest"} onClick={() => { if (slice.canOpenGrace) void send(openGraceEvent); }} />}>
+        <RailButton icon={<House {...tile} />} label="Home" selected={!popoverOpen && !slice.covered && slice.surface === "Home"} disabled={!slice.canHome} onClick={() => void send(visitHome)} />
         <RailButton icon={slice.muted ? <VolumeX {...tile} /> : <Volume2 {...tile} />} label="Volume" {...toggle("VolumePopover", slice.canVolume)} />
       </Rail>
-      {slice.railPopover !== "NoPopover" && (
+      {popoverOpen && (
         <OverPage className={cn(besideRail, "inset-y-0 right-0 z-[5]")} onPointerDown={(event) => {
           if (event.target === event.currentTarget) void send(dismissPopoverEvent);
         }}>
-          {slice.railPopover === "VolumePopover" ? <VolumePopover anchor={anchor} /> : <WifiPopover anchor={anchor} />}
+          {slice.railPopover === "VolumePopover" ? <VolumePopover anchor={anchor} /> : <WifiPopover anchor={anchor} wifiSsid={wifiSsid} />}
         </OverPage>
       )}
     </>
   );
 }
 
-const selectHomeSlice = (workspace: Workspace | undefined) => workspace && {
-  online: workspace.device.connectivity === "Online",
-  homePage: workspace.device.homePage,
-  canCalendar: enabled(workspace, visitCalendar, "Person"),
-  canEmail: enabled(workspace, visitEmail, "Person"),
-  canBrowser: enabled(workspace, visitBrowser, "Person"),
-  canFiles: enabled(workspace, visitFiles, "Person"),
-  canPasswords: enabled(workspace, visitPasswords, "Person"),
+const selectCaptionSlice = (workspace: Workspace | undefined) => {
+  if (!workspace) return undefined;
+  const { assistant } = workspace;
+  const last = assistant.conversation.messages.at(-1);
+  const guideEvent: WorkspaceEvent = { type: "interact", input: { tag: "ShowGuidance", revision: assistant.guidance.revision } };
+  return {
+    turn: assistant.conversation.turn,
+    activity: assistant.activity,
+    generation: assistant.conversation.generation,
+    guidanceRevision: assistant.guidance.revision,
+    lastAuthor: last?.author,
+    lastText: last?.text ?? "",
+    answers: assistant.conversation.answers,
+    canShowChat: enabled(workspace, showChatEvent, "Person"),
+    canShowGuide: enabled(workspace, guideEvent, "Person"),
+  };
+};
+
+function CaptionSection({ keyboard }: { keyboard: number }) {
+  const slice = useWorkspaceSelector(selectCaptionSlice, sameOptionalSlice);
+  const { current, send, say } = useWorkspaceActions();
+  if (!slice) return null;
+  const nowState = current();
+  const captionAnswers = slice.answers.filter((text) =>
+    enabled(nowState, { type: "interact", input: { tag: "ChooseAnswer", token: slice.generation, text } }, "Person"));
+  const showGuideEvent: WorkspaceEvent = { type: "interact", input: { tag: "ShowGuidance", revision: slice.guidanceRevision } };
+  return (
+    <OverPage className={cn(besideRail, "z-[4]")} style={{ bottom: 6 + keyboard }}>
+      <CaptionStrip
+        who={slice.turn === "Listening" || slice.lastAuthor === "HumanMessage" ? "you" : "grace"}
+        text={slice.lastText}
+        activity={captionActivity(slice.turn, slice.activity)}
+        answers={captionAnswers.length > 0 ? captionAnswers : undefined}
+        onAnswer={(text) => void say({ tag: "ChooseAnswer", token: slice.generation, text })}
+        onShowChat={() => { if (slice.canShowChat) void send(showChatEvent); }}
+        showGuide={slice.canShowGuide}
+        onShowGuide={() => { if (slice.canShowGuide) void send(showGuideEvent); }}
+      />
+    </OverPage>
+  );
+}
+
+const selectHomeSlice = (workspace: Workspace | undefined) => {
+  if (!workspace) return undefined;
+  const activePage = activeTab(workspace.browser);
+  const publicUrl = activePage && !activePage.manualSignIn ? tabUrl(activePage) : "";
+  return {
+    online: workspace.device.connectivity === "Online",
+    publicUrl,
+    homePage: workspace.device.homePage,
+    canCalendar: enabled(workspace, visitCalendar, "Person"),
+    canEmail: enabled(workspace, visitEmail, "Person"),
+    canBrowser: enabled(workspace, visitBrowser, "Person"),
+    canFiles: enabled(workspace, visitFiles, "Person"),
+    canPasswords: enabled(workspace, visitPasswords, "Person"),
+  };
 };
 
 // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller"
-function HomeSurface({ bottom, docked, covered }: { bottom: number; docked: boolean; covered: boolean }) {
+function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; docked: boolean; keyboard: number; covered: boolean }) {
   const runtime = useRuntime();
   const slice = useWorkspaceSelector(selectHomeSlice, sameOptionalSlice);
   const { current, send } = useWorkspaceActions();
@@ -280,8 +408,9 @@ function HomeSurface({ bottom, docked, covered }: { bottom: number; docked: bool
   const hour = now.getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const nowMs = now.getTime();
-  const weekday = appointmentDay.format(now).toUpperCase();
+  const weekday = appointmentWeekday(now);
   const day = now.getDate();
+  const internetStatus = !slice.online ? "Needs the internet" : slice.publicUrl !== "" ? `${site(slice.publicUrl)} was open` : "Open a website";
 
   return (
     <OverPage className={cn(lifted, "left-1.5")} style={{ bottom, contain: "layout style" }}>
@@ -289,19 +418,19 @@ function HomeSurface({ bottom, docked, covered }: { bottom: number; docked: bool
         <WithCalendars keys={calKeys}>{(calendars) => (
           <HomeScreen className="inset-0"
             banner={<NoticeBanner reminders={accounts && ours ? reminderNotice(accounts, calendars, nowMs, calendarActions, slice.canCalendar) : undefined} />}
-            layout={docked ? "compact" : "full"} {...under(covered)} greeting={greeting}
+            layout={docked ? (keyboard > 0 ? "greeting" : "compact") : "full"} {...under(covered)} greeting={greeting} line="Here’s your day"
             calendar={{
               weekday,
               day,
               ...ours && accounts ? homeCalendar(accounts, calendars, nowMs, slice.canCalendar ? calendarActions : undefined) : {
                 events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
-                  const when = startOf(event);
+                  const { date, time } = hostedAppointmentDisplay(event);
                   return {
                     id: event.externalId,
                     title: event.title || "Untitled appointment",
                     detail: event.location || undefined,
-                    weekday: appointmentDay.format(when).toUpperCase(),
-                    time: event.isAllDay ? "All day" : appointmentClock.format(when),
+                    weekday: appointmentWeekday(date),
+                    time,
                     next: index === 0,
                     onClick: !cards || !slice.canCalendar ? undefined : () => void runtime.runPromise(Effect.flatMap(ManagedReads, (managed) =>
                       managed.send({ kind: "homeOccurrence", row: { accountId: cards.accountId, grant: cards.grant, id: event.externalId, version: event.etag ?? null } }))),
@@ -322,7 +451,7 @@ function HomeSurface({ bottom, docked, covered }: { bottom: number; docked: bool
               },
               ...visitProps.email,
             }}
-            internet={visitProps.browser}
+            internet={{ ...visitProps.browser, "aria-label": "Internet", status: internetStatus, openLabel: slice.online && slice.publicUrl !== "" ? "Continue" : "Open", offline: !slice.online }}
             files={{ photos: files?.photos ?? [], document: files?.document, ...visitProps.files }}
             passwords={visitProps.passwords}
             page={slice.homePage}
@@ -336,6 +465,12 @@ function HomeSurface({ bottom, docked, covered }: { bottom: number; docked: bool
 function CalendarSurface({ covered }: { covered: boolean }) {
   const now = useMinute();
   return <Calendar now={now.getTime()} {...under(covered)} />;
+}
+
+function SettingsSurface({ covered }: { covered: boolean }) {
+  const owner = useSetupSelector(selectOwner);
+  const cards = useHomeCards();
+  return <Settings {...under(covered)} hostedAppointment={owner === "Hosted" ? cards?.events[0] : undefined} />;
 }
 
 function ManagedSurface({ surface, covered }: { surface: "Email" | "Calendar"; covered: boolean }) {
@@ -369,18 +504,18 @@ function FilesSurface({ covered }: { covered: boolean }) {
   return <Files {...under(covered)} onClose={onClose} />;
 }
 
-function ActiveSurface({ surface, bottom, docked, covered, sleeping }: { surface: Surface; bottom: number; docked: boolean; covered: boolean; sleeping: boolean }) {
+function ActiveSurface({ surface, bottom, docked, keyboard, covered, sleeping }: { surface: Surface; bottom: number; docked: boolean; keyboard: number; covered: boolean; sleeping: boolean }) {
   const owner = useSetupSelector(selectOwner);
   if (sleeping && surface !== "Browser") return null;
   const ours = owner === "Ours";
   const boxStyle = { bottom, contain: "layout style" } as const;
-  if (surface === "Home") return <HomeSurface bottom={bottom} docked={docked} covered={covered} />;
+  if (surface === "Home") return <HomeSurface bottom={bottom} docked={docked} keyboard={keyboard} covered={covered} />;
   return (
     <>
       {surface === "Browser" && <div className={cn(lifted, besideRail, "pointer-events-none z-[1]")} style={boxStyle}><Browser {...under(covered)} /></div>}
       {surface === "Calendar" && ours && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><CalendarSurface covered={covered} /></OverPage>}
       {surface === "Email" && ours && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><Email {...under(covered)} /></OverPage>}
-      {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><Settings {...under(covered)} /></OverPage>}
+      {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><SettingsSurface covered={covered} /></OverPage>}
       {surface === "Passwords" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><PasswordsSurface covered={covered} /></OverPage>}
       {surface === "Files" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><FilesSurface covered={covered} /></OverPage>}
       {!ours && (surface === "Email" || surface === "Calendar") && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><ManagedSurface surface={surface} covered={covered} /></OverPage>}
@@ -416,14 +551,19 @@ function SleepOverlay() {
 const selectScreenSlice = (workspace: Workspace | undefined) => {
   if (!workspace) return undefined;
   const privateSurface = privateSurfaceActive(workspace);
+  const { assistant } = workspace;
+  const websiteKeyboard = !privateSurface && assistant.presentation !== "Closed" && assistant.keyboard === "WebsiteKeyboard";
+  const showCaption = websiteKeyboard && (keyboardCaptionVisible(assistant) || assistant.conversation.answers.length > 0);
   return {
     surface: workspace.device.surface,
     sleeping: workspace.device.readiness === "Sleeping",
     privateSurface,
+    websiteKeyboard,
+    showCaption,
     benchmarkObservable: !privateSurface && !workspace.browser.tabs.some((tab) => tab.manualSignIn),
-    covered: !privateSurface && workspace.assistant.presentation === "Expanded",
-    docked: !privateSurface && workspace.assistant.presentation === "Compact",
-    graceOpen: workspace.assistant.presentation !== "Closed",
+    covered: !privateSurface && !websiteKeyboard && assistant.presentation === "Expanded",
+    docked: !privateSurface && !websiteKeyboard && assistant.presentation === "Compact",
+    graceOpen: assistant.presentation !== "Closed",
   };
 };
 
@@ -460,19 +600,22 @@ function Screen() {
   }, [runtime]);
 
   if (!slice) return null;
-  const bottom = keyboard + (slice.docked ? 6 + graceHeight + 6 : 6);
+  const bottom = keyboard + (slice.docked ? 6 + graceHeight + 6 : slice.showCaption ? 6 + 80 + 6 : 6);
+  const toastAbove = slice.covered ? keyboard + 92 : bottom - 6;
 
   return (
     <TextScaleBridge>
-      <div ref={bindKeys} data-benchmark-observable={slice.benchmarkObservable} className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
+      <div ref={bindKeys} data-benchmark-observable={slice.benchmarkObservable} className="fixed inset-0 overflow-clip font-sans text-foreground select-none">
         <div className="contents" {...under(slice.sleeping)}>
           <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
           <RailSection />
-          <ActiveSurface surface={slice.surface} bottom={bottom} docked={slice.docked} covered={slice.covered} sleeping={slice.sleeping} />
-          {!slice.privateSurface && !slice.sleeping && <Notices above={bottom - 6} />}
-          {!slice.privateSurface && !slice.sleeping && slice.graceOpen && <Grace onHeightChange={setGraceHeight} />}
+          <ActiveSurface surface={slice.surface} bottom={bottom} docked={slice.docked} keyboard={keyboard} covered={slice.covered} sleeping={slice.sleeping} />
+          {!slice.privateSurface && !slice.sleeping && <Notices above={toastAbove} />}
+          {slice.showCaption && <CaptionSection keyboard={keyboard} />}
+          {!slice.privateSurface && !slice.websiteKeyboard && !slice.sleeping && slice.graceOpen && <Grace onHeightChange={setGraceHeight} />}
         </div>
         {slice.sleeping && <SleepOverlay />}
+        <ScreenDimBridge />
       </div>
     </TextScaleBridge>
   );

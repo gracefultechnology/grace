@@ -175,8 +175,12 @@ async function visitExampleSite(native: ReturnType<typeof fakePlugin>) {
 function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
   const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
   const tap = async (target: Locator) => {
-    await routeTo(target);
-    await act(() => userEvent.click(target));
+    await vi.waitFor(async () => {
+      await native.route();
+      await userEvent.click(target, { trial: true, timeout: 250 });
+    }, { timeout: 10_000 });
+    await userEvent.click(target, { timeout: 10_000 });
+    await act(() => Promise.resolve());
   };
   return { routeTo, tap };
 }
@@ -623,7 +627,7 @@ it('Use Home and Settings above Grace (spec/app/shell.md, "Story: Reach everyday
   await tap("Expand");
   await act(() => userEvent.click(page.getByRole("button", { name: /^Wi-Fi/ })));
   await expect.element(button("Expand")).toBeVisible();
-  await tap("Wi-Fi settings");
+  await tap("Choose another network");
 
   await tap("Expand");
   await tap("Settings");
@@ -3733,7 +3737,7 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
 it.each([
   { target: "Rain jackets", siteLabel: "Rain jackets", order: "ascending", directionRequested: "PriceAscending" },
   { target: "living room furtniture", siteLabel: "Living Room Furniture", order: "descending", directionRequested: "PriceDescending" },
-])('Check the price direction in the reviewed public category $target (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async ({ target, siteLabel, order, directionRequested }) => {
+])('Check price order in $target (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async ({ target, siteLabel, order, directionRequested }) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const request = `List products from ${target} category by ${order} price`;
@@ -4151,7 +4155,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
         return respond({ error: "route_not_found" }, 404);
     }
   });
-  const browserHome = "https://www.example.org/";
+  const browserHome = "https://example.org/";
   let browserUrl = browserHome;
   let switchOwnerDuringPageRead = false;
   const native = fakePlugin(({ command }) => {
@@ -4363,10 +4367,10 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     const address = page.getByRole("textbox", { name: "Address" });
     await routeTo(address);
     await act(() => userEvent.type(address, "example.org{Enter}"));
-    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.url; }).toBe("https://example.org/");
+    await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.url; }).toBe(browserHome);
     await native.started("tab-1");
     await native.report("tab-1", browserUrl, 100);
-    await expect.poll(() => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs[0]).toMatchObject({ history: ["", browserUrl], load: "Loaded" });
+    await expect.poll(async () => { await native.route(); return runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs[0]; }).toMatchObject({ history: ["", browserUrl], load: "Loaded" });
     await send(browserAsk);
     await routeTo(page.getByRole("region", { name: "Review read plan" }));
     if (button("Collapse").query()) await tap(button("Collapse"));
@@ -4568,8 +4572,10 @@ it.each(["acknowledged", "lost"] as const)('Save a separately approved appointme
     }).toBe(true);
     const changeLocation = async (location: string) => {
       const occurrence = Schema.decodeUnknownSync(Schema.NonEmptyString)(savedOccurrence());
+      const { boxes } = await (await fetch(new URL("/fake/account", cloud), { headers })).json() as { boxes: { calendar: { externalId: string; etag: string }[] }[] };
+      const etag = boxes.flatMap((b) => b.calendar).find((e) => e.externalId === occurrence)?.etag ?? "";
       const response = await fetch(new URL("/api/v1/eliza/google/calendar/events/" + encodeURIComponent(occurrence), cloud), {
-        method: "PATCH", headers, body: JSON.stringify({ calendarId: "primary", location }),
+        method: "PATCH", headers: { ...headers, "If-Match": etag }, body: JSON.stringify({ calendarId: "primary", location }),
       });
       expect(response.ok).toBe(true);
     };

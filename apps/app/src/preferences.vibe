@@ -31,6 +31,31 @@ export const preferenceWorkspace = (port: PreferenceRecords | undefined) => port
   return machine(start)
 })
 
+const sampleRates: Record<DisplayPreferences["pace"], number> = { Slower: 0.85, Normal: 1, Faster: 1.15 }
+
+function speakSample(pace: DisplayPreferences["pace"], volume: number, name?: string) {
+  const host = webView.window
+  if (typeof host.speechSynthesis === "undefined" || typeof host.SpeechSynthesisUtterance === "undefined") return
+  host.speechSynthesis.cancel()
+  const utterance = new host.SpeechSynthesisUtterance(name ? `Hi ${name}, this is how I sound.` : "Hi, this is how I sound.")
+  utterance.rate = sampleRates[pace]
+  utterance.volume = Math.max(0, Math.min(1, volume / 100))
+  host.speechSynthesis.speak(utterance)
+}
+
+export effect function sampleVoice(name?: string) {
+  const workspace = try Workspaces
+  const result = workspace.send({ type: "samplePreferences" }, "Person") catch () => undefined
+  if (result === undefined) return
+  const current = try workspace.get()
+  for (const item of result.out) {
+    if (item.tag !== "PreferenceFeedback" || item.revision !== current.preferences.revision) continue
+    if (item.effect.tag === "PlaySample" && !item.effect.muted && !current.preferences.session.muted && item.effect.volume > 0) {
+      Effect.try(() => speakSample(item.effect.pace, item.effect.volume, name)) catch () => undefined
+    }
+  }
+}
+
 export effect function retryPreferences() {
   const workspace = try Workspaces
   workspace.send({ type: "savePreferences" }, "Host") catch () => undefined

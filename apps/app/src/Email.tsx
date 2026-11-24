@@ -251,7 +251,7 @@ function Mail({ registry, accountCan, accountSend, boxes, ...props }: MailProps)
     const opener = (chosen: readonly SavedFile[]) => chosen.some((f) => opening.can(attachment(f))) ? (i: number) => { const f = chosen[i]; if (f) offer(opening, attachment(f))?.(); } : undefined;
     const allPhotos = photos.map((p) => p.sourceRef);
     const header = mail && headerFor(mail, kept(opening.id, m.messageRef), opening.id, m);
-    const replying = mail && ready && answerable(m) && header && canReplyToMessage(m, header, "MailHost");
+    const replying = mail && ready && header && canReplyToMessage(m, header, "MailHost");
     const scam = showsScamWarning(m);
     const reviewed = kept(opening.id, ref)?.read;
     const linkSource = `${opening.id}|${ref}|${m.generation}|${reviewed?.version ?? ""}`;
@@ -274,7 +274,7 @@ function Mail({ registry, accountCan, accountSend, boxes, ...props }: MailProps)
           const { href } = part;
           return href ? <MailLink key={part.start} guide={part === firstLink ? pointing.link : undefined} onOpen={() => follow(href, "open")}>{part.text}</MailLink> : part.text;
         })} guide={pointing.message}
-        scam={scam} inTrash={messageRecord(m, ref).folder === "TrashFolder"}
+        scam={scam} inTrash={messageRecord(m, ref).folder === "TrashFolder"} sent={m.folder === "SentFolder"}
         photos={ready ? photos.map((p) => picture(p, held(opening.id, p))) : undefined} onOpenPhoto={opener(photos)}
         onSaveAll={saveAll} saveAllStatus={saver.status(photos)} onRetrySaveAll={saver.offer(allPhotos)}
         files={ready ? pdfs.map((a) => ({ name: a.name, detail: pages(a.pages) })) : undefined} onOpenFile={opener(pdfs)}
@@ -339,7 +339,7 @@ function Mail({ registry, accountCan, accountSend, boxes, ...props }: MailProps)
         const event: MailEvent = outbox ? { type: "reopenQueued", operationId: ref } : { type: "readMail", kind: "OpenMessage", ref, approved: true };
         if (box?.can(event)) void box.send(event);
       }}
-      onFixWifi={fire({ type: "chooseSettingsPage", page: "NetworkSettings" })} {...frame} />
+      onFixWifi={askGrace("fixWifi")} {...frame} />
   );
 }
 

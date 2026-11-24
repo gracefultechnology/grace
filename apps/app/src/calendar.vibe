@@ -1,7 +1,7 @@
-// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "An account's calendar is bound by its store before Calendar opens"; spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"; spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"; spec/app/calendarView.md, "Closing Calendar cancels unsubmitted edits and retains submitted writes"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Her yes is applied as the exact question she was asked"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/calendars.md, "Calendar turns to the day of Grace’s question and of what was just added, but never past an edit"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/notices.md, "One toast shows at a time and the others wait their turn in order"; spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background"; spec/app/notices.md, "Only the calendar dismisses a reminder, and then it is gone everywhere"
+// spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "An account's calendar is bound by its store before Calendar opens"; spec/app/calendarView.md, "Navigation clears detail and only accepts a validated calendar interval"; spec/app/calendarView.md, "Saving a repeating event updates its whole series through the same form"; spec/app/calendarView.md, "Closing Calendar cancels unsubmitted edits and retains submitted writes"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendar.md, "Time only makes an enabled reminder eligible and never executes the task"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Her yes is applied as the exact question she was asked"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/calendars.md, "Calendar turns to the day of Grace’s question and of what was just added, but never past an edit"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/notices.md, "One toast shows at a time and the others wait their turn in order"; spec/app/notices.md, "A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background"; spec/app/notices.md, "Only the calendar dismisses a reminder, and then it is gone everywhere"; spec/app/calendarView.md, "A change at the company names the revision it read and never overwrites a newer one"
 import { WebsiteTask } from "./websiteTask.vibe"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
-import { approveSave, create, initial as noEntry, save, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
+import { approveSave, create, initial as noEntry, save, withCurrent, type Calendar, type EntryDetails } from "../gen/app__calendar.effect.vibe"
 import { askedDay, calendarFree, type CalendarSource, type CalRow, changeOf, confirmationOf, confirmRing, type DayToShow, deletionOf, preservesCreatedEmailDetail, savedDay, shownReminders, showsDay, told, toldCreated, type CalendarTold } from "../gen/app__calendars.effect.vibe"
 import { type Machine as CalendarMachine, enabled, entryAt, keepsRepetition, step, seriesAt, type CalendarView, type DeleteScope, type Event as CalendarEvent, type SeriesReceipt, type ViewWindow } from "../gen/app__calendarView.effect.vibe"
 import { planned, repetitions as repeatsOf, shifted } from "./schedule.ts"
@@ -112,13 +112,13 @@ function written(v: CalendarView, c: Calendar): Calendar {
   const d = c.draft
   if (!generated(d.seriesId, c.identity.occurrenceId)) return c
   const first = shifted(d.recurrence, dayOf(d.startAt), (liveFrom(v, d.seriesId, 0)?.place ?? 0) - draftPlace(v, c))
-  return { ...c, identity: { ...c.identity, occurrenceId: rootOf(v, d.seriesId) }, hasSaved: true, draft: { ...d, ...first < 0 ? {} : repeatedOn(d, first) } }
+  return { ...c, identity: { ...c.identity, occurrenceId: rootOf(v, d.seriesId) }, version: kept(v, rootOf(v, d.seriesId)).version, hasSaved: true, draft: { ...d, ...first < 0 ? {} : repeatedOn(d, first) } }
 }
 
 type Removal =
   | { readonly tag: "Remove"; readonly id: string }
   | { readonly tag: "Forget" }
-  | { readonly tag: "Repetition"; readonly series: Calendar["identity"]; readonly occurrence: EntryDetails }
+  | { readonly tag: "Repetition"; readonly series: Calendar; readonly occurrence: EntryDetails }
   | { readonly tag: "Move"; readonly entry: Calendar }
   | { readonly tag: "Unable" }
 
@@ -126,7 +126,7 @@ function removal(v: CalendarView): Removal {
   const chosen = entryAt(v, v.selectedId).committed
   const { seriesId, recurrence } = chosen
   if (v.scope === "EntireSeries" || recurrence === "Once") return { tag: "Remove", id: generated(seriesId, v.selectedId) ? rootOf(v, seriesId) : v.selectedId }
-  if (!keepsRepetition(v)) return { tag: "Repetition", series: kept(v, rootOf(v, seriesId)).identity, occurrence: chosen }
+  if (!keepsRepetition(v)) return { tag: "Repetition", series: kept(v, rootOf(v, seriesId)), occurrence: chosen }
   const place = placeIn(seriesId, v.selectedId) ?? 0
   if (place !== liveFrom(v, seriesId, 0)?.place) return { tag: "Forget" }
   const next = liveFrom(v, seriesId, place + 1)
@@ -156,14 +156,14 @@ function repetitions(v: CalendarView, span: Reach): Published[] {
 
 type Store = {
   readonly write: (entry: Calendar, view: CalendarView, dispatch?: GuidedDispatch) => StoreReceipt!!
-  readonly remove: (identity: Calendar["identity"], scope: DeleteScope) => DeletionReceipt!!
-  readonly removeRepetition: (series: Calendar["identity"], occurrence: EntryDetails) => DeletionReceipt!!
+  readonly remove: (entry: Calendar, scope: DeleteScope) => DeletionReceipt!!
+  readonly removeRepetition: (series: Calendar, occurrence: EntryDetails) => DeletionReceipt!!
 }
 
 const device: Store = {
   write: (entry) => Effect.succeed({ revision: entry.revision, succeeded: true, published: [] }),
-  remove: (identity) => Effect.succeed({ succeeded: true, evidence: `tablet:${identity.occurrenceId}` }),
-  removeRepetition: (series) => Effect.succeed({ succeeded: true, evidence: `tablet:${series.occurrenceId}` })
+  remove: (entry) => Effect.succeed({ succeeded: true, evidence: `tablet:${entry.identity.occurrenceId}` }),
+  removeRepetition: (series) => Effect.succeed({ succeeded: true, evidence: `tablet:${series.identity.occurrenceId}` })
 }
 
 export type CalendarReport = { readonly told: CalendarTold; readonly keepDetail?: true } | { readonly refused: Ask }
@@ -320,9 +320,12 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
       return guidedSavePending(live) && live.assistant.taskId === approval.task && live.assistant.workVersion === task.assistant.workVersion &&
         live.plan.calendarApproval.proposal === approval.proposal && matchesGuidedApproval(key, c, live.plan.calendarApproval)
     }
-    const receipt = try store.write(written(v, c), v, guidedFirstDispatch ? { website, current } : undefined)
+    const target = written(v, c)
+    const receipt = try store.write(target, v, guidedFirstDispatch ? { website, current } : undefined)
     const before = try box.get()
-    const event: CalendarEvent = receipt.providerId !== undefined && !single(c)
+    const event: CalendarEvent = receipt.outdated !== undefined && single(c)
+      ? { type: "changeOccurrence", id: c.identity.occurrenceId, command: { tag: "EntryOutdated", revision: receipt.revision, ...receipt.outdated } }
+      : receipt.providerId !== undefined && !single(c)
       ? { type: "storeCreatedSeries", receipt: seriesReceipt(before, c, receipt), providerId: receipt.providerId }
       : receipt.providerId !== undefined
       ? { type: "storeCreated", created: { owner: c.identity.owner, calendarId: c.identity.calendarId, localId: c.identity.occurrenceId, providerId: receipt.providerId, revision: receipt.revision } }
@@ -338,19 +341,29 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     if (guidedFirstDispatch && adopted !== undefined && receipt.succeeded && receipt.providerId !== undefined)
       try observed(try box.get(), receipt.providerId, approval)
     for (const p of receipt.published) box.send({ type: "publishOccurrence", ...p }, "ViewStore") catch () => undefined
+    if (adopted !== undefined && receipt.version !== undefined) try revised(receipt.providerId ?? target.identity.occurrenceId, receipt.version)
+  }
+  effect function revised(id: string, version: string, latest?: EntryDetails) {
+    const v = try box.get()
+    const row = entryAt(v, id)
+    if (row.phase !== "Saved" || (latest === undefined && row.version === version)) return
+    const incoming = latest === undefined ? { ...row, version, revision: row.revision + 1 } : withCurrent(row, latest, version)
+    box.send({ type: "publishOccurrence", incoming, seriesVersion: incoming.committed.seriesId === "" ? 0 : seriesAt(v, incoming.committed.seriesId).version, scheduleVerified: true }, "ViewStore") catch () => undefined
   }
   effect function removedBy(v: CalendarView, plan: Removal) {
-    if (plan.tag === "Remove") return try store.remove(kept(v, plan.id).identity, "ThisOccurrence")
-    if (plan.tag === "Forget") return try device.remove(entryAt(v, v.selectedId).identity, "ThisOccurrence")
+    if (plan.tag === "Remove") return try store.remove(kept(v, plan.id), "ThisOccurrence")
+    if (plan.tag === "Forget") return try device.remove(entryAt(v, v.selectedId), "ThisOccurrence")
     if (plan.tag === "Repetition") return try store.removeRepetition(plan.series, plan.occurrence)
     if (plan.tag === "Unable") return { succeeded: false, evidence: "no-later-repetition" }
     const receipt = try store.write(plan.entry, v)
     return { succeeded: receipt.succeeded, evidence: receipt.succeeded ? `moved:${plan.entry.identity.occurrenceId}` : "" }
   }
   effect function erased(v: CalendarView) {
-    const result = try removedBy(v, removal(v))
+    const plan = removal(v)
+    const result = try removedBy(v, plan)
     const answered = Effect.as(box.send({ type: "deletionResult", generation: v.generation, succeeded: result.succeeded, evidence: result.evidence === "" ? "unanswered" : result.evidence }, "ViewStore"), true) catch () => false
     if (answered && result.succeeded) try deleted(entryAt(v, v.selectedId).committed.title)
+    if (answered && result.outdated !== undefined && plan.tag === "Remove") try revised(plan.id, result.outdated.version, result.outdated.latest)
   }
   let lastSpan: Reach | undefined
   try Stream.runForEach(box.changes, effect (v) => {
@@ -773,7 +786,7 @@ export const calendarFeeds = Layer.effectDiscard(effect {
     const link = connector.calendar({ provider: account.provider, address: account.address })
     const store: Store = {
       write: effect (entry, view, guidedFirstDispatch) => link.write(entry, view, guidedFirstDispatch) catch () => ({ revision: entry.revision, succeeded: false, published: [] }),
-      remove: effect (identity, scope) => link.remove(identity, scope) catch () => ({ succeeded: false, evidence: "signedOut" }),
+      remove: effect (entry, scope) => link.remove(entry, scope) catch () => ({ succeeded: false, evidence: "signedOut" }),
       removeRepetition: effect (series, occurrence) => link.removeRepetition(series, occurrence) catch () => ({ succeeded: false, evidence: "signedOut" })
     }
     const grown = Stream.changesWith(Stream.mapEffect(lead.changes, () => spanOf(lead)), within)

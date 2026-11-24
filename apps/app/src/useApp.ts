@@ -543,12 +543,15 @@ export function useSignIns() {
   }
   const note = useSyncExternalStore(flows.notes.subscribe, flows.notes.current);
   const page = useSyncExternalStore(flows.page.subscribe, flows.page.current);
+  const owner = useSyncExternalStore(flows.owner.subscribe, flows.owner.current);
   return useMemo(() => ({
     note,
     page,
+    owner,
     other: (details: OtherDetails) => runtime.runPromise(flows.other(details)),
     servers: (servers: MailServers) => runtime.runPromise(flows.servers(servers)),
-  }), [runtime, flows, note, page]);
+    lookUp: () => runtime.runPromise(flows.lookUp()),
+  }), [runtime, flows, note, page, owner]);
 }
 
 export function useProposal() {
@@ -687,7 +690,7 @@ function useCalendar(key: number) {
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
 
 const silence = () => () => {};
-const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set() };
+const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set(), unsendable: new Map() };
 const nothing = () => blank;
 const contactLists = new WeakMap<Mail["Service"], Map<string, Promise<readonly Contact[]>>>();
 

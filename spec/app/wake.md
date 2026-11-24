@@ -1,9 +1,10 @@
 # Wake Grace by voice
 
-The user selected the new prototype's “Hey Grace” behavior on November 13.
-This supersedes the older PRD prohibition of wake words and background wake
-detection. `prototype/Grace Prototype.html:2050,2253–2269` supplies the setting,
-sleep screen, wake response and silence return. The default is enabled.
+The prototype's “Hey Grace” behavior, which the user selected on November 13,
+is kept here as a model, but the MVP has no wake word on the device: she starts
+listening with a tap. `prototype/Grace Prototype.html:2050,2253–2269` supplies
+the setting, sleep screen, wake response and silence return, and the stored
+setting defaults to enabled.
 [Preferences](./preferences.md) owns that persisted choice; this module owns
 only one wake interaction and its timers. [Workspace](./workspace.md) joins it
 to the actual device and conversation.

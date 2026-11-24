@@ -9,7 +9,7 @@ import type { ComposeChoice, DraftContent, Event as MailEvent, Mailbox, SendStat
 import { draftMovable, contactAccounts, fromChoices, type MailSource, pickerBack, showsCopies, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import { sendableAttachments, type Contact } from "./connector.vibe";
 import { Library, type SavedPreview } from "./files.vibe";
-import { recipientsOf, recipientsValid } from "./mail.vibe";
+import { keptOnTablet, recipientsOf, recipientsValid } from "./mail.vibe";
 import { type MailInstance, type MailWriter, mailThumbnail, useRuntime, useWorkspace } from "./useApp.ts";
 
 type Field = "subject" | "body";
@@ -27,6 +27,8 @@ const sending: Record<SendStatus, MailSendStatus> = {
 };
 const anAddress = /^[^@\s,;]+@[^@\s,;]+$/;
 const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const tones = [1, 2, 3, 4, 5, 6] as const;
+const toneOf = (key: string) => tones[[...key.trim().toLowerCase()].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 0) % tones.length];
 
 function statusOf(m: Mailbox): MailSendStatus {
   if (m.sendStatus === "Sent" && !m.sendResultSaved) return "saveFailed";
@@ -108,7 +110,7 @@ function RecipientChoice({ field, people, backLabel, onBack, onPick, frame }: Pi
     const list = anAddress.test(sought) && !found.some((p) => same(p.address, sought))
       ? [...found, { name: sought, address: sought }]
       : found;
-    return { shown: list, tiles: list.map((p): MailContact => ({ name: p.name })) };
+    return { shown: list, tiles: list.map((p): MailContact => ({ name: p.name, tone: toneOf(p.address || p.name) })) };
   }, [people, query]);
   return (
     <MailRecipientPicker question={questions[field]} people={tiles} query={query} onQueryChange={setQuery}
@@ -136,9 +138,18 @@ export function EmailCompose({ registry, boxes, box, mail, sender, frame }: Emai
     return map;
   }, [people]);
   const attachments = useMemo(() => m.draftAttachments.map(mailThumbnail), [m.draftAttachments]);
-  const toList = useMemo(() => recipientsOf(m.draft.to).map((address): MailContact => ({ name: peopleByAddress.get(address.toLowerCase()) ?? address })), [m.draft.to, peopleByAddress]);
-  const ccList = useMemo(() => m.draft.cc.map((address): MailContact => ({ name: peopleByAddress.get(address.toLowerCase()) ?? address })), [m.draft.cc, peopleByAddress]);
-  const bccList = useMemo(() => m.draft.bcc.map((address): MailContact => ({ name: peopleByAddress.get(address.toLowerCase()) ?? address })), [m.draft.bcc, peopleByAddress]);
+  const toList = useMemo(() => recipientsOf(m.draft.to).map((address): MailContact => {
+    const name = peopleByAddress.get(address.toLowerCase()) ?? address;
+    return { name, tone: toneOf(address || name) };
+  }), [m.draft.to, peopleByAddress]);
+  const ccList = useMemo(() => m.draft.cc.map((address): MailContact => {
+    const name = peopleByAddress.get(address.toLowerCase()) ?? address;
+    return { name, tone: toneOf(address || name) };
+  }), [m.draft.cc, peopleByAddress]);
+  const bccList = useMemo(() => m.draft.bcc.map((address): MailContact => {
+    const name = peopleByAddress.get(address.toLowerCase()) ?? address;
+    return { name, tone: toneOf(address || name) };
+  }), [m.draft.bcc, peopleByAddress]);
   const close = frame.onClose && (() => { void leave(box, mail.hush); frame.onClose?.(); });
 
   const edit = (content: DraftContent, field?: Field, text?: string) => {
@@ -209,7 +220,7 @@ export function EmailCompose({ registry, boxes, box, mail, sender, frame }: Emai
       onSend={ready ? () => void mail.confirmSend(box.id, m.revision) : undefined}
       onDiscard={offered(box, throwAway) && (() => void discard(box))}
       draftError={!attachmentsValid ? "Remove any unsupported or duplicate files. Email can send up to 10 attachments." :
-        m.draftStorage !== "DraftStoreFailed" ? undefined : undeleted ? "This email couldn’t be deleted from Drafts." : "This email couldn’t be saved to Drafts."}
+        m.draftStorage !== "DraftStoreFailed" ? undefined : undeleted ? "This email couldn’t be deleted from Drafts." : keptOnTablet(mail.unsendable.get(box.id) ?? []) ?? "This email couldn’t be saved to Drafts."}
       onRetryDraft={attachmentsValid && box.can(retry) ? () => void (undeleted ? discard(box) : box.send(keep)) : undefined}
       onBack={leavable(box) ? () => void leave(box) : undefined}
       onAttach={{ camera: mail.camera && editable ? () => void mail.capture(box.id) : undefined, photos: chooser("ChoosePhoto"), file: chooser("ChooseFile") }}

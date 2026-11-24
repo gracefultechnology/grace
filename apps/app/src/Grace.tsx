@@ -1,9 +1,10 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
-import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceWindow, PageText, UserBubble } from "@repo/ui";
+import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceVoiceMenu, type GraceVoiceMenuProps, GraceWindow, PageText, UserBubble } from "@repo/ui";
 import { Effect, Exit } from "effect";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
+import type { Pace } from "../gen/app__preferences.ts";
 import type { Setup } from "../gen/app__setup.ts";
-import { currentGuidedNameCorrection, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, resumeAvailable, type GuidedStep, type Workspace } from "../gen/app__workspace.ts";
+import { currentGuidedNameCorrection, guidanceVisible, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, resumeAvailable, type GuidedStep, type Workspace } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { CalendarNews } from "./calendar.vibe";
@@ -19,7 +20,6 @@ import { guidedAuthority, guidedOwner } from "./managedReads.vibe";
 
 const Said = memo(UserBubble);
 const Answered = memo(GraceBubble);
-
 function stepSignature(step: GuidedStep): string {
   switch (step.tag) {
     case "SortPublicListing": return `${step.tag}:${step.origin}:${step.subject}:${step.direction}`;
@@ -86,6 +86,35 @@ const notCounted = (check: Exclude<GuidedCheck, "Confirmed">, step: GuidedStep |
 
 const selectAuthority = (setup: Setup | undefined) => guidedAuthority(setup, window.location.hash);
 const selectGraceOpen = (workspace: Workspace | undefined) => workspace !== undefined && workspace.assistant.presentation !== "Closed";
+
+type VoiceSpeed = NonNullable<GraceVoiceMenuProps["speed"]>;
+const speedOfPace: Record<Pace, VoiceSpeed> = { Slower: "slower", Normal: "normal", Faster: "faster" };
+const paceOfSpeed: Record<VoiceSpeed, Pace> = { slower: "Slower", normal: "Normal", faster: "Faster" };
+
+function GraceVoice({ expanded }: { expanded: boolean }) {
+  const { workspace, can, send } = useWorkspace();
+  if (!workspace) return null;
+  const preferences = workspace.preferences.session;
+  const setPreferences = (settings: typeof preferences) => {
+    const event = { type: "changePreferences", settings } as const;
+    if (can(event)) void send(event);
+  };
+  const repeat = { type: "interact", input: { tag: "RepeatReply", audible: preferences.voiceOutput } } as const;
+  const startOver = { type: "newConversation" } as const;
+  return (
+    <GraceVoiceMenu
+      side={expanded ? "bottom" : "top"}
+      voiceOn={preferences.voiceOutput}
+      onVoiceChange={(voiceOutput) => setPreferences({ ...preferences, voiceOutput })}
+      speed={speedOfPace[preferences.pace]}
+      onSpeedChange={(speed) => setPreferences({ ...preferences, pace: paceOfSpeed[speed] })}
+      canRepeat={can(repeat)}
+      onRepeat={() => { if (can(repeat)) void send(repeat); }}
+      canStartOver={can(startOver)}
+      onNewConversation={() => { if (can(startOver)) void send(startOver); }}
+    />
+  );
+}
 
 const Transcript = memo(function Transcript({ messages }: { messages: Workspace["assistant"]["conversation"]["messages"] }) {
   return (
@@ -278,6 +307,9 @@ function GracePanel({ onHeightChange }: { onHeightChange: (height: number) => vo
     });
   };
 
+  const showGuide: Interaction = { tag: "ShowGuidance", revision: assistant.guidance.revision };
+  const nudge = expanded && guidanceVisible(workspace) && assistant.keyboard !== "ChatKeyboard" && conversation.turn !== "Thinking" && conversation.turn !== "Speaking";
+
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
   return (
     <OverPage className={cn(besideRail, "pointer-events-none z-[3]")} style={{ bottom: 6 + keyboard }}>
@@ -286,7 +318,9 @@ function GracePanel({ onHeightChange }: { onHeightChange: (height: number) => vo
         header={
           <GraceHeader pause={paused ? "paused" : pausable ? "live" : conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
             onPause={() => pausable ? void send(stop) : interact({ tag: "PauseSpeech" })} onResume={() => paused ? void resumeReadPlan() : interact({ tag: "ResumeSpeech" })}
-            expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })}
+            voice={<GraceVoice expanded={expanded} />}
+            showGuide={can({ type: "interact", input: showGuide })} onShowGuide={() => interact(showGuide)}
+            expanded={expanded} onExpandedChange={(larger) => interact({ tag: "Resize", expanded: larger })} nudge={nudge}
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
@@ -295,7 +329,7 @@ function GracePanel({ onHeightChange }: { onHeightChange: (height: number) => vo
             canTalk={canTalk} needsMicPermission={needsMicPermission} talk={talk} interact={interact}
             current={current} requestGuide={guide.request} say={say} />
         }>
-        <GraceMessages>
+        <GraceMessages compact={!expanded}>
           <Transcript messages={conversation.messages} />
           {currentOffer && currentOffer.labels.length > 0 && (
             <AnswerChips>{currentOffer.labels.map((offerLabel, index) =>

@@ -18,8 +18,8 @@ export type OtherEmailDetails = { name: string; address: string; password: strin
 const problemText = (problem: OtherEmailProblem) => {
   switch (problem.kind) {
     case "listedProvider": {
-      const company = emailProviders[problem.provider].name;
-      return `This is ${/^[aeiou]/i.test(company) ? "an" : "a"} ${company} address. Go back and choose ${company}, so you can sign in on ${company}’s own page.`;
+      const { name: company, article } = emailProviders[problem.provider];
+      return `This is ${article} ${company} address. Go back and choose ${company}, so you can sign in on ${company}’s own page.`;
     }
     case "passwordRefused":
       return "That password didn’t work. Check it and try again. Some email companies give you a special password for apps; Grace can explain.";
@@ -53,7 +53,8 @@ export type OtherEmailFormProps = Omit<ComponentProps<"form">, "onSubmit"> & {
  * @design packages/design-system/design.md#windows
  */
 export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem, checking = false, onNext, accepts = () => true, onCancel, className, ...props }: OtherEmailFormProps) {
-  const [name, setName] = useState(defaultName);
+  const [typedName, setTypedName] = useState<string>();
+  const name = typedName ?? defaultName;
   const [address, setAddress] = useState(defaultAddress);
   const [filled, setFilled] = useState(false);
   const secretRef = useRef<SecretFieldHandle>(null);
@@ -70,7 +71,7 @@ export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem,
           {problemText(problem)}
         </Alert>
       ) : null}
-      <TextField label="Your name" placeholder="Your name" value={name} onChange={(event) => setName(event.target.value)} autoComplete="off" className="mt-3.5 max-w-[620px]" />
+      <TextField label="Your name" placeholder="Your name" value={name} onChange={(event) => setTypedName(event.target.value)} autoComplete="off" className="mt-3.5 max-w-[620px]" />
       <PageText tone="secondary" className="mt-1.5 ml-1.5">This is the name people see on your emails.</PageText>
       <TextField
         label="Email address"
