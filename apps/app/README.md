@@ -195,6 +195,30 @@ build copies it into `android/generated/android-user/` and points Gradle's `ANDR
 Anyone holding the repository can sign a debug build with it, which is why no production registration
 may list it.
 
+The `staging` environment in `apps/cloud/wrangler.jsonc` registers this key instead. Its Worker,
+`grace-cloud-staging`, serves `https://api-staging.graceforseniors.com` and
+`https://app-staging.graceforseniors.com`, and its `NATIVE_CLIENT_REGISTRY` lists
+`technology.graceful.grace` with the debug SHA-256 above and the sign-in return
+`https://app-staging.graceforseniors.com/android/auth/callback`, so a debug build verifies that App
+Link on staging. Production's registry keeps only the release certificate. `pnpm --filter @grace/cloud
+test` reads both environments from the Wrangler configuration and checks each one's
+`assetlinks.json` through the Grace Worker. Staging has no Stripe or SMS configuration, so
+subscriptions and text codes are off there. To bring staging up:
+
+1. Create a staging PostgreSQL database and run `CLOUD_ENVIRONMENT=staging DATABASE_URL=<owner
+   connection> pnpm --filter @grace/cloud migrate`. Staging shares the database identity of the local
+   configuration, so the same command prepares both.
+2. From `apps/cloud`, set each secret with `pnpm exec wrangler secret put <NAME> --env staging`:
+   `DATABASE_URL` with the runtime role, `CLOUD_PROFILE` with a staging row naming the two staging
+   origins and that identity, and staging values for the production secrets in the root README's
+   table.
+3. Run `pnpm --filter @grace/cloud bundle`, which dry-runs both environments, then deploy with
+   `pnpm exec wrangler deploy --env staging` from `apps/cloud`.
+4. In the Google project of the staging web client, register an Android OAuth client for
+   `technology.graceful.grace` with the debug SHA-1 above, and add
+   `https://api-staging.graceforseniors.com/api/auth/google/callback` and
+   `https://api-staging.graceforseniors.com/api/v1/eliza/google/connect/callback` to that web client.
+
 User QA receives the release-signed APK. R8 shrinks the release build, Capacitor preserves its
 plugin methods, and the content check enforces `debuggable=false`. The Grace release key for
 `technology.graceful.grace` is held outside this repository. Supply the established key through
