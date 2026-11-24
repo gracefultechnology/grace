@@ -491,8 +491,9 @@ pure def sometimesAHungLoadOffersReload(b: Browser): bool = activeTab(b).load ==
 
 ### Opened offline, the browser shows the offline page, never a blank page
 
-Internet opens whether or not the tablet is connected. While it is not, the
-page area shows Grace's offline page in the browser's own grey, never a
+Internet opens whether or not the tablet is connected. A network that asks
+for its sign-in counts as connected here, so its sign-in page can show. While
+the tablet is not connected, the page area shows Grace's offline page in the browser's own grey, never a
 blank or black page and never plum: "You're offline" over "Websites need the
 internet. Grace can help you reconnect.", with one Fix Wi-Fi, which opens
 the written steps on the Wi-Fi page as Home's offline banner does
