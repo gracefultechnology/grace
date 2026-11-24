@@ -60,23 +60,31 @@ function follow(controls: ReadonlyMap<HTMLElement, Control>, drawn: Rect[]) {
     control.show(isDrawn(control.at))
     const held = rect !== undefined && at !== undefined && isDrawn(at) && !isDrawn(rect)
     const moved = held && !encloses(at, rect)
-    element.style.transform = moved ? `translate(${at.x - rect.x}px, ${at.y - rect.y}px)` : ""
-    element.style.clipPath = moved ? `inset(0 ${Math.max(0, rect.width - at.width)}px ${Math.max(0, rect.height - at.height)}px 0)` : ""
-    element.toggleAttribute("data-settled", isDrawn(rect))
+    const nextTransform = moved ? `translate(${at.x - rect.x}px, ${at.y - rect.y}px)` : ""
+    const nextClip = moved ? `inset(0 ${Math.max(0, rect.width - at.width)}px ${Math.max(0, rect.height - at.height)}px 0)` : ""
+    if (element.style.transform !== nextTransform) element.style.transform = nextTransform
+    if (element.style.clipPath !== nextClip) element.style.clipPath = nextClip
+    const settled = isDrawn(rect)
+    if (element.hasAttribute("data-settled") !== settled) element.toggleAttribute("data-settled", settled)
   }
 }
 
 function measure(area: HTMLElement | undefined, controls: ReadonlyMap<HTMLElement, Control>, drawn: Rect[], before: Measured): Measured {
-  for (const element of controls.keys()) element.style.transform = element.style.clipPath = ""
+  for (const element of controls.keys()) {
+    if (element.style.transform !== "") element.style.transform = ""
+    if (element.style.clipPath !== "") element.style.clipPath = ""
+  }
+  const page = area === undefined ? before.page : rectOf(area, false)
+  const style = area === undefined ? undefined : webView.window.getComputedStyle(area)
+  const corners = style === undefined ? before.corners : {
+    topLeft: parseFloat(style.borderTopLeftRadius), topRight: parseFloat(style.borderTopRightRadius),
+    bottomRight: parseFloat(style.borderBottomRightRadius), bottomLeft: parseFloat(style.borderBottomLeftRadius)
+  }
   for (const [element, control] of controls) control.rect = element.isConnected ? rectOf(element, true) : undefined
   follow(controls, drawn)
-  const style = area === undefined ? undefined : webView.window.getComputedStyle(area)
   return {
-    page: area === undefined ? before.page : rectOf(area, false),
-    corners: style === undefined ? before.corners : {
-      topLeft: parseFloat(style.borderTopLeftRadius), topRight: parseFloat(style.borderTopRightRadius),
-      bottomRight: parseFloat(style.borderBottomRightRadius), bottomLeft: parseFloat(style.borderBottomLeftRadius)
-    },
+    page,
+    corners,
     controls: placedRects(controls)
   }
 }
@@ -128,6 +136,11 @@ effect function warn(what: string, page: PageId | undefined, cause: unknown) {
   try annotateLogs(logWarning(what, cause), { page: page ?? "every page" })
 }
 
+effect function setHostSurface(transparent: boolean) {
+  const toggle = privateViewPlugin?.setHostSurface?.bind(privateViewPlugin)
+  if (toggle !== undefined) tryPromise(() => toggle({ transparent })) catch () => undefined
+}
+
 effect function present(native: NativePage.Shape, pages: ReadonlyMap<PageId, Page>, paused: Set<PageId>, presented: PageId | null | undefined, selected: number | undefined, runs: boolean) {
   const id = selected !== undefined && pages.has(pageOf(selected)) ? pageOf(selected) : null
   for (const page of pages.keys()) {
@@ -136,7 +149,11 @@ effect function present(native: NativePage.Shape, pages: ReadonlyMap<PageId, Pag
     if (run) paused.delete(page)
     else paused.add(page)
   }
-  if (id !== presented) native.present(id) catch effect (cause) => try warn("present", id ?? undefined, cause)
+  if (id !== presented) {
+    if (id !== null && (presented === null || presented === undefined)) try setHostSurface(true)
+    native.present(id) catch effect (cause) => try warn("present", id ?? undefined, cause)
+    if (id === null && presented !== null) try setHostSurface(false)
+  }
   return id
 }
 
@@ -159,8 +176,18 @@ effect function watchPage(layer: PageLayers.Shape, onMeasured: () => void!!) {
     remeasure()
   })
   try addFinalizer(() => sync(() => { resized.disconnect(); stripResized.disconnect() }))
+  const isRelevantMove = (event: unknown) => {
+    if (area === undefined && controls.size === 0) return false
+    if (!(event instanceof webView.window.Event)) return true
+    if (event.type === "resize") return true
+    const target = event.target
+    if (!(target instanceof webView.window.Element)) return false
+    if (area !== undefined && (target === area || target.contains(area))) return true
+    for (const element of controls.keys()) if (target === element || target.contains(element)) return true
+    return false
+  }
   const moves = ["resize", "transitionend", "transitioncancel", "animationend"].map((name) => Stream.fromEventListener(webView.window, name, { capture: true }))
-  try fork.scoped Stream.runForEach(Stream.mergeAll(moves, { concurrency: "unbounded" }), () => sync(remeasure))
+  try fork.scoped Stream.runForEach(Stream.mergeAll(moves, { concurrency: "unbounded" }), (event) => isRelevantMove(event) ? sync(remeasure) : Effect.void)
   try fork.scoped Stream.runForEach(Stream.changesWith(Stream.map(layer.changes, (l) => l.drawn), sameRects), () => sync(remeasure))
   try fork.scoped effect {
     while (true) {
@@ -223,20 +250,52 @@ effect function failLoad(workspace: Workspaces.Shape, tab: Tab) {
   try report(workspace, { type: "receiveLoad", loadReport: { id: tab.id, version: tab.loadVersion, result: "LoadFailed", secure: false, endedAt: tabUrl(tab) } })
 }
 
+function sameLoadingTabs(a: readonly Tab[], b: readonly Tab[]) {
+  const aLoading = a.filter((t) => t.load === "Loading")
+  const bLoading = b.filter((t) => t.load === "Loading")
+  return aLoading.length === bLoading.length && aLoading.every((t, i) => t.id === bLoading[i].id && t.loadVersion === bLoading[i].loadVersion)
+}
+
+function sameNumbers(a: readonly number[], b: readonly number[]) {
+  return a.length === b.length && a.every((n, i) => n === b[i])
+}
+
+function samePageWorkspace(a: Workspace, b: Workspace) {
+  if (a.device.surface !== b.device.surface || a.device.readiness !== b.device.readiness ||
+      a.assistant.presentation !== b.assistant.presentation ||
+      a.browser.revision !== b.browser.revision || a.browser.selected !== b.browser.selected ||
+      a.browser.capacity !== b.browser.capacity || a.browser.tabs.length !== b.browser.tabs.length) return false
+  return a.browser.tabs.every((t, i) => {
+    const o = b.browser.tabs[i]
+    return t.id === o.id && t.load === o.load && t.loadVersion === o.loadVersion &&
+      t.cursor === o.cursor && t.manualSignIn === o.manualSignIn && sameHistory(t, o)
+  })
+}
+
 effect function waitForLoads(workspace: Workspaces.Shape, requests: WebsiteRequests.Shape, signals: Queue.Queue<Signal>) {
   const scope = try Scope.Scope
   const waits = new Map<number, { version: number; fiber: Fiber.Fiber<boolean> }>()
-  const changes = Stream.merge(Stream.map(workspace.changes, () => undefined), Stream.map(requests.changes, () => undefined))
-  try fork.scoped Stream.runForEach(changes, effect () => {
-    const tabs = (try workspace.get()).browser.tabs
-    const held = new Set((try requests.get()).requests.filter((r) => isMessage(r.ask)).map((r) => r.tab))
+  let latestTabs: readonly Tab[] = []
+  let latestHeld = new Set<number>()
+  const tabChanges = Stream.changesWith(Stream.map(workspace.changes, (w) => w.browser.tabs), sameLoadingTabs)
+  const heldChanges = Stream.changesWith(
+    Stream.map(requests.changes, (r) => r.requests.filter((req) => isMessage(req.ask)).map((req) => req.tab)),
+    sameNumbers
+  )
+  const changes = Stream.merge(
+    Stream.map(tabChanges, (tabs) => ({ kind: "tabs" as const, tabs })),
+    Stream.map(heldChanges, (held) => ({ kind: "held" as const, held }))
+  )
+  try fork.scoped Stream.runForEach(changes, effect (update) => {
+    if (update.kind === "tabs") latestTabs = update.tabs
+    else latestHeld = new Set(update.held)
     for (const [id, wait] of [...waits]) {
-      const tab = tabs.find((t) => t.id === id)
-      if (tab?.load === "Loading" && tab.loadVersion === wait.version && !held.has(id)) continue
+      const tab = latestTabs.find((t) => t.id === id)
+      if (tab?.load === "Loading" && tab.loadVersion === wait.version && !latestHeld.has(id)) continue
       waits.delete(id)
       try Fiber.interrupt(wait.fiber)
     }
-    for (const tab of tabs) if (tab.load === "Loading" && !held.has(tab.id) && !waits.has(tab.id)) waits.set(tab.id, {
+    for (const tab of latestTabs) if (tab.load === "Loading" && !latestHeld.has(tab.id) && !waits.has(tab.id)) waits.set(tab.id, {
       version: tab.loadVersion,
       fiber: try fork.in(scope) Effect.andThen(sleep(`${loadWaitSeconds} seconds`), Queue.offer(signals, Signal.Waited({ tab })))
     })
@@ -270,9 +329,13 @@ effect function stayed(workspace: Workspaces.Shape, page: Page | undefined) {
 }
 
 effect function resizeTabs(workspace: Workspaces.Shape, w: Workspace, stripWidth: number) {
-  if (stripWidth <= 0) return
+  if (stripWidth <= 0) return w
   const resize: BrowserInput = { tag: "ResizeTabs", revision: w.browser.revision, capacity: Math.max(1, Math.floor((stripWidth - STRIP_SPARE) / TAB_WIDTH)) }
-  if (resize.capacity !== w.browser.capacity && canChangePage(w, resize, "Host")) try report(workspace, { type: "changePage", browserInput: resize })
+  if (resize.capacity !== w.browser.capacity && canChangePage(w, resize, "Host")) {
+    const updated = try report(workspace, { type: "changePage", browserInput: resize })
+    if (updated !== undefined) return updated.state
+  }
+  return w
 }
 
 const goesElsewhere = (page: Page, url: string | undefined): url is string => url !== undefined && url !== "" && url !== page.url
@@ -362,7 +425,7 @@ effect function navigatePrivate(workspace: Workspaces.Shape, native: NativePage.
 effect function listenForPageSignals(workspace: Workspaces.Shape, native: NativePage.Shape, signals: Queue.Queue<Signal>, routes: Queue.Queue<Routing>) {
   native.claim() catch effect (cause) => try warn("claim", undefined, cause)
   const visibility = Stream.map(Stream.concat(Stream.make(undefined), Stream.fromEventListener(webView.document, "visibilitychange")), () => Signal.Visible({ visible: !webView.hidden() }))
-  try fork.scoped Stream.runForEach(workspace.changes, () => Queue.offer(signals, Signal.Woken()))
+  try fork.scoped Stream.runForEach(Stream.changesWith(workspace.changes, samePageWorkspace), () => Queue.offer(signals, Signal.Woken()))
   try fork.scoped Stream.runForEach(native.events, (event) => Queue.offer(routes, Signal.Heard({ event })))
   try fork.scoped Stream.runForEach(visibility, (signal) => Queue.offer(signals, signal))
 }
@@ -435,6 +498,43 @@ effect function routePages(native: NativePage.Shape, layer: PageLayers.Shape, pa
   }
 }
 
+effect function syncTabState(
+  native: NativePage.Shape,
+  pages: Map<PageId, Page>,
+  unmade: Map<number, number>,
+  protectBrowser: (active: boolean) => boolean!!,
+  open: (tab: Tab, shown: boolean) => void!!,
+  close: (tab: number) => void!!,
+  w: Workspace,
+  r: Effect.Success<ReturnType<WebsiteRequests.Shape["get"]>>
+) {
+  const tabs = w.browser.tabs
+  let mutated = false
+  for (const { tab } of [...pages.values()]) if (!tabs.some((t) => t.id === tab.id)) {
+    try close(tab.id)
+    mutated = true
+  }
+  if (!tabs.some((tab) => tab.manualSignIn)) try protectBrowser(false)
+  for (const id of [...unmade.keys()]) if (!tabs.some((t) => t.id === id)) unmade.delete(id)
+  const purging = r.clearing === "Purging"
+  for (const tab of tabs) {
+    const page = pages.get(pageOf(tab.id))
+    if (page === undefined) {
+      if (tabUrl(tab) !== "" && !purging) {
+        try open(tab, tab.id === w.browser.selected && pageShows(w.device, w.assistant))
+        mutated = true
+      }
+    } else if (tabUrl(tab) === "") {
+      try close(tab.id)
+      mutated = true
+    } else if (tab.loadVersion !== page.tab.loadVersion) {
+      try step(native, page, tab, close)
+      mutated = true
+    } else track(page, tab)
+  }
+  return mutated
+}
+
 effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
   const workspace = try Workspaces
   const layer = try PageLayers
@@ -481,11 +581,20 @@ effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
     if (done && isLeavePage(reply.ask) && reply.answer !== "Ok") try stayed(workspace, pages.get(request.page))
   }
 
-  effect function syncRequests() {
-    const w = try workspace.get()
-    const view = { shown: pageShows(w.device, w.assistant), selected: w.browser.selected, paused: !pageRuns(try layer.get()) }
-    if (canFollowView(try requests.get(), view, "WebsiteHost")) try website({ type: "followView", view }, "WebsiteHost")
-    if (w.device.surface !== "DeviceSettings" && (try requests.get()).clearing === "ConfirmingClear") try website({ type: "settingsClosed" }, "WebsiteHost")
+  effect function syncRequests(
+    w?: Workspace,
+    l?: Effect.Success<ReturnType<PageLayers.Shape["get"]>>,
+    r?: Effect.Success<ReturnType<WebsiteRequests.Shape["get"]>>
+  ) {
+    const currentW = w ?? (try workspace.get())
+    const currentL = l ?? (try layer.get())
+    let currentR = r ?? (try requests.get())
+    const view = { shown: pageShows(currentW.device, currentW.assistant), selected: currentW.browser.selected, paused: !pageRuns(currentL) }
+    if (canFollowView(currentR, view, "WebsiteHost")) {
+      const updated = try website({ type: "followView", view }, "WebsiteHost")
+      if (updated !== undefined) currentR = updated.state
+    }
+    if (currentW.device.surface !== "DeviceSettings" && currentR.clearing === "ConfirmingClear") try website({ type: "settingsClosed" }, "WebsiteHost")
   }
 
   effect function place(id: PageId) {
@@ -553,26 +662,15 @@ effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
     else try Queue.offer(routes, { _tag: "Route", targets: [[id, page]], rects: l.pending ? l.requested : l.routed })
   }
 
-  effect function syncTabs() {
-    const w = try workspace.get()
-    const tabs = w.browser.tabs
-    for (const { tab } of [...pages.values()]) if (!tabs.some((t) => t.id === tab.id)) try close(tab.id)
-    if (!tabs.some((tab) => tab.manualSignIn)) try protectBrowser(false)
-    for (const id of [...unmade.keys()]) if (!tabs.some((t) => t.id === id)) unmade.delete(id)
-    const purging = (try requests.get()).clearing === "Purging"
-    for (const tab of tabs) {
-      const page = pages.get(pageOf(tab.id))
-      if (page === undefined) { if (tabUrl(tab) !== "" && !purging) try open(tab, tab.id === w.browser.selected && pageShows(w.device, w.assistant)) }
-      else if (tabUrl(tab) === "") try close(tab.id)
-      else if (tab.loadVersion !== page.tab.loadVersion) try step(native, page, tab, close)
-      else track(page, tab)
-    }
-  }
-
   effect function reconcile() {
-    try syncTabs()
-    try resizeTabs(workspace, try workspace.get(), measurer.stripWidth)
-    const w = try workspace.get()
+    let w = try workspace.get()
+    let r = try requests.get()
+    const mutated = try syncTabState(native, pages, unmade, protectBrowser, open, close, w, r)
+    if (mutated) {
+      w = try workspace.get()
+      r = try requests.get()
+    }
+    w = try resizeTabs(workspace, w, measurer.stripWidth)
     let l = try layer.get()
     if (canPlace(l, measurer.measured.page)) {
       l = try Effect.orDie(layer.send({ type: "place", page: measurer.measured.page }))
@@ -581,7 +679,7 @@ effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
     const visible = pageShows(w.device, w.assistant)
     if (canShow(l, w.device, w.assistant)) l = try Effect.orDie(layer.send({ type: "show", s: w.device, a: w.assistant }))
     presented = try present(native, pages, paused, presented, visible ? w.browser.selected : undefined, pageRuns(l))
-    try syncRequests()
+    try syncRequests(w, l, r)
     const drawable = measurer.measured.controls.filter((r) => (!l.routingReady || within([r], l.routed)) && (!l.pending || within([r], l.requested)))
     if (canDraw(l, drawable)) {
       l = try Effect.orDie(layer.send({ type: "draw", rects: drawable }))

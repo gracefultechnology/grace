@@ -55,7 +55,7 @@ export function TaskReviewCard({ who, rows, stale = false, reading = false, labe
       aria-label={heading}
       aria-busy={stale || undefined}
       className={cn(
-        "flex flex-col gap-5 transition-[background-color,box-shadow] duration-base",
+        "flex flex-col gap-5 transition-colors duration-base",
         reading && !stale && "bg-card shadow-raised inset-ring-2 inset-ring-lavender",
         className,
       )}

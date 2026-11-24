@@ -108,7 +108,7 @@ export function NewTabPage({
                     className={cn(focusRing, "flex w-36 flex-col items-center gap-3 rounded-row p-4 transition-transform duration-press ease-spring active:scale-105 motion-reduce:active:scale-100")}
                   >
                     {s.favicon ? (
-                      <img src={s.favicon} alt="" className="size-16 rounded-full bg-card object-cover shadow-capsule" />
+                      <img src={s.favicon} alt="" decoding="async" loading="lazy" className="size-16 rounded-full bg-card object-cover shadow-capsule" />
                     ) : (
                       <span aria-hidden className="flex size-16 items-center justify-center rounded-full bg-card text-title-sm font-bold text-primary shadow-capsule">
                         {s.title.slice(0, 1)}

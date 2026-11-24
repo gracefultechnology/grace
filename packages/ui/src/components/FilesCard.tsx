@@ -30,7 +30,7 @@ export type FilesCardProps = Omit<LauncherCardProps, "title" | "children" | "art
 export function FilesCard({ title = "Files", photos, document, compact = false, size = "large", ...props }: FilesCardProps) {
   const photo = ({ src, alt }: FilesCardPhoto, className: string) => (
     <span key={src} className={cn("block min-h-0 overflow-hidden shadow-picture", className)}>
-      <img src={src} alt={alt ?? ""} className="block size-full object-cover" />
+      <img src={src} alt={alt ?? ""} decoding="async" loading="lazy" className="block size-full object-cover" />
     </span>
   );
   return (

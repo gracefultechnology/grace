@@ -1,10 +1,54 @@
 // spec/app/conversation.md, "Story: Talk or type without losing the conversation"
 import { webView } from "./surfacePlugin.ts";
 
+const utf8 = new TextDecoder();
+
+const micWorkletSource = `
+class GraceMicProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.buffer = new Int16Array(1024);
+    this.offset = 0;
+  }
+  process(inputs) {
+    const channel = inputs[0]?.[0];
+    if (!channel) return true;
+    for (let i = 0; i < channel.length; i += 1) {
+      const s = Math.max(-1, Math.min(1, channel[i]));
+      this.buffer[this.offset++] = s < 0 ? Math.round(s * 32768) : Math.round(s * 32767);
+      if (this.offset === this.buffer.length) {
+        const out = this.buffer;
+        this.buffer = new Int16Array(1024);
+        this.offset = 0;
+        this.port.postMessage(out.buffer, [out.buffer]);
+      }
+    }
+    return true;
+  }
+}
+registerProcessor("grace-mic-processor", GraceMicProcessor);
+`;
+
 export type Microphone = {
   attach: (send: (pcm: ArrayBuffer) => void) => void;
   close: () => Promise<void>;
 };
+
+async function createWorkletTap(audio: AudioContext): Promise<AudioWorkletNode | undefined> {
+  if (!audio.audioWorklet || typeof webView.window.AudioWorkletNode !== "function" ||
+      typeof webView.window.Blob !== "function" || typeof webView.window.URL?.createObjectURL !== "function") {
+    return undefined;
+  }
+  const url = webView.window.URL.createObjectURL(new webView.window.Blob([micWorkletSource], { type: "application/javascript" }));
+  try {
+    await audio.audioWorklet.addModule(url);
+    return new webView.window.AudioWorkletNode(audio, "grace-mic-processor", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1 });
+  } catch {
+    return undefined;
+  } finally {
+    webView.window.URL.revokeObjectURL(url);
+  }
+}
 
 export async function openMicrophone(signal: AbortSignal): Promise<Microphone> {
   const audio = new webView.window.AudioContext({ sampleRate: 16_000 });
@@ -28,7 +72,9 @@ export async function openMicrophone(signal: AbortSignal): Promise<Microphone> {
     throw failure;
   }
   const input = audio.createMediaStreamSource(media);
-  const tap = audio.createScriptProcessor(1024, 1, 1);
+  const worklet = await createWorkletTap(audio);
+  const script = worklet ? undefined : audio.createScriptProcessor(1024, 1, 1);
+  const tap: AudioNode = worklet ?? script ?? audio.createGain();
   const silence = audio.createGain();
   silence.gain.value = 0;
   let attached = false;
@@ -37,18 +83,24 @@ export async function openMicrophone(signal: AbortSignal): Promise<Microphone> {
     attach(send) {
       if (closed || attached) return;
       attached = true;
-      tap.onaudioprocess = (event) => {
-        const samples = event.inputBuffer.getChannelData(0);
-        const pcm = new ArrayBuffer(samples.length * 2);
-        const data = new DataView(pcm);
-        for (let index = 0; index < samples.length; index += 1) {
-          const sample = Math.max(-1, Math.min(1, samples[index]));
-          data.setInt16(index * 2, sample < 0 ? Math.round(sample * 32768) : Math.round(sample * 32767), true);
-        }
-        for (let offset = 0; offset < pcm.byteLength; offset += 3200) {
-          send(pcm.slice(offset, Math.min(offset + 3200, pcm.byteLength)));
-        }
-      };
+      if (worklet) {
+        worklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+          if (event.data instanceof ArrayBuffer) send(event.data);
+        };
+      } else if (script) {
+        script.onaudioprocess = (event) => {
+          const samples = event.inputBuffer.getChannelData(0);
+          const pcm = new ArrayBuffer(samples.length * 2);
+          const data = new DataView(pcm);
+          for (let index = 0; index < samples.length; index += 1) {
+            const sample = Math.max(-1, Math.min(1, samples[index]));
+            data.setInt16(index * 2, sample < 0 ? Math.round(sample * 32768) : Math.round(sample * 32767), true);
+          }
+          for (let offset = 0; offset < pcm.byteLength; offset += 3200) {
+            send(pcm.slice(offset, Math.min(offset + 3200, pcm.byteLength)));
+          }
+        };
+      }
       input.connect(tap);
       tap.connect(silence);
       silence.connect(audio.destination);
@@ -56,7 +108,12 @@ export async function openMicrophone(signal: AbortSignal): Promise<Microphone> {
     async close() {
       if (closed) return;
       closed = true;
-      tap.onaudioprocess = null;
+      if (worklet) {
+        worklet.port.onmessage = null;
+        worklet.port.close();
+      } else if (script) {
+        script.onaudioprocess = null;
+      }
       input.disconnect();
       tap.disconnect();
       silence.disconnect();
@@ -139,7 +196,7 @@ export function speechFrame(value: ArrayBuffer) {
   const length = frame[1] ?? 0;
   if (frame[0] !== 1 || frame.length > 65_602 || length < 1 || length > 64 || frame.length <= length + 2 ||
       (frame.length - length - 2) % 2 !== 0) return null;
-  const context = new TextDecoder().decode(frame.subarray(2, length + 2));
+  const context = utf8.decode(frame.subarray(2, length + 2));
   return /^[A-Za-z0-9_-]{1,64}$/.test(context) ? { context, pcm: frame.subarray(length + 2) } : null;
 }
 

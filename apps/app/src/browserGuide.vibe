@@ -149,6 +149,25 @@ function links(snapshot: LinkObservation, page: URL, target: string, publicOnly:
       }
     }
   }
+  const childrenByPrefix = new Map<string, string[]>()
+  if (target === "") {
+    for (const other of destinations.values()) {
+      const normalized = other.path.replace(/\/+$/u, "")
+      let slash = normalized.lastIndexOf("/")
+      while (slash >= 0) {
+        const prefix = normalized.slice(0, slash) + "/"
+        if (other.path !== prefix && other.path !== normalized.slice(0, slash)) {
+          let list = childrenByPrefix.get(prefix)
+          if (list === undefined) {
+            list = []
+            childrenByPrefix.set(prefix, list)
+          }
+          if (list.length < 3) list.push(other.label)
+        }
+        slash = slash === 0 ? -1 : normalized.lastIndexOf("/", slash - 1)
+      }
+    }
+  }
   return [...destinations].map(([href, link]) => {
     const aliases = [...link.labels]
     const description = aliases.join(" / ")
@@ -158,8 +177,8 @@ function links(snapshot: LinkObservation, page: URL, target: string, publicOnly:
         href, menuItem: link.menuItem, selector: link.selector, samePage: link.samePage, exact: aliases.some((label) => comparableName(label) === comparableName(target)), pointable: link.rank === 2 }
     }
     const prefix = link.path.replace(/\/+$/u, "") + "/"
-    const children = [...destinations.values()].filter(other => other.path !== link.path && other.path.startsWith(prefix))
-    const section = children.length ? " (section with links including " + children.slice(0, 3).map(child => child.label).join(", ") + ")" : ""
+    const children = childrenByPrefix.get(prefix) ?? []
+    const section = children.length ? " (section with links including " + children.join(", ") + ")" : ""
     const query = URL.parse(href)?.search ? " (address has query parameters)" : ""
     return { id: link.id, label: link.label, description: (description + query + section).slice(0, CLEF_DECISION_LIMITS.candidateLabel), href,
       menuItem: false, selector: undefined, samePage: false, exact: false, pointable: link.rank === 2 }
@@ -628,6 +647,7 @@ export const browserGuide = (native: boolean, fixture?: GuideDecision) => Layer.
   const publicLinks = linkGuidance({ native, fixture, page, website, workspace, setup, recovery, currentContext })
   const changes = Stream.merge(Stream.as(workspace.changes, undefined), Stream.as(requests.changes, undefined))
   try fork.scoped Stream.runForEach(changes, effect () => {
+    if (scan === undefined && selectedRecord === undefined && recordRing === undefined && publicLinks.shownPage() === undefined) return
     const observed = try workspace.get()
     const live = (try clear) ? recordContext(observed, try authority()) : undefined
     if (scan && observed.browser.revision >= scan.visit.from.browserRevision && (!live || !directRecordVisit(scan.visit, live))) scan = undefined

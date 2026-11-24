@@ -113,7 +113,18 @@ export function CalendarApp({
             {guided(
               guide,
               id,
-              <CalendarEventRow {...item} {...(onOpenEvent ? { onClick: () => onOpenEvent(id) } : { "aria-disabled": true, className: "cursor-default active:scale-100" })} />,
+              <CalendarEventRow
+                {...item}
+                {...(onOpenEvent
+                  ? {
+                      className: guide?.targetId === id ? undefined : "[content-visibility:auto] [contain-intrinsic-size:auto_96px]",
+                      onClick: () => onOpenEvent(id),
+                    }
+                  : {
+                      "aria-disabled": true,
+                      className: guide?.targetId === id ? "cursor-default active:scale-100" : "cursor-default active:scale-100 [content-visibility:auto] [contain-intrinsic-size:auto_96px]",
+                    })}
+              />,
               { radius: 22, placement: "below", className: "flex" },
             )}
           </Fragment>

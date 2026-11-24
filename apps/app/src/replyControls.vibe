@@ -179,11 +179,19 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
   const page = try NativePage
   const files = try FileLibrary
   const active = try SubscriptionRef.make<Offer | undefined>(undefined)
+  let hasActive = false
+  const setActive = (next: Offer | undefined) => effect {
+    hasActive = next !== undefined
+    try SubscriptionRef.set(active, next)
+  }
   const serial = try Ref.make(0)
   const gate = try Semaphore.make(1)
 
   effect function offer(scene: RequestScene, response: Workspace, actions: readonly Suggested[]) {
-    if (!actions.length) return try SubscriptionRef.set(active, undefined)
+    if (!actions.length) {
+      if (hasActive) try setActive(undefined)
+      return
+    }
     const w = response
     const context = replyControlContext(w)
     const index = w.assistant.conversation.messages.length - 1
@@ -206,7 +214,7 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
     })
     const controls = [...new Map(planned.flatMap((control) => control ? [[control.title, control] as const] : [])).values()]
     const id = try Ref.updateAndGet(serial, (prior) => prior + 1)
-    try SubscriptionRef.set(active, { visible: { id, context, messageIndex: index, messageText: message.text, labels: controls.map((control) => control.title), blocked: planned.some((item) => item === undefined) }, controls })
+    try setActive({ visible: { id, context, messageIndex: index, messageText: message.text, labels: controls.map((control) => control.title), blocked: planned.some((item) => item === undefined) }, controls })
   }
 
   effect function choose(id: number, index: number) {
@@ -214,7 +222,7 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
     if (kept?.visible.id !== id || !replyOfferIsVisible(try desk.get(), kept.visible)) return false
     const choice = kept.controls[index]
     if (!choice) return false
-    try SubscriptionRef.set(active, undefined)
+    try setActive(undefined)
     switch (choice.kind) {
       case "findFile": return try files.findFromReply(choice.query, choice.owner)
       case "workspace":
@@ -241,17 +249,22 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
       case "managed": return try managed.stage(choice.proposed)
     }
   }
-  try fork.scoped Stream.runForEach(desk.changes, () => gate.withPermit(effect {
-    const workspace = try desk.get()
-    try SubscriptionRef.update(active, (proposal) => {
-      if (!proposal) return undefined
+  try fork.scoped Stream.runForEach(desk.changes, effect (workspace) => {
+    if (!hasActive) return
+    try gate.withPermit(effect {
+      const proposal = try SubscriptionRef.get(active)
+      if (!proposal) {
+        hasActive = false
+        return
+      }
       const context = proposal.visible.context
       const conversation = workspace.assistant.conversation
-      return replyOfferIsVisible(workspace, proposal.visible) || (conversation.turn === "Thinking" &&
+      const keep = replyOfferIsVisible(workspace, proposal.visible) || (conversation.turn === "Thinking" &&
         conversation.generation === context.generation && workspace.device.contextVersion === context.device &&
-        workspace.preferences.revision === context.preferences) ? proposal : undefined
+        workspace.preferences.revision === context.preferences)
+      if (!keep) try setActive(undefined)
     })
-  }))
+  })
   return {
     state: Stream.map(SubscriptionRef.changes(active), (offer) => offer?.visible),
     get: () => Effect.map(SubscriptionRef.get(active), (offer) => offer?.visible),

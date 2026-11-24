@@ -13,8 +13,8 @@ import { ProgressStrip, type ProgressStripProps } from "./ProgressStrip.tsx";
 export type SetupRing = "talk" | "type" | "close";
 
 const dockRings: Partial<Record<SetupRing, string>> = {
-  talk: "[&_[aria-pressed]]:shadow-guide-tight [&_[aria-pressed]]:animate-guide-pulse-tight motion-reduce:[&_[aria-pressed]]:animate-none",
-  type: "[&_[data-open-keyboard]]:shadow-guide-tight [&_[data-open-keyboard]]:animate-guide-pulse-tight motion-reduce:[&_[data-open-keyboard]]:animate-none",
+  talk: "[&_[aria-pressed]]:relative [&_[aria-pressed]]:after:pointer-events-none [&_[aria-pressed]]:after:absolute [&_[aria-pressed]]:after:inset-0 [&_[aria-pressed]]:after:animate-guide-pulse-tight [&_[aria-pressed]]:after:rounded-full [&_[aria-pressed]]:after:shadow-guide-tight motion-reduce:[&_[aria-pressed]]:after:animate-none",
+  type: "[&_[data-open-keyboard]]:relative [&_[data-open-keyboard]]:after:pointer-events-none [&_[data-open-keyboard]]:after:absolute [&_[data-open-keyboard]]:after:inset-0 [&_[data-open-keyboard]]:after:animate-guide-pulse-tight [&_[data-open-keyboard]]:after:rounded-full [&_[data-open-keyboard]]:after:shadow-guide-tight motion-reduce:[&_[data-open-keyboard]]:after:animate-none",
 };
 
 export type SetupStepProps = Omit<GraceWindowProps, "header" | "children" | "content" | "dock" | "size"> & {

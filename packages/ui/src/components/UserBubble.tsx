@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import { memo, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../lib/cn.ts";
 import { RemovedNotice } from "./GraceBubble.tsx";
 
@@ -18,7 +18,7 @@ export type UserBubbleProps = Omit<ComponentProps<"div">, "children"> & {
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
  */
-export function UserBubble({ rise = false, removed = false, removedLabel = "I removed something that looked private.", className, children, ...props }: UserBubbleProps) {
+export const UserBubble = memo(function UserBubble({ rise = false, removed = false, removedLabel = "I removed something that looked private.", className, children, ...props }: UserBubbleProps) {
   return (
     <div className={cn("flex justify-end", className)} {...props}>
       <div
@@ -35,4 +35,4 @@ export function UserBubble({ rise = false, removed = false, removedLabel = "I re
       </div>
     </div>
   );
-}
+});

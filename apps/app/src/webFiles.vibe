@@ -13,6 +13,7 @@ schema MailFile {
 schema StoredFile { entry: MailFile; data: string }
 type Access = { owner: string; session: string }
 const storedFiles = Schema.decodeUnknownSync(Schema.Array(StoredFile))
+const storedFile = Schema.decodeUnknownSync(StoredFile)
 const sourceIdentity = (file: HeldFile) => JSON.stringify([file.origin, file.account, file.container, file.sourceRef])
 
 function contentType(name: string) {
@@ -29,19 +30,19 @@ effect function opened(owner: string) {
   })), (db) => sync(() => db.close()))
 }
 
-effect function transact<A>(owner: string, mode: IDBTransactionMode, update: (rows: readonly StoredFile[], store: IDBObjectStore) => A | undefined) {
+effect function runTransaction<A, R>(owner: string, mode: IDBTransactionMode, open: (store: IDBObjectStore) => IDBRequest<R>, update: (raw: unknown, store: IDBObjectStore) => A | undefined) {
   return try scoped(effect {
     const db = try opened(owner)
     return try tryPromise(() => new Promise<A>((resolve, reject) => {
       const tx = db.transaction("files", mode)
       const store = tx.objectStore("files")
-      const request = store.getAll()
+      const request = open(store)
       let result: A
       tx.onabort = () => reject(tx.error ?? new Error("File transaction failed"))
       tx.oncomplete = () => resolve(result)
       request.onsuccess = () => {
         try {
-          const value = update(storedFiles(request.result), store)
+          const value = update(request.result, store)
           if (value === undefined) tx.abort()
           else result = value
         }
@@ -51,21 +52,57 @@ effect function transact<A>(owner: string, mode: IDBTransactionMode, update: (ro
   })
 }
 
+effect function transact<A>(owner: string, mode: IDBTransactionMode, update: (rows: readonly StoredFile[], store: IDBObjectStore) => A | undefined) {
+  return try runTransaction(owner, mode, (store) => store.getAll(), (raw, store) => update(storedFiles(raw), store))
+}
+
+effect function transactOne<A>(owner: string, mode: IDBTransactionMode, id: string, update: (row: StoredFile | undefined, store: IDBObjectStore) => A | undefined) {
+  return try runTransaction(owner, mode, (store) => store.get(id), (raw, store) => update(raw === undefined ? undefined : storedFile(raw), store))
+}
+
 export function browserFiles(): FilesPort {
   const leases = new Map<string, Access>()
+  type LiveScope = Effect.Success<ReturnType<typeof browserSessionScope>>
+  let scopeCheck: Deferred.Deferred<LiveScope | undefined> | undefined
+
+  effect function liveScope(): (LiveScope | undefined)!! {
+    if (scopeCheck !== undefined) return try Deferred.await(scopeCheck)
+    const gate = try Deferred.make<LiveScope | undefined>()
+    scopeCheck = gate
+    return try Effect.ensuring(
+      effect {
+        const result = browserSessionScope() catch () => undefined
+        try Deferred.succeed(gate, result)
+        return result
+      },
+      effect {
+        if (scopeCheck === gate) scopeCheck = undefined
+        try Deferred.succeed(gate, undefined)
+      }
+    )
+  }
 
   effect function current(token: string) {
     const saved = leases.get(token)
     if (!saved) throw new BrowserFilesUnavailable()
-    const now = try browserSessionScope()
+    const now = try liveScope()
     if (now === undefined || saved.owner !== now.owner || saved.session !== now.session || leases.get(token) !== saved) throw new BrowserFilesUnavailable()
-    return now.owner
+    return { owner: now.owner, saved }
   }
 
   effect function read<A>(lease: string, mode: IDBTransactionMode, update: (rows: readonly StoredFile[], store: IDBObjectStore) => A | undefined) {
-    const owner = try current(lease)
+    const { owner, saved } = try current(lease)
     const result = try transact(owner, mode, update)
-    try current(lease)
+    if (mode === "readwrite") try current(lease)
+    else if (leases.get(lease) !== saved) throw new BrowserFilesUnavailable()
+    return result
+  }
+
+  effect function readOne<A>(lease: string, mode: IDBTransactionMode, id: string, update: (row: StoredFile | undefined, store: IDBObjectStore) => A | undefined) {
+    const { owner, saved } = try current(lease)
+    const result = try transactOne(owner, mode, id, update)
+    if (mode === "readwrite") try current(lease)
+    else if (leases.get(lease) !== saved) throw new BrowserFilesUnavailable()
     return result
   }
 
@@ -103,17 +140,14 @@ export function browserFiles(): FilesPort {
     }),
     close: ({ lease }) => runPromise(sync(() => { leases.delete(lease) })),
     list: ({ lease }) => runPromise(read(lease, "readonly", (rows) => ({ entries: rows.map((row) => row.entry).sort((a, b) => b.savedAt - a.savedAt) }))),
-    preview: ({ lease, id, page }) => runPromise(read(lease, "readonly", (rows) => {
-      const row = rows.find((item) => item.entry.id === id)
+    preview: ({ lease, id, page }) => runPromise(readOne(lease, "readonly", id, (row) => {
       if (!row || (row.entry.kind === "pdf" ? page < 1 || page > row.entry.pages : page !== 0)) return undefined
       return { id, page, image: "data:" + contentType(row.entry.name) + ";base64," + row.data }
     })),
-    content: ({ lease, id }) => runPromise(read(lease, "readonly", (rows) => {
-      const row = rows.find((item) => item.entry.id === id)
+    content: ({ lease, id }) => runPromise(readOne(lease, "readonly", id, (row) => {
       return row && { id, mimeType: contentType(row.entry.name), data: row.data }
     })),
-    remove: ({ lease, id }) => runPromise(read(lease, "readwrite", (rows, store) => {
-      const row = rows.find((item) => item.entry.id === id)
+    remove: ({ lease, id }) => runPromise(readOne(lease, "readwrite", id, (row, store) => {
       if (!row || row.entry.kind !== "photo") return undefined
       store.delete(id)
       return true

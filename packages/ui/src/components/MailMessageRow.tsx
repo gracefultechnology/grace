@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { createLucideIcon, type LucideIconNode } from "lucide-react";
 import { MailIcon, PencilIcon, TrashIcon } from "../icons.tsx";
 import { Avatar, type AvatarProps } from "./Avatar.tsx";
@@ -65,7 +65,7 @@ export type MailMessageRowProps = Omit<ListRowProps, "title" | "subtitle" | "lea
  * @model spec/app/emailItem.md
  * @design packages/design-system/design.md#windows
  */
-export function MailMessageRow({ from, subject, time, account, attachment = false, attachmentLabel = "Has attachments", onOpen, ...props }: MailMessageRowProps) {
+export const MailMessageRow = memo(function MailMessageRow({ from, subject, time, account, attachment = false, attachmentLabel = "Has attachments", onOpen, ...props }: MailMessageRowProps) {
   return (
     <ListRow
       title={from.name}
@@ -95,4 +95,4 @@ export function MailMessageRow({ from, subject, time, account, attachment = fals
       {...props}
     />
   );
-}
+});

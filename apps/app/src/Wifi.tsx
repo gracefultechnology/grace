@@ -1,18 +1,33 @@
 // spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"; spec/app/network.md, "The password goes from Grace's field to Android only, and Show never shares it with Grace"; spec/app/network.md, "Android handles Wi-Fi sign-in"
 import { Alert, Button, PageHeading, PageText, WifiJoinForm, WifiNetworkList, type WifiNetwork, type WifiStatus } from "@repo/ui";
 import { Effect, ManagedRuntime } from "effect";
-import { useState, useSyncExternalStore } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import type { Machine } from "../gen/app__network.effect.vibe";
 import { type Discovery, type Event, type ListAction, type NetworkJoin, helpOffered, listAction, wifiSignInOffered } from "../gen/app__network.ts";
 import { useMachine } from "../gen/app__network.react.ts";
+import { enabled, type Workspace } from "../gen/app__workspace.ts";
 import { wifiPlugin } from "./surfacePlugin.ts";
 import { wifiSignIn } from "./preferencesPlugin.ts";
-import { useWorkspace } from "./useApp.ts";
+import { shallowEqual, useWorkspaceActions, useWorkspaceSelector } from "./useApp.ts";
 import { type Offer, WifiPage, ssidOf, wifiPage } from "./wifi.vibe";
 
 export type WifiRuntime = ManagedRuntime.ManagedRuntime<WifiPage | Machine, never>;
 
-const device: WifiRuntime | undefined = wifiPlugin && wifiSignIn && ManagedRuntime.make(wifiPage(wifiPlugin, wifiSignIn));
+let cachedDevice: WifiRuntime | undefined;
+function getDeviceRuntime(): WifiRuntime | undefined {
+  if (!wifiPlugin || !wifiSignIn) return undefined;
+  cachedDevice ??= ManagedRuntime.make(wifiPage(wifiPlugin, wifiSignIn));
+  return cachedDevice;
+}
+
+const wifiPages = new WeakMap<WifiRuntime, WifiPage["Service"]>();
+function wifiPageFor(runtime: WifiRuntime): WifiPage["Service"] {
+  const known = wifiPages.get(runtime);
+  if (known) return known;
+  const page = runtime.runSync(Effect.service(WifiPage));
+  wifiPages.set(runtime, page);
+  return page;
+}
 
 const statuses: Readonly<Record<Discovery["tag"], WifiStatus>> = {
   Scanning: "scanning", WifiOff: "off", NetworksFound: "ready",
@@ -31,11 +46,18 @@ const offlineSteps = "Check that the internet box is plugged in and its lights a
 const fix = { type: "openGrace" } as const;
 const unnamed: WifiNetwork = { name: "Internet connection" };
 
+const selectWifiWorkspace = (workspace: Workspace | undefined) => ({
+  online: workspace?.device.connectivity === "Online",
+  canFix: workspace !== undefined && enabled(workspace, fix, "Person"),
+});
+
 export function Wifi() {
-  const { workspace, can, send } = useWorkspace();
-  const online = workspace?.device.connectivity === "Online";
+  const { online, canFix } = useWorkspaceSelector(selectWifiWorkspace, shallowEqual);
+  const { send } = useWorkspaceActions();
+  const device = getDeviceRuntime();
+  const onFix = useCallback(() => { if (canFix) void send(fix); }, [canFix, send]);
   if (!device) return <><PageHeading>Wi-Fi</PageHeading><PageText role="status">{online ? "Connected" : "No internet connection"}</PageText></>;
-  return <WifiNetworks runtime={device} online={online} onFix={() => { if (can(fix)) void send(fix); }} />;
+  return <WifiNetworks runtime={device} online={online} onFix={onFix} />;
 }
 
 const row = (offer: Offer): WifiNetwork => ({ id: offer.network.id, name: offer.name, signal: offer.signal, locked: offer.network.authentication !== "OpenNetwork" });
@@ -67,8 +89,18 @@ function PrivateEntry({ n, name, person, join }: { n: NetworkJoin; name: string;
 /** @model spec/app/network.md */
 export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime; online: boolean; onFix: () => void }) {
   const { state: n, can, send } = useMachine(runtime);
-  const page = runtime.runSync(Effect.service(WifiPage));
+  const page = wifiPageFor(runtime);
   const { nearby: offers, connected: identified, signInRequired, wifiValidated } = useSyncExternalStore(page.offers.subscribe, page.offers.current);
+  const offersById = useMemo(() => new Map(offers.map((offer) => [offer.network.id, offer])), [offers]);
+  const discovery = n?.discovery;
+  const nearby = useMemo(() => (
+    discovery?.tag === "NetworksFound"
+      ? discovery.networks.flatMap((network) => {
+          const offer = offersById.get(network.id);
+          return offer && network.id !== identified?.id ? [row(offer)] : [];
+        })
+      : []
+  ), [discovery, offersById, identified?.id]);
   if (!n) return null;
   const person = (event: Event) => { if (can(event, "Person")) void send(event, "Person"); };
   const run = (effect: Effect.Effect<void>) => void runtime.runPromise(effect);
@@ -76,13 +108,16 @@ export function WifiNetworks({ runtime, online, onFix }: { runtime: WifiRuntime;
   if (n.phase === "PrivateEntry") return <PrivateEntry key={n.version} n={n} name={name} person={person} join={(password) => run(page.join(password))} />;
 
   const connected = identified ?? (online ? unnamed : undefined);
-  const offersById = new Map(offers.map((offer) => [offer.network.id, offer]));
-  const nearby = n.discovery.tag === "NetworksFound" ? n.discovery.networks.flatMap((network) => {
-    const offer = offersById.get(network.id);
-    return offer && network.id !== identified?.id ? [row(offer)] : [];
-  }) : [];
   const action = listAction(n.discovery);
-  const act = { NoAction: () => {}, OpenPanel: () => run(page.openPanel()), Explain: () => person({ type: "explainLocation" }), Allow: () => run(page.allowLocation()), Rescan: () => person({ type: "rescan" }) }[action];
+  const act = () => {
+    switch (action) {
+      case "OpenPanel": return run(page.openPanel());
+      case "Explain": return person({ type: "explainLocation" });
+      case "Allow": return run(page.allowLocation());
+      case "Rescan": return person({ type: "rescan" });
+      case "NoAction": return;
+    }
+  };
   const signIn = wifiSignInOffered(n, signInRequired, wifiValidated);
   const said = signIn && n.phase === "SavedNetworkPanel" ? undefined : notice(n, name);
   return (

@@ -25,12 +25,14 @@ export const websiteTask = Layer.unwrap(effect {
     const hold = { type: "holdForWebsite", holds: holdsThePerson(try requests.get()) } as const
     if (enabled(try workspace.get(), hold, "Host")) try Effect.orDie(workspace.send(hold, "Host"))
   }
+  const releaseHold = { type: "holdForWebsite", holds: false } as const
   const send: Workspaces.Shape["send"] = effect (event, by, isCurrent) => {
     while (true) {
       const sent = try serial(effect {
         const state = try workspace.get()
-        const answered = step(state, { type: "holdForWebsite", holds: false }, "Host").state
-        if (enabled(state, event, by) || !enabled(answered, event, by)) return { result: try workspace.send(event, by, isCurrent) }
+        if (enabled(state, event, by) || !enabled(state, releaseHold, "Host")) return { result: try workspace.send(event, by, isCurrent) }
+        const answered = step(state, releaseHold, "Host").state
+        if (!enabled(answered, event, by)) return { result: try workspace.send(event, by, isCurrent) }
         return undefined
       })
       if (sent !== undefined) return sent.result

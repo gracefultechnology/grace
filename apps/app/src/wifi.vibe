@@ -92,13 +92,21 @@ const host = (wifi: WiFiPlugin, wifiSignIn: WifiSignIn) => Layer.effect(WifiPage
 
   effect function list() {
     const attempt = try networks.get()
-    try readSignIn()
     const permission = ask(Schema.decodeUnknownEffect(Permission), () => wifi.checkPermissions()) catch () => undefined
-    if (permission?.location !== "granted") return try report({ tag: "NoLocationAccess" })
+    if (permission?.location !== "granted") {
+      try readSignIn()
+      return try report({ tag: "NoLocationAccess" })
+    }
     const radio = ask(Schema.decodeUnknownEffect(Radio), () => wifi.getWifiState()) catch () => undefined
-    if (radio?.enabled === false) return try report({ tag: "RadioOff" })
+    if (radio?.enabled === false) {
+      try readSignIn()
+      return try report({ tag: "RadioOff" })
+    }
     const scan = ask(Schema.decodeUnknownEffect(Scan), () => wifi.listAvailableNetworks()) catch (refused) => unlisted[refused.code] ?? { networks: [] }
-    if ("tag" in scan) return try report(scan)
+    if ("tag" in scan) {
+      try readSignIn()
+      return try report(scan)
+    }
     const foundNetworks = scan.networks
     const prior = requested?.version === attempt.version ? requested.offer : undefined
     const signInStatus = try readSignIn()
