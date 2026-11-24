@@ -2206,6 +2206,6 @@ lemma lawSortNameCorrectionExampleIsCurrent_ensures(by_: WorkspaceActor)
     var offered := offerGuidedNameCorrection(ready, correction, WorkspaceActor.Host);
     assert currentGuidedNameCorrection(offered) == PendingGuidedNameCorrection(correction);
     assert canConfirmGuidedNameCorrection(offered, correction, by_);
-    assert !canConfirmGuidedNameCorrection(followWebsite(offered, app__websiteRequests_exampleTwoAsk, WorkspaceActor.Host), correction, by_);
+    assert !canConfirmGuidedNameCorrection(followWebsite(offered, aPermissionWaits, WorkspaceActor.Host), correction, by_);
   }
 }

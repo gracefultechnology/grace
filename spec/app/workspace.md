@@ -2024,7 +2024,7 @@ pure def lawSortNameCorrectionExampleIsCurrent(by: WorkspaceActor): bool = {
   by == Person implies canOfferGuidedNameCorrection(ready, exampleSortName, Host) and
     canConfirmGuidedNameCorrection(offered, exampleSortName, by) and
     not(canConfirmGuidedNameCorrection(offered, exampleSortName, Host)) and
-    not(canConfirmGuidedNameCorrection(followWebsite(offered, WR::exampleTwoAsk, Host), exampleSortName, by)) and
+    not(canConfirmGuidedNameCorrection(followWebsite(offered, aPermissionWaits, Host), exampleSortName, by)) and
     not(canConfirmGuidedNameCorrection(offered, { ...exampleSortName, owner: "another-owner" }, by)) and
     not(canOfferGuidedNameCorrection(ready, { ...exampleSortName, witness: LocatedSortCategory({
       domRevision: 1, origin: "https://other.example", direction: PriceAscending }) }, Host)) and
@@ -3159,7 +3159,9 @@ pure def followWebsite(w: Workspace, website: WR::WebsiteRequests, by: Workspace
     commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment,
     lastWebsiteAnswer: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
 }
-pure val websiteValues = Set(WR::initial, WR::exampleShown, WR::exampleTwoAsk, WR::exampleAsking)
+pure val aPermissionWaits: WR::WebsiteRequests = { ...WR::initial, tabs: Set(1), shown: true, nextId: 2,
+  asking: List({ id: 1, tab: 1, ask: WR::SitePermission({ origin: "https://clinic.example", kinds: WR::clinicCamera }) }) }
+pure val websiteValues = Set(WR::initial, WR::exampleShown, WR::exampleTwoAsk, WR::exampleAsking, aPermissionWaits)
 pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
   "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection",
   "confirmGuidedNameCorrection", "resumePublicTab",
@@ -3188,8 +3190,8 @@ pure val eval_witness_sometimesAHeldTaskGoesOnAfterHerAnswer = (
   ("begin", { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" }, Person),
   ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://www.utility.example/home" }, Host),
   ("adjustPreferenceLevel", R::VolumeBy({ amount: 10 }), Person),
-  ("followWebsite", WR::exampleTwoAsk, Host),
-  ("followWebsite", WR::exampleShown, Host),
+  ("followWebsite", aPermissionWaits, Host),
+  ("followWebsite", WR::initial, Host),
   ("observe", { ...observed, website: { ...X::goodObservation, generation: 2, task: "other", origin: "https://credit.example" } }, Host)
 )
 pure val weight_followWebsite = 8

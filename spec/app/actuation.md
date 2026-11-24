@@ -63,8 +63,8 @@ pure def lawOnlyActuatorConsumes(w: WS::Workspace, pendingEffect: WS::WorkspaceE
   currentEffect(w, pendingEffect, by) implies by == WS::Actuator
 
 pure def lawWebsiteQuestionRetiresTheCommand(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect): bool =
-  val held = WS::followWebsite(w, WR::exampleTwoAsk, WS::Host)
-  val answered = WS::followWebsite(held, WR::exampleShown, WS::Host)
+  val held = WS::followWebsite(w, WS::aPermissionWaits, WS::Host)
+  val answered = WS::followWebsite(held, WR::initial, WS::Host)
   not(currentEffect(held, pendingEffect, WS::Actuator)) and
     (currentEffect(w, pendingEffect, WS::Actuator) implies not(currentEffect(answered, pendingEffect, WS::Actuator)))
 
