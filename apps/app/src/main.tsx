@@ -2,6 +2,7 @@ import "@repo/ui/fonts.css";
 import { Capacitor } from "@capacitor/core";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { App, createAppRuntime } from "./App.tsx";
 import "./main.css";
 
 const root = createRoot(document.getElementById("root")!);
@@ -11,18 +12,17 @@ const mayBeApproval = !native && (
   (window.location.pathname === "/" && window.location.hash === "#account")
 );
 
-async function renderApp() {
-  const { App, createAppRuntime } = await import("./App.tsx");
+function renderApp() {
   root.render(<StrictMode><App runtime={createAppRuntime(native)} /></StrictMode>);
 }
 
 if (!mayBeApproval) {
-  void renderApp();
+  renderApp();
 } else {
   void import("./PasswordBackupConsent.tsx").then(async ({ PasswordBackupConsent, loadPendingPasswordBackupConsent }) => {
     const pending = await loadPendingPasswordBackupConsent();
     if (!pending) {
-      await renderApp();
+      renderApp();
       return;
     }
     root.render(<StrictMode><PasswordBackupConsent approval={pending.approval} account={pending.account} providers={pending.providers} /></StrictMode>);

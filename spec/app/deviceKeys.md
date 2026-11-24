@@ -1,11 +1,10 @@
 # Android Back and Home keys
 
-Android's hardware Back and the launcher's Home key reach Grace as window
-events (`apps/app/README.md`, "Android"). Back is a cancelable
-`hardware-back`: the interface consumes it by cancelling it, and when it does
-not, the launcher flavor dispatches `launcher-home` instead of leaving while
-the standalone app leaves. Home pressed while the launcher is already in front
-dispatches `launcher-home`. This library decides what each key means for the
+Grace is the tablet's Home app. Android's hardware Back and the Home key
+reach her as window events (`apps/app/README.md`, "Android"). Back is a
+cancelable `hardware-back`: the interface consumes it by cancelling it, and
+when it does not, Grace dispatches `launcher-home` instead of leaving. Home
+pressed while Grace is already in front dispatches `launcher-home`. This library decides what each key means for the
 current [shell](./shell.md), [assistant](./assistant.md),
 [browser](./browser.md) and [what websites ask](./websiteRequests.md); each
 decision is one existing [workspace](./workspace.md) or website requests
@@ -33,7 +32,7 @@ conversation cannot consume Back. In a private tab Android reports whether the p
 history, or returns Home from another surface, including Settings, keeping the
 tabs. On either the Files or Passwords launcher page, Back returns to the main Home cards. Going Home or
 returning to the main cards always lands on a resting Home, so the Back after
-it leaves. The address editor counts only while the Browser surface is shown:
+it is left unconsumed. The address editor counts only while the Browser surface is shown:
 on any other surface it is hidden and Back passes over it. A website's
 question counts only while it is presented, which is only while the browser
 is shown.
@@ -42,8 +41,7 @@ A device that is not ready has nothing of Grace to step back through. While
 it is Sleeping, its sleep screen is woken by a tap, and Back leaves nothing
 there to step through, so it stays unconsumed rather than waking or changing
 the surface hidden beneath. The unconsumed Back then does what it does
-anywhere: the standalone app leaves, and the launcher dispatches
-`launcher-home`, which a device that is not ready ignores, so the sleep
+anywhere: Grace dispatches `launcher-home`, which a device that is not ready ignores, so the sleep
 screen stays. Back is left unconsumed only while the device is not ready,
 or on the main Home cards with nothing to dismiss.
 
@@ -211,7 +209,7 @@ over the page, and closing Settings cancels Clear browsing data's
 confirmation (`settingsClosed`). A device that is not ready ignores it.
 Home moves an expanded conversation into the lower pane. Afterwards Back
 dismisses a surviving keyboard. When the keyboard is already closed, the
-next Back leaves.
+next Back is left unconsumed.
 
 ```quint
 pure def homeRequests(r: WR::WebsiteRequests): WR::WebsiteRequests = {
