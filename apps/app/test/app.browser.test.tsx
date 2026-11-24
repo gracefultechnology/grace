@@ -180,7 +180,7 @@ function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
       await userEvent.click(target, { trial: true, timeout: 250 });
     }, { timeout: 10_000 });
     await userEvent.click(target, { timeout: 10_000 });
-    await act(() => {});
+    await act(() => Promise.resolve());
   };
   return { routeTo, tap };
 }
@@ -4370,7 +4370,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
     await expect.poll(async () => { await native.route(); return native.calls("createSurface").at(-1)?.url; }).toBe(browserHome);
     await native.started("tab-1");
     await native.report("tab-1", browserUrl, 100);
-    await expect.poll(() => runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs[0]).toMatchObject({ history: ["", browserUrl], load: "Loaded" });
+    await expect.poll(async () => { await native.route(); return runtime.runSync(Effect.flatMap(Effect.service(Workspaces), (m) => m.get())).browser.tabs[0]; }).toMatchObject({ history: ["", browserUrl], load: "Loaded" });
     await send(browserAsk);
     await routeTo(page.getByRole("region", { name: "Review read plan" }));
     if (button("Collapse").query()) await tap(button("Collapse"));
