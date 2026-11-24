@@ -400,9 +400,11 @@ and pauses unfinished work before a sanitized context can be used again.
 Submitting a message, by typing, speaking or tapping an answer, supersedes the
 task's current step: unfinished work that is not paused is rechecked against
 the new request, with any operation in flight fenced. `supersede` is that one
-fence, which can keep a step that waits for the person. A turn the host
-starts, such as an Ask Grace button, needs Grace open and supersedes nothing:
-it adds no message and is not the person's request.
+fence, which can keep a step that waits for the person. A turn started without
+her words (`hostTurn`) — by the host for a page event, elsewhere report or
+opening line, or by the person tapping an Ask Grace button — needs Grace open,
+adds no message and supersedes nothing; only the Ask Grace tap belongs to the
+person (and it gives no consent).
 Task identifiers and checkpoints are non-secret metadata, never copies of
 private field values or unfiltered message text.
 
