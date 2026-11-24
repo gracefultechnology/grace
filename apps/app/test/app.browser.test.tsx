@@ -175,7 +175,10 @@ async function visitExampleSite(native: ReturnType<typeof fakePlugin>) {
 function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
   const routeTo = (target: Locator) => expect.poll(async () => { await native.route(); return shown(target); }, { timeout: 10000 }).toBe(true);
   const tap = async (target: Locator) => {
-    await routeTo(target);
+    await vi.waitFor(async () => {
+      await native.route();
+      await userEvent.click(target, { trial: true, timeout: 250 });
+    }, { timeout: 10_000 });
     await act(() => userEvent.click(target));
   };
   return { routeTo, tap };
