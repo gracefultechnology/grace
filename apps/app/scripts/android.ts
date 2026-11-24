@@ -539,7 +539,7 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
 }
 
 function checkNetworkSecurity({ file, aapt, aapt2, manifestReference, episodeCertificate }: {
-  file: string; aapt: string; aapt2: string; manifestReference: string | null; episodeCertificate: boolean;
+  file: string; aapt: string; aapt2: string; manifestReference: unknown; episodeCertificate: boolean;
 }) {
   const resourcePath = "res/xml/network_security.xml";
   const resources = execFileSync(aapt2, ["dump", "resources", file], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
