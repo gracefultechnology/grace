@@ -179,7 +179,8 @@ function routedControls(native: Pick<ReturnType<typeof fakePlugin>, "route">) {
       await native.route();
       await userEvent.click(target, { trial: true, timeout: 250 });
     }, { timeout: 10_000 });
-    await act(() => userEvent.click(target));
+    await userEvent.click(target, { timeout: 10_000 });
+    await act(() => {});
   };
   return { routeTo, tap };
 }
@@ -3736,7 +3737,7 @@ it('Check a public search the person performs (spec/app/workspace.md, "The perso
 it.each([
   { target: "Rain jackets", siteLabel: "Rain jackets", order: "ascending", directionRequested: "PriceAscending" },
   { target: "living room furtniture", siteLabel: "Living Room Furniture", order: "descending", directionRequested: "PriceDescending" },
-])('Check the price direction in the reviewed public category $target (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async ({ target, siteLabel, order, directionRequested }) => {
+])('Check price order in $target (spec/app/workspace.md, "Only a current observation of the next outcome advances the plan")', async ({ target, siteLabel, order, directionRequested }) => {
   const cloud = inject("cloud");
   const { secret } = await Effect.runPromise(Effect.provide(signIn(cloud), client));
   const request = `List products from ${target} category by ${order} price`;
