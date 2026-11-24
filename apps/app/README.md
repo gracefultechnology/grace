@@ -143,7 +143,8 @@ pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser
 
 ## Android
 
-Run `git submodule update --init vendor/eliza` from the repository root. Grace uses the Android
+From the repository root, run `git submodule update --init vendor/eliza` and then Eliza's own
+install from the [root setup](../../README.md#run-grace-cloud); without it Eliza's Core does not compile. Grace uses the Android
 consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
 The Android build generates Eliza's Core, Cloud and Agent models from the pinned checkout.
 It builds Core and the browser-safe Cloud client before compiling the Android Agent entry.
@@ -201,18 +202,19 @@ the four signing variables above. The [production App Links document](https://ap
 publishes the certificate SHA-256. The SHA-1 for Android Google client registration is
 `7D:9D:BF:44:E3:E5:D6:29:16:D3:DE:95:24:97:4A:A1:F6:10:D4:02`.
 
-Built from Grace `f866142` and Eliza `21fac1f`, each launcher APK passed the content check:
+Built from Grace `c484352` and Eliza `21fac1f`, each launcher APK passed the content check:
 agent payload and inventory, Node runtime, the native Grace account, the pinned wake keyword
-detector and no other inference class, and `debuggable` only in the debug build. The release
-APKs were signed with a throwaway key, so their size holds for the Grace key and their SHA-256
-does not.
+detector and no other inference class, and `debuggable` only in the debug build. Rebuilding a debug
+APK from that source gave the same SHA-256. The release APKs were signed with a throwaway RSA 2048
+key. Their SHA-256 depends on that key, so the table leaves it out. Another key can change the
+signing block and so the size.
 
 | APK | Processor type | Bytes | SHA-256 |
 |---|---|---|---|
-| `launcher-debug.apk` | `arm64-v8a` | 179,013,298 | `bde69a9e9842b627a3da3fe58109d8aead954670f8011e22254f78f330563c35` |
-| `launcher-release.apk` | `arm64-v8a` | 165,856,583 | `940fbec4ddb9944cce15af78f97c2dbdae4afa151df755a113d7fd978c1443af` |
+| `launcher-debug.apk` | `arm64-v8a` | 179,013,298 | `92640c8e9b0d8c80c1ce447337fa858de9460282e6d324b862d92433b64c1d83` |
+| `launcher-release.apk` | `arm64-v8a` | 165,856,583 | depends on the key |
 | `launcher-debug.apk` | `x86_64` | 182,359,724 | `86658017a8f512f79816d83ac0748e387781394806e43e90f69a43169c509223` |
-| `launcher-release.apk` | `x86_64` | 169,198,913 | `980436eb7d876063089d7630a2bbb7fd3e78c86f164e89ffcd028c7745e98e8e` |
+| `launcher-release.apk` | `x86_64` | 169,198,913 | depends on the key |
 
 ### On the tablet
 
