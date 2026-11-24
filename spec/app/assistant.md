@@ -501,13 +501,10 @@ pure def newConversation(a: Assistant, by: C::ConversationActor): Assistant =
 
 ### Hidden assistance is quiet and every task status has its necessary context
 
-Pausing a spoken reply turns the microphone off while the reply stays available to resume.
+The assistant keeps every rule of its conversation. Pausing a spoken reply turns the microphone off while the reply stays available to resume.
 
 ```quint
-pure def alwaysConversationRules(a: Assistant): bool =
-  C::alwaysListeningHasAnActiveExchange(a.conversation) and C::alwaysRecognitionRetriesAreBounded(a.conversation) and
-  C::alwaysReadingPositionExists(a.conversation) and C::alwaysGenerationsAreNonnegative(a.conversation) and
-  C::alwaysMessagesHaveContent(a.conversation) and C::alwaysPausedMicrophoneIsOff(a.conversation)
+pure def alwaysConversationRules(a: Assistant): bool = C::validConversation(a.conversation)
 pure def alwaysHiddenIsQuiet(a: Assistant): bool =
   a.presentation == Closed implies not(a.conversation.voice) and a.conversation.turn == C::Ready and
     (a.activity == NoTask or a.activity == Paused or a.activity == Finished)
@@ -528,6 +525,19 @@ pure def alwaysReplacementIsComplete(a: Assistant): bool =
 pure def stepWindowChangesKeepConversation(before: Assistant, via: str, after: Assistant): bool =
   (via == "open" or via == "resize" or via == "showChat" or via == "dismissKeyboard" or via == "focusWebsite") implies
     after.conversation == before.conversation
+```
+
+### An assistant is valid when it meets every rule above
+
+The [interaction](./interaction.md) law and the [workspace](./workspace.md) require `validAssistant` of an assistant, the conjunction of every `always` rule of this spec, rather than repeating them. Whoever adds an `always` rule here adds it to this conjunction too.
+
+```quint
+pure def validAssistant(a: Assistant): bool =
+  alwaysGraceWorksOnlyOnTheVisiblePage(a) and alwaysGuidanceIsNotAhead(a) and
+  alwaysDoneMeansVerifiedCompletion(a) and alwaysConversationRules(a) and
+  alwaysHiddenIsQuiet(a) and alwaysTaskContextExists(a) and alwaysOperationsBelongToWorkingTasks(a) and
+  alwaysOnlyVerifiedEndpointsClaimCompletion(a) and alwaysConversationOffersAndInterruptions(a) and
+  alwaysReplacementIsComplete(a)
 ```
 
 ### Pausing, reconciliation, replacement and verified outcomes are reachable

@@ -302,3 +302,14 @@ pure def retire(x: Execution, by: ExecutionActor): Execution =
 pure def stepRetirementClearsTargets(before: Execution, via: str, after: Execution): bool =
   via == "retire" implies after.phase == Idle and after.target == "" and after.valueRef == "" and after.generation > before.generation
 ```
+
+### An execution is valid when it meets every rule above
+
+The [workspace](./workspace.md) requires `validExecution` of its execution, the conjunction of every `always` rule of this spec, rather than repeating them. Whoever adds an `always` rule here adds it to this conjunction too.
+
+```quint
+pure def validExecution(x: Execution): bool =
+  alwaysIdentity(x) and alwaysGenerations(x) and alwaysFactsAreQuoted(x) and alwaysObservedContextExists(x) and
+  alwaysQueuedStepIsGraces(x) and alwaysPrepared(x) and alwaysExplainedBlock(x) and alwaysFailureCount(x) and
+  alwaysFailedApproachIsConcrete(x) and alwaysNoExhaustedApproachQueued(x)
+```
