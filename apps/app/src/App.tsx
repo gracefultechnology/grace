@@ -1,7 +1,7 @@
 // spec/app/index.md, "Story: Manage my saved passwords privately"
 // spec/app/wake.md, "Settings and the sleep screen say when wake detection is unavailable"
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
-import { AppWindow, AskGraceButton, besideRail, Button, CaptionStrip, type CaptionStripProps, HomeScreen, ListRow, Rail, RailButton, RailPopover, ScreenDim, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
+import { AppWindow, AskGraceButton, besideRail, Button, CaptionStrip, type CaptionStripProps, HomeScreen, type HomeScreenProps, ListRow, Rail, RailButton, RailPopover, ScreenDim, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
 import { Effect, ManagedRuntime } from "effect";
 import { CalendarDays, Check, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
 import { type ReactNode, Suspense, useCallback, useMemo, useState, useSyncExternalStore } from "react";
@@ -30,6 +30,7 @@ import { OverPage, PageBackdrop, PageMeasurer } from "./PageLayer.tsx";
 import { PasswordsApp } from "./PasswordsApp.tsx";
 import { Settings } from "./Settings.tsx";
 import { androidHost, devicePlugin, passwordClient, wifiPlugin } from "./surfacePlugin.ts";
+import { homeFilesHint, homeFilesStatus, internetStatusShown, passwordsCard, type SavedPasswords } from "../gen/app__shell.ts";
 import {
   RuntimeContext,
   type Runtime,
@@ -50,6 +51,7 @@ import {
   useManagedHomeCardsSnapshot,
   useMinute,
   useRuntime,
+  useUpdated,
   useSetupSelector,
   useToday,
   useWakeStatus,
@@ -369,6 +371,7 @@ const selectHomeSlice = (workspace: Workspace | undefined) => {
   const publicUrl = activePage && !activePage.manualSignIn ? tabUrl(activePage) : "";
   return {
     online: workspace.device.connectivity === "Online",
+    connectivity: workspace.device.connectivity,
     publicUrl,
     homePage: workspace.device.homePage,
     canCalendar: enabled(workspace, visitCalendar, "Person"),
@@ -379,7 +382,23 @@ const selectHomeSlice = (workspace: Workspace | undefined) => {
   };
 };
 
-// spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller"
+const savedPasswords: SavedPasswords = { tag: "CountUnknown" };
+
+// spec/app/shell.md, "Passwords offers Grace’s help while none are saved, then shows only how many"
+function passwordsProps(saved: SavedPasswords, open: { disabled: boolean; onClick: () => void }): NonNullable<HomeScreenProps["passwords"]> {
+  const view = passwordsCard(saved);
+  switch (view.tag) {
+    case "PlainPasswords": return open;
+    case "OfferToSave": return { ...open, status: "None saved yet", offer: { message: "Grace offers to save them as you sign in", action: "Add one", onAction: open.disabled ? undefined : open.onClick } };
+    case "ShowsSaved": return { ...open, status: `${view.count} saved, only on this tablet`, onAdd: open.disabled ? undefined : open.onClick };
+    default: {
+      const _exhaustive: never = view;
+      return _exhaustive;
+    }
+  }
+}
+
+// spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"; spec/app/shell.md, "Home cards open their named surface without activating a microphone or controller"; spec/app/shell.md, "Files says No photos yet, and how photos arrive while it holds nothing"; spec/app/shell.md, "Offline, Internet has no status and still opens the browser"; spec/app/calendars.md, "Home’s calendar card says Last updated only while it can’t update, and otherwise what is planned"; spec/app/mailboxes.md, "The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new"
 function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; docked: boolean; keyboard: number; covered: boolean }) {
   const runtime = useRuntime();
   const slice = useWorkspaceSelector(selectHomeSlice, sameOptionalSlice);
@@ -392,6 +411,7 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
   const calKeys = useCalendarKeys();
   const calendarActions = useCalendarActions();
   const read = useMailContent();
+  const updated = useUpdated();
   const now = useMinute();
   const onPageChange = useCallback((page: Workspace["device"]["homePage"]) => {
     const event: WorkspaceEvent = { type: "chooseHomePage", page };
@@ -415,7 +435,8 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
   const nowMs = now.getTime();
   const weekday = appointmentWeekday(now);
   const day = now.getDate();
-  const internetStatus = !slice.online ? "Needs the internet" : slice.publicUrl !== "" ? `${site(slice.publicUrl)} was open` : "Open a website";
+  const internetStatus = !internetStatusShown(slice.connectivity) ? undefined : slice.publicUrl !== "" ? `${site(slice.publicUrl)} was open` : "Open a website";
+  const photos = files?.photos ?? [];
 
   return (
     <OverPage className={cn(lifted, "left-1.5")} style={{ bottom, contain: "layout style" }}>
@@ -427,7 +448,7 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
             calendar={{
               weekday,
               day,
-              ...ours && accounts ? homeCalendar(accounts, calendars, nowMs, slice.canCalendar ? calendarActions : undefined) : {
+              ...ours && accounts ? homeCalendar(accounts, calendars, boxes, slice.online, nowMs, updated, slice.canCalendar ? calendarActions : undefined) : {
                 events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
                   const { date, time } = hostedAppointmentDisplay(event);
                   return {
@@ -445,20 +466,25 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
               ...visitProps.calendar,
             }}
             email={{
-              ...ours && accounts ? homeMail(accounts, boxes, read, slice.online) : {
+              ...ours && accounts ? homeMail(accounts, boxes, read, slice.online, nowMs, updated) : {
                 messages: (owner === "Hosted" ? cards?.mail ?? [] : []).slice(0, 2).map((message) => ({
                   id: message.externalId,
                   name: message.from || "Unknown sender",
                   subject: message.subject || "No subject",
                   unread: message.isUnread,
                 })),
-                ...slice.online ? {} : { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." },
               },
               ...visitProps.email,
             }}
-            internet={{ ...visitProps.browser, "aria-label": "Internet", status: internetStatus, openLabel: slice.online && slice.publicUrl !== "" ? "Continue" : "Open", offline: !slice.online }}
-            files={{ photos: files?.photos ?? [], document: files?.document, ...visitProps.files }}
-            passwords={visitProps.passwords}
+            internet={{ ...visitProps.browser, "aria-label": "Internet", status: internetStatus, openLabel: slice.online && slice.publicUrl !== "" ? "Continue" : "Open" }}
+            files={{
+              photos,
+              document: files?.document,
+              status: homeFilesStatus(photos.length) === "NoPhotosYet" ? "No photos yet" : undefined,
+              hint: homeFilesHint(photos.length, files?.document ? 1 : 0) ? "Photos you save from email will appear here." : undefined,
+              ...visitProps.files,
+            }}
+            passwords={passwordsProps(savedPasswords, visitProps.passwords)}
             page={slice.homePage}
             onPageChange={onPageChange} />
         )}</WithCalendars>

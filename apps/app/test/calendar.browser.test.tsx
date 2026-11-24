@@ -106,8 +106,9 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   const eyePreview = card.getByRole("button", { name: /Eye check with Dr\. Patel/ });
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
 
-  // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
-  await expect.element(homeCalendarLauncher()).toHaveAccessibleName("Calendar Nothing else today");
+  // spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/calendars.md, "Home’s calendar card says Last updated only while it can’t update, and otherwise what is planned"
+  await expect.element(homeCalendarLauncher()).toHaveAccessibleName("Calendar Nothing planned");
+  await expect.element(page.getByText("Ask Grace to add an appointment.")).toBeVisible();
   await expect.element(eyePreview).not.toBeInTheDocument();
   await reachable(true);
   await tapHomeCalendar();
@@ -320,6 +321,7 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
   await expect.element(ringed("Bridge club", "Done").first()).toBeVisible();
   await click("Next week");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "\\s*has plans") })).toBeVisible();
+  await expect.element(marked("Bridge club", "On this tablet").first()).toBeVisible();
   await click("Add");
   await click("Change Day");
   await picked(longDate(eyeDay + 7));
@@ -435,14 +437,18 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await click("Back to Calendar");
   // spec/app/calendarView.md, "A change at the company names the revision it read and never overwrites a newer one"
   const newer = "Gmail has a newer version of this appointment, so the tablet didn’t change it. This is how it is now.";
-  const remembered = await run(selectedGmailCalendar);
-  localStorage.setItem("calendar/1", JSON.stringify({
-    ...remembered,
-    entries: remembered.entries.map((entry) => entry.identity.occurrenceId === eye ? { ...entry, version: "" } : entry),
-  }));
+  const unversioned = async () => {
+    const remembered = await run(selectedGmailCalendar);
+    localStorage.setItem("calendar/1", JSON.stringify({
+      ...remembered,
+      entries: remembered.entries.map((entry) => entry.identity.occurrenceId === eye ? { ...entry, version: "" } : entry),
+    }));
+  };
+  await unversioned();
   await edit("Eye check before the tablet has a revision", "Never");
-  await expect.element(page.getByText(newer)).toBeVisible();
-  expect(await titles()).toEqual(["Eye check with Dr. Patel"]);
+  await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
+  await expect.poll(titles, atCloud).toEqual(["Eye check before the tablet has a revision"]);
+  await expect.element(page.getByText(newer)).not.toBeInTheDocument();
   await edit("Eye check at Riverside", "Never");
   await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
   await expect.poll(() => held(secret), atCloud).toEqual([{ title: "Eye check at Riverside", startAt: eyeAt }]);
@@ -464,6 +470,7 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await expect.element(page.getByRole("heading", { name: "Eye check in room 5" })).toBeVisible();
   await expect.element(page.getByRole("button", { name: "Delete it" })).not.toBeInTheDocument();
   expect(await titles()).toEqual(["Eye check in room 5"]);
+  await unversioned();
   await click("Delete");
   await click("Delete it");
   await expect.element(row("Eye check in room 5")).not.toBeInTheDocument();
@@ -520,6 +527,7 @@ it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: De
   await click("Delete");
   await click("Delete only this one");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "") })).toBeVisible();
+  await expect.element(page.getByText(/has a newer version/)).not.toBeInTheDocument();
   const nextWeek = new Date(physioAt + 7 * day).toISOString().replace(/[-:]|\.\d+/g, "");
   await expect.poll(async () => (await physios()).map((e) => e.cancelled), atCloud).toEqual([[`${physio.externalId}_${nextWeek}`]]);
   await click("Previous week");
@@ -583,7 +591,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await expect.element(reminded("Tea with Joan", "8 am")).toBeVisible();
   await expect.element(reminded("Pill pickup", "7 am")).not.toBeInTheDocument();
   await click("Home");
-  // spec/app/notices.md, "Home shows one banner: the connection first, then the first reminder to come due"
+  // spec/app/notices.md, "Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder"
   reach(false);
   await expect.element(page.getByText("Not connected to the internet")).toBeVisible();
   await expireToast("SeeDetails");

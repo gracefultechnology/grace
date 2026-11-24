@@ -183,11 +183,11 @@ pure def sometimesJoinUnconfirmed(n: NetworkJoin): bool = n.phase == JoinUnconfi
 
 ### Wi-Fi sign-in opens in Grace's browser
 
-Grace offers sign-in when Android reports that a connected Wi-Fi network
-needs it, including when the connection was made before opening Grace's
-Wi-Fi page or another connection is the default.
-Grace also offers it while the selected join is waiting for sign-in and
-Android has not validated a Wi-Fi connection. On Android 12 and later, Grace
+Outside private password entry, Grace offers sign-in when Android reports that
+a connected Wi-Fi network needs it (including when the connection was made
+before opening Grace's Wi-Fi page or another connection is the default), or
+while the selected join is waiting for sign-in and Android has not validated
+a Wi-Fi connection. On Android 12 and later, Grace
 can confirm a Wi-Fi connection even when another connection is the default.
 If Android validates a different Wi-Fi network and reports no portal, Grace shows that connection while the
 selected join remains pending. Sign in opens Grace's browser on an address

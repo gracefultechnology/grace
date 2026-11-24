@@ -1,7 +1,6 @@
-import { MailIcon } from "../icons.tsx";
 import { HomeMailRow, type HomeMailRowProps } from "./HomeMailRow.tsx";
-import { HomeWaiting } from "./HomeWaiting.tsx";
 import { LauncherCard, type LauncherCardProps, LauncherRows } from "./LauncherCard.tsx";
+import { PlaceholderRows } from "./PlaceholderRows.tsx";
 
 export type HomeMail = Omit<HomeMailRowProps, "className" | "id"> & { id: string | number };
 
@@ -10,12 +9,8 @@ export type HomeEmailCardProps = Omit<LauncherCardProps, "title" | "children" | 
   title?: string;
   /** The newest emails, unread first; two fit. */
   messages: HomeMail[];
-  /** While offline: what will arrive once back online, shown in place of the emails. */
-  waiting?: string;
-  /** No email account shows mail: the card says so and how to change it, in place of the emails. */
+  /** No email account shows mail: faded rows in place of the emails; Home's banner asks to add one. */
   notConnected?: boolean;
-  /** What it says with no email account. */
-  notConnectedLabel?: string;
   /** Its status with no email account, in place of `status`. */
   notConnectedStatus?: string;
   /** A narrow column above Grace's compact window: the subjects run onto more lines instead of being cut. */
@@ -23,31 +18,27 @@ export type HomeEmailCardProps = Omit<LauncherCardProps, "title" | "children" | 
 };
 
 /**
- * Home's Email card: the two newest emails; offline, a note that new email waits for the internet; with no email
- * account, a note to connect one.
+ * Home's Email card: the two newest emails, kept while offline with when they were last updated; with no email
+ * account, faded rows, since Home's banner asks for one.
  * @model spec/app/email.md
  * @design packages/design-system/design.md#glass
+ * @design packages/design-system/design.md#empty-states
  */
 export function HomeEmailCard({
   title = "Email",
   messages,
-  waiting,
   notConnected = false,
-  notConnectedLabel = "Connect your email to see it here.",
-  notConnectedStatus = "Not connected",
+  notConnectedStatus = "No email added yet",
   compact = false,
   size = "medium",
   status,
   ...props
 }: HomeEmailCardProps) {
-  const unconnected = notConnected && !waiting;
   return (
-    <LauncherCard title={title} size={size} compact={compact} status={unconnected ? notConnectedStatus : status} {...props}>
+    <LauncherCard title={title} size={size} compact={compact} status={notConnected ? notConnectedStatus : status} {...props}>
       <LauncherRows className="-mb-2.5 gap-y-3">
-        {waiting ? (
-          <HomeWaiting message={waiting} />
-        ) : unconnected ? (
-          <HomeWaiting message={notConnectedLabel} icon={<MailIcon size={26} strokeWidth={2} />} />
+        {notConnected ? (
+          <PlaceholderRows mark="avatar" className="mt-auto pb-2.5" />
         ) : (
           messages.slice(0, 2).map(({ id, ...mail }) => <HomeMailRow key={id} wrap={compact} {...mail} />)
         )}

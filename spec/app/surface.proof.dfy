@@ -22,6 +22,7 @@ lemma reclaim_ensures(l: PageLayer, tab: int, selected: int)
   ensures (inv(l) ==> canReclaim(l, tab, selected) ==> alwaysPendingRequestKeepsDrawnControls(reclaim(l, tab, selected)))
   ensures (inv(l) ==> canReclaim(l, tab, selected) ==> alwaysKeyboardHeightIsNonnegative(reclaim(l, tab, selected)))
   ensures (inv(l) ==> canReclaim(l, tab, selected) ==> alwaysReclaimedTabsAreTabs(reclaim(l, tab, selected)))
+  ensures (inv(l) ==> canReclaim(l, tab, selected) ==> alwaysFullscreenOnlyOnARunningPage(reclaim(l, tab, selected)))
   ensures (inv(l) ==> canReclaim(l, tab, selected) ==> stepRoutingFollowsAcknowledgement(l, "reclaim", reclaim(l, tab, selected)))
 {
   if inv(l) && canReclaim(l, tab, selected) {
@@ -40,6 +41,7 @@ lemma reopen_ensures(l: PageLayer, tab: int, selected: int)
   ensures (inv(l) ==> canReopen(l, tab, selected) ==> alwaysPendingRequestKeepsDrawnControls(reopen(l, tab, selected)))
   ensures (inv(l) ==> canReopen(l, tab, selected) ==> alwaysKeyboardHeightIsNonnegative(reopen(l, tab, selected)))
   ensures (inv(l) ==> canReopen(l, tab, selected) ==> alwaysReclaimedTabsAreTabs(reopen(l, tab, selected)))
+  ensures (inv(l) ==> canReopen(l, tab, selected) ==> alwaysFullscreenOnlyOnARunningPage(reopen(l, tab, selected)))
   ensures (inv(l) ==> canReopen(l, tab, selected) ==> stepRoutingFollowsAcknowledgement(l, "reopen", reopen(l, tab, selected)))
 {
   if inv(l) && canReopen(l, tab, selected) {
@@ -58,6 +60,7 @@ lemma forget_ensures(l: PageLayer, tab: int)
   ensures (inv(l) ==> canForget(l, tab) ==> alwaysPendingRequestKeepsDrawnControls(forget(l, tab)))
   ensures (inv(l) ==> canForget(l, tab) ==> alwaysKeyboardHeightIsNonnegative(forget(l, tab)))
   ensures (inv(l) ==> canForget(l, tab) ==> alwaysReclaimedTabsAreTabs(forget(l, tab)))
+  ensures (inv(l) ==> canForget(l, tab) ==> alwaysFullscreenOnlyOnARunningPage(forget(l, tab)))
   ensures (inv(l) ==> canForget(l, tab) ==> stepRoutingFollowsAcknowledgement(l, "forget", forget(l, tab)))
 {
   if inv(l) && canForget(l, tab) {

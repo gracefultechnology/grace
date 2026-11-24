@@ -40,16 +40,16 @@ import { type MailServers, type OtherDetails, SignIns } from "./accounts.vibe";
 import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
 import { BrowserGuide, type BrowserGuidance } from "./browserGuide.vibe";
-import { CalendarNews, dayOf, horizon, midnight, type Opening, openingPlan, relative, settled, timeLabel } from "./calendar.vibe";
+import { CalendarNews, dayOf, horizon, longDate, midnight, type Opening, openingPlan, relative, settled, timeLabel } from "./calendar.vibe";
 import { Conversation, type PersonTurn } from "./conversation.vibe";
-import type { Contact, MailContent } from "./connector.vibe";
-import { Instances } from "./instances.vibe";
+import type { MailContent } from "./connector.vibe";
+import { Instances, type Updated } from "./instances.vibe";
 import { type Board, Mail } from "./mail.vibe";
 import { PageHost } from "./page.vibe";
 import type { NoticeServices } from "./notices.vibe";
 import type { EntryDetails } from "../gen/app__calendar.ts";
-import { type CalendarSource, type CalRow, shownReminders, tabletKey, upcoming } from "../gen/app__calendars.ts";
-import { type HomeMailStatus, type MailSource, type Row as MailRow, homeRows, homeStatus } from "../gen/app__mailboxes.ts";
+import { type CalendarSource, type CalRow, homeCalendarHint, homeCalendarStatus, type HomeCalendarStatus, shownReminders, tabletKey, upcoming } from "../gen/app__calendars.ts";
+import { type HomeMailStatus, type MailSource, type Row as MailRow, homeRows, homeStatus, showsMail } from "../gen/app__mailboxes.ts";
 
 export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | CalendarNews | Accounts | Proposal | Instances | SignIns | NoticeServices | Library | MailChoices, never>;
 type RuntimeEnv = Runtime extends ManagedRuntime.ManagedRuntime<infer Env, never> ? Env : never;
@@ -616,6 +616,28 @@ export function useMailContent() {
   return useInstances().content;
 }
 
+export function useUpdated() {
+  return useInstances().updated;
+}
+
+export type UpdatedAt = (kind: Updated, id: number) => number | undefined;
+
+const fewMinutes = 15 * 60_000;
+
+export function lastUpdated(at: number | undefined, now: number): string {
+  if (at === undefined) return "Not updated yet";
+  if (now - at < fewMinutes) return "Last updated a few minutes ago";
+  const ago = dayOf(now) - dayOf(at);
+  if (ago === 0) return `Last updated ${timeLabel(at)}`;
+  if (ago === 1) return `Last updated yesterday at ${timeLabel(at)}`;
+  return `Last updated ${longDate(dayOf(at))} at ${timeLabel(at)}`;
+}
+
+const oldest = (kind: Updated, ids: readonly number[], updated: UpdatedAt) => {
+  const stamps = ids.map((id) => updated(kind, id));
+  return stamps.length === 0 || stamps.some((at) => at === undefined) ? undefined : Math.min(...stamps.filter((at) => at !== undefined));
+};
+
 export function useMailFile() {
   return useInstances().file;
 }
@@ -739,9 +761,8 @@ function useCalendar(key: number) {
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
 
 const silence = () => () => {};
-const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set(), unsendable: new Map() };
+const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set(), unsendable: new Map(), people: undefined };
 const nothing = () => blank;
-const contactLists = new WeakMap<Mail["Service"], Map<string, Promise<readonly Contact[]>>>();
 
 type MailActions = {
   readonly service: Mail["Service"];
@@ -754,7 +775,6 @@ type MailActions = {
   readonly attach: (id: number, asset: SavedFile) => Promise<boolean>;
   readonly camera: Mail["Service"]["camera"];
   readonly capture: (id: number) => Promise<boolean>;
-  readonly contacts: (sources: string) => Promise<readonly Contact[]>;
 };
 
 const mailServiceCache = new WeakMap<Runtime, MailActions | null>();
@@ -778,14 +798,6 @@ function mailActionsFor(runtime: Runtime): MailActions | undefined {
     attach: (id: number, asset: SavedFile) => runtime.runPromise(mail.attach(id, asset)),
     camera: mail.camera,
     capture: (id: number) => runtime.runPromise(mail.capture(id)),
-    contacts: (sources: string) => {
-      const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();
-      contactLists.set(mail, lists);
-      const knownList = lists.get(sources) ?? runtime.runPromise(mail.contacts());
-      if (!lists.has(sources)) lists.clear();
-      lists.set(sources, knownList);
-      return knownList;
-    },
   };
   mailServiceCache.set(runtime, actions);
   return actions;
@@ -807,7 +819,6 @@ export function useMail() {
     attach: actions.attach,
     camera: actions.camera,
     capture: actions.capture,
-    contacts: actions.contacts,
   }, [actions, board]);
 }
 
@@ -910,10 +921,15 @@ function opensOccurrence(views: readonly CalendarInstance[], r: CalRow, how: Ope
   return !!lead && !!box && openingPlan(lead.state, box.state, lead === box, dayOf(r.details.startAt), how, r.identity.occurrenceId) !== undefined;
 }
 
-export function homeCalendar(registry: AccountsState, views: readonly CalendarInstance[], now: number, actions: CalendarActions | undefined): { events: HomeEvent[]; status: string } {
+const calendarStatusText: Record<Exclude<HomeCalendarStatus, "CalendarLastUpdated">, string> = {
+  CalendarToday: "Today",
+  NothingToday: "Nothing today",
+  NothingPlanned: "Nothing planned",
+};
+
+export function homeEvents(registry: AccountsState, views: readonly CalendarInstance[], now: number, actions: CalendarActions | undefined): HomeEvent[] {
   const today = dayOf(now);
-  const sources = calendarSourcesOf(views);
-  const events = upcoming(registry, sources, now, now + horizon).sort(byStart).slice(0, 3).map((r) => ({
+  return upcoming(registry, calendarSourcesOf(views), now, now + horizon).sort(byStart).slice(0, 3).map((r) => ({
     id: `${r.key}/${r.identity.occurrenceId}`,
     weekday: shortDay(dayOf(r.details.startAt), today).toUpperCase(),
     time: timeLabel(r.details.startAt),
@@ -924,7 +940,26 @@ export function homeCalendar(registry: AccountsState, views: readonly CalendarIn
       ? (e: { stopPropagation: () => void }) => { e.stopPropagation(); actions.open(r.key, r.identity.occurrenceId, "Occurrence"); }
       : undefined,
   }));
-  return { events, status: upcoming(registry, sources, midnight(today), midnight(today + 1)).length > 0 ? "Today" : "Nothing else today" };
+}
+
+export function homeCalendar(
+  registry: AccountsState,
+  views: readonly CalendarInstance[],
+  boxes: readonly MailInstance[],
+  online: boolean,
+  now: number,
+  updated: UpdatedAt,
+  actions: CalendarActions | undefined,
+): { events: HomeEvent[]; status: string; hint?: string } {
+  const today = dayOf(now);
+  const sources = calendarSourcesOf(views);
+  const status = homeCalendarStatus(registry, sources, mailSourcesOf(boxes), online, now, now + horizon, midnight(today), midnight(today + 1));
+  const accounts = views.filter((v) => v.key !== tabletKey && registry.accounts.some((a) => a.id === v.key && a.use.calendar)).map((v) => v.key);
+  return {
+    events: homeEvents(registry, views, now, actions),
+    status: status === "CalendarLastUpdated" ? lastUpdated(oldest("calendar", accounts, updated), now) : calendarStatusText[status],
+    hint: homeCalendarHint(status) ? "Ask Grace to add an appointment." : undefined,
+  };
 }
 
 export function reminderNotice(registry: AccountsState, views: readonly CalendarInstance[], now: number, actions: CalendarActions | undefined, visiting: boolean): HomeReminders {
@@ -956,33 +991,34 @@ export function nextAppointment(registry: AccountsState, views: readonly Calenda
 const mailTones = [1, 2, 3, 4, 5, 6] as const;
 const toneOf = (key: string) => mailTones[[...key.trim().toLowerCase()].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 0) % mailTones.length];
 const mailContact = (name: string, address: string): MailContact => ({ name, tone: toneOf(address || name) });
-const homeStatuses = (status: HomeMailStatus): Pick<HomeEmailCardProps, "status" | "waiting" | "notConnected"> => {
-  switch (status.tag) {
-    case "NotConnected": return { notConnected: true };
-    case "WaitingForInternet": return { status: "Waiting for the internet", waiting: "New email will arrive when you’re back online." };
-    case "NewCount": return { status: `${status.count} new` };
-    case "NoNew": return { status: "No new email" };
-    default: {
-      const _exhaustive: never = status;
-      return _exhaustive;
-    }
-  }
-};
+const mailSourcesOf = (boxes: readonly MailInstance[]): MailSource[] => boxes.map((b) => ({ account: b.id, mailbox: b.state }));
 
 export function homeMail(
   registry: AccountsState,
   boxes: readonly MailInstance[],
   read: (id: number, ref: string) => MailContent | undefined,
   online: boolean,
-): Pick<HomeEmailCardProps, "messages" | "status" | "waiting" | "notConnected"> {
-  const sources: MailSource[] = boxes.map((b) => ({ account: b.id, mailbox: b.state }));
+  now: number,
+  updated: UpdatedAt,
+): Pick<HomeEmailCardProps, "messages" | "status" | "notConnected"> {
+  const sources = mailSourcesOf(boxes);
   const newest = (a: MailRow, b: MailRow) =>
     (read(b.account, b.record.identity.ref)?.receivedAt ?? 0) - (read(a.account, a.record.identity.ref)?.receivedAt ?? 0);
   const messages: HomeMail[] = homeRows(registry, sources).toSorted(newest).slice(0, 2).map((r) => {
     const c = read(r.account, r.record.identity.ref);
     return { id: `${r.account}/${r.record.identity.ref}`, ...mailContact(c?.from ?? "", c?.fromAddress ?? ""), subject: c?.subject ?? "", unread: r.record.unread };
   });
-  return { messages, ...homeStatuses(homeStatus(registry, sources, online)) };
+  const status: HomeMailStatus = homeStatus(registry, sources, online);
+  switch (status.tag) {
+    case "NoEmailAdded": return { messages, notConnected: true };
+    case "LastUpdated": return { messages, status: lastUpdated(oldest("mail", boxes.filter((b) => showsMail(registry, b.id)).map((b) => b.id), updated), now) };
+    case "NewCount": return { messages, status: `${status.count} new` };
+    case "AllCaughtUp": return { messages, status: "All caught up" };
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
 }
 
 const escapedSvg = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

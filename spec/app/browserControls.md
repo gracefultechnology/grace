@@ -19,9 +19,10 @@ editing recent shortcuts changes no displayed website. Host geometry reports
 must name the current browser revision; page reports also name the selected
 tab, so an old or background scroll callback cannot alter a newer page.
 Repeated reports of unchanged geometry are refused. The host also opens the
-new tab of a window the person tapped open on the selected page, and applies
-the Text size setting to the selected page as its zoom; the person has no
-zoom control. Every control keeps the browser's rules true, including that
+new tab of a window the person tapped open on the selected page, applies
+the Text size setting to the selected page as its zoom (the person has no
+zoom control), and, when the connection returns, opens again the selected
+page that was asked for but did not load ([the browser](./browser.md)). Every control keeps the browser's rules true, including that
 only a loaded secure page shows the padlock.
 
 ```quint
@@ -38,6 +39,7 @@ type BrowserInput = NewTab | Back | Forward | Reload | ExplainEmptyAddress | Dis
   | OpenWindow({ url: str }) | ResizeTabs({ revision: int, capacity: int })
   | RememberPage({ id: int, revision: int, scroll: int, pagePanel: str })
   | PageChanged({ id: int, revision: int })
+  | ReopenWhenOnline({ id: int, revision: int })
 
 pure def canControl(b: B::Browser, browserInput: BrowserInput, by: BrowserControlActor): bool = match browserInput {
   | ResizeTabs(data) => by == BrowserControlHost and data.revision == b.revision and
@@ -46,6 +48,8 @@ pure def canControl(b: B::Browser, browserInput: BrowserInput, by: BrowserContro
       (data.scroll != B::activeTab(b).scroll or data.pagePanel != B::activeTab(b).pagePanel) and
       B::canRememberPagePosition(b, data.scroll)
   | PageChanged(data) => by == BrowserControlHost and data.id == b.selected and data.revision == b.revision
+  | ReopenWhenOnline(data) => by == BrowserControlHost and data.id == b.selected and data.revision == b.revision and
+      B::reopensWhenOnline(B::activeTab(b))
   | OpenWindow(data) => by == BrowserControlHost and B::canOpenWindow(b, data.url)
   | ZoomPage(data) => by == BrowserControlHost and data.percent != B::activeTab(b).zoomPercent and B::canZoomPage(b, data.percent)
   | RequestPrivateSignIn(data) => by == BrowserControlUser and data.id == b.selected and data.revision == b.revision and B::canOpenPrivateSignIn(b, data.origin)
@@ -82,6 +86,7 @@ pure def control(b: B::Browser, browserInput: BrowserInput, by: BrowserControlAc
   | RememberPage(data) => B::rememberPagePosition(b, data.scroll, data.pagePanel)
   | ZoomPage(data) => B::zoomPage(b, data.percent)
   | PageChanged(data) => B::pageChanged(b)
+  | ReopenWhenOnline(data) => B::reload(b)
   | RemoveRecent(data) => B::removeRecent(b, data.url)
   | RequestClearHistory => B::requestClearHistory(b)
   | AnswerClearHistory(data) => B::answerClearHistory(b, data.confirmed)
@@ -116,7 +121,8 @@ pure val browserInputValues = Set(NewTab, Back, Forward, Reload, ExplainEmptyAdd
   AnswerClearHistory({ confirmed: true }), AnswerClearHistory({ confirmed: false }),
   ResizeTabs({ revision: 0, capacity: 2 }), ResizeTabs({ revision: 2, capacity: 2 }),
   RememberPage({ id: 1, revision: 2, scroll: 200, pagePanel: "details" }),
-  PageChanged({ id: 1, revision: 2 }), PageChanged({ id: 1, revision: 0 }), PageChanged({ id: 2, revision: 2 }))
+  PageChanged({ id: 1, revision: 2 }), PageChanged({ id: 1, revision: 0 }), PageChanged({ id: 2, revision: 2 }),
+  ReopenWhenOnline({ id: 1, revision: 1 }), ReopenWhenOnline({ id: 1, revision: 0 }))
 ```
 
 ## Story: Ask Grace to start a private sign-in for my bill

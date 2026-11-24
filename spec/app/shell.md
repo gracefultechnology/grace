@@ -158,6 +158,79 @@ pure def sometimesEmailCalendarSettingsIsReachable(s: Shell): bool =
   s.surface == DeviceSettings and s.settingsPage == EmailCalendarSettings
 ```
 
+## Story: Know why a Home card is empty
+
+> As a person using Grace, I want each Home card to say what is in it or why
+> it is empty, never to go blank, and to be told a cause that empties several
+> cards once, in Home’s banner, with its one fix. I want Grace to show me what
+> she can do where a card has nothing yet.
+
+Each card keeps its shape when empty: faded rows where rows would be, dashed
+frames where photos go. A status says what is true in a few words; a hint,
+under Grace’s sparkle, says what she can do. Email’s and Calendar’s statuses
+are [Email across accounts](./mailboxes.md)’s and
+[Calendars across accounts](./calendars.md)’s; one banner at a time, first
+no Wi-Fi, then a signed-out email, then no email added, is
+[Notices](./notices.md)’. The shell composes every sentence; the rules choose
+what each card says.
+
+### Files says No photos yet, and how photos arrive while it holds nothing
+
+With no photos the Files card keeps dashed frames where photos go and says
+"No photos yet". With no photos and no document it also says, under its
+download mark, "Photos you save from email will appear here." A card with
+photos shows them and no hint.
+
+```quint
+type HomeFilesStatus = NoPhotosYet | ShowsPhotos
+pure def homeFilesStatus(photos: int): HomeFilesStatus = if (photos > 0) ShowsPhotos else NoPhotosYet
+pure def homeFilesHint(photos: int, documents: int): bool = photos == 0 and documents == 0
+pure def lawFilesHintOnlyWhenEmpty(photos: int, documents: int): bool =
+  (homeFilesHint(photos, documents) implies homeFilesStatus(photos) == NoPhotosYet) and
+  (homeFilesStatus(photos) == NoPhotosYet iff photos <= 0)
+```
+
+### Passwords offers Grace’s help while none are saved, then shows only how many
+
+While no password is saved, the Passwords card shows Grace’s offer, "Grace
+offers to save them as you sign in", with Add one in place of Open, even
+while a banner is up; the offer has no ✕. Once some are saved it says "<n>
+saved, only on this tablet", with Open and a + that adds one. Only that count
+crosses from the vault to the app; the card never names a site or an
+account. While the app does not know the count, the card shows Open alone,
+with neither the offer nor a count.
+
+```quint
+type SavedPasswords = CountUnknown | SavedCount({ count: int })
+type PasswordsCardView = PlainPasswords | OfferToSave | ShowsSaved({ count: int })
+pure def passwordsCard(saved: SavedPasswords): PasswordsCardView = match saved {
+  | SavedCount(x) => if (x.count > 0) ShowsSaved({ count: x.count }) else OfferToSave
+  | _ => PlainPasswords
+}
+pure def lawPasswordsCardShowsOnlyACount(saved: SavedPasswords): bool =
+  val view = passwordsCard(saved)
+  match view {
+    | ShowsSaved(x) => x.count > 0 and saved == SavedCount({ count: x.count })
+    | OfferToSave => saved != CountUnknown
+    | _ => saved == CountUnknown
+  }
+pure val savedValues = Set(CountUnknown, SavedCount({ count: 0 }), SavedCount({ count: 3 }))
+```
+
+### Offline, Internet has no status and still opens the browser
+
+While the tablet is not connected, the Internet card says nothing under its
+name; the banner says why. Its Open is not greyed: the card opens the
+browser, which shows its offline page with Fix Wi-Fi
+([the browser](./browser.md)). Online, it says which website was open, or
+"Open a website".
+
+```quint
+pure def internetStatusShown(connectivity: Connectivity): bool = connectivity == Online
+pure def lawOfflineInternetIsQuiet(connectivity: Connectivity): bool =
+  internetStatusShown(connectivity) iff connectivity == Online
+```
+
 ## Story: Keep control through interruptions
 
 > As a person using Grace, I can stop, leave, sleep or lose a connection

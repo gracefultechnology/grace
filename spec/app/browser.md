@@ -489,6 +489,38 @@ pure def lawAFailedLoadOffersReload(b: Browser, loadVersion: int, endedAt: str):
 pure def sometimesAHungLoadOffersReload(b: Browser): bool = activeTab(b).load == LoadFailed and canReload(b)
 ```
 
+### Opened offline, the browser shows the offline page, never a blank page
+
+Internet opens whether or not the tablet is connected. While it is not, the
+page area shows Grace's offline page in the browser's own grey, never a
+blank or black page and never plum: "You're offline" over "Websites need the
+internet. Grace can help you reconnect.", with one Fix Wi-Fi, which opens
+the written steps on the Wi-Fi page as Home's offline banner does
+([Notices](./notices.md)). It covers every tab, whatever its page, because
+nothing a website draws can arrive. The tabs keep their pages while offline.
+When the connection returns the browser carries on: a new tab shows the
+new-tab page, a loaded page shows again, and a page that was asked for but
+did not load (still loading, or failed) opens again.
+
+```quint
+type PageView = OfflinePage | NewTabView | FailureView | WebsiteView
+pure def pageView(t: Tab, online: bool): PageView =
+  if (not(online)) OfflinePage
+  else if (tabUrl(t) == "") NewTabView
+  else if (t.load == LoadFailed or t.load == SecurityBlocked) FailureView
+  else WebsiteView
+pure def reopensWhenOnline(t: Tab): bool = tabUrl(t) != "" and (t.load == Loading or t.load == LoadFailed)
+pure def lawOfflineShowsTheOfflinePage(offlineTab: Tab): bool =
+  pageView(offlineTab, false) == OfflinePage and pageView(offlineTab, true) != OfflinePage and
+  (pageView(offlineTab, true) == NewTabView iff tabUrl(offlineTab) == "") and
+  (reopensWhenOnline(offlineTab) implies pageView(offlineTab, true) != NewTabView)
+pure val offlineTabValues = Set(
+  blankTab(1, 0),
+  { ...blankTab(1, 0), history: List("", "https://utility.example"), cursor: 1, load: Loading },
+  { ...blankTab(1, 0), history: List("", "https://utility.example"), cursor: 1, load: Loaded },
+  { ...blankTab(1, 0), history: List("", "https://utility.example"), cursor: 1, load: LoadFailed })
+```
+
 ### Stay on a leave-page warning keeps the page she was on
 
 A website can ask before its page is left. When the person answers Stay to

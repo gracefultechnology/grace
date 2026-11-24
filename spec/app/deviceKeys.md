@@ -8,7 +8,9 @@ pressed while Grace is already in front dispatches `launcher-home`. This library
 current [shell](./shell.md), [assistant](./assistant.md),
 [browser](./browser.md) and [what websites ask](./websiteRequests.md); each
 decision is one existing [workspace](./workspace.md) or website requests
-event, whose own rules say what else it changes. It also says when a
+event, whose own rules say what else it changes; Back is decided by
+`deviceBack`, which leaves a fullscreen video before anything `backAction`
+chooses. It also says when a
 website's question holds Grace's task, since it is where the workspace and
 what websites ask meet; the [workspace](./workspace.md) refuses each held
 step.
@@ -22,7 +24,8 @@ Reference: the previous application's HardwareBack (NA-1).
 ### Back closes the nearest open thing first and leaves only from a resting Home
 
 Android gives its keyboard and native dialogs the first chance to handle Back.
-When Grace receives Back, she first cancels a Clear browsing data confirmation,
+When Grace receives Back and no website video is fullscreen, which Back
+leaves before anything else, she first cancels a Clear browsing data confirmation,
 declines a visible website question, closes a rail popover, or dismisses the
 browser’s address editor, whichever comes first. Where conversation controls
 are available, Back next dismisses the chat or website keyboard, then collapses
@@ -135,6 +138,32 @@ pure val rValues = Set(WR::initial, WR::exampleShown, WR::exampleTwoAsk, WR::exa
   askedOnTab1(WR::DownloadOffer({ fileName: "form.pdf" })), askedOnTab1(WR::FileChoice),
   askedOnTab1(WR::OtherApp({ handoff: WR::RefusedLink, fallback: "" })), askedOnTab1(WR::BlockedSignIn({ provider: "Google" })),
   { ...askedOnTab1(WR::BlockedSignIn({ provider: "Google" })), shown: false })
+```
+
+### Back leaves a fullscreen video before anything else
+
+While a website's video is fullscreen over Grace on a ready device, Back
+only leaves fullscreen, by the surface's own `leaveFullscreen`, and is
+consumed, whatever else is open: a Clear browsing data confirmation, a
+website's question, a popover or the address editor waits for the next
+Back. The Back after it is the one `backAction` chooses, as the rules above
+say.
+
+```quint
+type DeviceBack = LeaveFullscreen | TakeBackAction({ back: BackAction })
+pure def backLeavesFullscreen(shell: S::Shell, layer: P::PageLayer): bool =
+  shell.readiness == S::Ready and P::canLeaveFullscreen(layer)
+pure def deviceBack(shell: S::Shell, a: A::Assistant, b: B::Browser, r: WR::WebsiteRequests,
+  history: P::PrivateHistory, layer: P::PageLayer): DeviceBack =
+  if (backLeavesFullscreen(shell, layer)) LeaveFullscreen else TakeBackAction({ back: backAction(shell, a, b, r, history) })
+pure def lawBackLeavesFullscreenBeforeAnythingElse(shell: S::Shell, a: A::Assistant, b: B::Browser,
+  r: WR::WebsiteRequests, history: P::PrivateHistory, layer: P::PageLayer): bool =
+  (deviceBack(shell, a, b, r, history, layer) == LeaveFullscreen iff backLeavesFullscreen(shell, layer)) and
+  (deviceBack(shell, a, b, r, history, layer) == LeaveFullscreen implies P::canLeaveFullscreen(layer))
+pure def lawBackAfterFullscreenIsTheBackAction(shell: S::Shell, a: A::Assistant, b: B::Browser,
+  r: WR::WebsiteRequests, history: P::PrivateHistory, layer: P::PageLayer): bool =
+  deviceBack(shell, a, b, r, history, P::leaveFullscreen(layer)) == TakeBackAction({ back: backAction(shell, a, b, r, history) })
+pure val layerValues = Set(P::initial, { ...P::initial, shown: true, fullscreen: true })
 ```
 
 ### Each Back action is one event its guard allows

@@ -9,7 +9,7 @@ export const internet: InternetCardProps = { status: "Open a website", preview: 
 
 export const internetContinue: InternetCardProps = { status: "Chase was open", openLabel: "Continue", preview: accountPage };
 
-export const internetOffline: InternetCardProps = { ...internet, status: "Needs the internet", offline: true };
+export const internetOffline: InternetCardProps = { ...internet, status: undefined };
 
 export const meta: ComponentMeta<InternetCardProps> = {
   args: { ...internet, className: "h-[250px] w-[470px]" },

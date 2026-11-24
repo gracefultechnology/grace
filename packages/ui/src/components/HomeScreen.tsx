@@ -1,5 +1,4 @@
 import { useCallback, useMemo, useRef, type ComponentProps, type MouseEvent, type PointerEvent, type ReactNode } from "react";
-import { KeyRound } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { play, prefersStill } from "../lib/motion.ts";
 import { useSize } from "../lib/observe.ts";
@@ -7,9 +6,10 @@ import { FilesCard, type FilesCardProps } from "./FilesCard.tsx";
 import { HomeCalendarCard, type HomeCalendarCardProps } from "./HomeCalendarCard.tsx";
 import { HomeEmailCard, type HomeEmailCardProps } from "./HomeEmailCard.tsx";
 import { HomeGreeting } from "./HomeGreeting.tsx";
-import { LauncherCard, type LauncherCardProps, showTurn, type Turning, turningOf, turnsFar } from "./LauncherCard.tsx";
+import { showTurn, type Turning, turningOf, turnsFar } from "./LauncherCard.tsx";
 import { HomePager, type HomePagerProps } from "./HomePager.tsx";
 import { InternetCard, type InternetCardProps } from "./InternetCard.tsx";
+import { PasswordsCard, type PasswordsCardProps } from "./PasswordsCard.tsx";
 
 const pages = ["MainCards", "FilesCard", "PasswordsCard"] as const;
 
@@ -34,8 +34,8 @@ export type HomeScreenProps = Omit<ComponentProps<"div">, "children"> & {
   internet: InternetCardProps;
   /** The Files card: the newest photos and document. */
   files: FilesCardProps;
-  /** Opens Passwords from the last page of Home's carousel, beside Files, without previewing any sign-ins. */
-  passwords?: Pick<LauncherCardProps, "disabled" | "onClick">;
+  /** The Passwords card, half height on the last page of Home's carousel beside Files; it never previews a sign-in. */
+  passwords?: PasswordsCardProps;
   /** How Home fills its space; give a `compact` or `greeting` Home a `bottom` that clears Grace's window. */
   layout?: HomeLayout;
   /** The page in view. */
@@ -50,7 +50,7 @@ const VIEW = 1042;
 const columnGap = 20;
 const SWIPE = { threshold: 12, overscroll: 60, flick: 0.5, stale: 80 };
 const filesSlot = { x: 990, top: 0, w: 520, h: 560 };
-const passwordsSlot = { x: filesSlot.x + filesSlot.w + columnGap, top: 0, w: VIEW - filesSlot.w - columnGap, h: 560 };
+const passwordsSlot = { x: filesSlot.x + filesSlot.w + columnGap, top: 0, w: VIEW - filesSlot.w - columnGap, h: 290 };
 const slots = {
   calendar: { x: 0, top: 0, w: 480, h: 560 },
   email: { x: 500, top: 0, w: 470, h: 290 },
@@ -132,8 +132,6 @@ function paint({ cards }: Rail, full: boolean, shift: number) {
     showTurn(card.turning, away, side);
   }
 }
-
-const keyArt = <KeyRound aria-hidden className="m-auto size-24 text-primary" strokeWidth={1.5} />;
 
 /**
  * Home: the greeting, the launcher cards in one carousel that turns them away round its edges like the side of a drum,
@@ -233,7 +231,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     email: useMemo(() => <HomeEmailCard {...email} compact={compact} className={cn("size-full", email.className)} />, [email, compact]),
     internet: useMemo(() => <InternetCard {...internet} compact={compact} className={cn("size-full", internet.className)} />, [internet, compact]),
     files: useMemo(() => <FilesCard {...files} compact={compact} className={cn("size-full", files.className)} />, [files, compact]),
-    passwords: useMemo(() => passwords && <LauncherCard {...passwords} title="Passwords" compact={compact} className="size-full">{keyArt}</LauncherCard>, [passwords, compact]),
+    passwords: useMemo(() => passwords && <PasswordsCard {...passwords} compact={compact} className={cn("size-full", passwords.className)} />, [passwords, compact]),
   };
   const place = (slot: Slot) => {
     const frame = full ? { left: slots[slot].x, top: slots[slot].top, width: slots[slot].w, height: slots[slot].h } : { left: columns[slot] * columnStep, top: 0, width: columnStep - columnGap, height: "100%" };

@@ -1,5 +1,5 @@
 // spec/app/browser.md, "Story: Sign in privately on a website"; spec/app/browserControls.md, "Only the person can open a verification app from the current private tab"; spec/app/browserControls.md, "A new-mail hint belongs to one approved private visit"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
-// spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"
+// spec/app/browser.md, "Story: Browse and return to the page I left"; spec/app/browser.md, "Opened offline, the browser shows the offline page, never a blank page"; spec/app/browserControls.md, "Story: Use every browser control without bypassing Grace's interruption boundary"; spec/app/browser.md, "Typed text that is not a web address searches with the default provider"; spec/app/browser.md, "Overflow retains the selected tab and the most recently used other tabs in opening order"; spec/app/browser.md, "A page that moves by itself keeps the address the person is typing"; spec/app/browser.md, "Load results must match the tab and request that produced them"; spec/app/browser.md, "Address entry preserves a draft and empty Go gives a visible explanation"; spec/app/browser.md, "Recent websites can be removed individually or cleared after one confirmation"
 import { AddressBar, BrowserPageState, BrowserTabStrip, BrowserToolbar, BrowserWindow, Button, NewTabPage } from "@repo/ui";
 import { CircleHelp } from "lucide-react";
 import { type ComponentProps, useCallback, useMemo, useRef, useState } from "react";
@@ -7,7 +7,7 @@ import { canStepPrivate, type HistoryDirection } from "../gen/app__deviceKeys.ts
 import type { Setup } from "../gen/app__setup.ts";
 import { historyFor, pageShows, type PageLayer } from "../gen/app__surface.ts";
 import { type BrowserInput, type PrivateInboxVisit, canOpenPrivateVerificationApp, canWatchPrivateInbox } from "../gen/app__browserControls.ts";
-import { type Browser as BrowserModel, type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, showsSecureIndicator, tabUrl, visibleTabs } from "../gen/app__browser.ts";
+import { type Browser as BrowserModel, type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, pageView, showsSecureIndicator, tabUrl, visibleTabs } from "../gen/app__browser.ts";
 import type { Workspace } from "../gen/app__workspace.ts";
 import { parseBrowserAddressInput } from "@elizaos/os/browser/address";
 import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
@@ -260,6 +260,7 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
   const fixWifi = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
   const secureAddress = showsSecureIndicator(browser, false) ? activeUrl : undefined;
   const failure = failures[active.load];
+  const view = pageView(active, workspace.device.connectivity === "Online");
   const privateFailure = active.manualSignIn && active.load === "LoadFailed";
   const fillNotice = guide === "FillPasswordGuide"
     ? secureOrigin(activeUrl) === "" ? "Open a secure website first." : "Ask Grace to use a saved password."
@@ -287,7 +288,13 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
       <PageArea className="absolute inset-0 rounded-b-window" />
       {showOverflow && <OverPage className="absolute inset-0 rounded-b-window" />}
       {browser.emptyAddressNotice && <OverPage className="absolute inset-x-0 top-0 h-20" />}
-      {activeUrl === "" && (
+      {view === "OfflinePage" && (
+        <OverPage className="absolute inset-0 overflow-hidden rounded-b-window">
+          <BrowserPageState kind="offline" labels={{ offline: "You’re offline" }} message="Websites need the internet. Grace can help you reconnect."
+            onFixWifi={can(fixWifi) ? () => void send(fixWifi) : undefined} />
+        </OverPage>
+      )}
+      {view === "NewTabView" && (
         <OverPage className="absolute inset-0 overflow-hidden rounded-b-window">
           <NewTabPage shortcuts={shortcuts} onOpenShortcut={(shortcutUrl) => edit({ tag: "Navigate", url: shortcutUrl })}
             removable onRemoveShortcut={(shortcutUrl) => edit({ tag: "RemoveRecent", url: shortcutUrl })}
@@ -295,13 +302,13 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
             onConfirmClear={() => edit({ tag: "AnswerClearHistory", confirmed: true })} onCancelClear={() => edit({ tag: "AnswerClearHistory", confirmed: false })} />
         </OverPage>
       )}
-      {failure !== undefined && (
+      {view === "FailureView" && failure !== undefined && (
         <OverPage className="absolute inset-0 overflow-hidden rounded-b-window">
-          <BrowserPageState kind={workspace.device.connectivity === "Online" ? "failed" : "offline"}
+          <BrowserPageState kind="failed"
             labels={{ failed: () => privateFailure ? "Private sign-in couldn’t open" : failure }}
             message={privateFailure ? "Check your internet connection. If it still won’t open, update Android System WebView in the Play Store."
               : !opensWebsites && active.load === "LoadFailed" ? "Websites open in Grace on the tablet. Here Grace opens only pages served from this computer." : undefined}
-            onRetry={() => edit({ tag: "Reload" })} onFixWifi={() => { if (can(fixWifi)) void send(fixWifi); }} />
+            onRetry={() => edit({ tag: "Reload" })} />
         </OverPage>
       )}
       {!active.manualSignIn && <WebsiteRequests />}
