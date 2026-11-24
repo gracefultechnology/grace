@@ -35,17 +35,30 @@ public class MainActivity extends ElizaBridgeActivity {
 
  private final ConnectivityManager.NetworkCallback defaultNetwork = new NetworkChange();
  private volatile WifiNetworkChange wifiNetwork;
+ private boolean hostTransparent;
 
  private class NetworkChange extends ConnectivityManager.NetworkCallback {
+  private final ConcurrentHashMap<Network, String> states = new ConcurrentHashMap<>();
+
   NetworkChange() {}
   @RequiresApi(Build.VERSION_CODES.S)
   NetworkChange(int flags) { super(flags); }
 
+  String stateOf(NetworkCapabilities capabilities) {
+   boolean validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+   boolean captive = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL);
+   boolean internet = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+   return validated + "|" + captive + "|" + internet;
+  }
+
   @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+   String next = stateOf(capabilities);
+   if (next.equals(states.put(network, next))) return;
    getBridge().triggerWindowJSEvent("android-network-changed");
   }
 
   @Override public void onLost(Network network) {
+   states.remove(network);
    getBridge().triggerWindowJSEvent("android-network-changed");
   }
  }
@@ -56,6 +69,15 @@ public class MainActivity extends ElizaBridgeActivity {
   WifiNetworkChange() {}
   @RequiresApi(Build.VERSION_CODES.S)
   WifiNetworkChange(int flags) { super(flags); }
+
+  @Override String stateOf(NetworkCapabilities capabilities) {
+   String base = super.stateOf(capabilities);
+   if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+     && capabilities.getTransportInfo() instanceof WifiInfo info) {
+    return base + "|" + info.getSSID() + "|" + info.getBSSID();
+   }
+   return base;
+  }
 
   @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
    if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
@@ -68,6 +90,12 @@ public class MainActivity extends ElizaBridgeActivity {
    validated.remove(network);
    super.onLost(network);
   }
+ }
+
+ void setHostTransparent(boolean transparent) {
+  if (hostTransparent == transparent) return;
+  hostTransparent = transparent;
+  getBridge().getWebView().setBackgroundColor(transparent ? Color.TRANSPARENT : ContextCompat.getColor(this, R.color.paper));
  }
 
  WifiInfo validatedWifi(Network network) {
@@ -95,7 +123,7 @@ public class MainActivity extends ElizaBridgeActivity {
   super.onCreate(state);
   preferSixtyHertz();
   findViewById(android.R.id.content).setBackgroundResource(R.color.paper);
-  getBridge().getWebView().setBackgroundColor(Color.TRANSPARENT);
+  getBridge().getWebView().setBackgroundColor(ContextCompat.getColor(this, R.color.paper));
   ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (view, insets) -> {
    int edges = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
    Insets bars = insets.getInsets(edges);

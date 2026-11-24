@@ -48,6 +48,7 @@ import wake as W from "./wake"
 import interaction as I from "./interaction"
 import browserControls as BC from "./browserControls"
 import handoffs as H from "./handoffs"
+import websiteRequests as WR from "./websiteRequests"
 
 type WorkspaceActor = Person | Host | Store | Actuator
 type StepDetails = { surface: S::Surface, subject: str, outcome: str }
@@ -188,9 +189,9 @@ type Workspace = {
   execution: X::Execution, commitment: CM::Commitment, otherCommitments: List[CM::Commitment],
   preferences: R::Preferences, wake: W::Wake,
   plan: GuidedPlan, review: GuidedReview, commitmentTask: str, observedDevice: int, observedBrowser: int,
-  websiteHold: WebsiteHold
+  website: WR::WebsiteRequests, lastWebsiteAnswer: WebsiteAnswer
 }
-type WebsiteHold = NoWebsiteHold | WebsiteHolds | WebsiteAnswered({ task: str, workVersion: int, observation: int })
+type WebsiteAnswer = NoWebsiteAnswer | WebsiteAnswered({ task: str, workVersion: int, observation: int })
 type WorkspaceEffect = Execute({ deviceVersion: int, browserRevision: int, effect: X::WebsiteEffect })
   | Commit({ deviceVersion: int, browserRevision: int, taskVersion: int, effect: CM::CommitmentEffect })
   | WakeFeedback({ signal: W::WakeSignal })
@@ -249,7 +250,7 @@ pure val initial: Workspace = {
   execution: X::initial, commitment: CM::initial, otherCommitments: List(),
   preferences: R::initial, wake: W::initial,
   plan: emptyPlan, review: emptyReview(0), commitmentTask: "", observedDevice: 0, observedBrowser: 0,
-  websiteHold: NoWebsiteHold
+  website: WR::initial, lastWebsiteAnswer: NoWebsiteAnswer
 }
 pure def privateSignInActive(w: Workspace): bool =
   w.device.surface == S::Browser and B::activeTab(w.browser).manualSignIn
@@ -588,6 +589,12 @@ pure def canOpenReleasedEmailLink(w: Workspace, release: ReleasedEmailLink, by: 
 pure def openReleasedEmailLink(w: Workspace, release: ReleasedEmailLink, by: WorkspaceActor): Workspace =
   val target = H::showEmailDestination(w.device, w.browser, release.link)
   interrupted(target.device, target.browser, w)
+
+pure val eval_witness_canOpenReleasedEmailLink = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("visit", S::Email, Person),
+  ("openReleasedEmailLink", { link: "https://mail.example/bill", deviceVersion: 2, browserRevision: 0 }, Host)
+)
 ```
 
 ### Conversation input and geometry use the same owned assistant state
@@ -681,6 +688,33 @@ pure def continueTask(w: Workspace, by: WorkspaceActor): Workspace = {
 pure def sometimesTypedRequestIsPending(w: Workspace): bool =
   not(w.assistant.conversation.voice) and w.assistant.conversation.turn == C::Thinking
 pure def sometimesReplacementIsPending(w: Workspace): bool = w.assistant.replacementId != ""
+
+pure val eval_witness_canContinueTask = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("leaveToPerson", { ...operation, target: "booking-frame", kind: X::Choose }, Host),
+  ("continueTask", Person)
+)
+pure val eval_witness_canReplaceTask = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("requestReplacement", "other", "Read another account", Person),
+  ("keepTask", Person),
+  ("requestReplacement", "other", "Read another account", Person),
+  ("replaceTask", { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" }, Person)
+)
 ```
 
 Replacement first pauses the old task and asks one question. Keeping it does
@@ -752,6 +786,18 @@ pure val guidanceReportValues = Set(
   { target: "control", revision: 0, workVersion: 0, conversationVersion: 2, deviceVersion: 2, browserRevision: 0, verified: true },
   { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 5, browserRevision: 2, verified: true },
   { target: "control", revision: 0, workVersion: 1, conversationVersion: 2, deviceVersion: 6, browserRevision: 2, verified: false })
+
+pure val eval_witness_canInvalidateGuidance = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("visit", S::Browser, Person),
+  ("openGrace", Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 0 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("publishGuidance", { target: "control", revision: 0, workVersion: 1, conversationVersion: 2,
+    deviceVersion: 7, browserRevision: 1, verified: true }, A::Tap, "Read the account", Host),
+  ("invalidateGuidance", 1, Host)
+)
 ```
 
 ### Home pages and rail overlays invalidate the covered page
@@ -796,6 +842,12 @@ pure def stepInterruptionsKeepTask(before: Workspace, via: str, after: Workspace
       (if (localPasswordCommands(before.device) != localPasswordCommands(after.device)) ""
        else before.assistant.conversation.draft) and
     not(after.assistant.conversation.voice)
+
+pure val eval_witness_canDismissPopover = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("togglePopover", S::WifiPopover, Person),
+  ("dismissPopover", Person)
+)
 ```
 
 ### An enabled wake phrase listens without resuming a website task
@@ -881,6 +933,28 @@ pure def sometimesWakeListens(w: Workspace): bool =
   w.wake.phase == W::AwaitingSpeech and w.assistant.conversation.turn == C::Listening
 pure def sometimesWakeExplainsSilence(w: Workspace): bool =
   w.wake.phase == W::SilenceNotice and not(w.assistant.conversation.voice)
+
+pure val eval_witness_canWakeReturn = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("detectWake", { ...W::exampleDetection, generation: 2 }, Host),
+  ("wakeNoSpeech", { generation: 3, conversationVersion: 1, now: 8000 }, Host),
+  ("wakeReturn", { generation: 3, conversationVersion: 2, now: 16000 }, Host)
+)
+
+pure val eval_witness_sometimesWakeExplainsSilence = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("detectWake", { ...W::exampleDetection, generation: 2 }, Host),
+  ("wakeNoSpeech", { generation: 3, conversationVersion: 1, now: 8000 }, Host)
+)
+
+pure val eval_witness_canCancelWake = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("detectWake", { ...W::exampleDetection, generation: 2 }, Host),
+  ("cancelWake", Person)
+)
 ```
 
 ### Preference changes invalidate wake timers and use the same durable settings
@@ -930,6 +1004,13 @@ pure def canPreferencesSaved(w: Workspace, saveToken: int, by: WorkspaceActor): 
 pure def preferencesSaved(w: Workspace, saveToken: int, succeeded: bool, by: WorkspaceActor): Workspace =
   { ...w, preferences: if (succeeded) R::saved(w.preferences, saveToken, R::PreferenceStore)
     else R::saveFailed(w.preferences, saveToken, R::PreferenceStore) }
+
+pure val eval_witness_canPreferencesSaved = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("changePreferences", { ...R::defaults, muted: true }, Person),
+  ("savePreferences", Host),
+  ("preferencesSaved", 2, true, Store)
+)
 ```
 
 ## Story: Resume against the current website
@@ -1005,6 +1086,15 @@ pure def canStayOnPage(w: Workspace, stayed: StayedLoad, by: WorkspaceActor): bo
 pure def stayOnPage(w: Workspace, stayed: StayedLoad, by: WorkspaceActor): Workspace =
   val browser = B::stayOnPage(w.browser, stayed.id, stayed.version)
   if (stayed.id == w.browser.selected) interrupted(w.device, browser, w) else { ...w, browser: browser }
+
+pure val eval_witness_canStayOnPage = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("visit", S::Browser, Person),
+  ("changePage", BC::Navigate({ url: "https://utility.example" }), Person),
+  ("receiveLoad", { id: 1, version: 1, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("changePage", BC::Navigate({ url: "https://utility.example/help" }), Person),
+  ("stayOnPage", { id: 1, version: 3 }, Host)
+)
 ```
 
 ### Correlated website progress is observed without asking the person to resume
@@ -1067,6 +1157,22 @@ pure def resume(w: Workspace, by: WorkspaceActor): Workspace = {
   commitment: if (not(hasNext(w.plan)) and CM::canResume(w.commitment, T::Person)) CM::resume(w.commitment, T::Person) else w.commitment,
   wake: W::cancel(w.wake, W::WakeUser)
 }
+
+pure val eval_witness_canReceiveProgress = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("prepare", operation, Host),
+  ("dispatch", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, generation: 1, observation: 1 }, Actuator),
+  ("receiveProgress", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, owner: "owner", task: "task", generation: 1,
+    observation: 1, commitmentRevision: 0, attempt: 0, kind: OrdinaryProgress, destination: "" }, Host)
+)
 ```
 
 ### A page that moves by itself where the person is not looking only records where it went
@@ -1246,6 +1352,18 @@ pure def sometimesResumeRequiresObservation(w: Workspace): bool =
   w.assistant.activity == A::Rechecking and w.execution.phase == X::NeedObservation
 pure def sometimesOperationDispatched(w: Workspace): bool = w.execution.phase == X::InFlight
 pure def sometimesOperationVerified(w: Workspace): bool = w.execution.phase == X::Verified
+
+pure val eval_witness_sometimesResumeRequiresObservation = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("stop", Person),
+  ("resume", Person)
+)
 ```
 
 ### An ordinary website goal finishes only on an observation quoting its fact
@@ -1467,6 +1585,23 @@ pure val recoveryValues = Set(
     request: { ...guidedCheckpointSample.request, steps: List(ReadMail, SaveMailAppointment) },
     save: GuidedSaveReconcile({ occurrence: "", owner: "mail", calendar: "primary", mailDigest: "prior-mail", detailsDigest: "approved-details" }) } })
 pure val fenceValues = Set({ task: "recovered", version: 5 }, { task: "recovered", version: 6 }, { task: "other", version: 5 })
+
+pure val eval_witness_canResumePublicTab = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("changePage", BC::Navigate({ url: "https://utility.example/help" }), Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example/help" }, Host),
+  ("closeGrace", Person),
+  ("restoreGuided", { owner: "owner", checkpoint: { ...guidedCheckpointSample, request: { owner: "owner", task: "task",
+    goal: "Read the account", steps: List(sampleSearchStep) }, receipts: List(), workVersion: 1 } }, Store),
+  ("openGrace", Person),
+  ("resumePublicTab", { ...sampleTabRecovery, version: 2, deviceVersion: 7, browserRevision: 3, loadVersion: 2,
+    url: "https://utility.example/help" }, Person)
+)
 ```
 
 ### A read plan offered in chat waits for the person to start it
@@ -1615,6 +1750,19 @@ pure val linkValues = Set({ task: "read", version: 1, generation: 2, deviceVersi
   { task: "read", version: 1, generation: 3, deviceVersion: 7, browserRevision: 3, stepIndex: 0,
     url: "https://utility.example/help" })
 pure val reviewRevisionValues = Set(0, 1, 2, 3, 4)
+
+pure val eval_witness_canStartReadReview = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::TypeIntoChat, Person),
+  ("interact", I::EditDraft({ text: "Read that page" }), Person),
+  ("interact", I::SendDraft({ revision: 1 }), Person),
+  ("interact", I::Respond({ token: 2, text: "Choose your page", isQuestion: false, answers: List(), audible: false }), Host),
+  ("offerReadReview", { owner: "owner", task: "task", steps: List(ReachNamedPage({ subject: "Support" })), generation: 2,
+    workVersion: 0 }, Host),
+  ("startReadReview", 1, Person)
+)
 ```
 
 ### Only the person can revise the next public page or category to its observed label
@@ -1707,6 +1855,23 @@ pure val correctionValues = Set(3, 4).map(generation =>
   { owner: "tablet", task: "read", version: 1, generation: generation, deviceVersion: 7, browserRevision: 3,
     stepIndex: 0, loadVersion: 1, documentId: "browser-document", url: "https://utility.example",
     href: "https://utility.example/help", original: "Support", label: "Help", witness: PublicLinkName })
+
+pure val eval_witness_canConfirmGuidedNameCorrection = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("beginGuided", { owner: "owner", task: "task", goal: "Read the account", steps: List(sampleSortStep) }, Person),
+  ("changePage", BC::Navigate({ url: "https://utility.example/help" }), Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example/help" }, Host),
+  ("resume", Person),
+  ("offerGuidedNameCorrection", { ...exampleSortName, version: 3, generation: 4, deviceVersion: 7, browserRevision: 3,
+    loadVersion: 2, url: "https://utility.example/help", href: "https://utility.example/help" }, Host),
+  ("confirmGuidedNameCorrection", { ...exampleSortName, version: 3, generation: 4, deviceVersion: 7, browserRevision: 3,
+    loadVersion: 2, url: "https://utility.example/help", href: "https://utility.example/help" }, Person)
+)
 ```
 
 ### Only a current observation of the next outcome advances the plan
@@ -1866,7 +2031,7 @@ pure def lawSortNameCorrectionExampleIsCurrent(by: WorkspaceActor): bool = {
   by == Person implies canOfferGuidedNameCorrection(ready, exampleSortName, Host) and
     canConfirmGuidedNameCorrection(offered, exampleSortName, by) and
     not(canConfirmGuidedNameCorrection(offered, exampleSortName, Host)) and
-    not(canConfirmGuidedNameCorrection(holdForWebsite(offered, true, Host), exampleSortName, by)) and
+    not(canConfirmGuidedNameCorrection(followWebsite(offered, aPermissionWaits, Host), exampleSortName, by)) and
     not(canConfirmGuidedNameCorrection(offered, { ...exampleSortName, owner: "another-owner" }, by)) and
     not(canOfferGuidedNameCorrection(ready, { ...exampleSortName, witness: LocatedSortCategory({
       domRevision: 1, origin: "https://other.example", direction: PriceAscending }) }, Host)) and
@@ -1875,6 +2040,38 @@ pure def lawSortNameCorrectionExampleIsCurrent(by: WorkspaceActor): bool = {
 }
 pure def sometimesGuidedGoalIsObserved(w: Workspace): bool =
   w.plan.owner != "" and w.plan.receipts.length() > 0 and w.assistant.outcome == A::Completed
+
+pure val eval_witness_canConfirmGuidedNamedPage = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("beginGuided", { owner: "owner", task: "task", goal: "Read the account", steps: List(ReachNamedPage({ subject: "Support" })) },
+    Person),
+  ("changePage", BC::Navigate({ url: "https://utility.example/help" }), Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example/help" }, Host),
+  ("resume", Person),
+  ("setGuidedLink", { task: "task", version: 3, generation: 4, deviceVersion: 7, browserRevision: 3, stepIndex: 0,
+    url: "https://utility.example/help" }, Host),
+  ("confirmGuidedNamedPage", { ...samplePageCheck, report: { ...namedReport, deviceVersion: 7, browserRevision: 3, version: 3,
+    sourceKey: "help" }, url: "https://utility.example/help" }, Host)
+)
+pure val eval_witness_canConfirmGuidedPublicSort = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("beginGuided", { owner: "owner", task: "task", goal: "Read the account", steps: List(sampleSortStep) }, Person),
+  ("changePage", BC::Navigate({ url: "https://utility.example/help" }), Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example/help" }, Host),
+  ("resume", Person),
+  ("confirmGuidedPublicSort", { ...sampleSortCheck, report: { ...sampleSortCheck.report, deviceVersion: 7, browserRevision: 3,
+    version: 3, evidence: "sorted" }, loadVersion: 2, url: "https://utility.example/help" }, Host)
+)
 ```
 
 ### The person searches the reviewed site and Grace checks that exact query
@@ -1928,6 +2125,21 @@ pure val sampleSearchCheck: GuidedSearchCheck = {
 }
 pure val searchCheckValues = Set(sampleSearchCheck, { ...sampleSearchCheck, query: "black tea" },
   { ...sampleSearchCheck, origin: "https://other.example" })
+
+pure val eval_witness_canConfirmGuidedSearch = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("beginGuided", { owner: "owner", task: "task", goal: "Read the account", steps: List(sampleSearchStep) }, Person),
+  ("changePage", BC::Navigate({ url: "https://utility.example/help" }), Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example/help" }, Host),
+  ("resume", Person),
+  ("confirmGuidedSearch", { ...sampleSearchCheck, report: { ...sampleSearchCheck.report, deviceVersion: 7, browserRevision: 3,
+    evidence: "searched" }, loadVersion: 2, url: "https://utility.example/help" }, Host)
+)
 ```
 
 ### The latest matching record must be selected on its collection and verified on arrival
@@ -2050,6 +2262,27 @@ pure val sampleGuidedRecordCheck: GuidedRecordCheck = {
 pure val recordCheckValues = Set(sampleGuidedRecordCheck,
   { ...sampleGuidedRecordCheck, key: "stale-binding" },
   { ...sampleGuidedRecordCheck, documentId: "collection-document" })
+
+pure val eval_witness_canConfirmGuidedRecord = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("beginGuided", { owner: "owner", task: "task", goal: "Read the account", steps: List(ReadLatestRecord({ collection: "order",
+    status: "completed" })) }, Person),
+  ("changePage", BC::Navigate({ url: "https://utility.example/help" }), Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example/help" }, Host),
+  ("resume", Person),
+  ("stageGuidedRecord", { ...sampleGuidedRecordSelection, owner: "owner", task: "task", version: 3, generation: 4, deviceVersion: 7,
+    browserRevision: 3, loadVersion: 2 }, Host),
+  ("changePage", BC::Navigate({ url: "https://utility.example/detail" }), Person),
+  ("receiveLoad", { id: 1, version: 4, result: B::Loaded, secure: true, endedAt: "https://utility.example/detail" }, Host),
+  ("resume", Person),
+  ("confirmGuidedRecord", { ...sampleGuidedRecordCheck, report: { ...sampleGuidedRecordCheck.report, owner: "owner", task: "task",
+    deviceVersion: 7, browserRevision: 5, version: 5 }, loadVersion: 4 }, Host)
+)
 ```
 
 ### A calendar save must come from the selected email and a separately approved write
@@ -2163,6 +2396,39 @@ pure val approvalValues = Set({ ...noGuidedApproval, task: "task", account: 1, o
   sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC", detailsDigest: "approved-details" })
 pure val savedValues = approvalValues.map(approval => { approval: approval, occurrence: "saved", evidence: "" })
   .union(approvalValues.map(approval => { approval: approval, occurrence: "saved", evidence: "Saved Visit" }))
+
+pure val eval_witness_canObserveGuidedCalendar = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("visit", S::Email, Person),
+  ("openGrace", Person),
+  ("beginGuided", { owner: "owner", task: "task", goal: "Read the appointment", steps: List(ReadMail, SaveMailAppointment) }, Person),
+  ("confirmGuidedMail", { report: { ...sampleReport, deviceVersion: 2, step: ReadMail, sourceKey: "prior-mail",
+    evidence: "The appointment is Thursday." }, mail: guidedMailSample }, Host),
+  ("expectGuidedCalendar", { ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary", sourceRef: "invite",
+    provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC", detailsDigest: "approved-details" }, Host),
+  ("observeGuidedCalendar", { approval: { ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",
+    sourceRef: "invite", provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC",
+    detailsDigest: "approved-details" }, occurrence: "saved", evidence: "" }, Host)
+)
+pure val eval_witness_canRebindGuidedMail = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("visit", S::Email, Person),
+  ("restoreGuided", { owner: "tablet", checkpoint: { ...guidedCheckpointSample, request: { ...guidedCheckpointSample.request,
+    steps: List(ReadMail, SaveMailAppointment) } } }, Store),
+  ("openGrace", Person),
+  ("resume", Person),
+  ("rebindGuidedMail", { report: { ...recoveredSaveReport, version: 6, step: ReadMail, sourceKey: "prior-mail",
+    evidence: "The appointment is Thursday." }, mail: guidedMailSample }, Host)
+)
+pure val eval_witness_canReconcileGuidedSave = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("visit", S::Calendar, Person),
+  ("restoreGuided", { owner: "tablet", checkpoint: { ...guidedCheckpointSample, request: { ...guidedCheckpointSample.request,
+    steps: List(ReadMail, SaveMailAppointment) }, save: GuidedSaveReconcile(recoveredSaveRef) } }, Store),
+  ("openGrace", Person),
+  ("resume", Person),
+  ("reconcileGuidedSave", { report: { ...recoveredSaveReport, version: 6 }, saved: recoveredSaveRef }, Host)
+)
 ```
 
 ## Story: Preserve payment authorization and uncertainty across surfaces
@@ -2330,6 +2596,23 @@ pure def lawHiddenCommitmentCannotSubmit(w: Workspace, commitmentTokens: Commitm
 pure def lawStaleCommitmentContextCannotSubmit(w: Workspace, commitmentTokens: CommitmentTokens, by: WorkspaceActor): bool =
   (commitmentTokens.deviceVersion != w.device.contextVersion or commitmentTokens.browserRevision != w.browser.revision)
   implies not(canSubmitCommitment(w, commitmentTokens, by))
+
+pure val eval_witness_canObserveCommitmentTap = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reviewCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, review: CM::exampleReview }, Host),
+  ("readBackCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, Host),
+  ("journalCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 0 }, true, Store),
+  ("observeCommitmentTap", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, revision: 1, attempt: 1 }, Host)
+)
 ```
 
 ### Verified provider outcomes finish the task while storage retains the payment record
@@ -2413,6 +2696,27 @@ pure def sometimesInterruptedCommitmentIsUncertain(w: Workspace): bool =
   w.assistant.activity == A::Paused and w.commitment.result == CM::Unknown and not(w.commitment.live)
 pure def sometimesCommitmentResultFinishesTask(w: Workspace): bool =
   w.assistant.activity == A::Finished and CM::positiveOutcome(w.commitment.result) and w.execution.phase == X::Idle
+
+pure val eval_witness_canRetryCommitment = (
+  ("setAvailability", { connection: S::Online, reasoning: true, microphone: true, observation: false }, Host),
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("openGrace", Person),
+  ("interact", I::Resize({ expanded: false }), Person),
+  ("visit", S::Browser, Person),
+  ("setBrowserObservation", { allowed: true, deviceVersion: 6, browserRevision: 1 }, Person),
+  ("begin", { owner: "owner", task: "task", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", observed, Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("reconcilePriorCommitment", { deviceVersion: 7, browserRevision: 3, taskVersion: 1, report: { ...CM::examplePrior,
+    result: CM::VerifiedFailure, reference: "" } }, Store),
+  ("begin", { owner: "owner", task: "again", goal: "Read the account", origin: "https://utility.example" }, Person),
+  ("receiveLoad", { id: 1, version: 4, result: B::Loaded, secure: true, endedAt: "https://utility.example" }, Host),
+  ("observe", { ...observed, browserRevision: 5, taskVersion: 3, website: { ...X::goodObservation, task: "again", generation: 3 } },
+    Host),
+  ("bindCommitment", CM::exampleKey, Person),
+  ("retryCommitment", Person)
+)
 ```
 
 The samples exercise the first operation and a stale context alongside a
@@ -2829,10 +3133,11 @@ pure def lawReplyControlStaleTurn(w: Workspace, reply: ReplyControlContext): boo
 
 ### No task step is taken while a website's question holds the person, and the task goes on after her answer
 
-The host tells the workspace whenever [what websites ask](./websiteRequests.md)
-starts or stops holding the person (`holdsThePerson`: a question is
-presented, or a site permission she allowed is waiting for Android). While it
-holds her, the workspace refuses every step of a task: observing, preparing,
+The workspace keeps [what websites ask](./websiteRequests.md) as part of
+its own state: it takes each state of those requests the host reports, and
+the workspace is held exactly while they hold the person (`holdsThePerson`: a
+question is presented, or a site permission she allowed is waiting for
+Android). While it holds her, the workspace refuses every step of a task: observing, preparing,
 dispatching or verifying an operation, progress reported for one, completing
 an ordinary goal, publishing guidance, offering a read plan, offering or
 approving a name correction, resuming a recovered public tab, every step of a
@@ -2849,19 +3154,21 @@ attempt and durable outcome so that Grace can check what happened. Answering
 the question never sends it again.
 
 ```quint
-pure def heldByWebsite(w: Workspace): bool = w.websiteHold == WebsiteHolds
+pure def heldByWebsite(w: Workspace): bool = WR::holdsThePerson(w.website)
 pure def taskStandsStill(w: Workspace, after: Workspace): bool =
   after.assistant.activity == w.assistant.activity and after.assistant.workVersion == w.assistant.workVersion
-pure def canHoldForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): bool =
-  by == Host and holds != heldByWebsite(w)
-pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspace = {
+pure def canFollowWebsite(w: Workspace, website: WR::WebsiteRequests, by: WorkspaceActor): bool = by == Host
+pure def followWebsite(w: Workspace, website: WR::WebsiteRequests, by: WorkspaceActor): Workspace = {
   val assistant = if (w.assistant.activity == A::DoingWork) A::supersede(true, w.assistant) else w.assistant
-  if (holds) { ...w, websiteHold: WebsiteHolds }
-  else { ...w, assistant: assistant,
+  if (not(heldByWebsite(w)) or WR::holdsThePerson(website)) { ...w, website: website }
+  else { ...w, website: website, assistant: assistant,
     execution: if (X::canInvalidate(w.execution, X::BrowserBridge)) X::invalidate(w.execution, X::BrowserBridge) else w.execution,
     commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment,
-    websiteHold: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
+    lastWebsiteAnswer: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
 }
+pure val aPermissionWaits: WR::WebsiteRequests = { ...WR::initial, tabs: Set(1), shown: true, nextId: 2,
+  asking: List({ id: 1, tab: 1, ask: WR::SitePermission({ origin: "https://clinic.example", kinds: WR::clinicCamera }) }) }
+pure val websiteValues = Set(WR::initial, WR::exampleShown, WR::exampleTwoAsk, WR::exampleAsking, aPermissionWaits)
 pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
   "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection",
   "confirmGuidedNameCorrection", "resumePublicTab",
@@ -2874,8 +3181,8 @@ pure def stepAHeldTaskDoesNotAdvance(before: Workspace, via: str, after: Workspa
   heldByWebsite(before) implies
     not(heldTaskSteps.contains(via)) and (heldTaskEvidence.contains(via) implies taskStandsStill(before, after))
 pure def sometimesAHeldTaskGoesOnAfterHerAnswer(w: Workspace): bool =
-  val hold = w.websiteHold
-  match hold {
+  val answer = w.lastWebsiteAnswer
+  match answer {
     | WebsiteAnswered(answered) => answered.task != "" and w.assistant.taskId == answered.task and
       w.assistant.workVersion == answered.workVersion and w.execution.observation > answered.observation
     | _ => false
@@ -2890,9 +3197,9 @@ pure val eval_witness_sometimesAHeldTaskGoesOnAfterHerAnswer = (
   ("begin", { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" }, Person),
   ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://www.utility.example/home" }, Host),
   ("adjustPreferenceLevel", R::VolumeBy({ amount: 10 }), Person),
-  ("holdForWebsite", true, Host),
-  ("holdForWebsite", false, Host),
+  ("followWebsite", aPermissionWaits, Host),
+  ("followWebsite", WR::initial, Host),
   ("observe", { ...observed, website: { ...X::goodObservation, generation: 2, task: "other", origin: "https://credit.example" } }, Host)
 )
-pure val weight_holdForWebsite = 8
+pure val weight_followWebsite = 8
 ```

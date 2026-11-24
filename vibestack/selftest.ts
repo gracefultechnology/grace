@@ -293,7 +293,7 @@ pure def selected(which: bool): Set[Field] = {
     assert.deepEqual(await explore(scratch({ "package.json": manifest({ start: "node server.js" }) }), remember), []);
     const [unserved, silent] = await Promise.all([
       explore(scratch({ "package.json": manifest({ build: "true" }), "index.html": page("") }), remember),
-      explore(scratch({ "package.json": manifest({ start: "node -e \"console.log('starting')\"" }), "index.html": page("") }), remember),
+      explore(scratch({ "package.json": manifest({ start: "node -e \"console.log('starting')\"" }), "index.html": page(""), "src/main.ts": 'import "../../";' }), () => assert.fail("an enclosing import must exercise the server again")),
     ]);
     assert.deepEqual(unserved.map(([ok, stage, summary]) => [ok, stage, summary]), [[false, "explore", "index.html is a page, and package.json has no start or dev script that serves it: add one that prints the address it serves at"]]);
     assert.deepEqual(silent.map(([ok, stage]) => [ok, stage]), [[false, "explore"]]);
@@ -1048,6 +1048,31 @@ pure def alwaysValid(n: int): bool = n <= 2`);
     assert.ok(commits.every(({ picks, result }) => picks.approved === true && JSON.stringify(result) === '{"state":2,"out":["saved"]}'));
   });
 
+  test("adding a witness keeps ordinary simulation, proof and runtime generation stable", async () => {
+    const source = [
+      "type State = { count: int }",
+      "pure val initial: State = { count: offset(1) }",
+      "pure val other = 7",
+      "pure def offset(n: int): int = { val other = n; other + base }",
+      "pure def canAdvance(s: State, amount: int): bool = amount > s.count",
+      "pure def advance(s: State, amount: int): State = { count: amount }",
+      "pure def retreat(s: State): State = { count: s.count - 1 }",
+      "pure def alwaysCounts(s: State): bool = s.count >= 0",
+      "pure val base = 2",
+    ];
+    const emit = async (lines: string[]) => {
+      const root = oneRule("counter", "Count", lines.join("\n"));
+      const m = await gen(root, readSpecs(root)[0]);
+      const runtime = await import(pathToFileURL(path.join(root, "gen", "counter.ts")).href);
+      assert.deepEqual([runtime.initial, runtime.other], [{ count: 3 }, 7]);
+      return [m.harness, m.guardHarness, m.ts, m.render("proof_", false), m.exports.types, m.exports.values];
+    };
+    const steps = Array.from({ length: 10 }, (_, i) => `("advance", other + ${i})`);
+    const guide = `pure val eval_witness_canAdvance = (${steps.join(", ")})`;
+    const [ordinary, guided] = await Promise.all([emit(source), emit([source[0], guide, ...source.slice(1)])]);
+    assert.deepEqual(guided, ordinary);
+  });
+
   test("a concrete witness uses the original guards and rules and supplies its steps to replay", async () => {
     const modelSource = `pure val initial: int = 0
 pure def publish(n: int, amount: int): int = amount
@@ -1097,6 +1122,41 @@ pure def witnessStep_sometimesDone(n: int): int = n`;
     const [command] = again.detail.split("\n").filter((line) => line.includes(`quint run ${reproduction}`));
     const rerun = await tool("quint", command.slice(command.indexOf("quint run ") + "quint ".length).split(" "), ordinary);
     assert.ok(violated(rerun), rerun.out);
+
+    const guardedPath = (first: string, target = "canFinish") => oneRule("gate", "Allow a reachable transition", [
+      "pure val initial: int = 0",
+      "pure def up(n: int, amount: int): int = n + amount",
+      "pure val amountValues = Set(1)",
+      "pure def canMark(n: int): bool = n >= 38",
+      "pure def mark(n: int): int = n + 1",
+      "pure def canFinish(n: int): bool = n >= 39",
+      "pure def finish(n: int): int = 0",
+      "pure def alwaysSafe(n: int): bool = n <= 500",
+      `pure val eval_witness_${target} = (("up", ${first}), "mark", "finish")`,
+    ].join("\n"));
+    const guidedGuard = async (root: string) => {
+      const spec = readSpecs(root)[0], model = await gen(root, spec);
+      const domain = await import(pathToFileURL(path.join(root, "gen/gate.ts")).href);
+      return simulation({ root, fresh: false, used: new Set() }, spec, [spec], model, domain, 1);
+    };
+    const direct = guardedPath("38"), stopped = guardedPath("1");
+    const [complete, fallback, bad] = await Promise.all([guidedGuard(direct), guidedGuard(stopped), guidedGuard(guardedPath("501"))]);
+    for (const result of [complete, fallback]) {
+      assert.ok(result.said.some((r) => r.ok && r.summary.includes("2 of 2 guards allow")), JSON.stringify(result.said));
+      assert.ok(result.said.some((r) => r.ok && r.stage === "replay"));
+    }
+    for (const event of [{ type: "up", amount: 38 }, { type: "mark" }, { type: "finish" }])
+      assert.ok(complete.tested?.events.some((actual) => isDeepStrictEqual(actual, event)), JSON.stringify(complete.tested?.events));
+    const positiveFile = (name: string) => `gen/traces/gate.never_allows_${name}.eval_${name}__1/0.itf.json`;
+    for (const guard of ["canMark", "canFinish"]) {
+      assert.ok(!fs.existsSync(path.join(direct, positiveFile(guard))));
+      assert.ok(fs.existsSync(path.join(stopped, positiveFile(guard))));
+    }
+    assert.ok(bad.said.some((r) => !r.ok && r.stage === "always" && r.detail.includes('up{"amount":501}')), JSON.stringify(bad.said));
+    for (const [root, error] of [
+      [guardedPath("38", "canMark"), /last transition must be guarded by canMark/],
+      [guardedPath("38", "canMissing"), /name a declared .*transition guard/],
+    ] as const) await assert.rejects(gen(root, readSpecs(root)[0]), error);
 
     const refusalSource = `type Clock = { elapsed: int }
 pure val initial: Clock = { elapsed: 0 }
@@ -1335,6 +1395,41 @@ pure val amountValues = Set(0, 1)`;
       "kit/parts/item-one.js": true, "kit/package.json": true,
       "app/gen/a.ts": true, "app/gen/b.ts": false, "aliased/gen/a.ts": true,
     }, "the page reads its code, the files and directories it names, what the packages it imports or runs export, and the generated modules it imports, or all of them where it names none; not what only its checks read, nor what a file it only scans imports");
+    const enclosing = scratch({
+      "package.json": '{"main":"./entry.js"}', "entry.js": 'export default "first";',
+      "app/package.json": "{}", "app/src/main.ts": 'import value from "../../";',
+      "app/vite.config.ts": 'export default { base: "./" };', "unrelated.txt": "outside the page",
+    });
+    const inner = path.join(enclosing, "app"), source = path.join(inner, "src/main.ts");
+    assert.equal(pageInputs(inner), undefined, "a relative import may read the enclosing package entry");
+    fs.writeFileSync(source, 'export const dir = new URL("../../", import.meta.url);');
+    assert.equal(pageInputs(inner), undefined, "a directory URL may be consumed dynamically");
+    fs.writeFileSync(source, 'import path from "node:path"; const dir = import.meta.dirname; export const parent = path.resolve(dir, "../../..");');
+    assert.equal(pageInputs(inner), undefined, "a computed path may alias the source directory");
+    fs.writeFileSync(source, 'export const valid = (part: string) => ![part].includes("..");');
+    const bounded = pageInputs(inner);
+    assert.ok(bounded, "a public Vite base does not read the directory");
+    fs.appendFileSync(path.join(enclosing, "unrelated.txt"), " unrelated edit");
+    assert.equal(pageInputs(inner), bounded);
+    fs.writeFileSync(path.join(inner, "vite.config.ts"), 'const data = { base: "./" }; export default { plugins: [readDirectory(data.base)] };');
+    assert.equal(pageInputs(inner), undefined, "a plugin can read a directory stored in its own base property");
+    fs.writeFileSync(path.join(inner, "vite.config.ts"), 'const defineConfig = (args) => readDirectory(args.base); export default defineConfig({ base: "./" });');
+    assert.equal(pageInputs(inner), undefined, "a user function can consume its base as a directory");
+    fs.writeFileSync(path.join(inner, "vite.config.ts"), 'import { defineConfig as config } from "vite"; export default config({ base: "./" });');
+    assert.ok(pageInputs(inner), "Vite's own config helper accepts a URL base through an alias");
+    fs.writeFileSync(path.join(inner, "vite.config.ts"), 'export default { base: "./" };');
+    fs.symlinkSync(enclosing, path.join(inner, "outer"), "dir");
+    fs.writeFileSync(path.join(inner, "src/main.css"), '@source "../outer";');
+    assert.equal(pageInputs(inner), undefined, "a symlinked Tailwind source is judged by its physical directory");
+    fs.writeFileSync(path.join(inner, "src/main.css"), '@source "../outer/**/*.html";');
+    assert.equal(pageInputs(inner), undefined, "an explicit Tailwind glob cannot be treated as a missing file");
+    fs.unlinkSync(path.join(inner, "outer"));
+    fs.mkdirSync(path.join(enclosing, "bounded"));
+    fs.symlinkSync(path.join(enclosing, "bounded"), path.join(inner, "outer"), "dir");
+    const retargeted = pageInputs(inner);
+    assert.ok(retargeted);
+    fs.writeFileSync(path.join(enclosing, "bounded/class.html"), '<p class="underline">');
+    assert.notEqual(pageInputs(inner), retargeted);
     const beforeBuild = pageInputs(page);
     const build = path.join(workspace, "kit/build");
     fs.mkdirSync(build);
@@ -1436,33 +1531,46 @@ export effect function independent() {
     const paired = await exec(process.execPath, ["--import", "vibelang/register", "--input-type=module", "-e", 'import assert from "node:assert/strict"; import { Effect } from "effect"; import { independent } from "./src/pair.vibe"; assert.deepEqual(await Effect.runPromise(independent()), [1, 0]);'], first);
     assert.equal(paired.status, 0, paired.stdout + paired.stderr);
     const isolated = scratch({ "package.json": PACKAGE["package.json"], "spec/index.md": ruleSpec(`type Item = { n: int }
-type State = { item: Item }
+type State = { item: Item, kept: Item }
 type Result = { state: State, out: List[Item] }
-pure val initial: State = { item: { n: 0 } }
+pure val initial: State = { item: { n: 0 }, kept: { n: 10 } }
 pure val entryValues = Set({ n: 0 }, { n: 2 })
 pure def canSetItem(s: State, entry: Item): bool = entry.n >= 0
-pure def setItem(s: State, entry: Item): Result = { state: { item: entry }, out: List(entry) }`), "src/probe.vibe": `import { Machine, machine } from "../gen/index.effect.vibe"
+pure def setItem(s: State, entry: Item): Result = { state: { ...s, item: entry }, out: List(entry) }`), "src/probe.vibe": `import { Machine, machine } from "../gen/index.effect.vibe"
+function refuses(act: () => void): boolean {
+  try { act(); return false } catch (error) { return error instanceof TypeError }
+}
 export effect function probe() {
-  const start = { item: { n: 0 } }
+  const start = { item: { n: 0 }, kept: { n: 10 } }
   provide machine(start) {
     start.item.n = 42
     const held = try Machine
     const first = try held.get()
+    const again = try held.get()
     const before = first.item.n
-    first.item.n = 43
+    const frozenGet = refuses(() => { first.item.n = 43 })
     const event = { type: "setItem" as const, entry: { n: 2 } }
     const after = try held.send(event)
-    after.state.item.n = 44
-    after.out[0].n = 45
+    const frozenState = refuses(() => { after.state.item.n = 44 })
+    const frozenOut = refuses(() => { after.out[0].n = 45 })
     event.entry.n = 46
-    try Stream.runHead(Stream.map(held.changes, (state) => { state.item.n = 47; return state }))
-    held.send({ type: "setItem", entry: { n: -1 } }) catch (error) => { error.state.item.n = 48 }
-    return [before, (try held.get()).item.n]
+    const fromChanges = try Stream.runHead(held.changes)
+    const changed = fromChanges._tag === "Some" ? fromChanges.value : undefined
+    const frozenChange = changed !== undefined && refuses(() => { changed.item.n = 47 })
+    const frozenError = held.send({ type: "setItem", entry: { n: -1 } }) catch (error) => refuses(() => { error.state.item.n = 48 })
+    return {
+      before,
+      after: (try held.get()).item.n,
+      sameGet: first === again,
+      sharedBranch: after.state.kept === first.kept,
+      sameChange: changed === after.state,
+      frozen: frozenGet && frozenState && frozenOut && frozenChange && frozenError,
+    }
   }
 }
 ` });
     await genAll(isolated);
-    const protectedState = await exec(process.execPath, ["--import", "vibelang/register", "--input-type=module", "-e", 'import assert from "node:assert/strict"; import { Effect } from "effect"; import { probe } from "./src/probe.vibe"; assert.deepEqual(await Effect.runPromise(probe()), [0, 2]);'], isolated);
+    const protectedState = await exec(process.execPath, ["--import", "vibelang/register", "--input-type=module", "-e", 'import assert from "node:assert/strict"; import { Effect } from "effect"; import { probe } from "./src/probe.vibe"; assert.deepEqual(await Effect.runPromise(probe()), { before: 0, after: 2, sameGet: true, sharedBranch: true, sameChange: true, frozen: true });'], isolated);
     assert.equal(protectedState.status, 0, protectedState.stdout + protectedState.stderr);
   });
 
@@ -2735,6 +2843,13 @@ function eachCheck() {
     fs.appendFileSync(path.join(root, "vibestack/review.ts"), "\nexport {};\n");
     assert.deepEqual([commented, await checked(pages)].map((after) => after.map((key: string, i: number) => key !== keys[i])), [[false, false], [true, false]],
       "a page that runs one of the tools reads the code of them all, not their comments, and a page that runs none reads none");
+    fs.renameSync(path.join(root, "vibestack"), path.join(root, "src"));
+    fs.writeFileSync(path.join(root, "package.json"), '{"name":"vibestack","type":"module"}');
+    fs.mkdirSync(path.join(root, "dist"));
+    fs.writeFileSync(path.join(root, "dist/skill-links.js"), 'const alias = import.meta.dirname; export const dir = path.resolve(alias, "../");');
+    fs.writeFileSync(path.join(root, "runs/src/main.ts"), 'import "../../dist/skill-links.js";');
+    const built = await checked('const { pageInputs } = await import("./src/explore.ts"); console.log(JSON.stringify([pageInputs("runs"), typeof pageInputs("plain")]));');
+    assert.deepEqual(built, [null, "string"], "a built tool with a caller-dependent directory is uncacheable and an unrelated page remains cacheable");
   });
 
   test("a process that outlives a reinstall of Quint, as watch does, keys what it runs and simulates by the Quint installed now, and remembers its runs again", { skip: process.platform === "win32" }, async () => {
@@ -3998,6 +4113,17 @@ pure def left(a: int, b: int): int = a % b`);
     leaks.forEach((quint, i) => assert.equal(leaked[i].said("model", /\bleak \(spec\/cards\.md:\d+\): (what it returns depends on a secret|a secret reaches an element)/)?.ok, false, `${quint}\n${leaked[i].text}`));
   });
 
+  const prepareReactPackage = async (root: string) => {
+    const modules = path.join(root, "node_modules");
+    fs.mkdirSync(modules);
+    for (const dir of [path.join(project, "vibestack/studio/node_modules"), nodeModules])
+      for (const entry of fs.readdirSync(dir)) if (!fs.existsSync(path.join(modules, entry))) fs.symlinkSync(path.join(dir, entry), path.join(modules, entry));
+    const files = await genAll(root);
+    const compiled = await tool("vibelang", ["--noEmit", "-p", "."], root);
+    assert.ok(compiled.ok, compiled.out);
+    return files;
+  };
+
   test("a machine is kept in a store from one run to the next and steps from what another machine stored since, and a package that depends on react gets a hook over its machine, in an owner's gen/ as in its own", async () => {
     const manifest = (name: string) => JSON.stringify({ name, type: "module", dependencies: { react: "19" } });
     const root = scratch({
@@ -4057,14 +4183,8 @@ export function useShown(counter: ManagedRuntime.ManagedRuntime<Machine, never>,
 `,
     });
     // Studio depends on react, so its packages, with the tools' own beside them, are the ones a package with a React interface resolves.
-    const modules = path.join(root, "node_modules");
-    fs.mkdirSync(modules);
-    for (const dir of [path.join(project, "vibestack/studio/node_modules"), nodeModules])
-      for (const entry of fs.readdirSync(dir)) if (!fs.existsSync(path.join(modules, entry))) fs.symlinkSync(path.join(dir, entry), path.join(modules, entry));
     // A library has no machine, and so no hook.
-    assert.deepEqual((await genAll(root)).filter((f) => f.endsWith(".react.ts")), ["index.react.ts", "vault.react.ts"]);
-    const compiled = await tool("vibelang", ["--noEmit", "-p", "."], root);
-    assert.ok(compiled.ok, compiled.out);
+    assert.deepEqual((await prepareReactPackage(root)).filter((f) => f.endsWith(".react.ts")), ["index.react.ts", "vault.react.ts"]);
     // Nothing stored starts from `initial`, and a stored state goes on from where it was; what the rules refuse, or what is no state, leaves the store as it is; a machine steps from what another over the same store stored since, and its guard is judged by it.
     const kept = await exec(process.execPath, ["--import", "vibelang/register", "--input-type=module", "-e", `import assert from "node:assert/strict"; import { Effect } from "effect"; import { counted, twoPages } from "./src/kept.vibe";
 assert.deepEqual(await Promise.all([undefined, "1", "2", "7", "{"].map((before) => Effect.runPromise(counted(before)))), [[1, "1"], [2, "2"], ["Rejected", "2"], ["NotAState", "7"], ["NotAState", "{"]]);
@@ -4111,6 +4231,149 @@ assert.deepEqual(outcome, ["Rejected", 1, 2]);`], root);
     delete appBefore["stale.ts"];
     assert.deepEqual([appAfter, rootAfter["app.ts"], Object.keys(plainAfter)], [appBefore, rootBefore["app.ts"], Object.keys(plainBefore)]);
     assert.notEqual(read("apps/plain/gen/plain.ts", tree), plainText);
+  });
+
+  test("stored caches decoded frozen states per store and key, invalidates on external changes, and useMachine supports selectors and stable helpers", async () => {
+    const manifest = JSON.stringify({ name: "cached-hooks", type: "module", dependencies: { react: "19" } });
+    const root = scratch({
+      "package.json": manifest,
+      "tsconfig.json": PACKAGE["tsconfig.json"],
+      "spec/board.md": ruleSpec(`type State = { count: int, note: str }
+pure val initial: State = { count: 0, note: "" }
+pure def canInc(s: State): bool = s.count < 3
+pure def inc(s: State): State = { ...s, count: s.count + 1 }
+pure def rename(s: State, text: str): State = { ...s, note: text }
+pure def touch(s: State): State = s
+pure def alwaysValid(s: State): bool = 0 <= s.count and s.count <= 3`),
+      "src/hooks.ts": `import type { ManagedRuntime } from "effect";
+import type { Machine } from "../gen/board.effect.vibe";
+import { useMachine, useMachineSelector } from "../gen/board.react.ts";
+
+export function useTyped(runtime: ManagedRuntime.ManagedRuntime<Machine, never>) {
+  const full = useMachine(runtime);
+  const sliced = useMachine(runtime, (s) => ({ count: s?.count ?? -1 }), (a, b) => a.count === b.count);
+  const count = useMachineSelector(runtime, (s) => s?.count);
+  return { full, sliced, count };
+}
+`,
+    });
+    await prepareReactPackage(root);
+    const verified = await exec(process.execPath, ["--import", "vibelang/register", "--input-type=module", "-e", `import assert from "node:assert/strict";
+import { Effect, Layer, ManagedRuntime } from "effect";
+import * as KeyValueStore from "effect/persistence/KeyValueStore";
+import { Window } from "happy-dom";
+import React, { act } from "react";
+import { createRoot } from "react-dom/client";
+import { Machine, machine, stored } from "./gen/board.effect.vibe";
+import { useMachine, useMachineSelector } from "./gen/board.react.ts";
+
+const backing = new Map();
+let sets = 0;
+let parses = 0;
+const realParse = JSON.parse;
+JSON.parse = (...args) => { parses += 1; return realParse(...args); };
+const store = KeyValueStore.makeStringOnly({
+  get: (key) => Effect.sync(() => backing.get(key)),
+  set: (key, value) => Effect.sync(() => { sets += 1; backing.set(key, value); }),
+  remove: (key) => Effect.sync(() => { backing.delete(key); }),
+  clear: Effect.sync(() => { backing.clear(); }),
+  size: Effect.sync(() => backing.size),
+});
+const layer = stored("board").pipe(Layer.provide(Layer.succeed(KeyValueStore.KeyValueStore, store)));
+await Effect.runPromise(Effect.gen(function*() {
+  const m = yield* Machine;
+  const s1 = yield* m.send({ type: "inc" });
+  assert.equal(Object.isFrozen(s1), true);
+  assert.equal(sets, 1);
+  const beforeReads = parses;
+  const g1 = yield* m.get();
+  const g2 = yield* m.get();
+  assert.equal(g1, s1);
+  assert.equal(g2, s1);
+  assert.equal(parses, beforeReads);
+  const touched = yield* m.send({ type: "touch" });
+  assert.equal(touched, s1);
+  assert.equal(sets, 1);
+  backing.set("board", JSON.stringify({ count: 2, note: "ext" }));
+  const g3 = yield* m.get();
+  assert.deepEqual(g3, { count: 2, note: "ext" });
+  assert.equal(Object.isFrozen(g3), true);
+  const afterMiss = parses;
+  assert.ok(afterMiss > beforeReads);
+  const g4 = yield* m.get();
+  assert.equal(g4, g3);
+  assert.equal(parses, afterMiss);
+  backing.delete("board");
+  const g5 = yield* m.get();
+  assert.deepEqual(g5, { count: 0, note: "" });
+  assert.equal(Object.isFrozen(g5), true);
+}).pipe(Effect.provide(layer)));
+JSON.parse = realParse;
+
+const win = new Window();
+Object.assign(globalThis, {
+  window: win,
+  document: win.document,
+  HTMLElement: win.HTMLElement,
+  IS_REACT_ACT_ENVIRONMENT: true,
+});
+const runtime = ManagedRuntime.make(machine());
+const fullRenders = [];
+const countRenders = [];
+const eqRenders = [];
+function Full() {
+  const h = useMachine(runtime);
+  fullRenders.push({ state: h.state, can: h.can, send: h.send, canInc: h.can({ type: "inc" }) });
+  return React.createElement("span", null, h.state?.note ?? "");
+}
+function CountOnly() {
+  const count = useMachineSelector(runtime, (s) => s?.count);
+  countRenders.push(count);
+  return React.createElement("span", null, String(count ?? ""));
+}
+function CustomEq() {
+  const h = useMachine(runtime, (s) => ({ count: s?.count ?? -1 }), (a, b) => a.count === b.count);
+  eqRenders.push({ state: h.state, can: h.can, send: h.send });
+  return React.createElement("span", null, String(h.state.count));
+}
+const container = win.document.createElement("div");
+win.document.body.appendChild(container);
+const rootEl = createRoot(container);
+const settle = async () => { for (let i = 0; i < 4; i++) await act(async () => { await Promise.resolve(); }); };
+await act(async () => {
+  rootEl.render(React.createElement(React.Fragment, null, React.createElement(Full), React.createElement(CountOnly), React.createElement(CustomEq)));
+});
+await settle();
+const fullBeforeRename = fullRenders.length;
+const countBeforeRename = countRenders.length;
+const eqBeforeRename = eqRenders.length;
+const firstCan = fullRenders.at(-1).can;
+const firstSend = fullRenders.at(-1).send;
+assert.equal(eqRenders.at(-1).can, firstCan);
+assert.equal(eqRenders.at(-1).send, firstSend);
+assert.equal(firstCan({ type: "inc" }), true);
+await act(async () => { await firstSend({ type: "rename", text: "alpha" }); });
+await settle();
+assert.ok(fullRenders.length > fullBeforeRename);
+assert.equal(countRenders.length, countBeforeRename);
+assert.equal(eqRenders.length, eqBeforeRename);
+assert.equal(fullRenders.at(-1).can, firstCan);
+assert.equal(fullRenders.at(-1).send, firstSend);
+await act(async () => { await firstSend({ type: "inc" }); });
+await settle();
+assert.equal(countRenders.at(-1), 1);
+assert.equal(eqRenders.at(-1).state.count, 1);
+assert.equal(fullRenders.at(-1).can, firstCan);
+assert.equal(fullRenders.at(-1).send, firstSend);
+await act(async () => { await firstSend({ type: "inc" }); await firstSend({ type: "inc" }); });
+await settle();
+assert.equal(firstCan({ type: "inc" }), false);
+assert.equal(fullRenders.at(-1).canInc, false);
+await act(async () => { rootEl.unmount(); });
+await runtime.dispose();
+await win.close();
+`], root);
+    assert.equal(verified.status, 0, verified.stdout + verified.stderr);
   });
 
   test("init gives a project the repository's guard on what the tools write", () => {

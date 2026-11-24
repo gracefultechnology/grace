@@ -18,8 +18,8 @@ lemma skip_ensures(s: Setup, st: SetupStage)
   ensures (inv(s) ==> canSkip(s, st) ==> stepTalkIsTriedOnlyWhileGraceSpeaks(s, "skip", skip(s, st)))
   ensures (inv(s) ==> canSkip(s, st) ==> stepEachRunEndsOnce(s, skip(s, st), []))
   ensures (inv(s) ==> canSkip(s, st) ==> stepOnlyTheAcknowledgementEnds(s, "skip", skip(s, st)))
-  ensures (inv(s) ==> canSkip(s, st) ==> stepTheAccountComesOnlyFromItsOwnSource(s, "skip", skip(s, st)))
   ensures (inv(s) ==> canSkip(s, st) ==> stepOnlyThePersonConfirmsATabletSignIn(s, "skip", skip(s, st)))
+  ensures (inv(s) ==> canSkip(s, st) ==> stepTheAccountComesOnlyFromItsOwnSource(s, "skip", skip(s, st)))
 {
   if inv(s) && canSkip(s, st) {
     assert st == s.progress.step;

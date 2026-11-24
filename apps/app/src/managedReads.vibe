@@ -51,8 +51,39 @@ export function actionableMailBody(selected: typeof MailBody.Type | undefined) {
 const transferTicket = Schema.String.check(Schema.isPattern(/^(?:[0-9a-f]{2}){1,4096}$/))
 const AttachmentReceipt = Schema.Struct({ version: Schema.Literal(1), accountId: idField, messageId: idField, historyId: historyField,
   partId: partIdField, name: attachmentName, mimeType: supportedMedia, size: Schema.Int, supported: Schema.Literal(true),
-  grantId: Schema.optional(idField), organizationId: Schema.optional(idField), deviceTransfer: Schema.optional(transferTicket), dataBase64: Schema.String.check(Schema.isMaxLength(encodedAttachmentLimit), Schema.isPattern(/^[A-Za-z0-9+/]*={0,2}$/)),
+  grantId: Schema.optional(idField), organizationId: Schema.optional(idField), deviceTransfer: Schema.optional(transferTicket), dataBase64: Schema.String.check(Schema.isMaxLength(encodedAttachmentLimit)),
   sha256: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)) })
+
+const utf8Decoder = new TextDecoder()
+
+function decodeBase64Strict(encoded: string): Uint8Array | undefined {
+  if (encoded.length % 4 !== 0) return undefined
+  const fromBase64: unknown = Reflect.get(Uint8Array, "fromBase64")
+  if (typeof fromBase64 === "function") {
+    for (let i = 0; i < encoded.length; i += 1) {
+      const code = encoded.charCodeAt(i)
+      if (code <= 32) return undefined
+    }
+    try {
+      const decoded: unknown = Reflect.apply(fromBase64, Uint8Array, [encoded, { lastChunkHandling: "strict" }])
+      return decoded instanceof Uint8Array ? decoded : undefined
+    } catch {
+      return undefined
+    }
+  }
+  const chunkSize = 65_536
+  const padding = encoded.endsWith("==") ? 2 : encoded.endsWith("=") ? 1 : 0
+  const totalBytes = (encoded.length / 4) * 3 - padding
+  const out = new Uint8Array(totalBytes)
+  let writeAt = 0
+  for (let offset = 0; offset < encoded.length; offset += chunkSize) {
+    const slice = encoded.slice(offset, Math.min(offset + chunkSize, encoded.length))
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(slice) || (offset + chunkSize < encoded.length && slice.includes("="))) return undefined
+    const decoded = webView.window.atob(slice)
+    for (let i = 0; i < decoded.length; i += 1) out[writeAt++] = decoded.charCodeAt(i)
+  }
+  return writeAt === totalBytes ? out : undefined
+}
 type OriginalAttachment = { name: string; mimeType: typeof supportedMedia.Type; url: string; file?: { part: string; digest: string; organization: string; saved: boolean }; deviceTransfer?: string; preview?: { text: string; truncated: boolean } }
 
 export schema LocalMailDraft { recipient: string; subject: string; text: string; operationId?: string; grant?: string }
@@ -330,19 +361,34 @@ effect function fetchPage(authorization: AccountActions.Shape, scope: ReadyScope
   return { kind: "calendar" as const, accountId: scope.accountId, grant: scope.grant, leaseVersion: scope.leaseVersion, rows, next: loaded.nextPageToken, from, until, window }
 }
 
-effect function watchHomeCards(native: boolean, pending: Ref.Ref<ReadIntent | undefined>) {
+function sameScope(left: Scope, right: Scope): boolean {
+  if (left.kind !== right.kind) return false
+  if (left.kind === "closed") return true
+  if (left.kind === "waiting" && right.kind === "waiting") return left.view === right.view && left.reason === right.reason
+  if (left.kind === "ready" && right.kind === "ready") return left.view === right.view && sameReadIdentity(left, right)
+  return false
+}
+
+function sameReadyScopes(a: readonly ReadyScope[] | undefined, b: readonly ReadyScope[] | undefined): boolean {
+  if (a === b) return true
+  if (a === undefined || b === undefined || a.length !== b.length) return false
+  return a.every((scope, index) => sameScope(scope, b[index]))
+}
+
+effect function watchHomeCards(native: boolean, pending: Ref.Ref<ReadIntent | undefined>,
+  deskView: Stream.Stream<{ readonly surface: string; readonly readiness: string }>) {
   const cards = try SubscriptionRef.make<HomeCards | undefined>(undefined)
   const authorization = try AccountActions
   const setup = try Setup
   const desk = try Workspaces
   if (!native) {
-    const homeScopes = Stream.changesWith(Stream.mapEffect(Stream.zipLatest(desk.changes, setup.changes),
-      effect ([workspace, account]) => {
-        if (workspace.device.surface !== "Home" || workspace.device.readiness !== "Ready") return undefined
+    const homeScopes = Stream.changesWith(Stream.mapEffect(Stream.zipLatest(deskView, setup.changes),
+      effect ([view, account]) => {
+        if (view.surface !== "Home" || view.readiness !== "Ready") return undefined
         const intent = try Ref.get(pending)
         return [try scopeOf(native, "Email", account, intent), try scopeOf(native, "Calendar", account, intent)]
           .filter((scope): scope is ReadyScope => scope.kind === "ready")
-      }), (a, b) => JSON.stringify(a) === JSON.stringify(b))
+      }), sameReadyScopes)
     try fork.scoped Stream.runDrain(Stream.switchMap(homeScopes, (selected) => Stream.fromEffect(effect {
       try SubscriptionRef.set(cards, undefined)
       const one = selected?.[0]
@@ -382,10 +428,9 @@ function mailAttachments(authorization: AccountActions.Shape, files: Library.Sha
     if (original.accountId !== scope.accountId || (original.grantId !== undefined && original.grantId !== scope.grant) || original.historyId !== selected.historyId || original.messageId !== messageId ||
         original.partId !== partId || original.name !== attachment.name || original.mimeType !== attachment.mimeType || original.size !== attachment.size) return undefined
     if (original.dataBase64.length % 4 !== 0) return undefined
-    const decoded = try Effect.try(() => webView.window.atob(original.dataBase64))
-    if (decoded.length !== attachment.size) return undefined
-    const bytes = Uint8Array.from(decoded, (character) => character.charCodeAt(0))
-    const hash = try tryPromise(() => webView.window.crypto.subtle.digest("SHA-256", bytes))
+    const bytes = try Effect.try(() => decodeBase64Strict(original.dataBase64))
+    if (bytes === undefined || bytes.length !== attachment.size) return undefined
+    const hash = try tryPromise(() => webView.window.crypto.subtle.digest("SHA-256", bytes as Uint8Array<ArrayBuffer>))
     if (Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("") !== original.sha256 ||
         !(try isCurrent(scope, shown))) return undefined
     return { original, bytes }
@@ -395,9 +440,9 @@ function mailAttachments(authorization: AccountActions.Shape, files: Library.Sha
     const receipt = try verifiedAttachment(scope, shown, partId)
     if (!receipt) return false
     const { original, bytes } = receipt
-    const url = webView.window.URL.createObjectURL(new webView.window.Blob([bytes], { type: original.mimeType }))
+    const url = webView.window.URL.createObjectURL(new webView.window.Blob([bytes as Uint8Array<ArrayBuffer>], { type: original.mimeType }))
     const preview = original.mimeType === "text/plain"
-      ? { text: new TextDecoder().decode(bytes.subarray(0, textPreviewLimit)), truncated: bytes.length > textPreviewLimit }
+      ? { text: utf8Decoder.decode(bytes.subarray(0, textPreviewLimit)), truncated: bytes.length > textPreviewLimit }
       : undefined
     const organization = original.mimeType !== "text/plain" && original.grantId === scope.grant ? original.organizationId : undefined
     const file = organization && original.size > 0 && original.size <= 5 * 1024 * 1024
@@ -419,7 +464,7 @@ function mailAttachments(authorization: AccountActions.Shape, files: Library.Sha
     const pages = pdf ? (try tryPromise(async () => (await (await import("pdf-lib")).PDFDocument.load(bytes)).getPageCount())) : 0
     if (pdf && (pages < 1 || pages > 1000)) throw new ManagedReadFailed()
     if (!pdf) {
-      const bitmap = try tryPromise(() => webView.window.createImageBitmap(new webView.window.Blob([bytes], { type: original.mimeType })))
+      const bitmap = try tryPromise(() => webView.window.createImageBitmap(new webView.window.Blob([bytes as Uint8Array<ArrayBuffer>], { type: original.mimeType })))
       try Effect.try(() => bitmap.close())
     }
     const id = try ownerHash(JSON.stringify(["gmail-original", scope.accountId, original.organizationId, scope.grant, original.messageId, part]))
@@ -678,9 +723,13 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
   const setup = try Setup
   const authorization = try AccountActions
   const files = try Library
+  const deskView = Stream.changesWith(
+    Stream.map(desk.changes, (w) => ({ surface: w.device.surface, readiness: w.device.readiness, settingsPage: w.device.settingsPage })),
+    (a, b) => a.surface === b.surface && a.readiness === b.readiness && a.settingsPage === b.settingsPage
+  )
   const pending = try Ref.make<ReadIntent | undefined>(native ? undefined : (try intentOfPage()))
   const latest = try SubscriptionRef.make<ManagedSnapshot>({ kind: "closed" })
-  const cards = try watchHomeCards(native, pending)
+  const cards = try watchHomeCards(native, pending, deskView)
   const gate = try Semaphore.make(1)
 
   effect function publish(snapshot: ManagedSnapshot) {
@@ -881,9 +930,9 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
         desk.send({ type: "visit", destination: onOpening.view }, "Person") catch () => undefined
       }
     }
-    try fork.scoped Stream.runForEach(Stream.zipLatest(desk.changes, setup.changes), effect ([workspace, account]) => {
+    try fork.scoped Stream.runForEach(Stream.zipLatest(deskView, setup.changes), effect ([view, account]) => {
       const next = try Ref.get(pending)
-      if (next?.returning && workspace.device.surface === "DeviceSettings" && workspace.device.settingsPage === "AccountSettings") {
+      if (next?.returning && view.surface === "DeviceSettings" && view.settingsPage === "AccountSettings") {
         const scope = try scopeOf(native, next.view, account, next)
         if (scope.kind !== "ready" && (scope.kind !== "waiting" || scope.reason !== "connectorUnavailable")) return
         const opened = desk.send({ type: "visit", destination: next.view }, "Person") catch () => undefined
@@ -892,8 +941,8 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
     })
   }
   const scopes = Stream.changesWith(
-    Stream.mapEffect(Stream.zipLatest(desk.changes, setup.changes), () => activeScope()),
-    (left, right) => JSON.stringify(left) === JSON.stringify(right),
+    Stream.mapEffect(Stream.zipLatest(deskView, setup.changes), () => activeScope()),
+    sameScope,
   )
   try fork.scoped Stream.runDrain(Stream.switchMap(scopes, (scope) => Stream.fromEffect(refresh(scope))))
   return {

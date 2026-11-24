@@ -65,6 +65,9 @@ export function WebsiteRequests() {
   const { requests, can, send, said } = useWebsiteRequests();
   if (!requests) return null;
   const request = presented(requests);
+  const hasDownloads = requests.downloads.length > 0;
+  const hasOpenings = requests.openings.length > 0;
+  if (request.id === 0 && !hasDownloads && !hasOpenings) return null;
   const notices = [
     ...requests.downloads.map((d: DownloadRecord) => ({ key: `d${d.id}`, mark: downloadMark[d.status], title: d.fileName, close: d.status === "Saving" ? undefined : { type: "dismissDownload", id: d.id } as const })),
     ...requests.openings.filter((o: Opening) => o.failed).map((o: Opening) => ({ key: `o${o.id}`, mark: downloadMark.SaveFailed, title: failure(o.ask), close: { type: "dismissOpening", id: o.id } as const })),

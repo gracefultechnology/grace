@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import { memo, type ComponentProps } from "react";
 import { FileIcon } from "../icons.tsx";
 import { cn } from "../lib/cn.ts";
 import { Button } from "./Button.tsx";
@@ -20,7 +20,7 @@ export type FileDocumentRowProps = Omit<ComponentProps<"div">, "children"> & {
  * @model spec/app/files.md
  * @design packages/design-system/design.md#windows
  */
-export function FileDocumentRow({ name, detail, kind = "PDF", onOpen, openLabel = "Open", className, ...props }: FileDocumentRowProps) {
+export const FileDocumentRow = memo(function FileDocumentRow({ name, detail, kind = "PDF", onOpen, openLabel = "Open", className, ...props }: FileDocumentRowProps) {
   return (
     <div className={cn("flex items-center gap-4 rounded-row bg-panel px-4 py-3.5 font-sans", className)} {...props}>
       <span aria-hidden className="flex h-16 w-14 flex-none flex-col items-center justify-center gap-1 rounded-lg bg-card text-mark leading-none font-extrabold text-destructive shadow-tile">
@@ -36,4 +36,4 @@ export function FileDocumentRow({ name, detail, kind = "PDF", onOpen, openLabel 
       </Button>
     </div>
   );
-}
+});

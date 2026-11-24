@@ -20,6 +20,8 @@ final class GraceBrowserGuide {
  private final Context context;
  private record GuideLease(String id, CloudDeviceAccount.Session owner, long generation) {}
  private GuideLease guideLease;
+ private static final ExecutorService LEASE = Executors.newSingleThreadExecutor();
+ private static final ExecutorService INBOX = Executors.newSingleThreadExecutor();
  private static final ExecutorService CHOICES = Executors.newSingleThreadExecutor();
  private static final ScheduledExecutorService CHOICE_DEADLINE = Executors.newSingleThreadScheduledExecutor();
  private static final int CHOICE_DEADLINE_MS = 30_000;
@@ -27,7 +29,7 @@ final class GraceBrowserGuide {
  GraceBrowserGuide(Context context) { this.context = context.getApplicationContext(); }
 
  void browserGuideLease(PluginCall call) {
-  CHOICES.execute(() -> {
+  LEASE.execute(() -> {
    var lease = currentGuideLease();
    call.resolve(new JSObject().put("id", lease == null ? JSONObject.NULL : lease.id()));
   });
@@ -45,7 +47,7 @@ final class GraceBrowserGuide {
  }
 
  void inboxArrival(PluginCall call) {
-  CHOICES.execute(() -> {
+  INBOX.execute(() -> {
    var lease = currentGuideLease();
    try {
     if (lease == null || !lease.id().equals(call.getString("lease"))) throw new IllegalStateException();

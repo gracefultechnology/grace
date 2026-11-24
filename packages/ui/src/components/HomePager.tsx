@@ -43,7 +43,7 @@ export function HomePager({ page, count = 2, onPageChange, nextLabel = "More app
         </Button>
       )}
       {!compact && (
-        <div className="absolute bottom-[18px] left-[182px] flex w-[1042px] items-center justify-center gap-1.5 will-change-transform">
+        <div className="absolute bottom-[18px] left-[182px] flex w-[1042px] items-center justify-center gap-1.5">
           {Array.from({ length: count }, (_, i) => (
             <button
               key={i}
@@ -53,10 +53,24 @@ export function HomePager({ page, count = 2, onPageChange, nextLabel = "More app
               onClick={() => onPageChange?.(i)}
               className={cn(
                 focusRing,
-                "pointer-events-auto flex size-11 cursor-pointer items-center justify-center rounded-full after:h-4 after:rounded-full after:transition-[width,background-color] after:duration-slow after:[transition-timing-function:var(--ease-settle),var(--ease-css-default)] after:content-['']",
-                i === page ? "after:w-14 after:bg-primary" : "after:w-4 after:bg-pager",
+                "pointer-events-auto relative flex size-11 cursor-pointer items-center justify-center rounded-full",
               )}
-            />
+            >
+              <span
+                aria-hidden
+                className={cn(
+                  "size-4 rounded-full bg-pager transition-opacity duration-slow ease-css-default motion-reduce:transition-none",
+                  i === page && "opacity-0",
+                )}
+              />
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute h-4 w-11 rounded-full bg-primary transition-[transform,opacity] duration-slow ease-settle motion-reduce:transition-none",
+                  i === page ? "scale-x-100 opacity-100" : "scale-x-[.36] opacity-0",
+                )}
+              />
+            </button>
           ))}
         </div>
       )}

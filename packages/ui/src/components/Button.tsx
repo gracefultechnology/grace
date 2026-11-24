@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn, focusRing } from "../lib/cn.ts";
 import { Spinner } from "./Spinner.tsx";
 
-export const press = "[transition:transform_var(--transition-duration-press)_var(--ease-spring),background-color_var(--transition-duration-press)_ease,box-shadow_var(--transition-duration-press)_ease] active:scale-105 motion-reduce:active:scale-100";
+export const press = "[transition:transform_var(--transition-duration-press)_var(--ease-spring),background-color_var(--transition-duration-press)_ease] active:scale-105 motion-reduce:active:scale-100";
 const sink = "active:scale-97 motion-reduce:active:scale-100";
 const fades = "disabled:text-grace-ink/32 disabled:opacity-100 aria-disabled:text-grace-ink/32 aria-disabled:opacity-100";
 
@@ -19,8 +19,8 @@ const buttonVariants = cva(
         ghost: "transition-colors hover:bg-accent hover:text-accent-foreground",
         destructive: "bg-destructive text-destructive-foreground transition-colors hover:bg-destructive/90",
         glass: cn(press, fades, "rounded-full bg-glass/10 text-grace-ink shadow-elevation-glass backdrop-blur-glass backdrop-brightness-106 backdrop-saturate-115 active:bg-glass/42 active:shadow-glass-pressed"),
-        capsule: cn(sink, fades, "rounded-full bg-glass/62 text-grace-ink shadow-capsule backdrop-blur-capsule backdrop-saturate-160 active:bg-glass/85"),
-        warn: cn(sink, "rounded-full bg-glass/62 text-destructive shadow-capsule backdrop-blur-capsule backdrop-saturate-160 active:bg-glass/85"),
+        capsule: cn(sink, fades, "rounded-full bg-glass/82 text-grace-ink shadow-capsule active:bg-glass/95"),
+        warn: cn(sink, "rounded-full bg-glass/82 text-destructive shadow-capsule active:bg-glass/95"),
         prominent: "rounded-full bg-primary text-primary-foreground shadow-prominent disabled:opacity-40 aria-disabled:opacity-40",
         plain: cn(fades, "rounded-full bg-transparent text-chrome active:bg-chrome/8"),
       },

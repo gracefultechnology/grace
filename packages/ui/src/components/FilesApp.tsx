@@ -160,7 +160,7 @@ export function FilesApp({
               {group.from ? <PageText tone="secondary" className="mb-3">{group.from}</PageText> : null}
               <div className="grid grid-cols-4 gap-3.5">
                 {group.photos.map((photo) => (
-                  <div key={photo.id} className="relative">
+                  <div key={photo.id} className={photo.id === highlightId ? "relative" : "relative [content-visibility:auto] [contain-intrinsic-size:auto_150px]"}>
                     <FileTile src={photo.src} label={photo.label} aria-current={photo.id === highlightId || undefined} className="w-full" onClick={() => onOpenPhoto?.(photo.id)} />
                     {ring(photo.id, 18)}
                   </div>
@@ -171,7 +171,7 @@ export function FilesApp({
         : (
             <div className="flex flex-col gap-3">
               {documents.map((document) => (
-                <div key={document.id} className="relative">
+                <div key={document.id} className={document.id === highlightId ? "relative" : "relative [content-visibility:auto] [contain-intrinsic-size:auto_92px]"}>
                   <FileDocumentRow
                     name={document.name}
                     detail={document.detail}

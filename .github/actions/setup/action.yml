@@ -347,7 +347,7 @@ runs:
         fi
         "$evaluator_dir/quint_evaluator" --help
       shell: bash
-    - if: inputs.job == 'product' && steps.quint-cache.outputs.cache-primary-key != '' && steps.quint-cache.outputs.cache-hit != 'true'
+    - if: (inputs.job == 'product' || inputs.job == 'verify') && steps.quint-cache.outputs.cache-primary-key != '' && steps.quint-cache.outputs.cache-hit != 'true'
       uses: actions/cache/save@v6
       with:
         path: ~/.quint/rust-evaluator-${{ steps.quint-evaluator.outputs.version }}

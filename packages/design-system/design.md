@@ -301,7 +301,10 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `shadow.cursor-tag-paused` | inset 0 0 0 2px var(--primary), 0 8px 24px color-mix(in srgb, var(--primary) 18%, transparent) |
 | `shadow.guide-tight` | 0 0 0 4px var(--guide) |
 | `shadow.guide-tight-ok` | 0 0 0 4px var(--ok) |
+| `shadow.guide-peak` | 0 0 0 6px var(--guide), 0 0 0 16px color-mix(in srgb, var(--guide) 18%, transparent), 0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent) |
+| `shadow.guide-peak-ok` | 0 0 0 6px var(--ok), 0 0 0 16px color-mix(in srgb, var(--ok) 12%, transparent), 0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent) |
 | `shadow.guide-nudge` | 0 0 0 4px var(--guide), 0 0 0 10px color-mix(in srgb, var(--guide) 24%, transparent) |
+| `shadow.tab` | 0 -1px 12px color-mix(in srgb, var(--primary) 15%, transparent) |
 | `shadow.attachment` | 0 2px 8px color-mix(in srgb, var(--shade) 12%, transparent) |
 | `shadow.photo-tile` | 0 2px 10px color-mix(in srgb, var(--shade) 10%, transparent) |
 | `shadow.pane` | inset 0 0 0 1px color-mix(in srgb, var(--glass) 65%, transparent), inset 0 1px 0 color-mix(in srgb, var(--glass) 95%, transparent), 0 0 0 1px color-mix(in srgb, var(--glass) 55%, transparent), 0 1px 2px color-mix(in srgb, var(--primary) 5%, transparent), 0 4px 14px color-mix(in srgb, var(--primary) 6%, transparent) |
@@ -367,18 +370,15 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `keyframes.breathe` | 0%,100%{transform:scaleY(.55);opacity:.7}50%{transform:scaleY(1);opacity:1} |
 | `keyframes.bob` | 0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-5px);opacity:1} |
 | `keyframes.blink` | 50%{opacity:0} |
-| `keyframes.guide-pulse` | 50%{box-shadow:0 0 0 6px var(--guide),0 0 0 16px color-mix(in srgb, var(--guide) 18%, transparent),0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent)} |
-| `keyframes.guide-pulse-ok` | 50%{box-shadow:0 0 0 6px var(--ok),0 0 0 16px color-mix(in srgb, var(--ok) 12%, transparent),0 8px 24px color-mix(in srgb, var(--primary) 14%, transparent)} |
-| `keyframes.guide-pulse-tight` | 50%{box-shadow:0 0 0 4px color-mix(in srgb, var(--lavender) 20%, transparent)} |
-| `keyframes.guide-pulse-tight-ok` | 50%{box-shadow:0 0 0 4px color-mix(in srgb, var(--ok) 20%, transparent)} |
+| `keyframes.guide-pulse` | 0%,100%{opacity:0}50%{opacity:1} |
+| `keyframes.guide-pulse-tight` | 0%,100%{opacity:1}50%{opacity:.25} |
 | `keyframes.label-in` | from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none} |
 | `keyframes.orb-in` | from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none} |
 | `keyframes.ripple` | from{transform:scale(.4);opacity:1}to{transform:scale(1.6);opacity:0} |
 | `keyframes.drift` | 0%{transform:translate(0,0)}50%{transform:translate(-60px,30px)}100%{transform:translate(40px,-20px)} |
 | `keyframes.glow` | 0%,100%{transform:scale(1.05);opacity:.75}50%{transform:scale(1.45);opacity:1} |
 | `keyframes.glow-ring` | 0%{transform:scale(1);opacity:.9}100%{transform:scale(1.75);opacity:0} |
-| `keyframes.sheen` | 0%,55%{left:-40%}100%{left:140%} |
-| `keyframes.sheen-pan` | 0%,55%{background-position:100% 0}100%{background-position:0% 0} |
+| `keyframes.sheen-pan` | 0%,55%{transform:translateX(-150%)}100%{transform:translateX(150%)} |
 | `keyframes.sway` | 0%,100%{transform:rotate(-6deg) translate(-2%,1.5%)}50%{transform:rotate(6deg) translate(2%,-1.5%)} |
 | `keyframes.grace-rise` | from{transform:translateY(var(--grace-travel))}to{transform:none} |
 | `keyframes.grace-rise-hold` | from{transform:translateY(calc(-1 * var(--grace-travel)))}to{transform:none} |
@@ -390,16 +390,13 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `animate.bob` | bob 1.2s ease-in-out infinite |
 | `animate.blink` | blink 1s step-end infinite |
 | `animate.guide-pulse` | guide-pulse 1.4s ease-in-out infinite |
-| `animate.guide-pulse-ok` | guide-pulse-ok 1.4s ease-in-out infinite |
 | `animate.guide-pulse-tight` | guide-pulse-tight 1.4s ease-in-out infinite |
-| `animate.guide-pulse-tight-ok` | guide-pulse-tight-ok 1.4s ease-in-out infinite |
 | `animate.label-in` | label-in .3s ease-out both |
 | `animate.orb-in` | orb-in .35s ease-out both |
 | `animate.ripple` | ripple .7s ease-out infinite |
 | `animate.drift` | drift 16s ease-in-out infinite alternate |
 | `animate.glow` | glow 2.4s ease-in-out infinite |
 | `animate.glow-ring` | glow-ring 2.4s ease-out infinite |
-| `animate.sheen` | sheen 9s ease-in-out infinite |
 | `animate.sheen-pan` | sheen-pan 9s ease-in-out infinite |
 | `animate.sway` | sway 10s ease-in-out infinite |
 | `animate.grace-rise` | grace-rise 280ms cubic-bezier(0.3, 0.7, 0.3, 1) 40ms both |

@@ -13,6 +13,7 @@ export type ScreenDimProps = Omit<ComponentProps<"div">, "children"> & {
  * @design packages/design-system/design.md#glass
  */
 export function ScreenDim({ brightness, className, style, ...props }: ScreenDimProps) {
+  if (brightness >= 100) return null;
   return (
     <div
       aria-hidden

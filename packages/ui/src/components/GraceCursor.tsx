@@ -31,7 +31,7 @@ export function GraceCursor({ x, y, tag, pressed = false, paused = false, flip =
     <div
       role="status"
       className={cn(
-        "pointer-events-none absolute top-0 left-0 z-6 size-0 transition-[translate] duration-[1400ms] ease-standard will-change-transform motion-reduce:transition-none",
+        "pointer-events-none absolute top-0 left-0 z-6 size-0 transition-[translate] duration-[1400ms] ease-standard will-change-[translate] motion-reduce:transition-none",
         dragging && "transition-none",
         className,
         top && "z-7",

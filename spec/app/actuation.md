@@ -37,6 +37,7 @@ import assistant as A from "./assistant"
 import execution as X from "./execution"
 import commitment as CM from "./commitment"
 import task as T from "./task"
+import websiteRequests as WR from "./websiteRequests"
 
 pure def currentOrdinaryEffect(x: X::Execution, operation: X::WebsiteEffect): bool = match operation {
   | Operate(details) => x.phase == X::InFlight and X::alwaysIdentity(x) and X::alwaysPrepared(x) and
@@ -62,8 +63,8 @@ pure def lawOnlyActuatorConsumes(w: WS::Workspace, pendingEffect: WS::WorkspaceE
   currentEffect(w, pendingEffect, by) implies by == WS::Actuator
 
 pure def lawWebsiteQuestionRetiresTheCommand(w: WS::Workspace, pendingEffect: WS::WorkspaceEffect): bool =
-  val held = WS::holdForWebsite(w, true, WS::Host)
-  val answered = WS::holdForWebsite(held, false, WS::Host)
+  val held = WS::followWebsite(w, WS::aPermissionWaits, WS::Host)
+  val answered = WS::followWebsite(held, WR::initial, WS::Host)
   not(currentEffect(held, pendingEffect, WS::Actuator)) and
     (currentEffect(w, pendingEffect, WS::Actuator) implies not(currentEffect(answered, pendingEffect, WS::Actuator)))
 

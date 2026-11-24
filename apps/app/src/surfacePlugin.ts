@@ -23,6 +23,7 @@ export type PrivateVerificationApp = "email" | "messages";
 
 type PrivateViewPlugin = {
   protect(input: { view: "vault" | "browser" | "account"; active: boolean }): Promise<void>;
+  setHostSurface?(input: { transparent: boolean }): Promise<void>;
   openVerificationApp(input: { app: PrivateVerificationApp }): Promise<void>;
 };
 

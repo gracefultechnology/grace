@@ -34,7 +34,7 @@ export function Avatar({ name, src, tone, size = 64, className, style, children,
       style={{ width: size, height: size, fontSize: initial, ...style }}
       {...props}
     >
-      {src ? <img src={src} alt="" className="size-full object-cover" /> : (children ?? name.charAt(0).toUpperCase())}
+      {src ? <img src={src} alt="" decoding="async" loading="lazy" className="size-full object-cover" /> : (children ?? name.charAt(0).toUpperCase())}
     </span>
   );
 }

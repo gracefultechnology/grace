@@ -18,6 +18,18 @@ export function instant(n: number, minutes: number) {
 
 export const midnight = (n: number) => instant(n, 0)
 
+export function createDayStarts(): (d: number) => number {
+  const dayStarts = new Map<number, number>()
+  return (d: number) => {
+    let ms = dayStarts.get(d)
+    if (ms === undefined) {
+      ms = midnight(d)
+      dayStarts.set(d, ms)
+    }
+    return ms
+  }
+}
+
 export function startDay(startAt: number): StartDay {
   const d = dayOf(startAt)
   const fromTime = midnight(d)

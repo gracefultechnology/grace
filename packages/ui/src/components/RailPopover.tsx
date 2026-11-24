@@ -35,7 +35,7 @@ export function RailPopover({ icon, title, value, onClose, closeLabel = "Close",
     <div
       role="dialog"
       aria-label={title}
-      className={cn("absolute left-[156px] z-[200] box-border w-[560px] rounded-menu bg-glass/95 p-6 font-sans text-foreground shadow-menu backdrop-blur-panel backdrop-saturate-160", className)}
+      className={cn("absolute left-[156px] z-[200] box-border w-[560px] rounded-menu bg-glass/95 p-6 font-sans text-foreground shadow-menu", className)}
       style={{ top, "--arrow": `${arrowTop}px`, ...style } as CSSProperties}
       {...props}
     >
@@ -45,7 +45,7 @@ export function RailPopover({ icon, title, value, onClose, closeLabel = "Close",
         {title}
         {value && <span className="ml-3 text-body-lg leading-7 font-semibold text-muted-foreground">{value}</span>}
         <span className="flex-1" />
-        <Button variant="capsule" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="-my-2 -mr-1.5 size-13 text-chrome backdrop-blur-none backdrop-saturate-100 transition-none active:scale-96 active:bg-glass/62">
+        <Button variant="capsule" size="compact-icon" aria-label={closeLabel} onClick={onClose} className="-my-2 -mr-1.5 size-13 text-chrome transition-none active:scale-96 active:bg-glass/62">
           <X size={22} strokeWidth={2} aria-hidden />
         </Button>
       </div>
