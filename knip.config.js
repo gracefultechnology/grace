@@ -100,9 +100,6 @@ export default {
     "apps/benchmark": {
       "entry": [
         "test/**/*.test.ts"
-      ],
-      "project": [
-        "test/**/*.ts"
       ]
     },
     "apps/cloud": {
