@@ -143,8 +143,9 @@ pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser
 
 ## Android
 
-Run `git submodule update --init vendor/eliza` from the repository root. Grace uses the Android
-consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
+From the repository root, run `git submodule update --init vendor/eliza` and then Eliza's own
+install from the [root setup](../../README.md#run-grace-cloud); without it Eliza's Core does not
+compile. Grace uses the Android consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
 The Android build generates Eliza's Core, Cloud and Agent models from the pinned checkout.
 It builds Core and the browser-safe Cloud client before compiling the Android Agent entry.
 The verified device bundle is written to `vendor/eliza/packages/agent/dist/bundle`. The build
@@ -159,27 +160,38 @@ JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and `JAV
 usual install paths) writes `artifacts/launcher-debug.apk` for one processor type,
 `--abi arm64-v8a` (the default: the tablet and an Apple silicon emulator) or `--abi x86_64`.
 Choose the cloud deployment at build time with `--cloud-profile`. The default
-is `standalone-production` for Grace Cloud. `shared-production` uses Eliza Cloud
+is `standalone-production` for Grace Cloud. `standalone-staging` uses Grace Cloud staging and
+builds debug APKs only. `shared-production` uses Eliza Cloud
 production. `shared-staging` uses Eliza Cloud staging and builds debug APKs only.
 The choice fixes the account registration and callback,
 the web bundle's cloud origins, and the embedded agent's inference endpoint.
-Shared builds write their APKs, verification manifest and intermediate files under
+Builds for any profile but the default write their APKs, verification manifest and intermediate files under
 `artifacts/cloud-profiles/<profile>/`. Use the same `--cloud-profile` with `--verify`.
 
 `--release` adds the release APK: `launcher-release.apk`, signed, when `GRACE_KEYSTORE`
-(absolute, or relative to the directory you ran the command from: `INIT_CWD` under pnpm, otherwise
-the working directory), `GRACE_KEYSTORE_PASSWORD`,
+(absolute, or relative to `apps/app`), `GRACE_KEYSTORE_PASSWORD`,
 `GRACE_KEY_ALIAS` and `GRACE_KEY_PASSWORD` are all set (`signing` in `android/host.json`; Gradle
 refuses a partial set, and the build fails if they are set and a release comes out unsigned),
-otherwise `launcher-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
-produced with its processor type, size, SHA-256 and the signer verified by `apksigner` from
-Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. The build
+otherwise `launcher-release-unsigned.apk`. The build, its web bundle and `cap copy` steps, Gradle
+and the check get only `PATH`, `HOME`, `TMPDIR`, `LANG`, `GRADLE_OPTS`, `GRADLE_USER_HOME`, these
+signing variables, the Android and Java locations, `ANDROID_USER_HOME`, the Capacitor project and web
+directories and the selected cloud profile's `VITE_GRACE_CLOUD_*` origins, never the rest of the
+environment, so `CI` and `TURBO_*` do not reach the nested code generation. `artifacts/apk-manifest.json` lists each APK this build
+produced with its processor type, size, SHA-256, requested permissions and the signer verified by `apksigner` from
+Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. Each APK
+passes upstream's distribution check (`apkDistributionProblems` in `@elizaos/os/android/apk-distribution.mjs`)
+with Grace's policy in `scripts/android.ts`: backups and cleartext traffic off, a network security
+configuration in a release, only the listed exported components with their permissions, no source
+maps, no test-only names, a version. A failed build or check removes its APKs and the manifest,
+an earlier build's included. An interrupted build can still leave an APK the manifest does not list,
+so installing (`--install`, `--emulator`, the BillWorld run) and `pnpm aosp` refuse any APK whose
+SHA-256 differs from its entry in the `apk-manifest.json` beside it. The build
 fails unless an APK carries the agent (`assets/agent/agent.mjs`, `libeliza_node.so` for exactly
 one processor type, `assets/agent/inventory.json` and every file that inventory lists, which the
 service unpacks before it starts) and the pinned local keyword detector.
 It checks the packaged asset and native libraries against the wake detector’s
 inventory, rejects other on-device model and inference artifacts, and checks
-the native Grace account and speech bridge. The
+the native Grace account. The
 `versionCode` is `package.json`'s version, MAJOR·10⁶ + MINOR·10³ + PATCH, so raise the version for each release.
 
 Every machine and CI sign debug builds with one key, `android/debug.keystore`, so a debug APK built
@@ -194,17 +206,69 @@ build copies it into `android/generated/android-user/` and points Gradle's `ANDR
 Anyone holding the repository can sign a debug build with it, which is why no production registration
 may list it.
 
+The `staging` environment in `apps/cloud/wrangler.jsonc` registers this key instead. Its Worker,
+`grace-cloud-staging`, serves `https://api-staging.graceforseniors.com` and
+`https://app-staging.graceforseniors.com`, and its `NATIVE_CLIENT_REGISTRY` lists
+`technology.graceful.grace` with the debug SHA-256 above and the sign-in return
+`https://app-staging.graceforseniors.com/android/auth/callback`. Build a debug APK that signs in
+there with `pnpm android --cloud-profile standalone-staging`: the profile names the staging origins
+and that return, and the build sets the account's registry environment to `staging`.
+Production's registry keeps only the release certificate, so a debug build of the default profile
+cannot sign in to production. `pnpm --filter @grace/cloud test` reads both environments from the
+Wrangler configuration and checks the `assetlinks.json` that Eliza's `nativeAssetLinks`, which the
+Grace Worker serves on each web origin, publishes for it. Staging has no Stripe or SMS configuration, so
+subscriptions and text codes are off there. To bring staging up:
+
+1. Create a staging PostgreSQL database and run `CLOUD_ENVIRONMENT=staging DATABASE_URL=<owner
+   connection> pnpm --filter @grace/cloud migrate`. Staging shares the database identity of the local
+   configuration, so the same command prepares both, and the Worker's identity check cannot tell a
+   local database from the staging one. Never point staging's `DATABASE_URL` at a local database.
+2. From `apps/cloud`, set each secret with `pnpm exec wrangler secret put <NAME> --env staging`:
+   `DATABASE_URL` with the runtime role, `CLOUD_PROFILE` with the JSON deployment profile that
+   `CloudProfile` in `vendor/eliza/packages/cloud/src/profile/profile.schema.ts` describes, whose
+   `environments.staging` gives `api` as `https://api-staging.graceforseniors.com`, `web` as
+   `https://app-staging.graceforseniors.com` and `databaseIdentity` as staging's
+   `CLOUD_IDENTITY_DIGEST` in `wrangler.jsonc`, and staging values of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+   `EMAIL_CODE_SECRET`, `GOOGLE_CONNECT_TOKEN_KEY`, `DEVICE_LEASE_SEAL_KEY` and `CARTESIA_API_KEY`.
+   Staging takes no Stripe, Blooio or Twilio secret.
+3. Run `pnpm --filter @grace/cloud bundle`, which dry-runs both environments, each with the web
+   bundle built for its own origins. The Worker serves `apps/app/dist`, whose sign-in return and
+   password backup pages call the API origin the build names, so build it for staging before the
+   deploy: from `apps/cloud`, run `VITE_GRACE_CLOUD_API_ORIGIN=https://api-staging.graceforseniors.com
+   VITE_GRACE_CLOUD_WEB_ORIGIN=https://app-staging.graceforseniors.com pnpm --filter @repo/app build`
+   and then `pnpm exec wrangler deploy --env staging`. The bundle script ends with the production
+   build in `apps/app/dist`, so deploying staging straight after it ships production origins to
+   staging. The next production deploy rebuilds the bundle with the production origins.
+4. In the Google project of the staging web client, register an Android OAuth client for
+   `technology.graceful.grace` with the debug SHA-1 above, and add
+   `https://api-staging.graceforseniors.com/api/auth/google/callback` and
+   `https://api-staging.graceforseniors.com/api/v1/eliza/google/connect/callback` to that web client.
+
 User QA receives the release-signed APK. R8 shrinks the release build, Capacitor preserves its
 plugin methods, and the content check enforces `debuggable=false`. The Grace release key for
 `technology.graceful.grace` is held outside this repository. Supply the established key through
 the four signing variables above. The [production App Links document](https://app.graceforseniors.com/.well-known/assetlinks.json)
-publishes the certificate SHA-256. The SHA-1 for Android Google client registration is
+publishes the certificate SHA-256, which `android/release-signer.json` holds for the AOSP image's
+staging. The SHA-1 for Android Google client registration is
 `7D:9D:BF:44:E3:E5:D6:29:16:D3:DE:95:24:97:4A:A1:F6:10:D4:02`.
 
-The ARM64 launcher APK built from Grace `ace4d8e` and Eliza `3423598` is
-135,640,693 bytes. It passed release certificate, package, agent payload, Node runtime and
-16 KiB alignment checks.
-[Release source](https://github.com/gracefultechnology/grace-new/pull/90)
+Built from Grace `c484352` and Eliza `21fac1f`, each launcher APK passed the content check:
+agent payload and inventory, Node runtime, the native Grace account, the pinned wake keyword
+detector and no other inference class, and `debuggable` only in the debug build. Rebuilding a debug
+APK from that source gave the same SHA-256. The release APKs were signed with a throwaway RSA 2048
+key. Their SHA-256 depends on that key, so the table leaves it out. Another key can change the
+signing block and so the size.
+
+| APK | Processor type | Bytes | SHA-256 |
+|---|---|---|---|
+| `launcher-debug.apk` | `arm64-v8a` | 179,013,298 | `92640c8e9b0d8c80c1ce447337fa858de9460282e6d324b862d92433b64c1d83` |
+| `launcher-release.apk` | `arm64-v8a` | 165,856,583 | depends on the key |
+| `launcher-debug.apk` | `x86_64` | 182,359,724 | `86658017a8f512f79816d83ac0748e387781394806e43e90f69a43169c509223` |
+| `launcher-release.apk` | `x86_64` | 169,198,913 | depends on the key |
+
+The last release built with the Grace release key came from Grace `ace4d8e` and Eliza `3423598`,
+before this pin; it passed the release certificate and 16 KiB alignment checks
+([release source](https://github.com/gracefultechnology/grace-new/pull/90)).
 
 ### On the tablet
 
@@ -258,8 +322,9 @@ time limit (the boot 15 minutes, the install 5) and is killed when the command e
 emulator that exits before it boots fails the command with its log. An emulator the command booted
 is stopped when the command fails or is interrupted, and left running when it succeeds, for the next
 `--install`; stop it with `adb -s emulator-<port> emu kill`. `--install emulator-<port>` does the
-same on an emulator that is already running and never stops it; it refuses any serial that is not an
-emulator's, so a tablet on USB is never touched. With `--release` the signed launcher release APK is
+same on an emulator that is already running and never stops it, and also takes a Cuttlefish
+device's local serial (`0.0.0.0:6520`, `127.0.0.1:6520`); it refuses any other serial, so a tablet on
+USB is never touched. With `--release` the signed launcher release APK is
 installed instead and the walk ends once Grace's process is running as Home; it needs the four
 signing variables, and `--exercise` is refused, since a release build's page has no debugging
 socket. An emulator holding Grace signed by another key (debug after release, or the reverse) has
@@ -316,9 +381,9 @@ then run `--install emulator-<port> --exercise wifi-password`. Both Wi-Fi walks 
 location access and, for `wifi.json`, AndroidWifi saved. A walk that stops after `forget` leaves the
 AVD's quickboot snapshot without either, so boot it once with `-wipe-data` before walking it again.
 
-A run of `develop` at `c8849b1` with this check, on an AVD made as above on a host with a load
-average between 140 and 370: both debug APKs passed the content check at 11,203,659 and 11,203,523
-bytes, the cold boot took 5 minutes, the WebView was `com.google.android.webview` 133.0.6943.137,
+A run of `develop` at `c8849b1`, before the APK carried the agent payload, with this check, on an
+AVD made as above on a host with a load average between 140 and 370: both debug APKs of that time
+passed the content check at 11,203,659 and 11,203,523 bytes (see the table above for today's), the cold boot took 5 minutes, the WebView was `com.google.android.webview` 133.0.6943.137,
 all 19 steps of `home.json` passed, and it ended `Grace is Home and responding; other processes
 raised 32 am_anr events since the install` and exited 0 in 14 minutes. Booted again with the current
 script, the same AVD passed in 7 minutes with 5 other events. With `--install`, Grace stopped

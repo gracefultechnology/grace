@@ -8,22 +8,18 @@ import {Schema} from "effect";
 import {isAndroidExecutableForAbi} from "@elizaos/os/android/android-runtime-inventory.mjs";
 import {readApkEntries, readApkSignerDigest} from "@elizaos/os/android/apk-distribution.mjs";
 import {createDevelopmentLauncherDescriptor, stageLauncher, validateDescriptor} from "@elizaos/os/aosp/stage-launcher-overlay.ts";
-import {buildTool as tool, identity as capacitor} from "./android.ts";
+import {buildTool as tool, checkedApk, identity as capacitor} from "./android.ts";
 
 const {appId, appName} = capacitor;
 const identity = {brand: appName.toLowerCase(), moduleName: appName, packageName: appId};
-const defaultPermissions = ["android.permission.RECORD_AUDIO"];
 const product = path.resolve(import.meta.dirname, "../aosp");
 const staged = path.resolve(import.meta.dirname, "../artifacts/aosp");
 
-const Sha256 = Schema.String.check(Schema.isPattern(/^([0-9a-f]{2}:?){31}[0-9a-f]{2}$/i));
-const Arguments = Schema.Union([
-  Schema.Struct({apk: Schema.NonEmptyString, browser: Schema.NonEmptyString, development: Schema.Literal(true)}),
-  Schema.Struct({apk: Schema.NonEmptyString, browser: Schema.NonEmptyString, development: Schema.Literal(false), signer: Sha256}),
-]);
-const {values} = parseArgs({options: {apk: {type: "string"}, browser: {type: "string"}, development: {type: "boolean", default: false}, signer: {type: "string"}}});
-const args = Schema.decodeUnknownSync(Arguments, {onExcessProperty: "error"})(values);
-const {apk, browser, development} = args;
+const ReleaseSigner = Schema.Struct({packageName: Schema.Literal(appId), certificateSha256: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/))});
+const Arguments = Schema.Struct({apk: Schema.NonEmptyString, browser: Schema.NonEmptyString, development: Schema.Boolean});
+const {values} = parseArgs({options: {apk: {type: "string"}, browser: {type: "string"}, development: {type: "boolean", default: false}}});
+const {apk, browser, development} = Schema.decodeUnknownSync(Arguments, {onExcessProperty: "error"})(values);
+const apkSha256 = checkedApk(apk);
 
 const targetAbi = "x86_64";
 const requiredRuntime = `lib/${targetAbi}/libeliza_node.so`;
@@ -43,10 +39,11 @@ const chromium = {
   "sha256": "750b839d8b7fd3dd3ca43268cc5a8c4ac3ab57ae051a2b1b2814984f5b8c9cc1",
   "signerSha256": "32a2fc74d731105859e5a85df16d95f102d85b22099b8064c5d8915c61dad1e0"
 };
-const pin = "signer" in args
-  ? {schemaVersion: 1, ...identity, apkSha256: createHash("sha256").update(fs.readFileSync(apk)).digest("hex"), certificateSha256: args.signer.replaceAll(":", "").toLowerCase()}
-  : createDevelopmentLauncherDescriptor({identity, apk, apksigner: tool("apksigner"), development: true});
-const descriptor = validateDescriptor({...pin, defaultPermissions, partition: "product"});
+const releaseSigner = () => Schema.decodeUnknownSync(ReleaseSigner)(JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../android/release-signer.json"), "utf8")));
+const pin = development
+  ? createDevelopmentLauncherDescriptor({identity, apk, apksigner: tool("apksigner"), development})
+  : {schemaVersion: 1, ...identity, apkSha256, certificateSha256: releaseSigner().certificateSha256};
+const descriptor = validateDescriptor({...pin, partition: "product"});
 const output = path.join(staged, `grace-${descriptor.apkSha256.slice(0, 12)}`);
 const pending = path.join(staged, "pending");
 const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "grace-aosp-"));
@@ -54,7 +51,7 @@ try {
   fs.rmSync(staged, {recursive: true, force: true});
   fs.writeFileSync(path.join(scratch, "launcher.json"), JSON.stringify(descriptor));
   stageLauncher({descriptor: path.join(scratch, "launcher.json"), apk, output: pending, aapt: tool("aapt"), apksigner: tool("apksigner"),
-    development, provisioning: {assistant: false}});
+    development, nativeAbi: targetAbi, nativeInstall: "soong", provisioning: {assistant: false}});
   const browserDir = path.join(pending, "browser");
   fs.mkdirSync(browserDir);
   if (!fs.lstatSync(browser).isFile()) throw new Error("The Chromium APK must be a regular file");
