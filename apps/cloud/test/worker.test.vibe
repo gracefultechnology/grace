@@ -1,13 +1,12 @@
 import { assert, describe, it } from "@effect/vitest"
 import { NodeFileSystem } from "@effect/platform-node"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
-import worker from "../src/worker.vibe"
+import { nativeAssetLinks } from "@elizaos/cloud/worker"
 
 schema Vars {
   PUBLIC_API_ORIGIN: string
   WEB_ORIGIN: string
   CLOUD_ENVIRONMENT: "staging" | "production"
-  CLOUD_IDENTITY_DIGEST: string
   NATIVE_CLIENT_REGISTRY: string
 }
 schema Environment { vars: Vars }
@@ -26,8 +25,7 @@ effect function assetLinks(environment: "staging" | "production") {
   const file = try fs.readFileString(`${import.meta.dirname}/../wrangler.jsonc`)
   const vars = (try Schema.decodeUnknownEffect(Schema.fromJsonString(Wrangler))(file)).env[environment].vars
   const request = HttpClientRequest.get(`${vars.WEB_ORIGIN}/.well-known/assetlinks.json`)
-  const sent = try HttpClientRequest.toWeb(request)
-  const response = HttpClientResponse.fromWeb(request, try tryPromise(() => worker.fetch(sent, vars as Parameters<typeof worker.fetch>[1])))
+  const response = HttpClientResponse.fromWeb(request, nativeAssetLinks(vars))
   return { environment: vars.CLOUD_ENVIRONMENT, status: response.status, statements: try response.json }
 }
 

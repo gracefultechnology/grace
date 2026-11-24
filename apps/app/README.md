@@ -207,13 +207,20 @@ subscriptions and text codes are off there. To bring staging up:
 
 1. Create a staging PostgreSQL database and run `CLOUD_ENVIRONMENT=staging DATABASE_URL=<owner
    connection> pnpm --filter @grace/cloud migrate`. Staging shares the database identity of the local
-   configuration, so the same command prepares both.
+   configuration, so the same command prepares both, and the Worker's identity check cannot tell a
+   local database from the staging one. Never point staging's `DATABASE_URL` at a local database.
 2. From `apps/cloud`, set each secret with `pnpm exec wrangler secret put <NAME> --env staging`:
    `DATABASE_URL` with the runtime role, `CLOUD_PROFILE` with a staging row naming the two staging
-   origins and that identity, and staging values for the production secrets in the root README's
-   table.
-3. Run `pnpm --filter @grace/cloud bundle`, which dry-runs both environments, then deploy with
-   `pnpm exec wrangler deploy --env staging` from `apps/cloud`.
+   origins and that identity, and staging values of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+   `EMAIL_CODE_SECRET`, `GOOGLE_CONNECT_TOKEN_KEY`, `DEVICE_LEASE_SEAL_KEY` and `CARTESIA_API_KEY`.
+   Staging takes no Stripe, Blooio or Twilio secret.
+3. Run `pnpm --filter @grace/cloud bundle`, which dry-runs both environments, each with the web
+   bundle built for its own origins. The Worker serves `apps/app/dist`, whose sign-in return and
+   password backup pages call the API origin the build names, so build it for staging before the
+   deploy: from `apps/cloud`, run `VITE_GRACE_CLOUD_API_ORIGIN=https://api-staging.graceforseniors.com
+   VITE_GRACE_CLOUD_WEB_ORIGIN=https://app-staging.graceforseniors.com pnpm --filter @repo/app build`
+   and then `pnpm exec wrangler deploy --env staging`. The next production deploy rebuilds the bundle
+   with the production origins.
 4. In the Google project of the staging web client, register an Android OAuth client for
    `technology.graceful.grace` with the debug SHA-1 above, and add
    `https://api-staging.graceforseniors.com/api/auth/google/callback` and
