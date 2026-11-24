@@ -235,6 +235,32 @@ lemma BestFinds(xs: seq<Account>, init: Account)
   }
 }
 
+lemma BestServerStep(xs: seq<FoundServer>, kind: ServerKind, init: FoundServer)
+  ensures Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs) == init ||
+    (Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs) in xs &&
+      Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs).kind == kind &&
+      Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs).host != "" &&
+      !Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs).security.Insecure?)
+  ensures (init.host != "" && init.security.SecureDirect?) ==>
+    (Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs).host != "" &&
+      Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs).security.SecureDirect?)
+  ensures (exists s :: s in xs && s.kind == kind && s.host != "" && s.security.SecureDirect?) ==>
+    (Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs).host != "" &&
+      Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs).security.SecureDirect?)
+  decreases |xs|
+{
+  if |xs| > 0 {
+    var next := if secureBetter(init, xs[0], kind) then xs[0] else init;
+    BestServerStep(xs[1..], kind, next);
+    if exists s :: s in xs && s.kind == kind && s.host != "" && s.security.SecureDirect? {
+      var s :| s in xs && s.kind == kind && s.host != "" && s.security.SecureDirect?;
+      if s != xs[0] {
+        assert s in xs[1..];
+      }
+    }
+  }
+}
+
 lemma SameAccountsSteps(a: Accounts, b: Accounts, via: string)
   requires alwaysIdsAreIssued(a) && b.accounts == a.accounts
   ensures stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, via, b) && stepRemovalNeedsTheQuestion(a, via, b)
@@ -310,7 +336,7 @@ lemma MappedMatch(a: Accounts, b: Accounts, via: string)
 
 lemma MappedRenewing(a: Accounts, b: Accounts)
   requires alwaysIdsAreIssued(a) && alwaysIdsAreIssued(b) && alwaysRenewingNamesAnAccount(a)
-  requires b.signIn.renewing == 0 || (b.signIn.renewing == a.signIn.renewing && b.signIn.provider == a.signIn.provider)
+  requires b.signIn.renewing == a.signIn.renewing && b.signIn.provider == a.signIn.provider
   requires |b.accounts| == |a.accounts|
   requires forall i :: 0 <= i < |a.accounts| ==> (b.accounts[i].id == a.accounts[i].id && b.accounts[i].provider == a.accounts[i].provider)
   ensures alwaysRenewingNamesAnAccount(b)
@@ -332,13 +358,13 @@ lemma Colour(n: int)
 
 lemma GrownAccounts(a: Accounts, b: Accounts, n: Account, via: string)
   requires alwaysOneAccountPerAddress(a) && alwaysIdsAreIssued(a) && alwaysNamesAreDistinct(a)
-  requires alwaysFromHistoryNamesAccounts(a) && alwaysFilterNamesAnEmailAccount(a)
+  requires alwaysFromHistoryNamesAccounts(a) && alwaysFilterNamesAnEmailAccount(a) && alwaysOnlyOtherEmailKeepsAFromName(a)
   requires b.accounts == a.accounts + [n] && b.nextId == a.nextId + 1 && n.id == a.nextId
-  requires n.address != "" && n.name != ""
+  requires n.address != "" && n.name != "" && (n.fromName != "" ==> n.provider.OtherEmail?)
   requires forall x :: x in a.accounts ==> x.address != n.address && x.name != n.name
   requires b.lastFrom == a.lastFrom && b.inboxFilter == a.inboxFilter
   ensures alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b)
-  ensures hasAccount(b, n.id)
+  ensures hasAccount(b, n.id) && alwaysOnlyOtherEmailKeepsAFromName(b)
   ensures alwaysFilterNamesAnEmailAccount(b) && alwaysFromHistoryNamesAccounts(b)
   ensures stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, via, b) && stepRemovalNeedsTheQuestion(a, via, b)
 {
@@ -374,143 +400,62 @@ lemma GrownAccounts(a: Accounts, b: Accounts, n: Account, via: string)
   }
 }
 
-lemma AdmittedExisting(a: Accounts, b: Accounts, provider: Provider, address: string, name: string, use: Use, fromName: string)
+lemma AdmittedExisting(a: Accounts, b: Accounts, via: string, provider: Provider, address: string, name: string, use: Use, fromName: string)
   requires inv(a) && b == admitted(provider, a, address, name, use, fromName) && accountWith(a, address).id != 0
-  requires (fromName != "" && a.signIn.renewing != 0) ==> a.signIn.provider.OtherEmail?
-  ensures b.lastFrom == a.lastFrom && b.nextId == a.nextId && b.inboxFilter == a.inboxFilter && b.signIn.attempt == a.signIn.attempt
-  ensures b.signIn.renewing == 0 || (b.signIn.renewing == a.signIn.renewing && b.signIn.provider == a.signIn.provider)
-  ensures |b.accounts| == |a.accounts|
-  ensures forall i :: 0 <= i < |a.accounts| ==> b.accounts[i] == a.accounts[i].(fromName := b.accounts[i].fromName)
-  ensures alwaysOnlyOtherEmailKeepsAFromName(b)
-  ensures b.page.AccountDetail? ==> hasAccount(a, b.shown)
+  requires fromName != "" ==> (a.signIn.renewing != 0 ==> a.signIn.provider.OtherEmail?)
+  ensures alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b)
+  ensures alwaysAccountsAreWellFormed(b) && alwaysOnlyOtherEmailKeepsAFromName(b)
+  ensures alwaysRenewingNamesAnAccount(b) && alwaysFilterNamesAnEmailAccount(b) && alwaysFromHistoryNamesAccounts(b)
+  ensures b.page.AccountDetail? ==> hasAccount(b, b.shown)
+  ensures stepAccountsGrowOnlyFromASignIn(a, via, b)
+  ensures stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, via, b) && stepRemovalNeedsTheQuestion(a, via, b)
 {
   var existing := accountWith(a, address);
   AccountWithFinds(a.accounts, address, noAccount);
   assert existing in a.accounts;
-  if existing.id == a.signIn.renewing && fromName != "" {
-    AccountAtIs(a, existing);
-    forall i | 0 <= i < |a.accounts| && a.accounts[i].id == existing.id
-      ensures a.accounts[i].provider.OtherEmail?
-    {
-      assert a.accounts[i] in a.accounts;
-      SameId(a, a.accounts[i], existing);
-    }
-  }
-  forall y | y in b.accounts
-    ensures y.fromName != "" ==> y.provider.OtherEmail?
-  {
-    var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
-    assert a.accounts[i] in a.accounts;
-  }
-}
-
-lemma FromNameShape(a: Accounts, b: Accounts)
-  requires |b.accounts| == |a.accounts|
-  requires forall i :: 0 <= i < |a.accounts| ==> b.accounts[i] == a.accounts[i].(fromName := b.accounts[i].fromName)
-  ensures forall i :: 0 <= i < |a.accounts| ==> (b.accounts[i].id == a.accounts[i].id && b.accounts[i].address == a.accounts[i].address &&
-    b.accounts[i].name == a.accounts[i].name && b.accounts[i].provider == a.accounts[i].provider && b.accounts[i].colour == a.accounts[i].colour &&
-    b.accounts[i].use == a.accounts[i].use && b.accounts[i].sent == a.accounts[i].sent)
-{
-}
-
-lemma FromNameKept(a: Accounts, b: Accounts)
-  requires alwaysAccountsAreWellFormed(a) && b.signIn.attempt >= 0 && b.signIn.renewing >= 0
-  requires |b.accounts| == |a.accounts|
-  requires forall i :: 0 <= i < |a.accounts| ==> (b.accounts[i].id == a.accounts[i].id && b.accounts[i].address == a.accounts[i].address &&
-    b.accounts[i].colour == a.accounts[i].colour && b.accounts[i].use == a.accounts[i].use && b.accounts[i].sent == a.accounts[i].sent)
-  ensures alwaysAccountsAreWellFormed(b)
-  ensures forall x :: x in a.accounts ==> exists y :: y in b.accounts && y.id == x.id && y.address == x.address
-  ensures forall y :: y in b.accounts ==> exists x :: x in a.accounts && x.id == y.id
-{
-  forall y | y in b.accounts
-    ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && exists x :: x in a.accounts && x.id == y.id
-  {
-    var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
-    assert a.accounts[i] in a.accounts;
-  }
-  forall x | x in a.accounts
-    ensures exists y :: y in b.accounts && y.id == x.id && y.address == x.address
-  {
-    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
-    assert b.accounts[i] in b.accounts;
-  }
-}
-
-lemma FromNameUses(a: Accounts, b: Accounts)
-  requires alwaysIdsAreIssued(a)
-  requires |b.accounts| == |a.accounts|
-  requires forall i :: 0 <= i < |a.accounts| ==> (b.accounts[i].id == a.accounts[i].id && b.accounts[i].use == a.accounts[i].use)
-  ensures forall x, y :: (x in a.accounts && y in b.accounts && y.id == x.id) ==> y.use == x.use
-{
-  forall x, y | x in a.accounts && y in b.accounts && y.id == x.id
-    ensures y.use == x.use
-  {
-    var j :| 0 <= j < |b.accounts| && b.accounts[j] == y;
-    assert a.accounts[j] in a.accounts;
-    SameId(a, x, a.accounts[j]);
-  }
-}
-
-lemma FromNameFilter(a: Accounts, b: Accounts)
-  requires alwaysFilterNamesAnEmailAccount(a) && b.inboxFilter == a.inboxFilter
-  requires |b.accounts| == |a.accounts|
-  requires forall i :: 0 <= i < |a.accounts| ==> (b.accounts[i].id == a.accounts[i].id && b.accounts[i].use == a.accounts[i].use)
-  ensures alwaysFilterNamesAnEmailAccount(b)
-{
-  if b.inboxFilter != 0 {
-    var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
-    MailMember(a, x);
-    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
-    MailMember(b, b.accounts[i]);
-  }
-}
-
-lemma FromNameMapped(a: Accounts, b: Accounts, via: string)
-  requires alwaysOneAccountPerAddress(a) && alwaysIdsAreIssued(a) && alwaysNamesAreDistinct(a) && alwaysAccountsAreWellFormed(a)
-  requires alwaysRenewingNamesAnAccount(a) && alwaysFilterNamesAnEmailAccount(a) && alwaysFromHistoryNamesAccounts(a)
-  requires b.nextId == a.nextId && b.lastFrom == a.lastFrom && b.inboxFilter == a.inboxFilter && b.signIn.attempt >= 0
-  requires b.signIn.renewing == 0 || (b.signIn.renewing == a.signIn.renewing && b.signIn.provider == a.signIn.provider)
-  requires |b.accounts| == |a.accounts|
-  requires forall i :: 0 <= i < |a.accounts| ==> b.accounts[i] == a.accounts[i].(fromName := b.accounts[i].fromName)
-  ensures alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysAccountsAreWellFormed(b)
-  ensures alwaysRenewingNamesAnAccount(b) && alwaysFilterNamesAnEmailAccount(b) && alwaysFromHistoryNamesAccounts(b)
-  ensures forall id :: hasAccount(b, id) == hasAccount(a, id)
-  ensures stepAccountsGrowOnlyFromASignIn(a, via, b) && stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, via, b)
-  ensures stepRemovalNeedsTheQuestion(a, via, b) && stepUseChangesKeepAccounts(a, via, b)
-{
-  FromNameShape(a, b);
-  assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) by {
+  if existing.id != a.signIn.renewing {
+    SameAccountsAlways(a, b);
+    SameAccountsSteps(a, b, via);
+  } else {
+    assert |b.accounts| == |a.accounts|;
+    assert forall i :: 0 <= i < |a.accounts| ==> b.accounts[i] == (if a.accounts[i].id == existing.id && fromName != "" then a.accounts[i].(fromName := fromName) else a.accounts[i]);
     MappedDistinct(a, b);
-  }
-  assert (forall id :: hasAccount(b, id) == hasAccount(a, id)) && stepRenewalKeepsTheAccount(a, b) && stepRemovalNeedsTheQuestion(a, via, b) by {
     MappedMatch(a, b, via);
-  }
-  assert alwaysAccountsAreWellFormed(b) && stepAccountsGrowOnlyFromASignIn(a, via, b) && stepUseChangesKeepAccounts(a, via, b) by {
-    FromNameKept(a, b);
-  }
-  assert stepUsesChangeOnlyByHerSwitch(a, via, b) by {
-    FromNameUses(a, b);
-  }
-  assert alwaysFilterNamesAnEmailAccount(b) by {
-    FromNameFilter(a, b);
-  }
-  assert alwaysRenewingNamesAnAccount(b) by {
     MappedRenewing(a, b);
-  }
-  assert alwaysFromHistoryNamesAccounts(b) by {
     HistoryView(a);
     HistoryView(b);
+    forall x, y | x in a.accounts && y in b.accounts && y.id == x.id
+      ensures y.use == x.use
+    {
+      var i :| 0 <= i < |a.accounts| && a.accounts[i] == x && b.accounts[i] == y;
+    }
+    forall y | y in b.accounts
+      ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && (y.fromName != "" ==> y.provider.OtherEmail?)
+    {
+      var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
+      assert a.accounts[i] in a.accounts;
+      if a.accounts[i].id == existing.id && fromName != "" {
+        AccountAtIs(a, a.accounts[i]);
+      }
+    }
+    if b.inboxFilter != 0 {
+      var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
+      MailMember(a, x);
+      var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
+      MailMember(b, b.accounts[i]);
+    }
   }
 }
 
 lemma AdmittedNew(a: Accounts, b: Accounts, via: string, provider: Provider, address: string, name: string, use: Use, fromName: string)
-  requires alwaysOneAccountPerAddress(a) && alwaysIdsAreIssued(a) && alwaysNamesAreDistinct(a) && alwaysOnlyOtherEmailKeepsAFromName(a)
+  requires alwaysOneAccountPerAddress(a) && alwaysIdsAreIssued(a) && alwaysNamesAreDistinct(a)
   requires alwaysFromHistoryNamesAccounts(a) && alwaysFilterNamesAnEmailAccount(a) && alwaysAccountsAreWellFormed(a)
-  requires admits(a, address, name) && b == admitted(provider, a, address, name, use, fromName) && accountWith(a, address).id == 0
+  requires alwaysOnlyOtherEmailKeepsAFromName(a)
   requires fromName != "" ==> provider.OtherEmail?
-  ensures alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysOnlyOtherEmailKeepsAFromName(b)
+  requires admits(a, address, name) && b == admitted(provider, a, address, name, use, fromName) && accountWith(a, address).id == 0
+  ensures alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b)
   ensures alwaysFromHistoryNamesAccounts(b) && alwaysFilterNamesAnEmailAccount(b) && hasAccount(b, b.shown)
-  ensures alwaysAccountsAreWellFormed(b) && b.signIn.renewing == 0
+  ensures alwaysAccountsAreWellFormed(b) && alwaysOnlyOtherEmailKeepsAFromName(b) && b.signIn.renewing == 0
   ensures stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, via, b) && stepRemovalNeedsTheQuestion(a, via, b)
 {
   AddressOnTablet(a, address);
@@ -518,13 +463,19 @@ lemma AdmittedNew(a: Accounts, b: Accounts, via: string, provider: Provider, add
   var n := Account(a.nextId, provider, address, name, remainder_app__accounts(|a.accounts|, 5), use, 0, fromName);
   assert b.accounts == a.accounts + [n];
   GrownAccounts(a, b, n, via);
-  forall y | y in b.accounts
-    ensures y.fromName != "" ==> y.provider.OtherEmail?
-  {
-    if y != n {
-      assert y in a.accounts;
-    }
-  }
+}
+
+lemma SameAccountsAlways(a: Accounts, b: Accounts)
+  requires alwaysOneAccountPerAddress(a) && alwaysIdsAreIssued(a) && alwaysNamesAreDistinct(a) && alwaysAccountsAreWellFormed(a)
+  requires alwaysOnlyOtherEmailKeepsAFromName(a) && alwaysRenewingNamesAnAccount(a) && alwaysFilterNamesAnEmailAccount(a) && alwaysFromHistoryNamesAccounts(a)
+  requires b.accounts == a.accounts && b.lastFrom == a.lastFrom && b.nextId == a.nextId && b.inboxFilter == a.inboxFilter
+  requires b.signIn.attempt >= 0
+  requires b.signIn.renewing == 0 || (b.signIn.renewing == a.signIn.renewing && b.signIn.provider == a.signIn.provider)
+  ensures alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysAccountsAreWellFormed(b)
+  ensures alwaysOnlyOtherEmailKeepsAFromName(b) && alwaysRenewingNamesAnAccount(b) && alwaysFilterNamesAnEmailAccount(b) && alwaysFromHistoryNamesAccounts(b)
+{
+  AddressView(a); IdView(a); NameView(a); HistoryView(a); MailView(a);
+  AddressView(b); IdView(b); NameView(b); HistoryView(b); MailView(b);
 }
 
 lemma RemovedView(a: Accounts, id: int)
@@ -535,7 +486,14 @@ lemma RemovedView(a: Accounts, id: int)
 
 lemma Removed(a: Accounts, id: int, via: string)
   requires inv(a) && a.removing == id && id != 0 && (via == "removeAccount" || via == "discardAndRemove")
-  ensures inv(removedFrom(id, a))
+  ensures alwaysOneAccountPerAddress(removedFrom(id, a))
+  ensures alwaysIdsAreIssued(removedFrom(id, a))
+  ensures alwaysNamesAreDistinct(removedFrom(id, a))
+  ensures alwaysAccountsAreWellFormed(removedFrom(id, a))
+  ensures alwaysOnlyOtherEmailKeepsAFromName(removedFrom(id, a))
+  ensures alwaysRenewingNamesAnAccount(removedFrom(id, a))
+  ensures alwaysFilterNamesAnEmailAccount(removedFrom(id, a))
+  ensures alwaysFromHistoryNamesAccounts(removedFrom(id, a))
   ensures !hasAccount(removedFrom(id, a), id)
   ensures stepAccountsGrowOnlyFromASignIn(a, via, removedFrom(id, a))
   ensures stepRenewalKeepsTheAccount(a, removedFrom(id, a))
@@ -601,7 +559,6 @@ lemma NoteSentView(a: Accounts, recipient: string, id: int, by_: AccountActor)
     ProofLib.Filter((f: LastFrom) => (f.recipient != recipient), a.lastFrom) + [LastFrom(recipient, id)]
 {
 }
-
 
 lemma NoteSentHistory(a: Accounts, b: Accounts, recipient: string, id: int)
   requires alwaysFromHistoryNamesAccounts(a) && recipient != "" && hasAccount(a, id)
@@ -808,6 +765,62 @@ lemma submitServers_ensures(a: Accounts, by_: AccountActor)
   }
 }
 
+lemma lookUpServers_ensures(a: Accounts, by_: AccountActor)
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysOneAccountPerAddress(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysIdsAreIssued(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysNamesAreDistinct(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysAccountsAreWellFormed(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysPagesNameAnAccount(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysOnlyOtherEmailKeepsAFromName(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysFoundServersAreBoth(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysTypedDomainStaysOnItsForm(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysRenewingNamesAnAccount(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysCompanyRenewalStaysOnItsAccount(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysFilterNamesAnEmailAccount(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysFromHistoryNamesAccounts(lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepAccountsGrowOnlyFromASignIn(a, "lookUpServers", lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepAttemptNeverMovesBack(a, lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepRenewalKeepsTheAccount(a, lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepUsesChangeOnlyByHerSwitch(a, "lookUpServers", lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepUseChangesKeepAccounts(a, "lookUpServers", lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepRemovalNeedsTheQuestion(a, "lookUpServers", lookUpServers(a, by_)))
+  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepDiscardFollowsHerConfirm(a, "lookUpServers", lookUpServers(a, by_)))
+{
+  if inv(a) && canLookUpServers(a, by_) {
+    assert stepRenewalKeepsTheAccount(a, lookUpServers(a, by_)) && stepUsesChangeOnlyByHerSwitch(a, "lookUpServers", lookUpServers(a, by_)) by {
+      SameAccountsSteps(a, lookUpServers(a, by_), "lookUpServers");
+    }
+  }
+}
+
+lemma serversLookedUp_ensures(a: Accounts, report: LookupReport, by_: AccountActor)
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysOneAccountPerAddress(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysIdsAreIssued(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysNamesAreDistinct(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysAccountsAreWellFormed(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysPagesNameAnAccount(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysOnlyOtherEmailKeepsAFromName(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysFoundServersAreBoth(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysTypedDomainStaysOnItsForm(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysRenewingNamesAnAccount(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysCompanyRenewalStaysOnItsAccount(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysFilterNamesAnEmailAccount(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysFromHistoryNamesAccounts(serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepAccountsGrowOnlyFromASignIn(a, "serversLookedUp", serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepAttemptNeverMovesBack(a, serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepRenewalKeepsTheAccount(a, serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepUsesChangeOnlyByHerSwitch(a, "serversLookedUp", serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepUseChangesKeepAccounts(a, "serversLookedUp", serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepRemovalNeedsTheQuestion(a, "serversLookedUp", serversLookedUp(a, report, by_)))
+  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepDiscardFollowsHerConfirm(a, "serversLookedUp", serversLookedUp(a, report, by_)))
+{
+  if inv(a) && canServersLookedUp(a, report, by_) {
+    assert stepRenewalKeepsTheAccount(a, serversLookedUp(a, report, by_)) && stepUsesChangeOnlyByHerSwitch(a, "serversLookedUp", serversLookedUp(a, report, by_)) by {
+      SameAccountsSteps(a, serversLookedUp(a, report, by_), "serversLookedUp");
+    }
+  }
+}
+
 lemma openAccount_ensures(a: Accounts, id: int, by_: AccountActor)
   ensures (inv(a) ==> canOpenAccount(a, id, by_) ==> alwaysOneAccountPerAddress(openAccount(a, id, by_)))
   ensures (inv(a) ==> canOpenAccount(a, id, by_) ==> alwaysIdsAreIssued(openAccount(a, id, by_)))
@@ -1004,6 +1017,34 @@ lemma keepAccount_ensures(a: Accounts, by_: AccountActor)
   }
 }
 
+lemma removeAnyway_ensures(a: Accounts, id: int, waiting: int, by_: AccountActor)
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysOneAccountPerAddress(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysIdsAreIssued(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysNamesAreDistinct(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysAccountsAreWellFormed(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysPagesNameAnAccount(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysOnlyOtherEmailKeepsAFromName(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysFoundServersAreBoth(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysTypedDomainStaysOnItsForm(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysRenewingNamesAnAccount(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysCompanyRenewalStaysOnItsAccount(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysFilterNamesAnEmailAccount(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysFromHistoryNamesAccounts(removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepAccountsGrowOnlyFromASignIn(a, "removeAnyway", removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepAttemptNeverMovesBack(a, removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepRenewalKeepsTheAccount(a, removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepUsesChangeOnlyByHerSwitch(a, "removeAnyway", removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepUseChangesKeepAccounts(a, "removeAnyway", removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepRemovalNeedsTheQuestion(a, "removeAnyway", removeAnyway(a, id, waiting, by_)))
+  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepDiscardFollowsHerConfirm(a, "removeAnyway", removeAnyway(a, id, waiting, by_)))
+{
+  if inv(a) && canRemoveAnyway(a, id, waiting, by_) {
+    assert stepRenewalKeepsTheAccount(a, removeAnyway(a, id, waiting, by_)) && stepUsesChangeOnlyByHerSwitch(a, "removeAnyway", removeAnyway(a, id, waiting, by_)) by {
+      SameAccountsSteps(a, removeAnyway(a, id, waiting, by_), "removeAnyway");
+    }
+  }
+}
+
 lemma sheetResult_ensures(a: Accounts, sheet: SheetReport, name: string, by_: AccountActor)
   ensures (inv(a) ==> canSheetResult(a, sheet, name, by_) ==> alwaysOneAccountPerAddress(sheetResult(a, sheet, name, by_)))
   ensures (inv(a) ==> canSheetResult(a, sheet, name, by_) ==> alwaysIdsAreIssued(sheetResult(a, sheet, name, by_)))
@@ -1028,13 +1069,12 @@ lemma sheetResult_ensures(a: Accounts, sheet: SheetReport, name: string, by_: Ac
   if inv(a) && canSheetResult(a, sheet, name, by_) {
     var b := sheetResult(a, sheet, name, by_);
     if sheet.outcome.Allowed? {
-      assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysOnlyOtherEmailKeepsAFromName(b) &&
+      assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) &&
         alwaysFromHistoryNamesAccounts(b) && alwaysFilterNamesAnEmailAccount(b) && (b.page.AccountDetail? ==> hasAccount(b, b.shown)) &&
-        alwaysAccountsAreWellFormed(b) && alwaysRenewingNamesAnAccount(b) &&
+        alwaysAccountsAreWellFormed(b) && alwaysOnlyOtherEmailKeepsAFromName(b) && alwaysRenewingNamesAnAccount(b) &&
         stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, "sheetResult", b) && stepRemovalNeedsTheQuestion(a, "sheetResult", b) by {
         if accountWith(a, sheet.address).id != 0 {
-          AdmittedExisting(a, b, a.signIn.provider, sheet.address, name, sheet.granted, "");
-          FromNameMapped(a, b, "sheetResult");
+          AdmittedExisting(a, b, "sheetResult", a.signIn.provider, sheet.address, name, sheet.granted, "");
         } else {
           AdmittedNew(a, b, "sheetResult", a.signIn.provider, sheet.address, name, sheet.granted, "");
         }
@@ -1071,13 +1111,12 @@ lemma otherResult_ensures(a: Accounts, check: OtherReport, name: string, fromNam
   if inv(a) && canOtherResult(a, check, name, fromName, by_) {
     var b := otherResult(a, check, name, fromName, by_);
     if check.outcome.OtherAllowed? {
-      assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysOnlyOtherEmailKeepsAFromName(b) &&
+      assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) &&
         alwaysFromHistoryNamesAccounts(b) && alwaysFilterNamesAnEmailAccount(b) && (b.page.AccountDetail? ==> hasAccount(b, b.shown)) &&
-        alwaysAccountsAreWellFormed(b) && alwaysRenewingNamesAnAccount(b) &&
+        alwaysAccountsAreWellFormed(b) && alwaysOnlyOtherEmailKeepsAFromName(b) && alwaysRenewingNamesAnAccount(b) &&
         stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, "otherResult", b) && stepRemovalNeedsTheQuestion(a, "otherResult", b) by {
         if accountWith(a, check.address).id != 0 {
-          AdmittedExisting(a, b, Provider.OtherEmail, check.address, name, otherUse, fromName);
-          FromNameMapped(a, b, "otherResult");
+          AdmittedExisting(a, b, "otherResult", Provider.OtherEmail, check.address, name, otherUse, fromName);
         } else {
           AdmittedNew(a, b, "otherResult", Provider.OtherEmail, check.address, name, otherUse, fromName);
         }
@@ -1114,13 +1153,12 @@ lemma serversResult_ensures(a: Accounts, check: OtherReport, name: string, fromN
   if inv(a) && canServersResult(a, check, name, fromName, by_) {
     var b := serversResult(a, check, name, fromName, by_);
     if check.outcome.OtherAllowed? {
-      assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysOnlyOtherEmailKeepsAFromName(b) &&
+      assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) &&
         alwaysFromHistoryNamesAccounts(b) && alwaysFilterNamesAnEmailAccount(b) && (b.page.AccountDetail? ==> hasAccount(b, b.shown)) &&
-        alwaysAccountsAreWellFormed(b) && alwaysRenewingNamesAnAccount(b) &&
+        alwaysAccountsAreWellFormed(b) && alwaysOnlyOtherEmailKeepsAFromName(b) && alwaysRenewingNamesAnAccount(b) &&
         stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, "serversResult", b) && stepRemovalNeedsTheQuestion(a, "serversResult", b) by {
         if accountWith(a, check.address).id != 0 {
-          AdmittedExisting(a, b, Provider.OtherEmail, check.address, name, otherUse, fromName);
-          FromNameMapped(a, b, "serversResult");
+          AdmittedExisting(a, b, "serversResult", Provider.OtherEmail, check.address, name, otherUse, fromName);
         } else {
           AdmittedNew(a, b, "serversResult", Provider.OtherEmail, check.address, name, otherUse, fromName);
         }
@@ -1130,6 +1168,48 @@ lemma serversResult_ensures(a: Accounts, check: OtherReport, name: string, fromN
         SameAccountsSteps(a, b, "serversResult");
       }
     }
+  }
+}
+
+lemma SetUsePreserved(a: Accounts, id: int, use: Use, by_: AccountActor)
+  requires inv(a) && canSetUse(a, id, use, by_)
+  ensures alwaysOneAccountPerAddress(setUse(a, id, use, by_))
+  ensures alwaysIdsAreIssued(setUse(a, id, use, by_))
+  ensures alwaysNamesAreDistinct(setUse(a, id, use, by_))
+  ensures alwaysAccountsAreWellFormed(setUse(a, id, use, by_))
+  ensures alwaysPagesNameAnAccount(setUse(a, id, use, by_))
+  ensures alwaysOnlyOtherEmailKeepsAFromName(setUse(a, id, use, by_))
+  ensures alwaysRenewingNamesAnAccount(setUse(a, id, use, by_))
+  ensures alwaysFromHistoryNamesAccounts(setUse(a, id, use, by_))
+  ensures alwaysFilterNamesAnEmailAccount(setUse(a, id, use, by_))
+  ensures stepRenewalKeepsTheAccount(a, setUse(a, id, use, by_))
+  ensures stepRemovalNeedsTheQuestion(a, "setUse", setUse(a, id, use, by_))
+  ensures stepUseChangesKeepAccounts(a, "setUse", setUse(a, id, use, by_))
+{
+  var b := setUse(a, id, use, by_);
+  SetUseView(a, id, use, by_);
+  MappedDistinct(a, b);
+  MappedMatch(a, b, "setUse");
+  MappedRenewing(a, b);
+  HistoryView(a);
+  HistoryView(b);
+  forall y | y in b.accounts
+    ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && (y.fromName != "" ==> y.provider.OtherEmail?)
+  {
+    var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
+    assert a.accounts[i] in a.accounts;
+  }
+  if b.inboxFilter != 0 {
+    var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
+    MailMember(a, x);
+    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
+    MailMember(b, b.accounts[i]);
+  }
+  forall x | x in a.accounts
+    ensures exists y :: y in b.accounts && y.id == x.id && y.address == x.address
+  {
+    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
+    assert b.accounts[i] in b.accounts;
   }
 }
 
@@ -1155,35 +1235,7 @@ lemma setUse_ensures(a: Accounts, id: int, use: Use, by_: AccountActor)
   ensures (inv(a) ==> canSetUse(a, id, use, by_) ==> stepDiscardFollowsHerConfirm(a, "setUse", setUse(a, id, use, by_)))
 {
   if inv(a) && canSetUse(a, id, use, by_) {
-    var b := setUse(a, id, use, by_);
-    assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysAccountsAreWellFormed(b) &&
-      alwaysPagesNameAnAccount(b) && alwaysRenewingNamesAnAccount(b) && alwaysFromHistoryNamesAccounts(b) && alwaysFilterNamesAnEmailAccount(b) && alwaysOnlyOtherEmailKeepsAFromName(b) &&
-      stepRenewalKeepsTheAccount(a, b) && stepRemovalNeedsTheQuestion(a, "setUse", b) && stepUseChangesKeepAccounts(a, "setUse", b) by {
-      SetUseView(a, id, use, by_);
-      MappedDistinct(a, b);
-      MappedMatch(a, b, "setUse");
-      MappedRenewing(a, b);
-      HistoryView(a);
-      HistoryView(b);
-      forall y | y in b.accounts
-        ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && (y.fromName != "" ==> y.provider.OtherEmail?)
-      {
-        var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
-        assert a.accounts[i] in a.accounts;
-      }
-      if b.inboxFilter != 0 {
-        var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
-        MailMember(a, x);
-        var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
-        MailMember(b, b.accounts[i]);
-      }
-      forall x | x in a.accounts
-        ensures exists y :: y in b.accounts && y.id == x.id && y.address == x.address
-      {
-        var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
-        assert b.accounts[i] in b.accounts;
-      }
-    }
+    SetUsePreserved(a, id, use, by_);
   }
 }
 
@@ -1211,7 +1263,8 @@ lemma noteSent_ensures(a: Accounts, recipient: string, id: int, by_: AccountActo
   if inv(a) && canNoteSent(a, recipient, id, by_) {
     var b := noteSent(a, recipient, id, by_);
     assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysAccountsAreWellFormed(b) &&
-      alwaysPagesNameAnAccount(b) && alwaysRenewingNamesAnAccount(b) && alwaysFromHistoryNamesAccounts(b) && alwaysFilterNamesAnEmailAccount(b) && alwaysOnlyOtherEmailKeepsAFromName(b) &&
+      alwaysPagesNameAnAccount(b) && alwaysOnlyOtherEmailKeepsAFromName(b) && alwaysRenewingNamesAnAccount(b) &&
+      alwaysFromHistoryNamesAccounts(b) && alwaysFilterNamesAnEmailAccount(b) &&
       stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, "noteSent", b) && stepRemovalNeedsTheQuestion(a, "noteSent", b) by {
       NoteSentView(a, recipient, id, by_);
       MappedDistinct(a, b);
@@ -1267,32 +1320,13 @@ lemma removeAccount_ensures(a: Accounts, id: int, waiting: int, by_: AccountActo
         SameAccountsSteps(a, b, "removeAccount");
       }
     } else {
-      Removed(a, id, "removeAccount");
+      assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysAccountsAreWellFormed(b) &&
+        alwaysOnlyOtherEmailKeepsAFromName(b) && alwaysRenewingNamesAnAccount(b) && alwaysFilterNamesAnEmailAccount(b) && alwaysFromHistoryNamesAccounts(b) &&
+        stepAccountsGrowOnlyFromASignIn(a, "removeAccount", b) && stepRenewalKeepsTheAccount(a, b) &&
+        stepUsesChangeOnlyByHerSwitch(a, "removeAccount", b) && stepRemovalNeedsTheQuestion(a, "removeAccount", b) by {
+        Removed(a, id, "removeAccount");
+      }
     }
-  }
-}
-
-lemma lawNothingChangedTellsNothing_ensures(a: Accounts)
-  ensures (lawNothingChangedTellsNothing(a) == true)
-{
-  NothingAdded(a);
-  ToldView(a);
-}
-
-lemma lawDefaultFromSendsMail_ensures(a: Accounts, recipient: string)
-  ensures (lawDefaultFromSendsMail(a, recipient) == true)
-{
-  BestFinds(mailAccounts(a), noAccount);
-}
-
-lemma lawDefaultFromExistsWithEmail_ensures(a: Accounts, recipient: string)
-  ensures (lawDefaultFromExistsWithEmail(a, recipient) == true)
-{
-  BestFinds(mailAccounts(a), noAccount);
-  forall x | x in mailAccounts(a)
-    ensures x in a.accounts
-  {
-    MailMember(a, x);
   }
 }
 
@@ -1318,148 +1352,49 @@ lemma discardAndRemove_ensures(a: Accounts, id: int, waiting: int, by_: AccountA
   ensures (inv(a) ==> canDiscardAndRemove(a, id, waiting, by_) ==> stepDiscardFollowsHerConfirm(a, "discardAndRemove", discardAndRemove(a, id, waiting, by_)))
 {
   if inv(a) && canDiscardAndRemove(a, id, waiting, by_) {
-    Removed(a, id, "discardAndRemove");
-  }
-}
-
-lemma lookUpServers_ensures(a: Accounts, by_: AccountActor)
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysOneAccountPerAddress(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysIdsAreIssued(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysNamesAreDistinct(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysAccountsAreWellFormed(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysPagesNameAnAccount(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysOnlyOtherEmailKeepsAFromName(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysFoundServersAreBoth(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysTypedDomainStaysOnItsForm(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysRenewingNamesAnAccount(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysCompanyRenewalStaysOnItsAccount(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysFilterNamesAnEmailAccount(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> alwaysFromHistoryNamesAccounts(lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepAccountsGrowOnlyFromASignIn(a, "lookUpServers", lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepAttemptNeverMovesBack(a, lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepRenewalKeepsTheAccount(a, lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepUsesChangeOnlyByHerSwitch(a, "lookUpServers", lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepUseChangesKeepAccounts(a, "lookUpServers", lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepRemovalNeedsTheQuestion(a, "lookUpServers", lookUpServers(a, by_)))
-  ensures (inv(a) ==> canLookUpServers(a, by_) ==> stepDiscardFollowsHerConfirm(a, "lookUpServers", lookUpServers(a, by_)))
-{
-  if inv(a) && canLookUpServers(a, by_) {
-    assert stepRenewalKeepsTheAccount(a, lookUpServers(a, by_)) && stepUsesChangeOnlyByHerSwitch(a, "lookUpServers", lookUpServers(a, by_)) by {
-      SameAccountsSteps(a, lookUpServers(a, by_), "lookUpServers");
+    var b := discardAndRemove(a, id, waiting, by_);
+    assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysAccountsAreWellFormed(b) &&
+      alwaysOnlyOtherEmailKeepsAFromName(b) && alwaysRenewingNamesAnAccount(b) && alwaysFilterNamesAnEmailAccount(b) && alwaysFromHistoryNamesAccounts(b) &&
+      !hasAccount(b, id) && stepAccountsGrowOnlyFromASignIn(a, "discardAndRemove", b) && stepRenewalKeepsTheAccount(a, b) &&
+      stepUsesChangeOnlyByHerSwitch(a, "discardAndRemove", b) && stepRemovalNeedsTheQuestion(a, "discardAndRemove", b) by {
+      Removed(a, id, "discardAndRemove");
     }
-  }
-}
-
-lemma serversLookedUp_ensures(a: Accounts, report: LookupReport, by_: AccountActor)
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysOneAccountPerAddress(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysIdsAreIssued(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysNamesAreDistinct(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysAccountsAreWellFormed(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysPagesNameAnAccount(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysOnlyOtherEmailKeepsAFromName(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysFoundServersAreBoth(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysTypedDomainStaysOnItsForm(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysRenewingNamesAnAccount(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysCompanyRenewalStaysOnItsAccount(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysFilterNamesAnEmailAccount(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> alwaysFromHistoryNamesAccounts(serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepAccountsGrowOnlyFromASignIn(a, "serversLookedUp", serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepAttemptNeverMovesBack(a, serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepRenewalKeepsTheAccount(a, serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepUsesChangeOnlyByHerSwitch(a, "serversLookedUp", serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepUseChangesKeepAccounts(a, "serversLookedUp", serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepRemovalNeedsTheQuestion(a, "serversLookedUp", serversLookedUp(a, report, by_)))
-  ensures (inv(a) ==> canServersLookedUp(a, report, by_) ==> stepDiscardFollowsHerConfirm(a, "serversLookedUp", serversLookedUp(a, report, by_)))
-{
-  if inv(a) && canServersLookedUp(a, report, by_) {
-    assert stepRenewalKeepsTheAccount(a, serversLookedUp(a, report, by_)) && stepUsesChangeOnlyByHerSwitch(a, "serversLookedUp", serversLookedUp(a, report, by_)) by {
-      SameAccountsSteps(a, serversLookedUp(a, report, by_), "serversLookedUp");
-    }
-  }
-}
-
-lemma removeAnyway_ensures(a: Accounts, id: int, waiting: int, by_: AccountActor)
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysOneAccountPerAddress(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysIdsAreIssued(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysNamesAreDistinct(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysAccountsAreWellFormed(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysPagesNameAnAccount(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysOnlyOtherEmailKeepsAFromName(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysFoundServersAreBoth(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysTypedDomainStaysOnItsForm(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysRenewingNamesAnAccount(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysCompanyRenewalStaysOnItsAccount(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysFilterNamesAnEmailAccount(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> alwaysFromHistoryNamesAccounts(removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepAccountsGrowOnlyFromASignIn(a, "removeAnyway", removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepAttemptNeverMovesBack(a, removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepRenewalKeepsTheAccount(a, removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepUsesChangeOnlyByHerSwitch(a, "removeAnyway", removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepUseChangesKeepAccounts(a, "removeAnyway", removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepRemovalNeedsTheQuestion(a, "removeAnyway", removeAnyway(a, id, waiting, by_)))
-  ensures (inv(a) ==> canRemoveAnyway(a, id, waiting, by_) ==> stepDiscardFollowsHerConfirm(a, "removeAnyway", removeAnyway(a, id, waiting, by_)))
-{
-  if inv(a) && canRemoveAnyway(a, id, waiting, by_) {
-    assert stepRenewalKeepsTheAccount(a, removeAnyway(a, id, waiting, by_)) && stepUsesChangeOnlyByHerSwitch(a, "removeAnyway", removeAnyway(a, id, waiting, by_)) by {
-      SameAccountsSteps(a, removeAnyway(a, id, waiting, by_), "removeAnyway");
-    }
-  }
-}
-
-lemma BestStays(xs: seq<FoundServer>, init: FoundServer, kind: ServerKind)
-  requires init.host != "" && init.security.SecureDirect?
-  ensures Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs) == init
-  decreases |xs|
-{
-  if |xs| > 0 {
-    BestStays(xs[1..], init, kind);
-  }
-}
-
-lemma BestDirect(xs: seq<FoundServer>, init: FoundServer, kind: ServerKind)
-  requires (init.host != "" && init.security.SecureDirect?) || exists s :: s in xs && s.kind == kind && s.host != "" && s.security.SecureDirect?
-  ensures Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs).host != ""
-  ensures Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs).security.SecureDirect?
-  decreases |xs|
-{
-  if init.host != "" && init.security.SecureDirect? {
-    BestStays(xs, init, kind);
-  } else {
-    var next := if secureBetter(init, xs[0], kind) then xs[0] else init;
-    if !(xs[0].kind == kind && xs[0].host != "" && xs[0].security.SecureDirect?) {
-      var s :| s in xs && s.kind == kind && s.host != "" && s.security.SecureDirect?;
-      assert s in xs[1..];
-    }
-    BestDirect(xs[1..], next, kind);
-  }
-}
-
-lemma BestFound(xs: seq<FoundServer>, init: FoundServer, kind: ServerKind)
-  ensures var r := Std.Collections.Seq.FoldLeft((best: FoundServer, s: FoundServer) => (if secureBetter(best, s, kind) then s else best), init, xs);
-    r == init || (r in xs && r.kind == kind && r.host != "" && !r.security.Insecure?)
-  decreases |xs|
-{
-  if |xs| > 0 {
-    var next := if secureBetter(init, xs[0], kind) then xs[0] else init;
-    BestFound(xs[1..], next, kind);
-  }
-}
-
-lemma lawLookupPrefersADirectSecureServer_ensures(found: seq<FoundServer>)
-  ensures (lawLookupPrefersADirectSecureServer(found) == true)
-{
-  if exists s :: s in found && ((s.kind.ImapServer? && (s.host != "")) && s.security.SecureDirect?) {
-    BestDirect(found, noServer, ServerKind.ImapServer);
   }
 }
 
 lemma lawLookupFillsOnlyWithSecureServers_ensures(a: Accounts, report: LookupReport, by_: AccountActor)
   ensures (lawLookupFillsOnlyWithSecureServers(a, report, by_) == true)
 {
-  BestFound(report.found, noServer, ServerKind.ImapServer);
-  BestFound(report.found, noServer, ServerKind.SmtpServer);
-  if lookupFinds(report.found) {
-    assert bestServer(report.found, ServerKind.ImapServer) in report.found;
-    assert bestServer(report.found, ServerKind.SmtpServer) in report.found;
+  BestServerStep(report.found, ServerKind.ImapServer, noServer);
+  BestServerStep(report.found, ServerKind.SmtpServer, noServer);
+}
+
+lemma lawLookupPrefersADirectSecureServer_ensures(found: seq<FoundServer>)
+  ensures (lawLookupPrefersADirectSecureServer(found) == true)
+{
+  BestServerStep(found, ServerKind.ImapServer, noServer);
+}
+
+lemma lawNothingChangedTellsNothing_ensures(a: Accounts)
+  ensures (lawNothingChangedTellsNothing(a) == true)
+{
+  NothingAdded(a);
+  ToldView(a);
+}
+
+lemma lawDefaultFromSendsMail_ensures(a: Accounts, recipient: string)
+  ensures (lawDefaultFromSendsMail(a, recipient) == true)
+{
+  BestFinds(mailAccounts(a), noAccount);
+}
+
+lemma lawDefaultFromExistsWithEmail_ensures(a: Accounts, recipient: string)
+  ensures (lawDefaultFromExistsWithEmail(a, recipient) == true)
+{
+  BestFinds(mailAccounts(a), noAccount);
+  forall x | x in mailAccounts(a)
+    ensures x in a.accounts
+  {
+    MailMember(a, x);
   }
 }

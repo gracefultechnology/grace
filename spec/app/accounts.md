@@ -285,7 +285,7 @@ pure def canLookUpServers(a: Accounts, by: AccountActor): bool =
 pure def lookUpServers(a: Accounts, by: AccountActor): Accounts =
   { ...a, problem: NoProblem, signIn: { ...offServers(a.signIn), lookup: LookingUp, attempt: a.signIn.attempt + 1 } }
 pure def canServersLookedUp(a: Accounts, report: LookupReport, by: AccountActor): bool =
-  by == AccountConnector and a.page == MailServersPage and a.signIn.lookup == LookingUp and report.attempt == a.signIn.attempt
+  by == AccountConnector and a.page == MailServersPage and a.signIn.stage == NotSigningIn and a.signIn.lookup == LookingUp and report.attempt == a.signIn.attempt
 pure def serversLookedUp(a: Accounts, report: LookupReport, by: AccountActor): Accounts =
   if (lookupFinds(report.found))
     { ...a, signIn: { ...a.signIn, lookup: LookupFound,
