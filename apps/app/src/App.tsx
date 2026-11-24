@@ -1,4 +1,5 @@
 // spec/app/index.md, "Story: Manage my saved passwords privately"
+// spec/app/wake.md, "Settings and the sleep screen say when wake detection is unavailable"
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
 import { AppWindow, AskGraceButton, besideRail, Button, CaptionStrip, type CaptionStripProps, HomeScreen, ListRow, Rail, RailButton, RailPopover, ScreenDim, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
 import { Effect, ManagedRuntime } from "effect";
@@ -11,6 +12,7 @@ import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKe
 import { effectiveBrightness, muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
 import type { Setup } from "../gen/app__setup.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
+import { sleepHint } from "../gen/app__wake.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
 import { canChangeLifecycle, enabled, privateSurfaceActive, type Event as WorkspaceEvent, type Workspace } from "../gen/app__workspace.ts";
 import { agentPlugin } from "./agentPlugin.ts";
@@ -48,6 +50,7 @@ import {
   useRuntime,
   useSetupSelector,
   useToday,
+  useWakeStatus,
   useWorkspaceActions,
   useWorkspaceSelector,
   websiteRequestActionsFor,
@@ -523,24 +526,29 @@ function ActiveSurface({ surface, bottom, docked, keyboard, covered, sleeping }:
   );
 }
 
+const selectWakeEnabled = (workspace: Workspace | undefined) => workspace?.preferences.session.wakeEnabled ?? false;
+
 function SleepOverlay() {
   const now = useMinute();
   const owner = useSetupSelector(selectOwner);
   const cards = useHomeCards();
   const { accounts } = useAccounts();
   const calKeys = useCalendarKeys();
+  const wakeEnabled = useWorkspaceSelector(selectWakeEnabled);
+  const wakeStatus = useWakeStatus();
   const { current, send } = useWorkspaceActions();
   const ours = owner === "Ours";
   const { time } = clockParts(now);
+  const wakeHint = sleepHint(wakeEnabled, wakeStatus.armed);
   const wake = useCallback(() => {
     if (canChangeLifecycle(current(), "WakeDevice", "Host")) void send({ type: "changeLifecycle", lifecycle: "WakeDevice" }, "Host");
   }, [current, send]);
   const renderSleep = (next: string | undefined) => (
-    <SleepScreen role="button" tabIndex={0} aria-label="Wake Grace"
+    <SleepScreen role="button" tabIndex={0} aria-label="Wake Grace" aria-description={wakeHint}
       time={time}
       date={sleepDate.format(now)}
       next={next}
-      hint="Touch the screen to wake it" onClick={wake} onKeyDown={(event) => {
+      hint={wakeHint} onClick={wake} onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") { event.preventDefault(); wake(); }
       }} />
   );

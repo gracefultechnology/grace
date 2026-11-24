@@ -362,7 +362,8 @@ This includes restoration: reconnecting, touch waking and granting a permission
 cannot silently restart work or a microphone. The host reports the operating
 system's current access, not an optimistic result before a permission prompt.
 Startup failure and retry stay distinct from a usable device.
-Sleep hides Grace after pausing it, preserving the task, transcript and draft.
+The person can put Grace to sleep. Sleep hides Grace after pausing it, preserving
+the task, transcript and draft.
 Touch waking restores the application surface without reopening Grace; an
 enabled wake phrase can explicitly open a new exchange. Native lock blocks
 application access until OS authentication permits it. The model relies on the
@@ -383,7 +384,7 @@ reviewed guided checkpoint after startup.
 
 ```quint
 pure def canChangeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): bool =
-  by == Host and match lifecycle {
+  (by == Host or (by == Person and lifecycle == SleepDevice)) and match lifecycle {
     | StartupSucceeded => S::canFinishStartup(w.device)
     | StartupFailed => S::canFinishStartup(w.device)
     | RetryStartup => S::canRetryStartup(w.device)
@@ -857,10 +858,11 @@ phrase is explicit voice intent even while the device sleeps. It pauses the
 old task and invalidates payment approval before opening a fresh exchange.
 Existing open chat keeps its size; Home opens expanded and other apps compact.
 The wake chime obeys actual volume/mute. Pre-trigger audio stays local to the
-native detector. Capture after detection still requires an available reasoning
-route and microphone permission; unavailable service opens Grace with a clear
-notice and leaves manual controls available. Detection availability is distinct
-from reasoning availability. While a wake exchange or its silence notice is
+native detector. Capture after detection requires microphone permission, an
+online connection and an available reasoning route. From Browser, Grace opens with a written
+notice and leaves the microphone available to the website. When voice is
+unavailable, Grace opens with a written notice and keeps Type available.
+Detection availability is distinct from reasoning availability. While a wake exchange or its silence notice is
 active, website execution is idle or paused. Starting or resuming website work
 cancels that wake exchange before its timer can hide Grace.
 
@@ -873,11 +875,16 @@ pure def priorWindow(a: A::Assistant): W::PriorWindow =
   if (a.presentation == A::Closed) W::WasClosed else if (a.presentation == A::Compact) W::WasCompact else W::WasExpanded
 pure def wakeWindow(a: A::Assistant, presentation: A::Presentation): A::Assistant =
   { ...a, keyboard: A::NoKeyboard, presentation: presentation }
+pure def wakeSpeechAvailable(w: Workspace): bool =
+  w.device.reasoningAvailable and w.device.connectivity == S::Online and w.device.surface != S::Browser
+pure def wakeAvailabilityNotice(c: C::Conversation): C::Conversation =
+  C::appended(C::GraceMessage, "I can’t listen here right now. You can still type.", c)
 pure def listeningAfterWake(w: Workspace): A::Assistant =
   val paused = quietAssistant(w.assistant)
   val presentation = if (A::isVisible(paused)) paused.presentation else if (w.device.surface == S::Home) A::Expanded else A::Compact
   val opened = wakeWindow(paused, presentation)
-  if (w.device.reasoningAvailable) A::talk(opened, C::ConversationUser) else opened
+  if (wakeSpeechAvailable(w)) A::talk(opened, C::ConversationUser)
+  else { ...opened, conversation: wakeAvailabilityNotice(opened.conversation) }
 pure def canDetectWake(w: Workspace, detection: W::WakeDetection, by: WorkspaceActor): bool =
   not(privateSurfaceActive(w)) and
   by == Host and W::canDetect(w.wake, detection, W::WakeHost) and
@@ -890,9 +897,9 @@ pure def detectWake(w: Workspace, detection: W::WakeDetection, by: WorkspaceActo
     browser: if (w.browser.editingAddress or w.assistant.keyboard != A::NoKeyboard)
       B::pageChanged(B::dismissAddress(w.browser)) else w.browser,
     assistant: listeningAfterWake(w), execution: quietExecution(w.execution), commitment: quietCommitment(w.commitment),
-    wake: if (w.device.reasoningAvailable) W::detect(w.wake, detection, W::WakeHost).state
+    wake: if (wakeSpeechAvailable(w)) W::detect(w.wake, detection, W::WakeHost).state
       else W::cancel(w.wake, W::WakeHost) },
-  out: List(WakeFeedback({ signal: if (w.device.reasoningAvailable) W::WakeChime else W::ExplainUnavailable }))
+  out: List(WakeFeedback({ signal: if (wakeSpeechAvailable(w)) W::WakeChime else W::ExplainUnavailable }))
 }
 pure def canWakeNoSpeech(w: Workspace, timer: W::WakeTimer, by: WorkspaceActor): bool =
   by == Host and W::canNoSpeech(w.wake, timer, W::WakeHost) and A::isVisible(w.assistant) and
@@ -918,7 +925,7 @@ pure def cancelWake(w: Workspace, by: WorkspaceActor): Workspace =
 pure def stepWakeNeverDispatchesWebsite(before: Workspace, via: str, after: Workspace, out: List[WorkspaceEffect]): bool =
   via == "detectWake" implies
     out.length() == 1 and out.every(effect => match effect {
-      | WakeFeedback(feedback) => feedback.signal == (if (before.device.reasoningAvailable) W::WakeChime else W::ExplainUnavailable)
+      | WakeFeedback(feedback) => feedback.signal == (if (wakeSpeechAvailable(before)) W::WakeChime else W::ExplainUnavailable)
       | _ => false
     }) and
     after.commitment.result == before.commitment.result and not(after.commitment.fresh)
@@ -1332,7 +1339,7 @@ pure def stepEffectsRequireCurrentContext(before: Workspace, after: Workspace, o
     | WakeFeedback(feedback) => if (feedback.signal == W::WakeChime)
         before.preferences.session.wakeEnabled and after.device.readiness == S::Ready and after.device.microphoneAllowed
       else if (feedback.signal == W::ExplainUnavailable) after.device.readiness == S::Ready and
-        not(after.device.reasoningAvailable) and not(after.assistant.conversation.voice)
+        not(wakeSpeechAvailable(before)) and not(after.assistant.conversation.voice)
       else feedback.signal == W::ExplainSilence and before.wake.phase == W::AwaitingSpeech and not(after.assistant.conversation.voice)
   })
 pure def lawStaleDeviceCannotDispatch(w: Workspace, tokens: OperationTokens, by: WorkspaceActor): bool =

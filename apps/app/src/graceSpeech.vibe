@@ -1,11 +1,11 @@
-// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Only Talk opens the microphone, so her voice is sent only in an exchange she started"; spec/app/conversation.md, "Listening waits eight seconds for her first word"
+// spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/conversation.md, "Talk and the wake phrase open cloud capture only for the current exchange"; spec/app/conversation.md, "Listening waits eight seconds for her first word"; spec/app/wake.md, "Story: Call Grace from any app or while the screen sleeps"
 import { Machine as PasswordViews, type GuideMic } from "../gen/app.effect.vibe"
 import { firstWordLimitMs, sendsHerVoice, voiceDisclosure } from "../gen/app__conversation.effect.vibe"
 import { Machine as Setup, type Setup as SetupState } from "../gen/app__setup.effect.vibe"
-import { Machine as Workspaces, localPasswordCommands, privateSurfaceActive, type Workspace } from "../gen/app__workspace.effect.vibe"
+import { Machine as Workspaces, canDetectWake, listeningAfterWake, localPasswordCommands, priorWindow, privateSurfaceActive, type Workspace } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin } from "./accountPlugin.ts"
 import { apiOrigin } from "./graceAccount.vibe"
-import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone } from "./graceSpeechPlatform.ts"
+import { gracePlayback, openMicrophone, openSpeechSocket, releaseSpeechSocket, speechFrame, type Microphone, type WakePort } from "./graceSpeechPlatform.ts"
 import { Passwords } from "./passwords.vibe"
 import { webView } from "./surfacePlugin.ts"
 
@@ -20,6 +20,8 @@ schema Ready { t: "ready"; version: 1; sampleRate: 16000; channels: 1 }
 schema Input { t: "stt"; event: Transcript }
 schema Complete { t: "complete"; id: string }
 schema UnavailableEvent { t: "error"; code: string }
+schema NativeWakeStatus { available: boolean; permitted: boolean }
+schema NativeWakeDetection { generation: Schema.Int }
 
 error SpeechUnavailable
 type PasswordViewState = Effect.Success<ReturnType<PasswordViews.Shape["get"]>>
@@ -27,11 +29,18 @@ type InputFrame = { kind: "setup"; setup: SetupState } | { kind: "view"; view: P
   { kind: "received"; payload: unknown } | { kind: "drained"; token: number; played: boolean }
 
 type VoiceCapture = { microphone: Microphone; guide?: { person: string; ticket: number } }
-type VoiceUse = "talk" | "command"
+type VoiceUse = "talk" | "command" | "wake"
+export type WakeStatus = typeof NativeWakeStatus.Type & { disclosed: boolean; armed: boolean }
+type WakeArm = { generation: number; interaction: number }
+type WakeUpdate = { kind: "status"; value: unknown } | { kind: "detection"; value: unknown } | { kind: "reconcile" }
+const wakeDisclosureKey = "grace/voice-disclosure/wake"
+const noWake: WakeStatus = { available: false, permitted: false, disclosed: false, armed: false }
 export type VoiceNotice = { scope: string | undefined; use: VoiceUse }
 
 export service SpeechActions {
   talk(acknowledged?: VoiceNotice): (VoiceNotice | undefined)!!
+  readonly wakeStatus: SubscriptionRef.SubscriptionRef<WakeStatus>
+  setUpWake(acknowledged?: VoiceNotice): (VoiceNotice | undefined)!!
 }
 
 export function mayOfferTalk(state: Workspace) {
@@ -146,7 +155,7 @@ effect function speechConnection(native: boolean) {
   return { lease, socket }
 }
 
-effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<VoiceCapture | null>, currentMic: () => VoiceCapture | null, heardIn: Ref.Ref<number | null>) {
+effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref.Ref<VoiceCapture | null>, currentMic: () => VoiceCapture | null, heardIn: Ref.Ref<number | null>, wake?: WakePort) {
   const passwords = try Passwords
   const view = try PasswordViews
   const setup = try Setup
@@ -298,7 +307,14 @@ effect function runSpeech(native: boolean, workspace: Workspaces.Shape, mic: Ref
     if (!ready) {
       if (Option.isNone(Schema.decodeUnknownOption(Ready)(payload))) throw new SpeechUnavailable()
       ready = true
-      try update(state)
+      latestWorkspace = try workspace.get()
+      refreshMicGate()
+      if (wake && current.wake.phase === "AwaitingSpeech" && latestWorkspace.wake.generation === current.wake.generation &&
+        latestWorkspace.preferences.session.volume > 0 && !latestWorkspace.preferences.session.muted)
+        try Effect.ignore(timeout(tryPromise(() => wake.chime()), "1 second"))
+      latestWorkspace = try workspace.get()
+      refreshMicGate()
+      try update(latestWorkspace)
       return
     }
     const completed = Schema.decodeUnknownOption(Complete)(payload)
@@ -354,7 +370,7 @@ effect function voiceNoticeScope(native: boolean, setup: Setup.Shape) {
     ? "device/" + status.voiceDisclosureScope : undefined
 }
 
-export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effect {
+export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(SpeechActions, effect {
   const workspace = try Workspaces
   const setup = try Setup
   const views = try PasswordViews
@@ -366,6 +382,9 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
   }
   const heardIn = try Ref.make<number | null>(null)
   const opening = try Semaphore.make(1)
+  const wakeStatus = try SubscriptionRef.make(noWake)
+  let arm: WakeArm | undefined
+  let nextArm = 0
   effect function closeMic() {
     activeMic = null
     const current = try Ref.getAndSet(mic, null)
@@ -378,19 +397,129 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
       workspace.send({ type: "setAvailability", availability }, "Host") catch () => undefined
     }
   }
+  effect function wakeDisclosed() {
+    return (Effect.try(() => webView.window.localStorage.getItem(wakeDisclosureKey)) catch () => null) === voiceDisclosure
+  }
+  effect function pauseWake() {
+    if (!wake || !arm) return true
+    try SubscriptionRef.update(wakeStatus, (status) => ({ ...status, armed: false }))
+    const stopped = (tryPromise(() => wake.configure({ generation: null })) |> Effect.as(%, true)) catch () => false
+    if (stopped) arm = undefined
+    return stopped
+  }
+  effect function pageVisible() {
+    return !(Effect.try(() => webView.hidden()) catch () => true)
+  }
+  function eligibleWake(state: Workspace, status: WakeStatus) {
+    const { device, assistant } = state
+    return status.available && status.permitted && status.disclosed &&
+      state.preferences.session.wakeEnabled && device.microphoneAllowed &&
+      (device.readiness === "Ready" || device.readiness === "Sleeping") && state.wake.phase === "Dormant" &&
+      !privateSurfaceActive(state) && !localPasswordCommands(device) && !assistant.conversation.voice &&
+      assistant.conversation.turn !== "Speaking" && assistant.conversation.turn !== "Paused"
+  }
+  effect function syncWake() {
+    if (!wake) return
+    const status = try SubscriptionRef.get(wakeStatus)
+    const state = try workspace.get()
+    if (!eligibleWake(state, status) || !(try pageVisible()) || (try Ref.get(mic)) !== null) {
+      try pauseWake()
+      return
+    }
+    if (arm?.interaction === state.wake.generation) return
+    const lease = { generation: ++nextArm, interaction: state.wake.generation }
+    arm = lease
+    const started = (tryPromise(() => wake.configure({ generation: lease.generation })) |> Effect.as(%, true)) catch () => false
+    if (!started) arm = undefined
+    try SubscriptionRef.update(wakeStatus, (current) => ({ ...current, armed: started }))
+  }
+  effect function updateWakeStatus(value: unknown) {
+    const status = Schema.decodeUnknownEffect(NativeWakeStatus)(value) catch () => noWake
+    const previous = try SubscriptionRef.get(wakeStatus)
+    const disclosed = try wakeDisclosed()
+    try SubscriptionRef.set(wakeStatus, { ...status, disclosed, armed: previous.armed && status.available && status.permitted })
+    if (status.available || previous.available) try reportMic(status.permitted && (try pageVisible()))
+  }
+  effect function startWake(value: unknown) {
+    if (!wake) return
+    const observed = Schema.decodeUnknownEffect(NativeWakeDetection)(value) catch () => undefined
+    const lease = arm
+    if (!observed || observed.generation !== lease?.generation) return
+    arm = undefined
+    try SubscriptionRef.update(wakeStatus, (status) => ({ ...status, armed: false }))
+    const status = try SubscriptionRef.get(wakeStatus)
+    const state = try workspace.get()
+    if (lease.interaction !== state.wake.generation || !eligibleWake(state, status) || !(try pageVisible())) return
+    const detection = {
+      generation: lease.interaction, now: try Clock.currentTimeMillis,
+      conversationVersion: listeningAfterWake(state).conversation.generation,
+      prior: priorWindow(state.assistant),
+      context: { enabled: true, permitted: status.permitted, available: status.available, ready: true, source: "HumanWake" as const },
+    }
+    if (!canDetectWake(state, detection, "Host")) return
+    const accepted = workspace.send({ type: "detectWake", detection }, "Host") catch () => undefined
+    if (!accepted || accepted.state.wake.phase !== "AwaitingSpeech") return
+    const exchange = accepted.state.wake
+    const current = try workspace.get()
+    if (current.wake.generation !== exchange.generation || !current.assistant.conversation.voice || !(try pageVisible())) return
+    const opened = timeout(tryPromise((signal) => openMicrophone(signal)), "4 seconds") catch () => null
+    if (opened === null) return
+    const after = try workspace.get()
+    if (after.wake.generation !== exchange.generation || !after.assistant.conversation.voice || !(try pageVisible())) {
+      try Effect.ignore(tryPromise(() => opened.close()))
+      return
+    }
+    try setMic({ microphone: opened })
+  }
+  if (wake !== undefined) {
+    const nativeUpdates = Stream.callback<WakeUpdate>((queue) => Effect.ignore(effect {
+      try tryPromise(() => wake.configure({ generation: null }))
+      for (const [event, kind] of [["wakeDetected", "detection"], ["wakeStatus", "status"]] as const) {
+        try acquireRelease(
+          tryPromise(() => wake.addListener(event, (value) => { Queue.offerUnsafe(queue, { kind, value }) })),
+          (handle) => Effect.ignore(tryPromise(() => handle.remove())),
+        )
+      }
+      const value = tryPromise(() => wake.status()) catch () => undefined
+      Queue.offerUnsafe(queue, { kind: "status", value })
+    }))
+    const changes = Stream.mergeAll([
+      nativeUpdates,
+      Stream.map(workspace.changes, (): WakeUpdate => ({ kind: "reconcile" })),
+      Stream.map(Stream.fromEventListener(webView.document, "visibilitychange"), (): WakeUpdate => ({ kind: "reconcile" })),
+    ], { concurrency: "unbounded" })
+    try fork.scoped Effect.ignore(Stream.runForEach(changes, (update) => opening.withPermits(1)(effect {
+      if (update.kind === "status") try updateWakeStatus(update.value)
+      if (update.kind === "detection") try startWake(update.value)
+      try syncWake()
+    })))
+    try addFinalizer(() => Effect.ignore(tryPromise(() => wake.configure({ generation: null }))))
+  }
+  const wakeTimers = Stream.changesWith(Stream.map(workspace.changes, (state) => state.wake),
+    (previous, next) => previous.phase === next.phase && previous.generation === next.generation)
+  try fork.scoped Stream.runDrain(Stream.switchMap(wakeTimers, (session) => session.phase === "Dormant" ? Stream.empty : Stream.fromEffect(effect {
+    const now = try Clock.currentTimeMillis
+    try Effect.sleep(Math.max(0, session.deadline - now))
+    const timer = { generation: session.generation, conversationVersion: session.conversationVersion, now: try Clock.currentTimeMillis }
+    if (session.phase === "SilenceNotice") workspace.send({ type: "wakeReturn", timer }, "Host") catch () => undefined
+    else if ((try Ref.get(heardIn)) !== session.conversationVersion) workspace.send({ type: "wakeNoSpeech", timer }, "Host") catch () => undefined
+  })))
   const changed = Stream.changes(Stream.map(workspace.changes, speechWanted))
   try fork.scoped Stream.runDrain(Stream.switchMap(changed, (wanted) => wanted ? Stream.fromEffect(effect {
     const captureReady = opening.withPermits(1)(Effect.void)
     try captureReady
-    scoped(runSpeech(native, workspace, mic, () => activeMic, heardIn)) catch effect () => {
-      const { assistant } = try workspace.get()
-      const token = assistant.conversation.generation
+    const current = try workspace.get()
+    if (current.wake.phase === "AwaitingSpeech" && (try Ref.get(mic)) === null) return
+    scoped(runSpeech(native, workspace, mic, () => activeMic, heardIn, wake)) catch effect () => {
+      const latest = try workspace.get()
+      if (latest.wake.phase === "AwaitingSpeech") return
+      const token = latest.assistant.conversation.generation
       workspace.send({ type: "interact", input: { tag: "FinishSpeech", token, played: false } }, "Host") catch () => undefined
       try reportMic(false)
     }
   }) : Stream.empty))
-  const listening = Stream.changes(Stream.map(workspace.changes, ({ assistant: { conversation } }) =>
-    conversation.voice && conversation.turn === "Listening" ? conversation.generation : null))
+  const listening = Stream.changes(Stream.map(workspace.changes, ({ assistant: { conversation }, wake }) =>
+    wake.phase === "Dormant" && conversation.voice && conversation.turn === "Listening" ? conversation.generation : null))
   try fork.scoped Stream.runDrain(Stream.switchMap(listening, (token) => token === null ? Stream.empty : Stream.fromEffect(effect {
     try Effect.sleep(firstWordLimitMs)
     if ((try Ref.get(heardIn)) !== token) workspace.send({ type: "interact", input: { tag: "Silence", token } }, "Host") catch () => undefined
@@ -400,11 +529,15 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
     (a, b) => a.voice === b.voice && a.mayTalk === b.mayTalk
   )
   try fork.scoped Stream.runForEach(micStatus, effect ({ voice, mayTalk }) => {
-    if (!voice) try closeMic()
-    else if (!mayTalk) {
+    if (voice && mayTalk) return
+    if ((try Ref.get(mic)) === null) return
+    try opening.withPermits(1)(effect {
+      const current = try workspace.get()
+      if (current.assistant.conversation.voice && mayOfferTalk(current)) return
       try closeMic()
-      try reportMic(false)
-    }
+      if (current.assistant.conversation.voice) try reportMic(false)
+      try syncWake()
+    })
   })
   try fork.scoped Stream.runForEach(Stream.fromEventListener(webView.document, "visibilitychange"), effect () => {
     if ((Effect.try(() => webView.hidden()) catch () => true)) {
@@ -413,7 +546,7 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
     }
   })
   try addFinalizer(() => closeMic())
-  effect function noticeFor(use: VoiceUse, scope: string | undefined, acknowledged?: VoiceNotice) {
+  effect function noticeFor(use: Exclude<VoiceUse, "wake">, scope: string | undefined, acknowledged?: VoiceNotice) {
     const key = scope === undefined ? undefined : "grace/voice-disclosure/" + scope + (use === "talk" ? "" : "/" + use)
     if (acknowledged !== undefined && (acknowledged.scope !== scope || acknowledged.use !== use)) return { scope, use }
     if (acknowledged === undefined) {
@@ -428,6 +561,21 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
     if (ticket !== undefined) views.send({ type: "finishGuideMic", ticket, result }, "PasswordsHost") catch () => undefined
   }
   return {
+    wakeStatus,
+    setUpWake: (acknowledged) => effect {
+      if (!wake || !(try SubscriptionRef.get(wakeStatus)).available) return undefined
+      if (!(try wakeDisclosed())) {
+        if (acknowledged?.use !== "wake") return { use: "wake", scope: undefined }
+        const saved = Effect.try(() => { webView.window.localStorage.setItem(wakeDisclosureKey, voiceDisclosure); return true }) catch () => false
+        if (!saved) return { use: "wake", scope: undefined }
+      }
+      const value = tryPromise(() => wake.requestPermission()) catch () => undefined
+      try opening.withPermits(1)(effect {
+        try updateWakeStatus(value)
+        try syncWake()
+      })
+      return undefined
+    },
     talk: (acknowledged) => opening.withPermits(1)(effect {
       const state = try workspace.get()
       if (!mayOfferTalk(state) || state.assistant.presentation === "Closed" || state.assistant.conversation.voice) return undefined
@@ -442,16 +590,19 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
       if (notice) return notice
       const pending = guide ? (views.send({ type: "startGuideMic" }, "PasswordsPerson") catch () => undefined) : undefined
       if (guide && pending === undefined) return undefined
+      if (!(try pauseWake())) return undefined
       const opened = tryPromise((signal) => openMicrophone(signal)) catch () => null
       if (opened === null) {
         try finishGuide(pending?.guideMicEpoch, "GuideMicUnavailable")
         try reportMic(false)
+        try syncWake()
         return undefined
       }
       const current = try workspace.get()
       if (!mayOfferTalk(current) || localPasswordCommands(current.device) !== guide || current.device.contextVersion !== state.device.contextVersion || current.assistant.presentation === "Closed" || (try voiceNoticeScope(native, setup)) !== scope) {
         try finishGuide(pending?.guideMicEpoch, "GuideMicIdle")
         try Effect.ignore(tryPromise(() => opened.close()))
+        try syncWake()
         return undefined
       }
       try reportMic(true)
@@ -460,6 +611,7 @@ export const graceSpeech = (native: boolean) => Layer.effect(SpeechActions, effe
       else {
         try finishGuide(pending?.guideMicEpoch, "GuideMicUnavailable")
         try Effect.ignore(tryPromise(() => opened.close()))
+        try syncWake()
       }
       return undefined
     })
