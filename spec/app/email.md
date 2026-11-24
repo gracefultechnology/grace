@@ -650,7 +650,8 @@ opens only a new, unaddressed message; a reply opens only through
 `replyToMessage` (next rule), so there is one reply path. No reply is sent
 merely by selecting an email. Trash exposes Restore and Delete forever, so
 reply and forwarding are unavailable until that message is restored. Her own
-email in Sent offers Forward and never Reply, and a saved draft in Drafts is
+email in Sent offers Forward and never Reply, an email she sent to herself
+offers Forward and never Reply in Inbox too (next rule), and a saved draft in Drafts is
 never replied to, so neither she nor Grace replies to what she wrote herself; the prototype offers
 Reply on a sent email (`prototype/Grace Prototype.html:2023`), and the owner
 chose Forward only.
@@ -762,7 +763,10 @@ message's own reply-to header instead, which may name a different address, as
 mail clients do, and the connector supplies whichever address that header
 names. The recipient therefore never arrives as an edit the person
 did not make, and a header from an earlier read or from another message cannot
-address the reply.
+address the reply. A header whose reply address is her own account's address,
+as an email she sent to herself has, opens no reply, so that email in Inbox
+offers Forward only, as her email in Sent does; the connector gives her own
+address exactly as her account spells it.
 The automatic subject is remembered, so it alone does not make the composer
 worth keeping (`prototype/Grace Prototype.html:2199`).
 
@@ -770,7 +774,8 @@ worth keeping (`prototype/Grace Prototype.html:2199`).
 type ReplyHeader = { ref: str, generation: int, address: str, subject: str, verified: bool }
 pure def canReplyToMessage(m: Mailbox, header: ReplyHeader, by: MailActor): bool =
   (by == MailConnector or by == MailHost) and m.view == Message and replyable(m) and
-  header.ref == m.messageRef and header.generation == m.generation and header.verified and header.address != ""
+  header.ref == m.messageRef and header.generation == m.generation and header.verified and header.address != "" and
+  header.address != m.account
 pure def replyToMessage(m: Mailbox, header: ReplyHeader, by: MailActor): Mailbox =
   { ...openComposer(m.messageRef, m), draft: { ...emptyContent, to: header.address, subject: header.subject },
     autoSubject: header.subject }
@@ -1034,7 +1039,10 @@ draft holds them. Saving prepares the attachments as sending does, so a draft
 holding one that cannot be sent (its bytes gone from Files, or a kind or size
 email cannot carry) is never saved without it: the save fails, the draft stays
 on the tablet exactly as it was and reopens, and the composer names each
-attachment that cannot go, so she can remove it and save the rest. The
+attachment that cannot go and why: a kind email cannot carry or bytes no longer
+on the tablet, an attachment that could not be read again from the email it
+came from, or, when together they are too large, each of the largest that must
+come out for the rest to fit, so she can remove them and save the rest. The
 prototype saves every draft (`prototype/Grace Prototype.html:2337`); here no
 saved draft silently lacks what she attached. Reopening Drafts reads the selected provider draft
 and restores all recipients and attachments as that draft's own, so a saved

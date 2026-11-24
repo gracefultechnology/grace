@@ -84,7 +84,7 @@ pure val noSeries: SeriesDefinition = { version: -1, details: C::noDetails }
 pure def sameSeriesFields(a: C::EntryDetails, b: C::EntryDetails): bool =
   a.title == b.title and a.location == b.location and a.participant == b.participant and a.notes == b.notes and
   a.timezone == b.timezone and a.allDay == b.allDay and a.seriesId == b.seriesId and a.recurrence == b.recurrence and
-  a.reminderEnabled == b.reminderEnabled and a.leadTime == b.leadTime
+  a.reminderEnabled == b.reminderEnabled and a.leadTime == b.leadTime and a.important == b.important
 pure def seriesAt(v: CalendarView, id: str): SeriesDefinition =
   v.series.select(s => s.details.seriesId == id).nthOr(0, noSeries)
 pure def putSeries(definitions: List[SeriesDefinition], definition: SeriesDefinition): List[SeriesDefinition] =
@@ -278,10 +278,11 @@ verified import. A new entry, from Add or from Grace's confirmed proposal, may
 be marked important, by the form's Important switch or by the proposal she
 agreed to, and has a positive length, the prototype's one hour by default (`Grace Prototype.html:2172`),
 which edits then keep. A form change applies through Calendar's `formDetails`.
-Editing a repeating event starts from its series' settings but keeps the
-occurrence's own important mark, and a series save writes each other member's
-own mark back, so the mark she sets on one occurrence never spreads to the
-others.
+The important mark belongs to the whole repeating event, as the prototype
+draws every repetition of a marked event red (its `red` is a field of the
+event, which repeats on every matching day): editing a repeating event starts
+from its series' settings, mark included, and a series save marks or unmarks
+every member.
 
 Dismiss on the Home banner or the reminder toast reaches the row whether or not
 Calendar is open or that event is selected, and even while a Save of that event
@@ -329,12 +330,13 @@ pure def ownedEntryResult(v: CalendarView, c: C::Calendar, command: OccurrenceAc
   match command {
     | BeginEditing => if (c.committed.seriesId != "")
         { ...C::beginEdit(c, C::CalendarUser),
-          draft: { ...seriesAt(v, c.committed.seriesId).details, important: c.committed.important } }
+          draft: seriesAt(v, c.committed.seriesId).details }
       else C::beginEdit(c, C::CalendarUser)
     | _ => changeEntry(c, command)
   }
-pure def lawEditingKeepsOwnMark(v: CalendarView, c: C::Calendar): bool =
-  ownedEntryResult(v, c, BeginEditing).draft.important == c.committed.important
+pure def lawEditingShowsTheSeriesMark(v: CalendarView, c: C::Calendar): bool =
+  c.committed.seriesId != "" implies
+    ownedEntryResult(v, c, BeginEditing).draft.important == seriesAt(v, c.committed.seriesId).details.important
 pure def freshEntryAllowed(v: CalendarView, entry: EntrySeed): bool =
   v.deletion == NoDeletion and not(hasEditing(v)) and
   C::canCreate(C::initial, entry.identity, C::CalendarUser) and entry.details.endAt > entry.details.startAt and
@@ -405,6 +407,18 @@ changes or stops a repetition. A reminder on any calendar is the tablet's
 own: the tablet reminds her, and the company keeps whatever reminders it
 had, and so is the important mark, which the company never receives.
 
+Eliza Cloud's feed sends a repeating appointment as its single occurrences,
+each with its own ID and revision and its event's ID (Google's
+`singleEvents`), never the repetition rule. The tablet shows those
+occurrences as one repeating appointment: those of one event that share its
+title, place, notes, timezone and time of day and fall on the same weekday a
+week apart repeat every week, or on the same date a month apart every month.
+An occurrence that fits neither, such as one moved or retitled at the company,
+or the only one in reach, shows as an appointment of its own. Since the company
+sends every occurrence, an email account's calendar makes no repetition of its
+own. A change to the repeating appointment is made to the company's event, at
+the event's revision, by its ID.
+
 ```quint
 pure val tabletCalendarId: str = "tablet"
 pure def keepsRepetition(v: CalendarView): bool = v.calendarId == tabletCalendarId
@@ -429,6 +443,13 @@ Calendar's `withCurrent` of the saved entry, which closes the deletion
 question. It asks the company again only when she does. A repeating
 appointment's change refused this way stays a failed save, which she can
 cancel; the next read shows the company's version.
+
+When the tablet has no revision for an appointment, as after a create it
+recovered without the company's answer, or when the company refuses the one
+it named, it reads the appointment again first: if the company still holds
+what she saw, the change or deletion goes ahead at the revision just read,
+and only otherwise is it refused as above. It never sends an empty revision,
+which the company refuses.
 
 ```quint
 pure def lawOutdatedChangeShowsTheCompanysVersion(v: CalendarView, id: str, revision: int, latest: C::EntryDetails, version: str): bool =
@@ -708,9 +729,9 @@ The prototype edits the recurring event, not an isolated repetition
 to the series without an added scope question. Each series has one versioned
 definition. Opening Edit uses that definition's original anchor date and
 settings, as the prototype does, rather than silently moving the anchor to
-the clicked repetition. Its title, location, notes, participant, timezone, repeat and
-reminder settings project into every live occurrence. Each occurrence retains
-its own immutable identity, invoice source, important mark and deletion
+the clicked repetition. Its title, location, notes, participant, timezone, repeat,
+reminder settings and important mark project into every live occurrence. Each
+occurrence retains its own immutable identity, invoice source and deletion
 tombstone. Saving an
 updated occurrence resets its reminder from the newly committed schedule.
 
@@ -755,8 +776,7 @@ pure def validSeriesSchedule(v: CalendarView, receipt: SeriesReceipt): bool =
   scheduleFor(receipt.schedules, v.selectedId).endAt == selectedOccurrence(v).draft.endAt
 pure def seriesMemberResult(v: CalendarView, c: C::Calendar, receipt: SeriesReceipt): C::Calendar =
   val schedule = scheduleFor(receipt.schedules, c.identity.occurrenceId)
-  val details = { ...selectedOccurrence(v).draft, startAt: schedule.startAt, endAt: schedule.endAt,
-    important: c.committed.important }
+  val details = { ...selectedOccurrence(v).draft, startAt: schedule.startAt, endAt: schedule.endAt }
   val editing = C::edit(C::beginEdit(c, C::CalendarUser), details, C::CalendarUser)
   if (not(seriesMemberAffected(v, c))) c
   else if (not(receipt.persisted))
@@ -791,9 +811,10 @@ pure def lawCreatedSeriesReceiptIsSpent(v: CalendarView, receipt: SeriesReceipt,
 pure val providerIdValues = Set("", "visitA", "periodA", "providerA")
 pure def lawPartialSeriesReceiptCannotSave(v: CalendarView, receipt: SeriesReceipt, by: ViewActor): bool =
   receipt.persisted and not(validSeriesSchedule(v, receipt)) implies not(canSaveSeries(v, receipt, by))
-pure def lawSeriesSaveKeepsOtherMarks(v: CalendarView, c: C::Calendar, receipt: SeriesReceipt): bool =
-  c.identity.occurrenceId != v.selectedId implies
-    seriesMemberResult(v, c, receipt).committed.important == c.committed.important
+pure def lawSeriesSaveMarksEveryMember(v: CalendarView, c: C::Calendar, receipt: SeriesReceipt): bool =
+  (receipt.persisted and seriesMemberAffected(v, c) and scheduleFor(receipt.schedules, c.identity.occurrenceId).include and
+    c.identity.occurrenceId != v.selectedId) implies
+    seriesMemberResult(v, c, receipt).committed.important == selectedOccurrence(v).draft.important
 pure def sometimesSeriesEdited(v: CalendarView): bool = v.series.some(s => s.version > 0)
 pure def sometimesSeriesStopped(v: CalendarView): bool = v.series.some(s => s.details.recurrence == C::Once)
 ```
@@ -912,11 +933,10 @@ or publishing another row cannot change a pending target. The store's result
 names its receipt evidence; the view keeps only the result, not the receipt.
 On an email account's calendar, Delete only this one of a repeating
 appointment deletes that one occurrence at its company, by the company's own
-ID for it, its event's ID and the occurrence's original start, as Eliza
-Cloud's deletion of an instance ID removes one occurrence; the rest of the
-series stays there and here. Where the company answers that it has no such
-occurrence, the repetition was the tablet's own and is removed here only.
-Delete every one deletes the company's event, and with it the series.
+ID for it and at its own revision, as Eliza Cloud's deletion of an instance ID
+removes one occurrence; the rest of the series stays there and here. Delete
+every one deletes the company's event by its ID, at the event's revision read
+just before, and with it the series.
 Discovered by the proof: a pending or failed whole-series deletion retains a
 recurring selected event. Without that fact an arbitrary pending state could
 treat a nonrepeating event's empty series ID as a deleted series.

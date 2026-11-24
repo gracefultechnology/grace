@@ -116,17 +116,15 @@ function written(v: CalendarView, c: Calendar): Calendar {
 }
 
 type Removal =
-  | { readonly tag: "Remove"; readonly id: string }
+  | { readonly tag: "Remove"; readonly id: string; readonly scope: DeleteScope }
   | { readonly tag: "Forget" }
-  | { readonly tag: "Repetition"; readonly series: Calendar; readonly occurrence: EntryDetails }
   | { readonly tag: "Move"; readonly entry: Calendar }
   | { readonly tag: "Unable" }
 
 function removal(v: CalendarView): Removal {
   const chosen = entryAt(v, v.selectedId).committed
   const { seriesId, recurrence } = chosen
-  if (v.scope === "EntireSeries" || recurrence === "Once") return { tag: "Remove", id: generated(seriesId, v.selectedId) ? rootOf(v, seriesId) : v.selectedId }
-  if (!keepsRepetition(v)) return { tag: "Repetition", series: kept(v, rootOf(v, seriesId)), occurrence: chosen }
+  if (v.scope === "EntireSeries" || recurrence === "Once" || !keepsRepetition(v)) return { tag: "Remove", id: generated(seriesId, v.selectedId) ? rootOf(v, seriesId) : v.selectedId, scope: v.scope }
   const place = placeIn(seriesId, v.selectedId) ?? 0
   if (place !== liveFrom(v, seriesId, 0)?.place) return { tag: "Forget" }
   const next = liveFrom(v, seriesId, place + 1)
@@ -141,7 +139,7 @@ const savedEntry = (v: CalendarView, id: string, details: EntryDetails) => save(
 
 function repetitions(v: CalendarView, span: Reach): Published[] {
   return v.series.flatMap(({ version, details: d }) => {
-    if (d.recurrence === "Once" || v.deletedSeries.includes(d.seriesId)) return []
+    if (!keepsRepetition(v) || d.recurrence === "Once" || v.deletedSeries.includes(d.seriesId)) return []
     const duration = d.endAt - d.startAt
     const first = dayOf(Math.max(midnight(0), span.fromTime - duration))
     const until = dayOf(span.untilTime) + 1
@@ -149,7 +147,7 @@ function repetitions(v: CalendarView, span: Reach): Published[] {
       const id = place === 0 ? d.seriesId : `${d.seriesId}@${place}`
       const { startAt, endAt } = repeatedOn(d, n)
       if (startAt >= span.untilTime || endAt <= span.fromTime || v.cancelledIds.includes(id) || v.entries.some((m) => m.identity.occurrenceId === id)) return []
-      return [{ incoming: savedEntry(v, id, { ...d, startAt, endAt, important: false }), seriesVersion: version, scheduleVerified: dayOf(startAt) === n && endAt > startAt }]
+      return [{ incoming: savedEntry(v, id, { ...d, startAt, endAt }), seriesVersion: version, scheduleVerified: dayOf(startAt) === n && endAt > startAt }]
     })
   })
 }
@@ -157,13 +155,11 @@ function repetitions(v: CalendarView, span: Reach): Published[] {
 type Store = {
   readonly write: (entry: Calendar, view: CalendarView, dispatch?: GuidedDispatch) => StoreReceipt!!
   readonly remove: (entry: Calendar, scope: DeleteScope) => DeletionReceipt!!
-  readonly removeRepetition: (series: Calendar, occurrence: EntryDetails) => DeletionReceipt!!
 }
 
 const device: Store = {
   write: (entry) => Effect.succeed({ revision: entry.revision, succeeded: true, published: [] }),
-  remove: (entry) => Effect.succeed({ succeeded: true, evidence: `tablet:${entry.identity.occurrenceId}` }),
-  removeRepetition: (series) => Effect.succeed({ succeeded: true, evidence: `tablet:${series.identity.occurrenceId}` })
+  remove: (entry) => Effect.succeed({ succeeded: true, evidence: `tablet:${entry.identity.occurrenceId}` })
 }
 
 export type CalendarReport = { readonly told: CalendarTold; readonly keepDetail?: true } | { readonly refused: Ask }
@@ -351,9 +347,8 @@ effect function keep(key: number, box: CalendarMachine.Shape, store: Store, publ
     box.send({ type: "publishOccurrence", incoming, seriesVersion: incoming.committed.seriesId === "" ? 0 : seriesAt(v, incoming.committed.seriesId).version, scheduleVerified: true }, "ViewStore") catch () => undefined
   }
   effect function removedBy(v: CalendarView, plan: Removal) {
-    if (plan.tag === "Remove") return try store.remove(kept(v, plan.id), "ThisOccurrence")
+    if (plan.tag === "Remove") return try store.remove(kept(v, plan.id), plan.scope)
     if (plan.tag === "Forget") return try device.remove(entryAt(v, v.selectedId), "ThisOccurrence")
-    if (plan.tag === "Repetition") return try store.removeRepetition(plan.series, plan.occurrence)
     if (plan.tag === "Unable") return { succeeded: false, evidence: "no-later-repetition" }
     const receipt = try store.write(plan.entry, v)
     return { succeeded: receipt.succeeded, evidence: receipt.succeeded ? `moved:${plan.entry.identity.occurrenceId}` : "" }
@@ -786,8 +781,7 @@ export const calendarFeeds = Layer.effectDiscard(effect {
     const link = connector.calendar({ provider: account.provider, address: account.address })
     const store: Store = {
       write: effect (entry, view, guidedFirstDispatch) => link.write(entry, view, guidedFirstDispatch) catch () => ({ revision: entry.revision, succeeded: false, published: [] }),
-      remove: effect (entry, scope) => link.remove(entry, scope) catch () => ({ succeeded: false, evidence: "signedOut" }),
-      removeRepetition: effect (series, occurrence) => link.removeRepetition(series, occurrence) catch () => ({ succeeded: false, evidence: "signedOut" })
+      remove: effect (entry, scope) => link.remove(entry, scope) catch () => ({ succeeded: false, evidence: "signedOut" })
     }
     const grown = Stream.changesWith(Stream.mapEffect(lead.changes, () => spanOf(lead)), within)
     const signedIn = Stream.filter(Stream.drop(Stream.changes(Stream.map(registry.changes, (a) => a.signIn.stage)), 1), (stage) => stage === "NotSigningIn")

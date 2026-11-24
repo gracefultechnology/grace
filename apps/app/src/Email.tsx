@@ -252,6 +252,7 @@ function Mail({ registry, accountCan, accountSend, boxes, ...props }: MailProps)
     const allPhotos = photos.map((p) => p.sourceRef);
     const header = mail && headerFor(mail, kept(opening.id, m.messageRef), opening.id, m);
     const replying = mail && ready && header && canReplyToMessage(m, header, "MailHost");
+    const own = m.folder === "SentFolder" || header?.address === m.account;
     const scam = showsScamWarning(m);
     const reviewed = kept(opening.id, ref)?.read;
     const linkSource = `${opening.id}|${ref}|${m.generation}|${reviewed?.version ?? ""}`;
@@ -274,7 +275,7 @@ function Mail({ registry, accountCan, accountSend, boxes, ...props }: MailProps)
           const { href } = part;
           return href ? <MailLink key={part.start} guide={part === firstLink ? pointing.link : undefined} onOpen={() => follow(href, "open")}>{part.text}</MailLink> : part.text;
         })} guide={pointing.message}
-        scam={scam} inTrash={messageRecord(m, ref).folder === "TrashFolder"} sent={m.folder === "SentFolder"}
+        scam={scam} inTrash={messageRecord(m, ref).folder === "TrashFolder"} sent={own}
         photos={ready ? photos.map((p) => picture(p, held(opening.id, p))) : undefined} onOpenPhoto={opener(photos)}
         onSaveAll={saveAll} saveAllStatus={saver.status(photos)} onRetrySaveAll={saver.offer(allPhotos)}
         files={ready ? pdfs.map((a) => ({ name: a.name, detail: pages(a.pages) })) : undefined} onOpenFile={opener(pdfs)}

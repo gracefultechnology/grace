@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { type ChildProcess, execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -13,7 +13,7 @@ import { parseAst } from "vite";
 import { stageRuntimePayload } from "@elizaos/os/android/android-runtime-inventory.mjs";
 import { buildAndroidConsumer } from "@elizaos/os/android/build-consumer.mjs";
 import { generateAndroidConsumerHost } from "@elizaos/os/android/consumer-host.mjs";
-import { readApkSignerDigest } from "@elizaos/os/android/apk-distribution.mjs";
+import { apkDistributionProblems, readApk, readApkSignerDigest } from "@elizaos/os/android/apk-distribution.mjs";
 import { resolveAndroidSdkRoot, resolveJavaHome } from "@elizaos/os/android/toolchain.ts";
 import config, { androidPaths, CloudProfile, cloudProfiles, standaloneProfile } from "../capacitor.config.ts";
 
@@ -30,11 +30,6 @@ const sharedSignInModules = ["sign-in", "secure-store", "agent-service", "runtim
   appDependency: module === "sign-in" || module === "secure-store",
 }));
 const apkOutput = (cloudProfile: CloudProfile) => cloudProfile === standaloneProfile ? "artifacts" : `artifacts/cloud-profiles/${cloudProfile}`;
-const forbiddenEntry = new RegExp([
-  String.raw`\.(gguf|onnx|ort|tflite|safetensors|pte|task)$`,
-  String.raw`(^|/)(lib[^/]*(llama|ggml|mtmd|onnxruntime|sherpa|whisper|piper|executorch|elizainference|omnivoice)[^/]*\.so(\.\d[^/]*)?|llama(-omnivoice)?-server)$`,
-  String.raw`^assets/(?!public/)([^/]+/)*(tts|asr|models?)/`,
-].join("|"), "i");
 const inferenceClass = /^L(ai\/eliza\/voice\/|ai\/onnxruntime\/|org\/tensorflow\/lite\/|org\/pytorch\/|com\/k2fsa\/|com\/google\/mediapipe\/|org\/vosk\/)/;
 
 const readJson = (file: string): unknown => JSON.parse(readFileSync(file, "utf8"));
@@ -109,6 +104,36 @@ const wakeNotices = [
 const wakeKeywords = "▁HE Y ▁GRA CE @HEY_GRACE\n";
 const wakeDownload = "https://github.com/k2-fsa/sherpa-onnx/releases/download/";
 const wakeLimit = 64 * 1024 * 1024;
+const apkPolicy = {
+  exportedComponents: {
+    [`${identity.appId}.MainActivity`]: null,
+    "ai.eliza.plugins.passwords.ElizaPasswordAutofillService": "android.permission.BIND_AUTOFILL_SERVICE",
+    "com.google.android.gms.auth.api.signin.RevocationBoundService": "com.google.android.gms.auth.api.signin.permission.REVOCATION_NOTIFICATION",
+    "androidx.profileinstaller.ProfileInstallReceiver": "android.permission.DUMP",
+  },
+  forbiddenEntries: new RegExp([
+    String.raw`\.(gguf|onnx|ort|tflite|safetensors|pte|task)$`,
+    String.raw`(^|/)(lib[^/]*(llama|ggml|mtmd|onnxruntime|sherpa|whisper|piper|executorch|elizainference|omnivoice)[^/]*\.so(\.\d[^/]*)?|llama(-omnivoice)?-server)$`,
+    String.raw`^assets/(?!public/)([^/]+/)*(tts|asr|models?)/.*[^/]$`,
+    String.raw`^assets/${wakeAssets}/.*[^/]$`,
+  ].join("|"), "i"),
+  forbiddenEntriesLabel: "An unapproved model or local inference file is packaged",
+  requiredEntries: ["assets/eliza-agent.json", "assets/agent/agent.mjs", "assets/agent/inventory.json"],
+};
+const builtApks = (directory: string) => existsSync(directory)
+  ? readdirSync(directory).filter((name) => name.startsWith(`${variant}-`) && name.endsWith(".apk"))
+  : [];
+const discardApks = (directory: string) => {
+  for (const name of [...builtApks(directory), "apk-manifest.json"]) rmSync(path.join(directory, name), { force: true });
+};
+const ApkManifest = Schema.Array(Schema.Struct({ name: Schema.String, sha256: Schema.String }));
+export function checkedApk(file: string) {
+  const listing = path.join(path.dirname(file), "apk-manifest.json");
+  const digest = sha256(readFileSync(file));
+  const entry = existsSync(listing) ? Schema.decodeUnknownSync(ApkManifest)(readJson(listing)).find(({ name }) => name === path.basename(file)) : undefined;
+  if (entry?.sha256 !== digest) throw new Error(`${file} is not the checked build ${listing} lists; rebuild it`);
+  return digest;
+}
 const unzipEntry = (archive: string, entry: string) => execFileSync("unzip", ["-p", archive, entry], { maxBuffer: wakeLimit });
 const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 
@@ -184,7 +209,8 @@ function stageWakeRuntime(abi: Abi) {
   return { assets: source(assets), jniLibs: source(jniLibs), gradle: source(gradle) };
 }
 
-const EmulatorSerial = Schema.String.check(Schema.isPattern(/^emulator-\d+$/));
+const virtualDevice = /^(emulator-\d+|(0\.0\.0\.0|127\.0\.0\.1):65\d\d)$/;
+const EmulatorSerial = Schema.String.check(Schema.isPattern(virtualDevice));
 const AgentStatus = Schema.Struct({
   state: Schema.Literals(["unavailable", "stopped", "starting", "running", "failed"]),
   failure: Schema.optional(Schema.Literals(["payload", "storage", "config", "credential", "agent", "crashed", "runtime"])),
@@ -251,11 +277,12 @@ export function buildTool(name: string): string {
   return tool;
 }
 
+const inherited = ["PATH", "HOME", "TMPDIR", "LANG", "GRADLE_OPTS", "GRADLE_USER_HOME", ...Object.values(signing)];
 const environment = () => ({
-  ...process.env,
+  ...Object.fromEntries(inherited.flatMap((name) => process.env[name]?.trim() ? [[name, process.env[name]]] : [])),
   ANDROID_HOME: androidHome(),
   JAVA_HOME: located(resolveJavaHome(), "No JDK was found: set JAVA_HOME to a JDK 21"),
-  ...(process.env[keystore]?.trim() ? { [keystore]: path.resolve(process.env.INIT_CWD ?? process.cwd(), process.env[keystore]) } : {}),
+  ...(process.env[keystore]?.trim() ? { [keystore]: path.resolve(app, process.env[keystore]) } : {}),
 });
 
 const versionCode = (version: string) => {
@@ -412,7 +439,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
       },
       manifestPlaceholders: { graceCloudCallbackHost: new URL(selected.webOrigin).hostname, graceCloudCallbackPath: selected.callbackPath },
       buildConfigFields: Object.entries({
-        CLOUD_PROFILE: cloudProfile, CLOUD_API_ORIGIN: selected.apiOrigin,
+        CLOUD_PROFILE: cloudProfile, CLOUD_ENVIRONMENT: selected.environment, CLOUD_API_ORIGIN: selected.apiOrigin,
         CLOUD_WEB_ORIGIN: selected.webOrigin, CLOUD_CALLBACK_PATH: selected.callbackPath,
       }).map(([name, value]) => ({ name, type: "String", value })),
       sourceSets: {
@@ -429,28 +456,33 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
   copyFileSync(path.join(app, "android/debug.keystore"), path.join(userHome, "debug.keystore"));
   if (!release && fixture === undefined) for (const suffix of ["", "-unsigned"])
     rmSync(path.join(app, output, `${variant}-release${suffix}.apk`), { force: true });
-  buildAndroidConsumer({
-    root: app,
-    environment: {
-      ...environment(), ANDROID_USER_HOME: userHome,
-      GRACE_ANDROID_CAPACITOR_PROJECT: project, GRACE_ANDROID_CAPACITOR_WEB_DIR: webDir,
-      VITE_GRACE_CLOUD_PROFILE: cloudProfile, VITE_GRACE_CLOUD_API_ORIGIN: selected.apiOrigin, VITE_GRACE_CLOUD_WEB_ORIGIN: selected.webOrigin,
-    },
-    variants: [variant],
-    release,
-    lint: false,
-    androidTest: false,
-    daemon: true,
-    project,
-    output,
-    signing: { environment: Object.values(signing) },
-    prepare: [
-      { command: "pnpm", args: ["run", "build", "--outDir", webDir] },
-      { command: path.join(app, "node_modules/.bin/cap"), args: ["copy", "android"] },
-    ],
-    verify: { command: process.execPath, args: [import.meta.filename, "--cloud-profile", cloudProfile,
-      ...(fixture ? ["--verify-billworld-run", path.basename(fixture.output)] : ["--verify"])] },
-  });
+  try {
+    buildAndroidConsumer({
+      root: app,
+      environment: {
+        ...environment(), ANDROID_USER_HOME: userHome,
+        GRACE_ANDROID_CAPACITOR_PROJECT: project, GRACE_ANDROID_CAPACITOR_WEB_DIR: webDir,
+        VITE_GRACE_CLOUD_PROFILE: cloudProfile, VITE_GRACE_CLOUD_API_ORIGIN: selected.apiOrigin, VITE_GRACE_CLOUD_WEB_ORIGIN: selected.webOrigin,
+      },
+      variants: [variant],
+      release,
+      lint: false,
+      androidTest: false,
+      daemon: true,
+      project,
+      output,
+      signing: { environment: Object.values(signing) },
+      prepare: [
+        { command: "pnpm", args: ["run", "build", "--outDir", webDir] },
+        { command: path.join(app, "node_modules/.bin/cap"), args: ["copy", "android"] },
+      ],
+      verify: { command: process.execPath, args: [import.meta.filename, "--cloud-profile", cloudProfile,
+        ...(fixture ? ["--verify-billworld-run", path.basename(fixture.output)] : ["--verify"])] },
+    });
+  } catch (error) {
+    discardApks(path.join(app, output));
+    throw error;
+  }
 }
 
 type Syntax = { type: string; [key: string]: unknown };
@@ -497,16 +529,35 @@ function checkPolicy(bundle: string) {
 }
 
 function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app, apkOutput(cloudProfile)), episodeCertificate = false) {
+  try {
+    writeCheckedManifest(cloudProfile, directory, episodeCertificate);
+  } catch (error) {
+    discardApks(directory);
+    throw error;
+  }
+}
+
+function writeCheckedManifest(cloudProfile: CloudProfile, directory: string, episodeCertificate: boolean) {
   const apksigner = buildTool("apksigner");
   const aapt = buildTool("aapt");
   const selected = cloudProfiles[cloudProfile];
   const callbackHost = new URL(selected.webOrigin).hostname;
-  const apks = readdirSync(directory).filter((name) => name.startsWith(`${variant}-`) && name.endsWith(".apk"));
+  const apks = builtApks(directory);
   if (!apks.length) throw new Error("No Grace APK was produced for verification");
   const manifest = apks.map((name) => {
     const file = path.join(directory, name);
-    const contents = readFileSync(file);
-    const entries = execFileSync(aapt, ["list", file], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }).split("\n");
+    const apk = readApk(file, { aapt, policy: apkPolicy });
+    const entries = apk.names;
+    const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_node\.so$/.exec(entry)?.slice(1) ?? []);
+    if (abis.length !== 1) throw new Error(`${name} does not carry one agent runtime: libeliza_node.so for ${abis.join(", ") || "no processor type"}`);
+    const abi = Schema.decodeUnknownSync(Abi)(abis[0]);
+    const keywordRoot = `assets/${wakeAssets}/`;
+    const allowedWake = new Map([...wakeModel.files, ...wakeNotices].map((entry) => [keywordRoot + entry.name, entry.sha256]));
+    allowedWake.set(keywordRoot + "keywords.txt", sha256(Buffer.from(wakeKeywords)));
+    allowedWake.set(`lib/${abi}/${wakeRuntime.library}`, wakeRuntime.libraries[abi]);
+    const { facts, problems } = apkDistributionProblems({ ...apk, names: entries.filter((entry) => !allowedWake.has(entry)) }, apkPolicy,
+      { mode: name.includes("-release") ? "release" : "debug" });
+    if (problems.length) throw new Error(`${name} fails the distribution check: ${problems.join("; ")}`);
     if (entries.includes("res/raw/billworld_episode_ca.pem") !== episodeCertificate) {
       throw new Error(`${name} has the wrong certificate resources for this build`);
     }
@@ -515,8 +566,7 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
     );
     if (agentHost.cloud.baseUrl !== selected.agentOrigin)
       throw new Error(`${name} has the wrong cloud origin for ${cloudProfile}`);
-    const manifestXml = execFileSync(aapt, ["dump", "xmltree", file, "AndroidManifest.xml"], { encoding: "utf8" });
-    const links = Array.from(manifestXml.matchAll(/^( *)E: intent-filter[^\n]*\n((?:\1  [^\n]*\n)+)/gm), ([, , filter]) => filter)
+    const links = Array.from(apk.xml.matchAll(/^( *)E: intent-filter[^\n]*\n((?:\1  [^\n]*\n)+)/gm), ([, , filter]) => filter)
       .filter((filter) => filter.includes('"android.intent.category.BROWSABLE"'))
       .map((filter) => {
         const data = filter.split(/ E: data [^\n]*\n/);
@@ -527,15 +577,6 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
     const expectedLinks = [selected.callbackPath, "/android/files/import"].map((route) => ({ scheme: "https", host: callbackHost, path: route }));
     if (links.length !== expectedLinks.length || !expectedLinks.every((expected) => links.some((link) => isDeepStrictEqual(link, expected))))
       throw new Error(`${name} must declare the selected account return and Files import links for ${selected.webOrigin}`);
-    const abis = entries.flatMap((entry) => /^lib\/([^/]+)\/libeliza_node\.so$/.exec(entry)?.slice(1) ?? []);
-    if (abis.length !== 1 || !entries.includes("assets/agent/inventory.json")) throw new Error(`${name} does not carry one agent runtime: libeliza_node.so for ${abis.join(", ") || "no processor type"}`);
-    const abi = Schema.decodeUnknownSync(Abi)(abis[0]);
-    const keywordRoot = `assets/${wakeAssets}/`;
-    const allowedWake = new Map([...wakeModel.files, ...wakeNotices].map((entry) => [keywordRoot + entry.name, entry.sha256]));
-    allowedWake.set(keywordRoot + "keywords.txt", sha256(Buffer.from(wakeKeywords)));
-    allowedWake.set(`lib/${abi}/${wakeRuntime.library}`, wakeRuntime.libraries[abi]);
-    const forbidden = entries.filter((entry) => (forbiddenEntry.test(entry) || entry.startsWith(keywordRoot)) && !entry.endsWith("/") && !allowedWake.has(entry));
-    if (forbidden.length) throw new Error(`${name} carries an unapproved model or local inference file: ${forbidden.join(", ")}`);
     for (const [entry, digest] of allowedWake) {
       if (entries.filter((candidate) => candidate === entry).length !== 1) throw new Error(`${name} must package ${entry} once`);
       verifyWakeBytes(unzipEntry(file, entry), digest, `${name}:${entry}`);
@@ -569,13 +610,14 @@ function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app,
     if (inference.length) throw new Error(`${name} carries unapproved local inference classes: ${inference.join(", ")}`);
     if (!classes.includes("Ltechnology/graceful/grace/GraceWakePlugin;") || !classes.includes("Lcom/k2fsa/sherpa/onnx/KeywordSpotter;"))
       throw new Error(`${name} lacks the local wake keyword bridge`);
-    if (!classes.includes("Ltechnology/graceful/grace/GraceAccount;")) throw new Error(`${name} lacks the cloud speech bridge`);
+    if (!classes.includes("Ltechnology/graceful/grace/GraceAccount;")) throw new Error(`${name} lacks the native Grace account`);
     const actions = checkPolicy(execFileSync("unzip", ["-p", file, "assets/agent/agent.mjs"], { encoding: "utf8", maxBuffer: 1024 * 1024 * 1024 }));
-    const debuggable = execFileSync(aapt, ["dump", "badging", file], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 }).includes("application-debuggable");
+    const { debuggable } = apk;
     if (name.includes("-release") && debuggable) throw new Error(`${name} is debuggable, so any computer on USB could read and drive Grace's page`);
-    if (cloudProfile === "shared-staging" && !debuggable) throw new Error(`${name} ships staging in a production build`);
-    process.stdout.write(`${name} ${abi} ${contents.byteLength} bytes, ${debuggable ? "debuggable" : "not debuggable"}; ${classes.length} classes, cloud speech and the pinned local wake keyword detector; its ${actions} actions declared by name are each allowed or refused\n`);
-    return { name, cloudProfile, abi: abis[0], bytes: contents.byteLength, debuggable, sha256: createHash("sha256").update(contents).digest("hex"),
+    if (cloudProfiles[cloudProfile].environment === "staging" && !debuggable) throw new Error(`${name} ships staging in a production build`);
+    const bytes = statSync(file).size;
+    process.stdout.write(`${name} ${abi} ${bytes} bytes, ${debuggable ? "debuggable" : "not debuggable"}, ${facts.permissions.length} permissions; ${classes.length} classes, the native Grace account and the pinned local wake keyword detector; its ${actions} actions declared by name are each allowed or refused\n`);
+    return { name, cloudProfile, abi: abis[0], bytes, debuggable, sha256: apk.sha256, permissions: facts.permissions,
       signer: name.endsWith("-unsigned.apk") ? null : Schema.decodeUnknownSync(Schema.String)(readApkSignerDigest(file, { apksigner })) };
   });
   writeFileSync(path.join(directory, "apk-manifest.json"), JSON.stringify(manifest, null, 2));
@@ -592,7 +634,8 @@ const adb = async (args: string[], seconds = 60) => {
 };
 const shell = (serial: string, command: string, seconds?: number) => adb(["-s", serial, "shell", command], seconds);
 const forever = new Promise<never>(() => {});
-const emulators = async () => (await adb(["devices"])).split("\n").map((line) => line.split("\t")[0]).filter((serial) => /^emulator-\d+$/.test(serial));
+const devices = async () => (await adb(["devices"])).split("\n").map((line) => line.split("\t")[0]);
+const emulators = async () => (await devices()).filter((serial) => /^emulator-\d+$/.test(serial));
 const avds = () => execFileSync(sdk("emulator/emulator"), ["-list-avds"], { encoding: "utf8", timeout: 60_000 }).split("\n");
 
 type Target = { serial: typeof EmulatorSerial.Type; exited: Promise<never>; stop: () => void };
@@ -972,6 +1015,7 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
 }
 
 async function installGrace(serial: typeof EmulatorSerial.Type, apk: string) {
+  checkedApk(apk);
   await adb(["-s", serial, "install", "-r", apk], 1800).catch(async (error: unknown) => {
     if (!(error instanceof Error && String(error.cause).includes("INSTALL_FAILED_UPDATE_INCOMPATIBLE"))) throw error;
     process.stdout.write(`${serial} holds Grace signed by another key; uninstalling her and her data\n`);
@@ -1280,7 +1324,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           cleanup.push(() => adb(["-s", serial, "reverse", "--remove", `tcp:${port}`]));
         }
         step = "install the episode-specific signed APK";
-        const digest = createHash("sha256").update(readFileSync(apk)).digest("hex");
+        const digest = checkedApk(apk);
         const remote = `/data/local/tmp/grace-billworld-${runId}.apk`;
         cleanup.push(() => shell(serial, `rm -f ${remote}`));
         await adb(["-s", serial, "push", apk, remote], 180);
@@ -1451,7 +1495,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
 if (import.meta.main) {
   const options = parseArgs({ options: { "cloud-profile": { type: "string" }, release: { type: "boolean" }, verify: { type: "boolean" }, abi: { type: "string" }, install: { type: "string" }, emulator: { type: "string" }, exercise: { type: "string" }, "billworld-passwords": { type: "string" }, "verify-billworld-run": { type: "string" }, benchmark: { type: "string" }, receipt: { type: "string" } } }).values;
   const { "cloud-profile": cloudProfile = standaloneProfile, verify, release = false, abi = "arm64-v8a", install, emulator, exercise, "billworld-passwords": billworld, "verify-billworld-run": fixtureRun, benchmark, receipt } = Schema.decodeUnknownSync(Arguments)(options);
-  if (cloudProfile === "shared-staging" && release) throw new Error("Shared Eliza Cloud staging is only available in debug APKs");
+  if (cloudProfiles[cloudProfile].environment === "staging" && release) throw new Error("Staging cloud profiles are only available in debug APKs");
   if (install && emulator) throw new Error("Give --install <emulator serial> or --emulator <avd>, not both");
   if (exercise && !install && !emulator) throw new Error("--exercise needs --install <emulator serial> or --emulator <avd>");
   if ((benchmark || receipt) && (!benchmark || !receipt || (!install && !emulator) || exercise || verify || release))
@@ -1459,7 +1503,7 @@ if (import.meta.main) {
   if (exercise && release) throw new Error("--exercise drives Grace's page over its debugging socket, which a release build does not open; walk the debug build");
   if (release && (install || emulator) && !Object.values(signing).every((name) => process.env[name]?.trim()))
     throw new Error(`An unsigned release APK cannot be installed; set ${Object.values(signing).join(", ")}`);
-  if (install && !(await emulators()).includes(install)) throw new Error(`No emulator ${install} is attached`);
+  if (install && !(await devices()).includes(install)) throw new Error(`No virtual device ${install} is attached`);
   if (emulator && !avds().includes(emulator)) throw new Error(`No AVD named ${emulator}`);
   const steps = exercise ? Schema.decodeUnknownSync(Schema.NonEmptyArray(Step), { onExcessProperty: "error" })(readJson(path.join(app, "test/device", `${exercise}.json`))) : [];
   const trial = benchmark && receipt ? { input: Schema.decodeUnknownSync(Benchmark, { onExcessProperty: "error" })(readJson(benchmark)), receipt } : undefined;

@@ -51,6 +51,7 @@ type Appointment = {
   recurrence?: readonly string[]
   reminders?: typeof Reminders.Type
   cancelled?: readonly string[]
+  seriesId?: string
 }
 
 schema Turn { said: string; outcome: "streaming" | "completed" | "aborted" }
@@ -398,6 +399,30 @@ function during(e: Appointment, timeMin: string, timeMax: string) {
     if (at + end - start > min && !(e.cancelled ?? []).includes(`${e.externalId}_${stampOf(at)}`)) return true
   }
   return false
+}
+
+function instancesOf(e: Appointment, timeMin: string, timeMax: string): Appointment[] {
+  if (e.recurrence === undefined) return [e]
+  const freq = /FREQ=(DAILY|WEEKLY|MONTHLY)/.exec(e.recurrence.join(";"))?.[1]
+  const [start, end, min, max] = [e.startAt, e.endAt, timeMin, timeMax].map(Date.parse)
+  const { recurrence: _rule, cancelled = [], ...master } = e
+  const found: Appointment[] = []
+  for (let n = 0, at = start; freq !== undefined && at < max; n++, at = nthStart(start, freq, n)) {
+    const stamp = stampOf(at)
+    const etag = `"${e.etag.replaceAll("\"", "")}-${stamp}"`
+    const instance = { ...master, externalId: `${e.externalId}_${stamp}`, startAt: new Date(at).toISOString(), endAt: new Date(at + end - start).toISOString(), etag,
+      metadata: { ...e.metadata, etag, recurringEventId: e.externalId }, seriesId: e.externalId }
+    if (at + end - start > min && !cancelled.includes(instance.externalId)) found.push(instance)
+  }
+  return found
+}
+
+function occurrenceOf(calendar: readonly Appointment[], eventId: string, calendarId: string) {
+  const [, seriesId, stamp] = /^(.+)_(\d{8}T\d{6}Z)$/.exec(eventId) ?? []
+  const series = calendar.find((e) => e.externalId === seriesId && e.calendarId === calendarId && e.recurrence !== undefined)
+  const at = Date.parse((stamp ?? "").replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"))
+  if (series === undefined || Number.isNaN(at)) return undefined
+  return { series, instance: instancesOf(series, new Date(at).toISOString(), new Date(at + 1).toISOString()).find((i) => i.externalId === eventId) }
 }
 
 function box(provider: Slug, address: string, grantId: string, at: number, site: string, visit: string): Box {
@@ -858,7 +883,8 @@ effect function store(site: string) {
     const zone = timeZone?.trim() || "UTC"
     const token = (try Ref.get(googleLinks)).get(found.grantId)
     const raw = token === undefined ? undefined : try Schema.decodeUnknownEffect(GoogleEventReferences)(try googleRequest("GET", `${googleCalendar}/${encodeURIComponent(calendar)}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`, token))
-    const events = found.calendar.filter((e) => raw === undefined || raw.items.some(({ id }) => id === e.externalId)).map((e) => shown(e, zone)).filter((e) => e.calendarId === calendar && during(e, timeMin, timeMax))
+    const events = found.calendar.filter((e) => raw === undefined || raw.items.some(({ id }) => id === e.externalId))
+      .flatMap((e) => instancesOf(e, timeMin, timeMax)).map((e) => shown(e, zone)).filter((e) => e.calendarId === calendar && during(e, timeMin, timeMax))
     return try HttpServerResponse.json({ calendarId: calendar, events, syncedAt: try now() })
   }
 
@@ -947,10 +973,12 @@ effect function store(site: string) {
     const query = try HttpServerRequest.schemaSearchParams(RemovalQuery)
     const { box: found } = try connection(fixed, query.grantId)
     const { eventId } = try HttpRouter.params
-    const event = found.calendar.find((e) => e.externalId === eventId && e.calendarId === (query.calendarId?.trim() || "primary"))
+    const calendarId = query.calendarId?.trim() || "primary"
+    const event = found.calendar.find((e) => e.externalId === eventId && e.calendarId === calendarId) ?? occurrenceOf(found.calendar, eventId ?? "", calendarId)?.instance
     if (!event) throw new Missing()
     const zone = event.timezone ?? "UTC"
-    const wire = event.isAllDay ? { ...event, startAt: dateIn(event.startAt, zone), endAt: dateIn(event.endAt, zone), timezone: null } : event
+    const { recurrence: _rule, cancelled: _cancelled, ...card } = event
+    const wire = event.isAllDay ? { ...card, startAt: dateIn(event.startAt, zone), endAt: dateIn(event.endAt, zone), timezone: null } : card
     return try HttpServerResponse.json({ event: wire }, { headers: { etag: event.etag } })
   }
 
@@ -967,23 +995,22 @@ effect function store(site: string) {
     return try HttpServerResponse.json({ event: shown(moved, moved.timezone ?? "UTC") }, { headers: { etag } })
   }
 
-  effect function cancelRepetition(fixed: Slug | undefined, query: typeof RemovalQuery.Type, instance: string, seriesId: string, stamp: string) {
+  effect function cancelRepetition(fixed: Slug | undefined, query: typeof RemovalQuery.Type, eventId: string) {
     const { key, box: found } = try connection(fixed, query.grantId)
-    const series = found.calendar.find((e) => e.externalId === seriesId && e.calendarId === (query.calendarId?.trim() || "primary"))
     const ifMatch = (try HttpServerRequest.HttpServerRequest).headers["if-match"]?.trim()
     if (ifMatch === undefined || ifMatch === "" || ifMatch === "*") throw new NoRevision()
-    if (series !== undefined && ifMatch !== series.etag) throw new Stale()
-    const at = Date.parse(stamp.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, "$1-$2-$3T$4:$5:$6Z"))
-    const from = series === undefined ? Number.NaN : Date.parse(series.startAt)
-    if (series?.recurrence === undefined || !(at >= from) || (at - from) % (24 * 60 * 60 * 1000) !== 0) throw new Missing()
-    try changeBox(key, found.grantId, (b) => ({ ...b, calendar: b.calendar.map((e) => e.externalId === series.externalId && e.calendarId === series.calendarId ? { ...e, cancelled: [...e.cancelled ?? [], instance] } : e) }))
+    const occurrence = occurrenceOf(found.calendar, eventId, query.calendarId?.trim() || "primary")
+    if (occurrence?.instance === undefined) throw new Missing()
+    if (ifMatch !== occurrence.instance.etag) throw new Stale()
+    const { series } = occurrence
+    try changeBox(key, found.grantId, (b) => ({ ...b, calendar: b.calendar.map((e) => e.externalId === series.externalId && e.calendarId === series.calendarId ? { ...e, cancelled: [...e.cancelled ?? [], eventId] } : e) }))
     return try HttpServerResponse.json({ ok: true })
   }
 
   effect function removeAppointment(fixed?: Slug) {
     const query = try HttpServerRequest.schemaSearchParams(RemovalQuery)
-    const repetition = /^(.+)_(\d{8}T\d{6}Z)$/.exec((try HttpRouter.params).eventId ?? "")
-    if (repetition !== null) return try cancelRepetition(fixed, query, repetition[0], repetition[1], repetition[2])
+    const eventId = (try HttpRouter.params).eventId ?? ""
+    if (/_\d{8}T\d{6}Z$/.test(eventId)) return try cancelRepetition(fixed, query, eventId)
     const { key, grantId, found } = try existing(fixed, query.grantId, query.calendarId)
     try changeBox(key, grantId, (b) => ({ ...b, calendar: b.calendar.filter((e) => e !== found) }))
     return try HttpServerResponse.json({ ok: true })

@@ -321,6 +321,7 @@ it('Add, change and delete on the tablet (spec/app/calendarView.md, "Story: Dele
   await expect.element(ringed("Bridge club", "Done").first()).toBeVisible();
   await click("Next week");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "\\s*has plans") })).toBeVisible();
+  await expect.element(marked("Bridge club", "On this tablet").first()).toBeVisible();
   await click("Add");
   await click("Change Day");
   await picked(longDate(eyeDay + 7));
@@ -436,14 +437,18 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await click("Back to Calendar");
   // spec/app/calendarView.md, "A change at the company names the revision it read and never overwrites a newer one"
   const newer = "Gmail has a newer version of this appointment, so the tablet didn’t change it. This is how it is now.";
-  const remembered = await run(selectedGmailCalendar);
-  localStorage.setItem("calendar/1", JSON.stringify({
-    ...remembered,
-    entries: remembered.entries.map((entry) => entry.identity.occurrenceId === eye ? { ...entry, version: "" } : entry),
-  }));
+  const unversioned = async () => {
+    const remembered = await run(selectedGmailCalendar);
+    localStorage.setItem("calendar/1", JSON.stringify({
+      ...remembered,
+      entries: remembered.entries.map((entry) => entry.identity.occurrenceId === eye ? { ...entry, version: "" } : entry),
+    }));
+  };
+  await unversioned();
   await edit("Eye check before the tablet has a revision", "Never");
-  await expect.element(page.getByText(newer)).toBeVisible();
-  expect(await titles()).toEqual(["Eye check with Dr. Patel"]);
+  await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
+  await expect.poll(titles, atCloud).toEqual(["Eye check before the tablet has a revision"]);
+  await expect.element(page.getByText(newer)).not.toBeInTheDocument();
   await edit("Eye check at Riverside", "Never");
   await expect.element(page.getByText("Doesn’t repeat")).toBeVisible();
   await expect.poll(() => held(secret), atCloud).toEqual([{ title: "Eye check at Riverside", startAt: eyeAt }]);
@@ -465,6 +470,7 @@ it('Change and delete an appointment from email (spec/app/calendarView.md, "Stor
   await expect.element(page.getByRole("heading", { name: "Eye check in room 5" })).toBeVisible();
   await expect.element(page.getByRole("button", { name: "Delete it" })).not.toBeInTheDocument();
   expect(await titles()).toEqual(["Eye check in room 5"]);
+  await unversioned();
   await click("Delete");
   await click("Delete it");
   await expect.element(row("Eye check in room 5")).not.toBeInTheDocument();
@@ -521,6 +527,7 @@ it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: De
   await click("Delete");
   await click("Delete only this one");
   await expect.element(page.getByRole("button", { name: tile(eyeDay + 7, "") })).toBeVisible();
+  await expect.element(page.getByText(/has a newer version/)).not.toBeInTheDocument();
   const nextWeek = new Date(physioAt + 7 * day).toISOString().replace(/[-:]|\.\d+/g, "");
   await expect.poll(async () => (await physios()).map((e) => e.cancelled), atCloud).toEqual([[`${physio.externalId}_${nextWeek}`]]);
   await click("Previous week");
