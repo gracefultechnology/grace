@@ -114,6 +114,7 @@ function turnTo(rail: Rail, full: boolean, shift: number) {
   const from = posed(rail);
   paint(rail, full, shift);
   if (!prefersStill() && posed(rail) !== from) rail.stage.dataset.turning = "";
+  else delete rail.stage.dataset.turning;
 }
 
 function paint({ cards }: Rail, full: boolean, shift: number) {
@@ -262,7 +263,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
             key={passwords ? layout : `${layout}-short`}
             ref={settle}
             onTransitionEnd={(event) => {
-              if (event.propertyName === "transform") delete event.currentTarget.dataset.turning;
+              if (event.propertyName === "transform" && event.target instanceof HTMLElement && "homeCard" in event.target.dataset) delete event.currentTarget.dataset.turning;
             }}
             className={cn("group/home absolute", full ? "top-40 left-[182px] h-[560px] w-[1042px]" : "inset-y-0 right-0 left-[138px] overflow-clip")}>
             {(["calendar", "email", "internet", "files"] as const).map(place)}
