@@ -80,6 +80,10 @@
       ],
       "outputs": ["dist/**", "$TURBO_ROOT$/vendor/eliza/packages/cloud/dist/{gen,src}/**"]
     },
+    "@grace/cloud#typecheck": {
+      "dependsOn": ["@grace/cloud#build"],
+      "outputs": [".vibe/declarations/**"]
+    },
     "@repo/app#gen": {
       "inputs": [
         "$TURBO_ROOT$/vendor/eliza/packages/{cloud,core,os}/package.json",
@@ -234,7 +238,6 @@
         "vibestack-studio#test:browser"
       ],
       "inputs": [
-        "eslint.config.js",
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
         "!vibestack/selftests/{docs,examples}.ts",
@@ -265,7 +268,6 @@
         "vibestack-studio#test:browser"
       ],
       "inputs": [
-        "eslint.config.js",
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
         "!vibestack/selftests/{docs,examples}.ts",
@@ -368,6 +370,7 @@
       "dependsOn": [
         "@repo/design-system#build",
         "@repo/app#typecheck",
+        "@grace/cloud#typecheck",
         "vibestack-studio#typecheck"
       ],
       "inputs": [
@@ -511,9 +514,7 @@
       "dependsOn": [
         "^build"
       ],
-      "outputs": [
-        ".vibe/declarations/**"
-      ]
+      "outputs": []
     },
     "@repo/design-system#build": {
       "dependsOn": [
