@@ -62,12 +62,18 @@ it('Dim the tablet at night (spec/app/preferences.md, "Night dimming and sound s
   await expect.poll(() => brightness).toBe(30);
 });
 
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve: () => resolve() };
+}
+
 function tablet(stored: { revision: number; value: string | null }) {
   const store = { acceptsWrites: true, refused: 0 };
   const audio = { step: 9, min: 0, max: 15, muted: false };
   const screen = { brightness: 100 };
   const device = () => ({ volume: { ...audio }, brightness: { percent: screen.brightness } });
-  const listening = Promise.withResolvers<void>();
+  const listening = deferred();
   let report = () => {};
   let nextRead: (() => Promise<ReturnType<typeof device>>) | undefined;
   const clock = Layer.effectDiscard(TestClock.setTime(new Date(2026, 10, 20, 12).getTime())).pipe(Layer.provideMerge(TestClock.layer()));
@@ -97,8 +103,8 @@ function tablet(stored: { revision: number; value: string | null }) {
     },
   }).pipe(Layer.provideMerge(clock)));
   const holdRead = (reading: ReturnType<typeof device>) => {
-    const taken = Promise.withResolvers<void>();
-    const released = Promise.withResolvers<void>();
+    const taken = deferred();
+    const released = deferred();
     nextRead = () => { taken.resolve(); return released.promise.then(() => reading); };
     onTestFinished(() => released.resolve());
     return { taken: taken.promise, release: () => released.resolve() };
