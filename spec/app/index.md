@@ -39,6 +39,7 @@ The visual direction is the prototype's Figtree typography, soft gradient frame,
 - [Bill discovery, choices and verified preparation](./prep.md)
 - [Join a task's preparation to its review, its fills and its view](./taskBridge.md)
 - [Commitment authorization, durable attempts and provider outcomes](./commitment.md)
+- [The calendar entry a booked visit proposes](./taskCalendar.md)
 - [One canonical bill across Email, Calendar and browser entry points](./handoffs.md)
 - [Composed navigation, interruption and execution](./workspace.md)
 - [Actuator checks for emitted browser and payment commands](./actuation.md)
