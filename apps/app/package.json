@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./test/index.ts",
+      "browser": "./test/journey.tsx",
+      "default": "./test/project.ts"
+    }
+  },
   "scripts": {
     "dev": "vite",
     "start": "(node -e \"import('node:fs').then((fs) => process.exit(process.env.TURBO_HASH && fs.existsSync('dist/index.html') ? 0 : 1))\" || pnpm -s build) && vite preview --host 127.0.0.1",
