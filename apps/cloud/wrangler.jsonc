@@ -15,6 +15,72 @@
     "CLOUD_IDENTITY_DIGEST": "f62b08bc7eaf597030f5d4eb325c4a0be46433f117a00296863dad956620bc4b"
   },
   "env": {
+    "staging": {
+      "name": "grace-cloud-staging",
+      "workers_dev": false,
+      "preview_urls": false,
+      "routes": [
+        {
+          "pattern": "api-staging.graceforseniors.com",
+          "custom_domain": true
+        },
+        {
+          "pattern": "app-staging.graceforseniors.com",
+          "custom_domain": true
+        }
+      ],
+      "assets": {
+        "directory": "../app/dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application",
+        "run_worker_first": true
+      },
+      "vars": {
+        "PUBLIC_API_ORIGIN": "https://api-staging.graceforseniors.com",
+        "WEB_ORIGIN": "https://app-staging.graceforseniors.com",
+        "NATIVE_AUTH_CALLBACK": "https://app-staging.graceforseniors.com/android/auth/callback",
+        "NATIVE_CLIENT_ID": "technology.graceful.grace",
+        "NATIVE_CLIENT_REGISTRY": "[{\"clientId\":\"technology.graceful.grace\",\"environment\":\"staging\",\"displayName\":\"Grace debug\",\"androidPackage\":\"technology.graceful.grace\",\"certFingerprints\":[\"41:C2:73:72:4A:EA:BA:69:3F:1B:B0:91:A0:8B:E7:60:7E:75:AD:D8:A4:C4:19:9B:AF:69:50:0C:3A:89:C0:64\"],\"signInReturn\":\"https://app-staging.graceforseniors.com/android/auth/callback\",\"billingReturn\":\"https://app-staging.graceforseniors.com/\",\"credentialTtlMs\":604800000,\"nativeGoogle\":true,\"enabled\":true}]",
+        "CLOUD_ENVIRONMENT": "staging",
+        "CLOUD_IDENTITY_DIGEST": "f62b08bc7eaf597030f5d4eb325c4a0be46433f117a00296863dad956620bc4b",
+        "CHAT_MODEL": "qwen-3.8-27b",
+        "CHAT_UPSTREAM_MODEL": "@cf/qwen/qwen3.8-27b",
+        "EMBEDDING_MODEL": "@cf/baai/bge-base-en-v1.5",
+        "CHAT_INPUT_MICROS_PER_1K": "450",
+        "CHAT_OUTPUT_MICROS_PER_1K": "3200",
+        "EMBEDDING_INPUT_MICROS_PER_1K": "67",
+        "MAX_COMPLETION_TOKENS": "2048",
+        "EMAIL_FROM": "signin@auth.graceforseniors.com",
+        "CARTESIA_VOICE_ID": "273f9ef7-9fc2-4def-88bb-ab108c6249ca",
+        "SPEECH_STT_MICROS_PER_SECOND": "135",
+        "SPEECH_TTS_MICROS_PER_CHARACTER": "45",
+        "SPEECH_DAILY_SESSION_LIMIT": "120"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SPEECH_RELAY_SESSIONS",
+            "class_name": "SpeechRelayCoordinator"
+          }
+        ]
+      },
+      "triggers": {
+        "crons": [
+          "*/5 * * * *"
+        ]
+      },
+      "ai": {
+        "binding": "AI"
+      },
+      "send_email": [
+        {
+          "name": "SIGN_IN_EMAIL",
+          "allowed_sender_addresses": [
+            "signin@auth.graceforseniors.com"
+          ]
+        }
+      ]
+    },
     "production": {
       "name": "grace-cloud",
       "workers_dev": false,
