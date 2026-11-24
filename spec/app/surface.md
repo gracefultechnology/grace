@@ -29,6 +29,7 @@ control rects, even an empty one.
 ```quint
 import shell as S from "./shell"
 import assistant as A from "./assistant"
+import conversation as C from "./conversation"
 
 type Rect = { x: int, y: int, width: int, height: int }
 type Point = { x: int, y: int }
@@ -83,12 +84,14 @@ pure val historyValues = Set({ tab: 2, back: false, forward: false }, { tab: 2, 
 ### A touch reaches the website only on the shown page and outside every routed control
 
 The page takes a gesture that starts inside its rect while it is shown and
-Grace's window is in the foreground, after routing is ready, and outside every rect the host routes to Grace.
-Every other gesture stays with Grace for its whole length.
+Grace's window is in the foreground, after routing is ready, and outside every rect the host routes to Grace,
+while no video of the page is fullscreen; a fullscreen video takes every
+gesture itself. Every other gesture stays with Grace for its whole length.
 
 ```quint
 pure def pageTakes(l: PageLayer, p: Point): bool =
-  l.shown and l.hostVisible and l.routingReady and covers(l.page, p) and not(l.routed.some(r => covers(r, p)))
+  l.shown and l.hostVisible and l.routingReady and not(l.fullscreen) and covers(l.page, p) and
+    not(l.routed.some(r => covers(r, p)))
 pure def lawHiddenPageTakesNoTouch(l: PageLayer, p: Point): bool =
   not(l.shown) implies not(pageTakes(l, p))
 pure def lawTouchOutsideThePageStaysWithGrace(l: PageLayer, p: Point): bool =
@@ -184,7 +187,10 @@ The sleep screen is a covering control, as expanded Grace is: the page is
 hidden beneath it rather than routed around it, so the sleep screen has no
 rect for the host to route. Once the interface reports the sleeping shell,
 the page neither runs nor takes a touch, wherever the touch lands, and it
-keeps its tabs, history and scroll for when the device wakes.
+keeps its tabs, history and scroll for when the device wakes. The rule holds
+from that `show` on: between the interface painting the sleep screen and
+the native host applying the hidden layer, a touch could still reach the
+page, and this rule does not rule that window out.
 
 ```quint
 pure def lawSleepingPageIsHiddenAndPaused(l: PageLayer, s: S::Shell, a: A::Assistant, p: Point): bool =
@@ -228,14 +234,15 @@ pure val pageValues = Set({ x: 0, y: 0, width: 100, height: 100 }, { x: 0, y: 20
 
 On the tablet Grace's wallpaper is painted over the whole screen with one
 clear area, through which the page below shows. The clear area is the page
-rect that `place` stored in the layer, read from the same layer state, so
-the wallpaper's opening and the page move in the same frame and never from
-two measurements. While the page is not shown nothing is clear.
+rect that `place` stored in the layer, so the wallpaper's opening and the
+rect the native page is placed at come from one state and never from two
+measurements. Nothing is clear while the page is not shown or the selected
+tab has no address, as a new tab has, since no native page is there.
 
 ```quint
-pure def clearArea(l: PageLayer): Rect = if (l.shown) l.page else noRect
-pure def lawClearAreaIsThePlacedPage(l: PageLayer, page: Rect): bool =
-  clearArea(place(l, page)) == (if (l.shown) page else noRect)
+pure def clearArea(l: PageLayer, address: str): Rect = if (l.shown and address != "") l.page else noRect
+pure def lawClearAreaIsThePlacedPage(l: PageLayer, page: Rect, address: str): bool =
+  clearArea(place(l, page), address) == (if (l.shown and address != "") page else noRect)
 ```
 
 ### The keyboard's height is the host's report, held by the layer
@@ -311,35 +318,59 @@ pure val addressValues = Set("", "https://example.org/")
 ## Story: Watch a website's video fullscreen
 
 > As a person using Grace, I can make a website's video fill the screen,
-> even over Grace. Back brings me out of it, and when Grace speaks or I tap
-> Ask Grace, the video leaves fullscreen first so I see her.
+> even over Grace. Back brings me out of it, and when Grace speaks or I call
+> her, the video leaves fullscreen first so I see her.
 
 ### Only a running page's video fills the screen over Grace
 
 A website asks for fullscreen from its own page, which must be shown and
-running. Android then draws the video over Grace's whole window and the
-video takes every touch; Grace's controls stay drawn and routed beneath it
-and are there again, unchanged, when it ends. Fullscreen ends whenever the
-page stops running: hidden, in the background, asleep or recreated.
+running. Android then draws the video over Grace's whole window, and the
+video takes every touch: neither the page under it nor any Grace control
+takes one, so Ask Grace cannot be tapped until the video leaves. Each touch
+has exactly one taker: the video, the page or Grace. Grace's controls stay
+drawn and routed beneath the video and are there again when it ends, unless
+the page was recreated, after which the next request routes them again.
+Fullscreen ends whenever the page stops running: hidden, in the background,
+asleep or recreated.
 
 ```quint
 pure def canEnterFullscreen(l: PageLayer): bool = pageRuns(l) and not(l.fullscreen)
 pure def enterFullscreen(l: PageLayer): PageLayer = { ...l, fullscreen: true }
 pure def alwaysFullscreenOnlyOnARunningPage(l: PageLayer): bool = l.fullscreen implies pageRuns(l)
 pure def sometimesVideoCoversGrace(l: PageLayer): bool = l.fullscreen and l.drawn.length() > 0
+pure def graceTakes(l: PageLayer, p: Point): bool = not(l.fullscreen) and not(pageTakes(l, p))
+pure def lawFullscreenVideoTakesEveryTouch(l: PageLayer, p: Point): bool =
+  l.fullscreen implies not(pageTakes(l, p)) and not(graceTakes(l, p))
+pure def lawEachTouchHasOneTaker(l: PageLayer, p: Point): bool =
+  (if (l.fullscreen) 1 else 0) + (if (pageTakes(l, p)) 1 else 0) + (if (graceTakes(l, p)) 1 else 0) == 1
 ```
 
 ### Leaving fullscreen returns the video to the page and Grace to view
 
 The website leaving fullscreen, Back and Grace herself all leave by the
-same event, which changes nothing but the video's size. Grace speaks, and
-Ask Grace opens her window, only once the video is no longer fullscreen:
-the interface leaves fullscreen first.
+same event, which changes nothing but the video's size. Grace appears when
+an assistant change opens her window or starts her listening or speaking,
+whether "Hey Grace", Ask Grace or her own reply caused it. The interface applies
+each assistant change to the layer through `appearGrace`, which leaves
+fullscreen first whenever Grace appears, so she never appears under a
+fullscreen video, and leaves the layer as it was otherwise.
 
 ```quint
 pure def canLeaveFullscreen(l: PageLayer): bool = l.fullscreen
 pure def leaveFullscreen(l: PageLayer): PageLayer = { ...l, fullscreen: false }
-pure def graceMayAppear(l: PageLayer): bool = not(l.fullscreen)
-pure def lawLeavingFullscreenLetsGraceAppear(l: PageLayer): bool = graceMayAppear(leaveFullscreen(l))
-pure def lawGraceWaitsForFullscreenToEnd(l: PageLayer): bool = l.fullscreen implies not(graceMayAppear(l))
+pure def heard(a: A::Assistant): bool = a.conversation.turn == C::Speaking or a.conversation.turn == C::Listening
+pure def graceAppears(a: A::Assistant, later: A::Assistant): bool =
+  (A::isVisible(later) and not(A::isVisible(a))) or (heard(later) and later.conversation.turn != a.conversation.turn)
+pure def appearGrace(l: PageLayer, a: A::Assistant, later: A::Assistant): PageLayer =
+  if (graceAppears(a, later) and canLeaveFullscreen(l)) leaveFullscreen(l) else l
+pure def lawGraceNeverAppearsUnderAFullscreenVideo(l: PageLayer, a: A::Assistant, later: A::Assistant): bool =
+  graceAppears(a, later) implies not(appearGrace(l, a, later).fullscreen)
+pure def lawAppearingChangesOnlyTheVideosSize(l: PageLayer, a: A::Assistant, later: A::Assistant): bool =
+  { ...appearGrace(l, a, later), fullscreen: l.fullscreen } == l
+pure def lawAskGraceMakesHerAppear(a: A::Assistant): bool =
+  A::canOpen(a, C::ConversationUser) implies graceAppears(a, A::open(a, C::ConversationUser))
+pure val speakingAssistant: A::Assistant =
+  { ...A::initial, presentation: A::Compact, conversation: { ...C::initial, turn: C::Speaking } }
+pure val laterValues = Set(A::initial, { ...A::initial, presentation: A::Compact }, speakingAssistant,
+  { ...A::initial, presentation: A::Expanded })
 ```
