@@ -282,7 +282,7 @@ function minuteStoreFor(runtime: Runtime): SubscriptionStore<Date> {
       if (!stop) {
         current = new Date();
         const delay = Math.max(1_000, 60_000 - (current.getTime() % 60_000));
-        const fiber = runtime.runFork(
+        const fiber = Effect.runFork(
           Effect.flatMap(
             Effect.sleep(Duration.millis(delay)),
             () => Effect.andThen(

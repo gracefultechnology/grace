@@ -595,6 +595,215 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
   }
 }
 
+function connectedMail(link: CloudLink, account: AccountRef,
+  transport: Effect.Success<ReturnType<typeof connectorTransport>>,
+  grantOf: (account: AccountRef, fresh?: boolean) => string!ConnectorFailure): MailConnection {
+  const { call, fetched, get, post } = transport
+  const at = routes[account.provider].mail
+  const asked = effect (path: string, params: Record<string, string>, grantId?: string) => try get(`${at}${path}`, { ...params, grantId: grantId ?? (try grantOf(account)) })
+  const posted = effect (path: string, body: object) => try post(`${at}${path}`, { ...body, grantId: try grantOf(account) })
+  const removed = effect (path: string) =>
+    HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(`${link.url}${path}`), { grantId: try grantOf(account) })
+  const requestOf = (purpose: string) => requestIdOf(`${account.provider}:${account.address}:${purpose}`)
+
+  effect function read(ref: string, grantId?: string) {
+    return try fetched(asked("/read", { messageId: ref }, grantId), ReadResponse)
+  }
+
+  function drafts(grantId: string) {
+    const cursors = new Set<string>()
+    return Stream.paginate(undefined, effect (pageToken: string | undefined) => {
+      const page = try fetched(asked("/inbox-v1/drafts", pageToken === undefined ? {} : { pageToken }, grantId), DraftList)
+      if (page.nextPageToken !== null) {
+        if (cursors.has(page.nextPageToken)) throw new ProviderRefused({ status: 502 })
+        cursors.add(page.nextPageToken)
+      }
+      return [page.drafts, Option.fromNullishOr(page.nextPageToken)] as const
+    })
+  }
+
+  effect function draftCount() {
+    const grantId = try grantOf(account)
+    const ids = Stream.runFold(drafts(grantId), () => new Set<string>(), (seen, d) => seen.add(d.draftId)) catch effect (e) => match (e) {
+      when ProviderRefused: undefined;
+      default: throw e;
+    }
+    return ids !== undefined && (try grantOf(account, true)) === grantId ? ids.size : undefined
+  }
+
+  effect function contacts(query: string) {
+    return (try fetched(asked("/contacts", { query }), ContactList)).contacts.map((c): Contact => ({ name: c.name, address: c.email }))
+  }
+
+  effect function operate(requestId: string, proposal: object) {
+    const { receipt } = try fetched(posted("/inbox-v1/operations", { requestId, proposal }), Operation)
+    return receipt.state !== "prepared" ? receipt : (try fetched(posted(`/inbox-v1/operations/${requestId}/dispatch`, { reviewDigest: receipt.reviewDigest, proposal }), Operation)).receipt
+  }
+
+  effect function attachmentOf(file: SavedFile, version: string) {
+    const got = try fetched(asked("/inbox-v1/attachment", { messageId: file.container, partId: file.contentRef, historyId: version }), AttachmentContent)
+    const type = served[got.mimeType]
+    if (type?.kind !== file.kind || !got.dataBase64.startsWith(type.magic) || byteLength(got.dataBase64) !== got.size) throw new ProviderRefused({ status: 502 })
+    return { mimeType: got.mimeType, data: got.dataBase64 }
+  }
+
+  effect function uploaded(file: SavedFile, held: Attached | undefined) {
+    let got = held
+    if (got === undefined) {
+      if (file.origin !== account.provider || file.account !== account.address) throw new ProviderRefused({ status: 422 })
+      const { message } = try read(file.container)
+      got = try attachmentOf(file, message.metadata.historyId ?? "")
+    }
+    if (!sendableAttachment(file, got)) throw new ProviderRefused({ status: 422 })
+    return { name: file.name, mimeType: got.mimeType, dataBase64: got.data }
+  }
+
+  effect function prepared(attachments: readonly SavedFile[], held: ReadonlyMap<string, Attached>) {
+    if (!sendableAttachments(attachments)) throw new ProviderRefused({ status: 422 })
+    const tried = try Effect.forEach(attachments, effect (file) => {
+      const part = uploaded(file, held.get(file.id)) catch effect (e) => match (e) {
+        when ProviderRefused: undefined;
+        when NeedsSignIn: throw e;
+        when Unreachable: throw e;
+      }
+      return { file, part }
+    })
+    const files = tried.flatMap(({ part }) => part === undefined ? [] : [part])
+    const refused = tried.filter(({ part }) => part === undefined).map(({ file }) => file.name)
+    const largest = files.toSorted((a, b) => b.dataBase64.length - a.dataBase64.length).slice(0, 1).map((file) => file.name)
+    const tooLarge = files.reduce((length, file) => length + file.dataBase64.length, 0) >= maxMailMimeBytes
+    return { files, unsendable: refused.length > 0 ? refused : tooLarge ? largest : [], status: refused.length > 0 ? 422 : 413 }
+  }
+
+  effect function uploads(attachments: readonly SavedFile[], held: ReadonlyMap<string, Attached>) {
+    const { files, unsendable, status } = try prepared(attachments, held)
+    if (unsendable.length > 0) throw new ProviderRefused({ status })
+    return files
+  }
+
+  effect function outgoing({ content: c, replyTo, attachments }: DraftSnapshot, held: ReadonlyMap<string, Attached>) {
+    const files = try uploads(attachments, held)
+    const recipients = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, ...files.length > 0 ? { attachments: files } : {} }
+    if (replyTo === "") return { kind: "send", mode: "compose", ...recipients }
+    const { message } = try read(replyTo)
+    const threaded = c.subject === (/^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`)
+    return threaded ? { kind: "send", mode: "reply", replyMessageId: replyTo, ...recipients } : { kind: "send", mode: "compose", ...recipients }
+  }
+
+  effect function looked(operationId: string) {
+    const { receipt } = try fetched(asked(`/inbox-v1/operations/${requestOf(`send:${operationId}`)}`, {}), Operation)
+    return sendOutcome(receipt)
+  }
+
+  effect function lookup(operationId: string) {
+    return looked(operationId) catch effect (e) => match (e) {
+      when NeedsSignIn: throw e;
+      when ProviderRefused: outcome("SendUnknown", "");
+      when Unreachable: outcome("SendUnknown", "");
+    }
+  }
+
+  return {
+    list: (scope, revisionOf) => {
+      const folder = searched[scope.folder]
+      return folder === undefined ? Stream.empty : Stream.unwrap(effect {
+        const { messages } = try fetched(asked("/search", { query: searchOf(folder, scope.query), maxResults: "50" }), Listing)
+        const sent = scope.folder === "SentFolder" ? messages : (try fetched(asked("/search", { query: sentMail, maxResults: "50" }), Listing)).messages
+        const replies = repliesTo(sent)
+        return Stream.fromIterable(messages.flatMap((m) => listed(scope, m, revisionOf(m.externalId), replies)))
+      })
+    },
+    read: effect (ref, generation) => {
+      const { message, bodyText, attachments, suspicion } = try read(ref)
+      const assets = manifest(account, ref, message, attachments)
+      return { receipt: { generation, succeeded: assets !== undefined, assets: assets ?? [], suspicion: assets === undefined ? "" : suspicion?.trim() ?? "" }, content: content(message, receivedOf(message) ?? 0, bodyText) }
+    },
+    header: effect (ref, generation) => {
+      const { message } = try read(ref)
+      const sent = message.labels.includes("SENT")
+      const address = (sent ? (message.to.length === 1 ? [bare(message.to[0])] : []) : [message.replyTo, message.fromEmail]).find((a) => a?.includes("@"))
+      return { ref, generation, address: address ?? "", subject: /^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`, verified: address !== undefined && message.externalId === ref }
+    },
+    attachment: attachmentOf,
+    draftCount,
+    draft: effect (ref, version) => {
+      const grantId = try grantOf(account)
+      const found = try Stream.runHead(Stream.filter(drafts(grantId), (d) => d.messageId === ref))
+      if (Option.isNone(found)) throw new ProviderRefused({ status: 404 })
+      const { draftId } = found.value
+      const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId, content: "1" }, grantId), DraftRead)
+      const opened = d.attachmentCount === 0 ? undefined : try read(messageId, grantId)
+      if ((try grantOf(account, true)) !== grantId) throw new ProviderRefused({ status: 409 })
+      const files = opened === undefined ? [] : manifest(account, messageId, opened.message, opened.attachments)
+      const content = { to: d.to.join(", "), cc: [...d.cc], bcc: [...d.bcc], subject: d.subject, body: d.bodyText }
+      const verified = id === draftId && messageId === ref && d.plainText && !d.threaded && files !== undefined && files.length === d.attachmentCount
+      return { snapshot: { id: ref, version, content, attachments: files ?? [], replyTo: "" }, verified }
+    },
+    resolve: effect (contact) => {
+      const named = (try contacts(contact)).filter((c) => c.name.toLowerCase() === contact.trim().toLowerCase())
+      return named.length === 1 ? { address: named[0].address, verified: true } : { address: "", verified: false }
+    },
+    contacts: () => contacts(""),
+    change: effect (op) => {
+      const proposal = { kind: operations[op.change], messageId: op.identity.ref, expectedHistoryId: op.version }
+      const requestId = requestOf(`${op.identity.ref}:${op.change}:${op.version}:${op.revision}`)
+      const answered = { identity: op.identity, revision: op.revision }
+      return Effect.map(operate(requestId, proposal), (r): ChangeReceipt => match (r.state) {
+        when "succeeded": r.providerResult === null ? { ...answered, result: "ChangeUnknown", evidence: "" } : { ...answered, result: "ChangeIdle", evidence: `history:${r.providerResult.historyId ?? ""}` };
+        when "rejected": { ...answered, result: "ChangeFailed", evidence: `rejected:${r.rejectionCode ?? ""}` };
+        default: { ...answered, result: "ChangeUnknown", evidence: "" };
+      }) catch effect (e) => match (e) {
+        when NeedsSignIn: throw e;
+        when ProviderRefused: certain(e) ? { ...answered, result: "ChangeFailed", evidence: `refused:${e.status}` } : { ...answered, result: "ChangeUnknown", evidence: "" };
+        when Unreachable: { ...answered, result: "ChangeUnknown", evidence: "" };
+      }
+    },
+    saveDraft: effect ({ id, content: c, attachments }, held) => {
+      const stored = effect {
+        const { files, unsendable } = try prepared(attachments, held)
+        if (unsendable.length > 0) return { draftId: id, persisted: false, unsendable } satisfies DraftStored
+        const body = { draftId: id, to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, attachments: files }
+        const { draftId } = try fetched(posted("/drafts", body), DraftSaved)
+        return { draftId, persisted: draftId === id } satisfies DraftStored
+      }
+      return stored catch effect (e) => match (e) {
+        when NeedsSignIn: throw e;
+        default: { draftId: id, persisted: false };
+      }
+    },
+    deleteDraft: effect (draftId) => {
+      return Effect.as(call(removed(`${at}/drafts/${encodeURIComponent(draftId)}`)), true) catch effect (e) => match (e) {
+        when NeedsSignIn: throw e;
+        when ProviderRefused: e.status === 404;
+        default: false;
+      }
+    },
+    send: effect (operationId, snapshot, held) => {
+      const requestId = requestOf(`send:${operationId}`)
+      const preflight = effect {
+        const grantId = try grantOf(account)
+        const proposal = try outgoing(snapshot, held)
+        const { receipt } = try fetched(post(`${at}/inbox-v1/operations`, { grantId, requestId, proposal }), Operation)
+        if (receipt.state !== "prepared") return { kind: "receipt" as const, result: sendOutcome(receipt) }
+        const request = try post(`${at}/inbox-v1/operations/${requestId}/dispatch`, { grantId, reviewDigest: receipt.reviewDigest, proposal })
+        return { kind: "dispatch" as const, request }
+      }
+      const next = preflight catch effect (e) => match (e) {
+        when NeedsSignIn: throw e;
+        when ProviderRefused: { kind: "receipt" as const, result: outcome("SendFailed", `refused:${e.status}`) };
+        when Unreachable: { kind: "receipt" as const, result: outcome("SendFailed", "preflight-unreachable") };
+      }
+      if (next.kind === "receipt") return next.result
+      return Effect.map(fetched(Effect.succeed(next.request), Operation), ({ receipt }) => sendOutcome(receipt)) catch effect (e) => match (e) {
+        when NeedsSignIn: throw e;
+        when ProviderRefused: try lookup(operationId);
+        when Unreachable: outcome("SendUnknown", "");
+      }
+    },
+    lookup
+  }
+}
+
 export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unreachable) => Layer.effect(Connector, effect {
   const creates = try calendarCreates(link.url, locks)
   const grantCache = new Map<string, string>()
@@ -654,213 +863,6 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
     return { attempt, outcome: checked[c.outcome], address: c.address } satisfies OtherReport
   }
 
-  function mail(account: AccountRef): MailConnection {
-    const at = routes[account.provider].mail
-    const asked = effect (path: string, params: Record<string, string>, grantId?: string) => try get(`${at}${path}`, { ...params, grantId: grantId ?? (try grantOf(account)) })
-    const posted = effect (path: string, body: object) => try post(`${at}${path}`, { ...body, grantId: try grantOf(account) })
-    const removed = effect (path: string) =>
-      HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(`${link.url}${path}`), { grantId: try grantOf(account) })
-    const requestOf = (purpose: string) => requestIdOf(`${account.provider}:${account.address}:${purpose}`)
-
-    effect function read(ref: string, grantId?: string) {
-      return try fetched(asked("/read", { messageId: ref }, grantId), ReadResponse)
-    }
-
-    function drafts(grantId: string) {
-      const cursors = new Set<string>()
-      return Stream.paginate(undefined, effect (pageToken: string | undefined) => {
-        const page = try fetched(asked("/inbox-v1/drafts", pageToken === undefined ? {} : { pageToken }, grantId), DraftList)
-        if (page.nextPageToken !== null) {
-          if (cursors.has(page.nextPageToken)) throw new ProviderRefused({ status: 502 })
-          cursors.add(page.nextPageToken)
-        }
-        return [page.drafts, Option.fromNullishOr(page.nextPageToken)] as const
-      })
-    }
-
-    effect function draftCount() {
-      const grantId = try grantOf(account)
-      const ids = Stream.runFold(drafts(grantId), () => new Set<string>(), (seen, d) => seen.add(d.draftId)) catch effect (e) => match (e) {
-        when ProviderRefused: undefined;
-        default: throw e;
-      }
-      return ids !== undefined && (try grantOf(account, true)) === grantId ? ids.size : undefined
-    }
-
-    effect function contacts(query: string) {
-      return (try fetched(asked("/contacts", { query }), ContactList)).contacts.map((c): Contact => ({ name: c.name, address: c.email }))
-    }
-
-    effect function operate(requestId: string, proposal: object) {
-      const { receipt } = try fetched(posted("/inbox-v1/operations", { requestId, proposal }), Operation)
-      return receipt.state !== "prepared" ? receipt : (try fetched(posted(`/inbox-v1/operations/${requestId}/dispatch`, { reviewDigest: receipt.reviewDigest, proposal }), Operation)).receipt
-    }
-
-    effect function attachmentOf(file: SavedFile, version: string) {
-      const got = try fetched(asked("/inbox-v1/attachment", { messageId: file.container, partId: file.contentRef, historyId: version }), AttachmentContent)
-      const type = served[got.mimeType]
-      if (type?.kind !== file.kind || !got.dataBase64.startsWith(type.magic) || byteLength(got.dataBase64) !== got.size) throw new ProviderRefused({ status: 502 })
-      return { mimeType: got.mimeType, data: got.dataBase64 }
-    }
-
-    effect function uploaded(file: SavedFile, held: Attached | undefined) {
-      let got = held
-      if (got === undefined) {
-        if (file.origin !== account.provider || file.account !== account.address) throw new ProviderRefused({ status: 422 })
-        const { message } = try read(file.container)
-        got = try attachmentOf(file, message.metadata.historyId ?? "")
-      }
-      if (!sendableAttachment(file, got)) throw new ProviderRefused({ status: 422 })
-      return { name: file.name, mimeType: got.mimeType, dataBase64: got.data }
-    }
-
-    effect function prepared(attachments: readonly SavedFile[], held: ReadonlyMap<string, Attached>) {
-      if (!sendableAttachments(attachments)) throw new ProviderRefused({ status: 422 })
-      const tried = try Effect.forEach(attachments, effect (file) => {
-        const part = uploaded(file, held.get(file.id)) catch effect (e) => match (e) {
-          when ProviderRefused: undefined;
-          when NeedsSignIn: throw e;
-          when Unreachable: throw e;
-        }
-        return { file, part }
-      })
-      const files = tried.flatMap(({ part }) => part === undefined ? [] : [part])
-      const refused = tried.filter(({ part }) => part === undefined).map(({ file }) => file.name)
-      const largest = files.toSorted((a, b) => b.dataBase64.length - a.dataBase64.length).slice(0, 1).map((file) => file.name)
-      const tooLarge = files.reduce((length, file) => length + file.dataBase64.length, 0) >= maxMailMimeBytes
-      return { files, unsendable: refused.length > 0 ? refused : tooLarge ? largest : [], status: refused.length > 0 ? 422 : 413 }
-    }
-
-    effect function uploads(attachments: readonly SavedFile[], held: ReadonlyMap<string, Attached>) {
-      const { files, unsendable, status } = try prepared(attachments, held)
-      if (unsendable.length > 0) throw new ProviderRefused({ status })
-      return files
-    }
-
-    effect function outgoing({ content: c, replyTo, attachments }: DraftSnapshot, held: ReadonlyMap<string, Attached>) {
-      const files = try uploads(attachments, held)
-      const recipients = { to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, ...files.length > 0 ? { attachments: files } : {} }
-      if (replyTo === "") return { kind: "send", mode: "compose", ...recipients }
-      const { message } = try read(replyTo)
-      const threaded = c.subject === (/^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`)
-      return threaded ? { kind: "send", mode: "reply", replyMessageId: replyTo, ...recipients } : { kind: "send", mode: "compose", ...recipients }
-    }
-
-    effect function looked(operationId: string) {
-      const { receipt } = try fetched(asked(`/inbox-v1/operations/${requestOf(`send:${operationId}`)}`, {}), Operation)
-      return sendOutcome(receipt)
-    }
-
-    effect function lookup(operationId: string) {
-      return looked(operationId) catch effect (e) => match (e) {
-        when NeedsSignIn: throw e;
-        when ProviderRefused: outcome("SendUnknown", "");
-        when Unreachable: outcome("SendUnknown", "");
-      }
-    }
-
-    return {
-      list: (scope, revisionOf) => {
-        const folder = searched[scope.folder]
-        return folder === undefined ? Stream.empty : Stream.unwrap(effect {
-          const { messages } = try fetched(asked("/search", { query: searchOf(folder, scope.query), maxResults: "50" }), Listing)
-          const sent = scope.folder === "SentFolder" ? messages : (try fetched(asked("/search", { query: sentMail, maxResults: "50" }), Listing)).messages
-          const replies = repliesTo(sent)
-          return Stream.fromIterable(messages.flatMap((m) => listed(scope, m, revisionOf(m.externalId), replies)))
-        })
-      },
-      read: effect (ref, generation) => {
-        const { message, bodyText, attachments, suspicion } = try read(ref)
-        const assets = manifest(account, ref, message, attachments)
-        return { receipt: { generation, succeeded: assets !== undefined, assets: assets ?? [], suspicion: assets === undefined ? "" : suspicion?.trim() ?? "" }, content: content(message, receivedOf(message) ?? 0, bodyText) }
-      },
-      header: effect (ref, generation) => {
-        const { message } = try read(ref)
-        const sent = message.labels.includes("SENT")
-        const address = (sent ? (message.to.length === 1 ? [bare(message.to[0])] : []) : [message.replyTo, message.fromEmail]).find((a) => a?.includes("@"))
-        return { ref, generation, address: address ?? "", subject: /^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`, verified: address !== undefined && message.externalId === ref }
-      },
-      attachment: attachmentOf,
-      draftCount,
-      draft: effect (ref, version) => {
-        const grantId = try grantOf(account)
-        const found = try Stream.runHead(Stream.filter(drafts(grantId), (d) => d.messageId === ref))
-        if (Option.isNone(found)) throw new ProviderRefused({ status: 404 })
-        const { draftId } = found.value
-        const { id, messageId, content: d } = try fetched(asked("/inbox-v1/draft", { draftId, content: "1" }, grantId), DraftRead)
-        const opened = d.attachmentCount === 0 ? undefined : try read(messageId, grantId)
-        if ((try grantOf(account, true)) !== grantId) throw new ProviderRefused({ status: 409 })
-        const files = opened === undefined ? [] : manifest(account, messageId, opened.message, opened.attachments)
-        const content = { to: d.to.join(", "), cc: [...d.cc], bcc: [...d.bcc], subject: d.subject, body: d.bodyText }
-        const verified = id === draftId && messageId === ref && d.plainText && !d.threaded && files !== undefined && files.length === d.attachmentCount
-        return { snapshot: { id: ref, version, content, attachments: files ?? [], replyTo: "" }, verified }
-      },
-      resolve: effect (contact) => {
-        const named = (try contacts(contact)).filter((c) => c.name.toLowerCase() === contact.trim().toLowerCase())
-        return named.length === 1 ? { address: named[0].address, verified: true } : { address: "", verified: false }
-      },
-      contacts: () => contacts(""),
-      change: effect (op) => {
-        const proposal = { kind: operations[op.change], messageId: op.identity.ref, expectedHistoryId: op.version }
-        const requestId = requestOf(`${op.identity.ref}:${op.change}:${op.version}:${op.revision}`)
-        const answered = { identity: op.identity, revision: op.revision }
-        return Effect.map(operate(requestId, proposal), (r): ChangeReceipt => match (r.state) {
-          when "succeeded": r.providerResult === null ? { ...answered, result: "ChangeUnknown", evidence: "" } : { ...answered, result: "ChangeIdle", evidence: `history:${r.providerResult.historyId ?? ""}` };
-          when "rejected": { ...answered, result: "ChangeFailed", evidence: `rejected:${r.rejectionCode ?? ""}` };
-          default: { ...answered, result: "ChangeUnknown", evidence: "" };
-        }) catch effect (e) => match (e) {
-          when NeedsSignIn: throw e;
-          when ProviderRefused: certain(e) ? { ...answered, result: "ChangeFailed", evidence: `refused:${e.status}` } : { ...answered, result: "ChangeUnknown", evidence: "" };
-          when Unreachable: { ...answered, result: "ChangeUnknown", evidence: "" };
-        }
-      },
-      saveDraft: effect ({ id, content: c, attachments }, held) => {
-        const stored = effect {
-          const { files, unsendable } = try prepared(attachments, held)
-          if (unsendable.length > 0) return { draftId: id, persisted: false, unsendable } satisfies DraftStored
-          const body = { draftId: id, to: addresses(c.to), cc: c.cc, bcc: c.bcc, subject: c.subject, bodyText: c.body, attachments: files }
-          const { draftId } = try fetched(posted("/drafts", body), DraftSaved)
-          return { draftId, persisted: draftId === id } satisfies DraftStored
-        }
-        return stored catch effect (e) => match (e) {
-          when NeedsSignIn: throw e;
-          default: { draftId: id, persisted: false };
-        }
-      },
-      deleteDraft: effect (draftId) => {
-        return Effect.as(call(removed(`${at}/drafts/${encodeURIComponent(draftId)}`)), true) catch effect (e) => match (e) {
-          when NeedsSignIn: throw e;
-          when ProviderRefused: e.status === 404;
-          default: false;
-        }
-      },
-      send: effect (operationId, snapshot, held) => {
-        const requestId = requestOf(`send:${operationId}`)
-        const preflight = effect {
-          const grantId = try grantOf(account)
-          const proposal = try outgoing(snapshot, held)
-          const { receipt } = try fetched(post(`${at}/inbox-v1/operations`, { grantId, requestId, proposal }), Operation)
-          if (receipt.state !== "prepared") return { kind: "receipt" as const, result: sendOutcome(receipt) }
-          const request = try post(`${at}/inbox-v1/operations/${requestId}/dispatch`, { grantId, reviewDigest: receipt.reviewDigest, proposal })
-          return { kind: "dispatch" as const, request }
-        }
-        const next = preflight catch effect (e) => match (e) {
-          when NeedsSignIn: throw e;
-          when ProviderRefused: { kind: "receipt" as const, result: outcome("SendFailed", `refused:${e.status}`) };
-          when Unreachable: { kind: "receipt" as const, result: outcome("SendFailed", "preflight-unreachable") };
-        }
-        if (next.kind === "receipt") return next.result
-        return Effect.map(fetched(Effect.succeed(next.request), Operation), ({ receipt }) => sendOutcome(receipt)) catch effect (e) => match (e) {
-          when NeedsSignIn: throw e;
-          when ProviderRefused: try lookup(operationId);
-          when Unreachable: outcome("SendUnknown", "");
-        }
-      },
-      lookup
-    }
-  }
-
-
   return {
     signIn: effect (request) => {
       const refused: SheetReport = { attempt: request.attempt, outcome: "Refused", address: "", granted: nothing }
@@ -873,7 +875,7 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
       return account?.name ?? ""
     },
     shown: SubscriptionRef.changes(shown),
-    mail,
+    mail: (account) => connectedMail(link, account, transport, grantOf),
     calendar: (account) => connectedCalendar(link, account, zones, creates, transport, grantOf)
   }
 }).pipe(Layer.provide(Layer.merge(FetchHttpClient.layer, Digest.layerWebCrypto)))

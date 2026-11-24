@@ -13,7 +13,7 @@ import type { Attached, MailContent } from "./connector.vibe";
 import { EmailCompose } from "./EmailCompose.tsx";
 import { chooseMailLink, type LinkChoice } from "./mailLink.vibe";
 import { messageLinkParts } from "./messageLinks.vibe";
-import { answerable, headerFor, queuedAt, recipientsOf } from "./mail.vibe";
+import { headerFor, queuedAt, recipientsOf } from "./mail.vibe";
 import { type MailInstance, type MailWriter, mailThumbnail, useAccountIds, useAccounts, useFiles, useMail, useMailContent, useMailFile, useMailHeld, useMinute, useRuntime, useWorkspace, WithMailboxes } from "./useApp.ts";
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };

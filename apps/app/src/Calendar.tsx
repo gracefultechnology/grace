@@ -12,22 +12,6 @@ import { adding, CalendarNews, dayOf, editingPlan, hour, instant, midnight, minu
 import type { HomeCards } from "./managedReads.vibe";
 import { type CalendarInstance, useAccounts, useCalendarActions, useCalendarKeys, useCalendarNote, useDraft, useProposal, useRecoveredCalendarDrafts, useRuntime, useWorkspace, WithCalendars } from "./useApp.ts";
 
-const shortWeekday = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-const shortTime = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
-
-export type HostedAppointment = HomeCards["events"][number];
-
-export const appointmentWeekday = (date: Date) => shortWeekday.format(date).toUpperCase();
-
-export function hostedAppointmentDate({ isAllDay, startAt }: HostedAppointment): Date {
-  return new Date(isAllDay && startAt.length === 10 ? `${startAt}T12:00:00` : startAt);
-}
-
-export function hostedAppointmentDisplay(event: HostedAppointment) {
-  const date = hostedAppointmentDate(event);
-  return { date, time: event.isAllDay ? "All day" : shortTime.format(date) };
-}
-
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
 
 const repeats: Record<Recurrence, string> = { Once: "Never", Weekly: "Every week", Monthly: "Every month" };

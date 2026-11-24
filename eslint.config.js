@@ -78,7 +78,7 @@ const effects = {
 const code = { rules: { comments, effects } }
 const own = ["apps/**", "packages/**"]
 const commented = {"apps/app/src/App.tsx": 19, "apps/app/src/Grace.tsx": 6, "apps/app/src/ManagedRead.tsx": 1, "apps/app/src/app.vibe": 8, "apps/app/src/google.vibe": 1, "apps/app/src/providers.vibe": 1, "apps/app/src/surfacePlugin.ts": 6, "apps/app/src/useApp.ts": 12, "apps/app/test/app.browser.test.tsx": 63, "packages/ui/src/icons.tsx": 12, "packages/ui/src/lib/facts.tsx": 1, "packages/ui/vite.config.ts": 1, "packages/ui/vitest.config.ts": 1}
-const scheduled = { "apps/app/scripts/android.ts": 1, "apps/app/src/App.tsx": 4, "apps/app/src/page.vibe": 2, "apps/app/src/useApp.ts": 3, "apps/app/test/app.browser.test.tsx": 7 }
+const scheduled = { "apps/app/scripts/android.ts": 1, "apps/app/src/page.vibe": 2, "apps/app/test/app.browser.test.tsx": 7 }
 
 // The tool reads Quint's JSON and the TypeScript compiler API as `any` at its boundaries; packages and apps stay strict.
 const loose = Object.fromEntries(["no-explicit-any", "no-unsafe-argument", "no-unsafe-assignment", "no-unsafe-call", "no-unsafe-member-access", "no-unsafe-return"].map((rule) => [`@typescript-eslint/${rule}`, "off"]))
