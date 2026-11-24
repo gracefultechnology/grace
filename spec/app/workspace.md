@@ -48,6 +48,7 @@ import wake as W from "./wake"
 import interaction as I from "./interaction"
 import browserControls as BC from "./browserControls"
 import handoffs as H from "./handoffs"
+import websiteRequests as WR from "./websiteRequests"
 
 type WorkspaceActor = Person | Host | Store | Actuator
 type StepDetails = { surface: S::Surface, subject: str, outcome: str }
@@ -188,9 +189,9 @@ type Workspace = {
   execution: X::Execution, commitment: CM::Commitment, otherCommitments: List[CM::Commitment],
   preferences: R::Preferences, wake: W::Wake,
   plan: GuidedPlan, review: GuidedReview, commitmentTask: str, observedDevice: int, observedBrowser: int,
-  websiteHold: WebsiteHold
+  website: WR::WebsiteRequests, lastWebsiteAnswer: WebsiteAnswer
 }
-type WebsiteHold = NoWebsiteHold | WebsiteHolds | WebsiteAnswered({ task: str, workVersion: int, observation: int })
+type WebsiteAnswer = NoWebsiteAnswer | WebsiteAnswered({ task: str, workVersion: int, observation: int })
 type WorkspaceEffect = Execute({ deviceVersion: int, browserRevision: int, effect: X::WebsiteEffect })
   | Commit({ deviceVersion: int, browserRevision: int, taskVersion: int, effect: CM::CommitmentEffect })
   | WakeFeedback({ signal: W::WakeSignal })
@@ -249,7 +250,7 @@ pure val initial: Workspace = {
   execution: X::initial, commitment: CM::initial, otherCommitments: List(),
   preferences: R::initial, wake: W::initial,
   plan: emptyPlan, review: emptyReview(0), commitmentTask: "", observedDevice: 0, observedBrowser: 0,
-  websiteHold: NoWebsiteHold
+  website: WR::initial, lastWebsiteAnswer: NoWebsiteAnswer
 }
 pure def privateSignInActive(w: Workspace): bool =
   w.device.surface == S::Browser and B::activeTab(w.browser).manualSignIn
@@ -1859,7 +1860,7 @@ pure def lawSortNameCorrectionExampleIsCurrent(by: WorkspaceActor): bool = {
   by == Person implies canOfferGuidedNameCorrection(ready, exampleSortName, Host) and
     canConfirmGuidedNameCorrection(offered, exampleSortName, by) and
     not(canConfirmGuidedNameCorrection(offered, exampleSortName, Host)) and
-    not(canConfirmGuidedNameCorrection(holdForWebsite(offered, true, Host), exampleSortName, by)) and
+    not(canConfirmGuidedNameCorrection(followWebsite(offered, WR::exampleTwoAsk, Host), exampleSortName, by)) and
     not(canConfirmGuidedNameCorrection(offered, { ...exampleSortName, owner: "another-owner" }, by)) and
     not(canOfferGuidedNameCorrection(ready, { ...exampleSortName, witness: LocatedSortCategory({
       domRevision: 1, origin: "https://other.example", direction: PriceAscending }) }, Host)) and
@@ -2822,10 +2823,11 @@ pure def lawReplyControlStaleTurn(w: Workspace, reply: ReplyControlContext): boo
 
 ### No task step is taken while a website's question holds the person, and the task goes on after her answer
 
-The host tells the workspace whenever [what websites ask](./websiteRequests.md)
-starts or stops holding the person (`holdsThePerson`: a question is
-presented, or a site permission she allowed is waiting for Android). While it
-holds her, the workspace refuses every step of a task: observing, preparing,
+The workspace keeps [what websites ask](./websiteRequests.md) as part of
+its own state: the host hands it each state those requests step to, and the
+workspace is held exactly while they hold the person (`holdsThePerson`: a
+question is presented, or a site permission she allowed is waiting for
+Android). While it holds her, the workspace refuses every step of a task: observing, preparing,
 dispatching or verifying an operation, progress reported for one, completing
 an ordinary goal, publishing guidance, offering a read plan, offering or
 approving a name correction, resuming a recovered public tab, every step of a
@@ -2842,19 +2844,19 @@ attempt and durable outcome so that Grace can check what happened. Answering
 the question never sends it again.
 
 ```quint
-pure def heldByWebsite(w: Workspace): bool = w.websiteHold == WebsiteHolds
+pure def heldByWebsite(w: Workspace): bool = WR::holdsThePerson(w.website)
 pure def taskStandsStill(w: Workspace, after: Workspace): bool =
   after.assistant.activity == w.assistant.activity and after.assistant.workVersion == w.assistant.workVersion
-pure def canHoldForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): bool =
-  by == Host and holds != heldByWebsite(w)
-pure def holdForWebsite(w: Workspace, holds: bool, by: WorkspaceActor): Workspace = {
+pure def canFollowWebsite(w: Workspace, website: WR::WebsiteRequests, by: WorkspaceActor): bool = by == Host
+pure def followWebsite(w: Workspace, website: WR::WebsiteRequests, by: WorkspaceActor): Workspace = {
   val assistant = if (w.assistant.activity == A::DoingWork) A::supersede(true, w.assistant) else w.assistant
-  if (holds) { ...w, websiteHold: WebsiteHolds }
-  else { ...w, assistant: assistant,
+  if (not(heldByWebsite(w)) or WR::holdsThePerson(website)) { ...w, website: website }
+  else { ...w, website: website, assistant: assistant,
     execution: if (X::canInvalidate(w.execution, X::BrowserBridge)) X::invalidate(w.execution, X::BrowserBridge) else w.execution,
     commitment: if (CM::canInvalidate(w.commitment, T::Host)) CM::invalidate(w.commitment, T::Host) else w.commitment,
-    websiteHold: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
+    lastWebsiteAnswer: WebsiteAnswered({ task: assistant.taskId, workVersion: assistant.workVersion, observation: w.execution.observation }) }
 }
+pure val websiteValues = Set(WR::initial, WR::exampleShown, WR::exampleTwoAsk, WR::exampleAsking)
 pure val heldTaskSteps = Set("observe", "prepare", "dispatch", "verify", "receiveProgress", "completeOrdinary",
   "publishGuidance", "setGuidedLink", "offerReadReview", "offerGuidedNameCorrection",
   "confirmGuidedNameCorrection", "resumePublicTab",
@@ -2867,8 +2869,8 @@ pure def stepAHeldTaskDoesNotAdvance(before: Workspace, via: str, after: Workspa
   heldByWebsite(before) implies
     not(heldTaskSteps.contains(via)) and (heldTaskEvidence.contains(via) implies taskStandsStill(before, after))
 pure def sometimesAHeldTaskGoesOnAfterHerAnswer(w: Workspace): bool =
-  val hold = w.websiteHold
-  match hold {
+  val answer = w.lastWebsiteAnswer
+  match answer {
     | WebsiteAnswered(answered) => answered.task != "" and w.assistant.taskId == answered.task and
       w.assistant.workVersion == answered.workVersion and w.execution.observation > answered.observation
     | _ => false
@@ -2883,9 +2885,9 @@ pure val eval_witness_sometimesAHeldTaskGoesOnAfterHerAnswer = (
   ("begin", { owner: "owner", task: "other", goal: "Read another account", origin: "https://credit.example" }, Person),
   ("receiveLoad", { id: 1, version: 2, result: B::Loaded, secure: true, endedAt: "https://www.utility.example/home" }, Host),
   ("adjustPreferenceLevel", R::VolumeBy({ amount: 10 }), Person),
-  ("holdForWebsite", true, Host),
-  ("holdForWebsite", false, Host),
+  ("followWebsite", WR::exampleTwoAsk, Host),
+  ("followWebsite", WR::exampleShown, Host),
   ("observe", { ...observed, website: { ...X::goodObservation, generation: 2, task: "other", origin: "https://credit.example" } }, Host)
 )
-pure val weight_holdForWebsite = 8
+pure val weight_followWebsite = 8
 ```

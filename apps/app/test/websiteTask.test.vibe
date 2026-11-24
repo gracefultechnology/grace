@@ -1,0 +1,28 @@
+// spec/app/workspace.md, "Story: Wait for my answer to a website"
+import { assert, it } from "@effect/vitest"
+import { holdsThePerson, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe"
+import { machine as workspaces } from "../gen/app__workspace.effect.vibe"
+import { WebsiteTask, websiteTask } from "../src/websiteTask.vibe"
+
+const question = { tab: 1, ask: { tag: "WebsiteMessage", dialog: "ConfirmMessage" }, fromTap: true, topFrame: true } as const
+const yes = { type: "answer", id: 1, choice: { accept: true, text: "" } } as const
+
+it.effect("Wait for my answer to a website: the task is held while her question is open, an answer cut short leaves the task held exactly as the page holds her, and her answer lets the task go on", () => effect {
+  provide Layer.provide(websiteTask, workspaces()) {
+    const requests = try WebsiteRequests
+    const task = try WebsiteTask
+    try requests.send({ type: "pageStarted", tab: 1 }, "WebsiteHost")
+    try requests.send({ type: "followView", view: { shown: true, selected: 1, paused: false } }, "WebsiteHost")
+    try requests.send({ type: "raise", report: question }, "WebsiteHost")
+    const held = { clear: try task.clear, start: try task.start(Effect.succeed(true), Effect.void) }
+    const waiting = try Effect.forkChild(task.released)
+    try Fiber.interrupt(try Effect.forkChild(requests.send(yes, "WebsitePerson")))
+    const cut = { clear: try task.clear, pageHolds: holdsThePerson(try requests.get()) }
+    if (cut.pageHolds) try requests.send(yes, "WebsitePerson")
+    try Fiber.join(waiting)
+    const after = { clear: try task.clear, started: typeof (try task.start(Effect.succeed(true), Effect.void)) !== "string" }
+    try Effect.try(() => assert.deepStrictEqual(
+      { held, cutAgrees: cut.clear === !cut.pageHolds, after },
+      { held: { clear: false, start: "Held" }, cutAgrees: true, after: { clear: true, started: true } }))
+  }
+})

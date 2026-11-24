@@ -1,7 +1,6 @@
 // spec/app/deviceKeys.md, "Story: Answer a website before Grace goes on"; spec/app/workspace.md, "Story: Wait for my answer to a website"
-import { taskMayAdvance } from "../gen/app__deviceKeys.effect.vibe"
-import { decodeEvent as websiteEvent, holdsThePerson, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe"
-import { decodeEvent as workspaceEvent, enabled, step, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { decodeEvent as websiteEvent, machineOver as requestsOver, Machine as WebsiteRequests } from "../gen/app__websiteRequests.effect.vibe"
+import { decodeEvent as workspaceEvent, enabled, heldByWebsite, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 
 export service WebsiteTask {
   readonly clear: boolean!!
@@ -11,38 +10,28 @@ export service WebsiteTask {
 
 export const websiteTask = Layer.unwrap(effect {
   const workspace = try Workspaces
-  const requests = try WebsiteRequests
   const lock = try Semaphore.make(1)
   const serial = lock.withPermits(1)
-  const clear = Effect.map(requests.get(), (r) => taskMayAdvance(r, true))
-  const released = Effect.asVoid(Stream.runHead(Stream.filter(requests.changes, (r) => taskMayAdvance(r, true))))
+  const clear = Effect.map(workspace.get(), (w) => !heldByWebsite(w))
+  const released = Effect.asVoid(Stream.runHead(Stream.filter(workspace.changes, (w) => !heldByWebsite(w))))
   const issue: WebsiteTask.Shape["start"] = (current, run) => serial(effect {
     if (!(try current)) return "Stale" as const
     if (!(try clear)) return "Held" as const
     return try Effect.forkChild(run, { startImmediately: true })
   })
-  const follow = effect {
-    const hold = { type: "holdForWebsite", holds: holdsThePerson(try requests.get()) } as const
-    if (enabled(try workspace.get(), hold, "Host")) try Effect.orDie(workspace.send(hold, "Host"))
-  }
   const send: Workspaces.Shape["send"] = effect (event, by, isCurrent) => {
     while (true) {
       const sent = try serial(effect {
         const state = try workspace.get()
-        const answered = step(state, { type: "holdForWebsite", holds: false }, "Host").state
-        if (enabled(state, event, by) || !enabled(answered, event, by)) return { result: try workspace.send(event, by, isCurrent) }
+        if (enabled(state, event, by) || !heldByWebsite(state)) return { result: try workspace.send(event, by, isCurrent) }
         return undefined
       })
       if (sent !== undefined) return sent.result
       try Effect.interruptible(released)
     }
   }
-  const answer: WebsiteRequests.Shape["send"] = (event, by, isCurrent) => serial(Effect.uninterruptible(effect {
-    const result = try requests.send(event, by, isCurrent)
-    try follow
-    return result
-  }))
-  try serial(follow)
+  const requests = try requestsOver(() => Effect.map(workspace.get(), (w) => w.website), (website) => Effect.asVoid(Effect.orDie(workspace.send({ type: "followWebsite", website }, "Host"))))
+  const answer: WebsiteRequests.Shape["send"] = (event, by, isCurrent) => serial(requests.send(event, by, isCurrent))
   return Layer.mergeAll(
     Layer.succeed(Workspaces, { ...workspace, send, receive: effect (input, by) => try send(try workspaceEvent(input), by) }),
     Layer.succeed(WebsiteRequests, { ...requests, send: answer, receive: effect (input, by) => try answer(try websiteEvent(input), by) }),
