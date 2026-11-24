@@ -269,11 +269,13 @@ fullscreen video ends. The interface keeps drawing its controls; the next
 request routes them again.
 
 ```quint
-pure def canRecreate(l: PageLayer): bool = l.routingReady or l.pending
+pure def canRecreate(l: PageLayer): bool = l.routingReady or l.pending or l.fullscreen
 pure def recreate(l: PageLayer): PageLayer = {
   ...l, routed: List(), requested: List(),
   routingReady: false, pending: false, version: l.version + 1, fullscreen: false
 }
+pure def lawRecreationClearsFullscreen(l: PageLayer): bool =
+  l.fullscreen implies canRecreate(l) and not(recreate(l).fullscreen)
 pure def sometimesRecreatedPageWaits(l: PageLayer): bool = l.shown and not(l.routingReady) and l.version > 0
 ```
 
