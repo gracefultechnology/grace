@@ -46,16 +46,20 @@ The entry is an appointment of the person who booked, in the calendar she choose
 pure val minuteLength = 60000
 pure val reminderLead = 3600000
 pure val noSlot: T::Slot = { start: 0, minutes: 0, venue: "" }
-pure def bookedService(booked: CM::Commitment): str = match booked.proposal {
-  | NoTerms => ""
-  | PayTerms(x) => ""
-  | BookTerms(x) => x.book.service
-}
-pure def bookedSlot(booked: CM::Commitment): T::Slot = match booked.proposal {
-  | NoTerms => noSlot
-  | PayTerms(x) => noSlot
-  | BookTerms(x) => x.book.slot
-}
+pure def bookedService(booked: CM::Commitment): str =
+  val terms = booked.proposal
+  match terms {
+    | NoTerms => ""
+    | PayTerms(x) => ""
+    | BookTerms(x) => x.book.service
+  }
+pure def bookedSlot(booked: CM::Commitment): T::Slot =
+  val terms = booked.proposal
+  match terms {
+    | NoTerms => noSlot
+    | PayTerms(x) => noSlot
+    | BookTerms(x) => x.book.slot
+  }
 pure def appointmentFor(booked: CM::Commitment, calendarId: str, timezone: str): CV::EntrySeed = {
   identity: { ...C::noIdentity, owner: booked.key.owner, calendarId: calendarId, occurrenceId: booked.key.ref,
     sourceRef: booked.reference, kind: C::Appointment },
