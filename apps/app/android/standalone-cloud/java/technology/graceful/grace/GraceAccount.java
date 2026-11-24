@@ -33,7 +33,7 @@ public final class GraceAccount extends Plugin {
  private static final ExecutorService ACCOUNT = Executors.newSingleThreadExecutor();
  private static final ExecutorService RECOVERY = Executors.newSingleThreadExecutor();
  private static final String CLOUD_ORIGIN = BuildConfig.CLOUD_API_ORIGIN;
- private static final String MOBILE_ENVIRONMENT = "production";
+ private static final String MOBILE_ENVIRONMENT = BuildConfig.CLOUD_ENVIRONMENT;
  private CloudPasswordBackup passwordBackup;
  private GracePasswordRecovery recovery;
  private GraceBrowserGuide guide;

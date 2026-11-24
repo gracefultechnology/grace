@@ -4,13 +4,18 @@ import { Schema } from "effect";
 export const androidPaths = { project: "android/generated", web: "dist" };
 
 export const standaloneProfile = "standalone-production";
-export const CloudProfile = Schema.Literals([standaloneProfile, "shared-production", "shared-staging"]);
+export const CloudProfile = Schema.Literals([standaloneProfile, "standalone-staging", "shared-production", "shared-staging"]);
 export type CloudProfile = typeof CloudProfile.Type;
 export const cloudProfiles = {
   "standalone-production": {
     apiOrigin: "https://api.graceforseniors.com", webOrigin: "https://app.graceforseniors.com",
     agentOrigin: "https://api.graceforseniors.com",
     callbackPath: "/android/auth/callback", environment: "production", sources: "standalone-cloud",
+  },
+  "standalone-staging": {
+    apiOrigin: "https://api-staging.graceforseniors.com", webOrigin: "https://app-staging.graceforseniors.com",
+    agentOrigin: "https://api-staging.graceforseniors.com",
+    callbackPath: "/android/auth/callback", environment: "staging", sources: "standalone-cloud",
   },
   "shared-production": {
     apiOrigin: "https://cloud.eliza.app", webOrigin: "https://cloud.eliza.app",
@@ -44,7 +49,7 @@ const config: CapacitorConfig = {
   android: { path: process.env.GRACE_ANDROID_CAPACITOR_PROJECT ?? androidPaths.project },
   plugins: {
     SystemBars: { style: "LIGHT", insetsHandling: "disable" },
-    ...(cloudProfile === standaloneProfile ? {} : {
+    ...(cloudProfiles[cloudProfile].sources === "standalone-cloud" ? {} : {
       GraceAccount: {
         clientId: appId,
         testEnvironments,

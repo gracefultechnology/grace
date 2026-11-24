@@ -160,21 +160,32 @@ JDK 21, Android SDK platform 36 with build-tools 36.0.0; `ANDROID_HOME` and `JAV
 usual install paths) writes `artifacts/launcher-debug.apk` for one processor type,
 `--abi arm64-v8a` (the default: the tablet and an Apple silicon emulator) or `--abi x86_64`.
 Choose the cloud deployment at build time with `--cloud-profile`. The default
-is `standalone-production` for Grace Cloud. `shared-production` uses Eliza Cloud
+is `standalone-production` for Grace Cloud. `standalone-staging` uses Grace Cloud staging and
+builds debug APKs only. `shared-production` uses Eliza Cloud
 production. `shared-staging` uses Eliza Cloud staging and builds debug APKs only.
 The choice fixes the account registration and callback,
 the web bundle's cloud origins, and the embedded agent's inference endpoint.
-Shared builds write their APKs, verification manifest and intermediate files under
+Builds for any profile but the default write their APKs, verification manifest and intermediate files under
 `artifacts/cloud-profiles/<profile>/`. Use the same `--cloud-profile` with `--verify`.
 
 `--release` adds the release APK: `launcher-release.apk`, signed, when `GRACE_KEYSTORE`
-(absolute, or relative to the directory you ran the command from: `INIT_CWD` under pnpm, otherwise
-the working directory), `GRACE_KEYSTORE_PASSWORD`,
+(absolute, or relative to `apps/app`), `GRACE_KEYSTORE_PASSWORD`,
 `GRACE_KEY_ALIAS` and `GRACE_KEY_PASSWORD` are all set (`signing` in `android/host.json`; Gradle
 refuses a partial set, and the build fails if they are set and a release comes out unsigned),
-otherwise `launcher-release-unsigned.apk`. `artifacts/apk-manifest.json` lists each APK this build
-produced with its processor type, size, SHA-256 and the signer verified by `apksigner` from
-Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. The build
+otherwise `launcher-release-unsigned.apk`. The build, its web bundle and `cap copy` steps, Gradle
+and the check get only `PATH`, `HOME`, `TMPDIR`, `LANG`, `GRADLE_OPTS`, `GRADLE_USER_HOME`, these
+signing variables, the Android and Java locations, `ANDROID_USER_HOME`, the Capacitor project and web
+directories and the selected cloud profile's `VITE_GRACE_CLOUD_*` origins, never the rest of the
+environment, so `CI` and `TURBO_*` do not reach the nested code generation. `artifacts/apk-manifest.json` lists each APK this build
+produced with its processor type, size, SHA-256, requested permissions and the signer verified by `apksigner` from
+Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. Each APK
+passes upstream's distribution check (`apkDistributionProblems` in `@elizaos/os/android/apk-distribution.mjs`)
+with Grace's policy in `scripts/android.ts`: backups and cleartext traffic off, a network security
+configuration in a release, only the listed exported components with their permissions, no source
+maps, no test-only names, a version. A failed build or check removes its APKs and the manifest,
+an earlier build's included. An interrupted build can still leave an APK the manifest does not list,
+so installing (`--install`, `--emulator`, the BillWorld run) and `pnpm aosp` refuse any APK whose
+SHA-256 differs from its entry in the `apk-manifest.json` beside it. The build
 fails unless an APK carries the agent (`assets/agent/agent.mjs`, `libeliza_node.so` for exactly
 one processor type, `assets/agent/inventory.json` and every file that inventory lists, which the
 service unpacks before it starts) and the pinned local keyword detector.
@@ -194,6 +205,44 @@ never a copy of a developer's own `~/.android/debug.keystore`; its SHA-1 is
 build copies it into `android/generated/android-user/` and points Gradle's `ANDROID_USER_HOME` there.
 Anyone holding the repository can sign a debug build with it, which is why no production registration
 may list it.
+
+The `staging` environment in `apps/cloud/wrangler.jsonc` registers this key instead. Its Worker,
+`grace-cloud-staging`, serves `https://api-staging.graceforseniors.com` and
+`https://app-staging.graceforseniors.com`, and its `NATIVE_CLIENT_REGISTRY` lists
+`technology.graceful.grace` with the debug SHA-256 above and the sign-in return
+`https://app-staging.graceforseniors.com/android/auth/callback`. Build a debug APK that signs in
+there with `pnpm android --cloud-profile standalone-staging`: the profile names the staging origins
+and that return, and the build sets the account's registry environment to `staging`.
+Production's registry keeps only the release certificate, so a debug build of the default profile
+cannot sign in to production. `pnpm --filter @grace/cloud test` reads both environments from the
+Wrangler configuration and checks the `assetlinks.json` that Eliza's `nativeAssetLinks`, which the
+Grace Worker serves on each web origin, publishes for it. Staging has no Stripe or SMS configuration, so
+subscriptions and text codes are off there. To bring staging up:
+
+1. Create a staging PostgreSQL database and run `CLOUD_ENVIRONMENT=staging DATABASE_URL=<owner
+   connection> pnpm --filter @grace/cloud migrate`. Staging shares the database identity of the local
+   configuration, so the same command prepares both, and the Worker's identity check cannot tell a
+   local database from the staging one. Never point staging's `DATABASE_URL` at a local database.
+2. From `apps/cloud`, set each secret with `pnpm exec wrangler secret put <NAME> --env staging`:
+   `DATABASE_URL` with the runtime role, `CLOUD_PROFILE` with the JSON deployment profile that
+   `CloudProfile` in `vendor/eliza/packages/cloud/src/profile/profile.schema.ts` describes, whose
+   `environments.staging` gives `api` as `https://api-staging.graceforseniors.com`, `web` as
+   `https://app-staging.graceforseniors.com` and `databaseIdentity` as staging's
+   `CLOUD_IDENTITY_DIGEST` in `wrangler.jsonc`, and staging values of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
+   `EMAIL_CODE_SECRET`, `GOOGLE_CONNECT_TOKEN_KEY`, `DEVICE_LEASE_SEAL_KEY` and `CARTESIA_API_KEY`.
+   Staging takes no Stripe, Blooio or Twilio secret.
+3. Run `pnpm --filter @grace/cloud bundle`, which dry-runs both environments, each with the web
+   bundle built for its own origins. The Worker serves `apps/app/dist`, whose sign-in return and
+   password backup pages call the API origin the build names, so build it for staging before the
+   deploy: from `apps/cloud`, run `VITE_GRACE_CLOUD_API_ORIGIN=https://api-staging.graceforseniors.com
+   VITE_GRACE_CLOUD_WEB_ORIGIN=https://app-staging.graceforseniors.com pnpm --filter @repo/app build`
+   and then `pnpm exec wrangler deploy --env staging`. The bundle script ends with the production
+   build in `apps/app/dist`, so deploying staging straight after it ships production origins to
+   staging. The next production deploy rebuilds the bundle with the production origins.
+4. In the Google project of the staging web client, register an Android OAuth client for
+   `technology.graceful.grace` with the debug SHA-1 above, and add
+   `https://api-staging.graceforseniors.com/api/auth/google/callback` and
+   `https://api-staging.graceforseniors.com/api/v1/eliza/google/connect/callback` to that web client.
 
 User QA receives the release-signed APK. R8 shrinks the release build, Capacitor preserves its
 plugin methods, and the content check enforces `debuggable=false`. The Grace release key for
