@@ -30,7 +30,7 @@ import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, modelTurns, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
 import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
-import { actOnScreen, browserAccountResponse, mount, signInToGrace, tapHomeCalendar, tabletView, wakeBoundary } from "./screen.tsx";
+import { actOnScreen, browserAccountResponse, fixtureListener, mount, signInToGrace, tapHomeCalendar, tabletView, wakeBoundary } from "./screen.tsx";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -243,7 +243,8 @@ const deviceAgent = (model?: (history: readonly Said[], text: string) => Promise
       }
       return Promise.resolve({ id: input.id });
     },
-    ...agentEvents(listeners),
+    abort: () => Promise.resolve({ aborted: true }),
+    addListener: fixtureListener(listeners),
   };
   const answer = (index: number, reply: object) => act(() => {
     const { id } = requests[index];
@@ -1091,16 +1092,6 @@ it('Use the current typed Passwords command when cloud speech is unavailable (sp
   await act(() => userEvent.keyboard("{Enter}"));
   await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
 });
-
-function agentEvents(listeners: Map<string, (input: unknown) => void>): Pick<EmbeddedAgent, "abort" | "addListener"> {
-  return {
-    abort: () => Promise.resolve({ aborted: true }),
-    addListener: (event, listener) => {
-      listeners.set(event, listener);
-      return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
-    },
-  };
-}
 
 it('Ask for email help (spec/app/conversation.md, "A turn may start without her words, marked with where it came from")', async () => {
   const { agent, requests, answer } = deviceAgent();

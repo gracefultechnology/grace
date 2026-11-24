@@ -105,6 +105,13 @@ export async function mount(runtime: Runtime) {
   return view;
 }
 
+export function fixtureListener(listeners: Map<string, (value: unknown) => void>) {
+  return (event: string, listener: (value: unknown) => void) => {
+    listeners.set(event, listener);
+    return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
+  };
+}
+
 export function wakeBoundary() {
   const key = "grace/voice-disclosure/wake";
   const previous = localStorage.getItem(key);
@@ -123,10 +130,7 @@ export function wakeBoundary() {
     requestPermission: () => { permitted = true; return status(); },
     configure: (choice) => { generation = choice.generation; return Promise.resolve(); },
     chime: () => { chimes++; return Promise.resolve(); },
-    addListener: (event, listener) => {
-      listeners.set(event, listener);
-      return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
-    },
+    addListener: fixtureListener(listeners),
   };
   return {
     port,
