@@ -19,7 +19,7 @@ import { dayOf, relative, timeLabel } from "./calendar.vibe";
 import { type HomeCards, ManagedReads, surfaceOwner } from "./managedReads.vibe";
 import { ManagedRead } from "./ManagedRead.tsx";
 import { Files, useFilesHome } from "./Files.tsx";
-import { Calendar, calendarKeys, homeCalendar, nextAppointment, reminderNotice, useCalendarActions } from "./Calendar.tsx";
+import { appointmentWeekday, Calendar, calendarKeys, homeCalendar, hostedAppointmentDate, hostedAppointmentDisplay, nextAppointment, reminderNotice, useCalendarActions } from "./Calendar.tsx";
 import { Email, homeMail } from "./Email.tsx";
 import { Grace } from "./Grace.tsx";
 import { NoticeBanner, Notices } from "./Notices.tsx";
@@ -50,20 +50,18 @@ const backEvents: Record<Exclude<BackAction, "Unconsumed" | "PrivatePageBack" | 
 const lifted = "absolute top-1.5 right-1.5";
 /** What expanded Grace covers is out of reach, for touch and for assistive technology. */
 const homeUpdates = Stream.unwrap(Effect.map(ManagedReads, (managed) => managed.home));
-const appointmentClock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
-const appointmentDay = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const railClock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const railDate = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
 const sleepDate = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
-const startOf = (event: HomeCards["events"][number]) => new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
 const managedNext = (cards: HomeCards | undefined, now: Date) => {
   const next = cards?.events[0];
-  return next && `${relative(dayOf(startOf(next).getTime()), dayOf(now.getTime()))}: ${next.title || "Untitled appointment"}, ${next.isAllDay ? "All day" : timeLabel(startOf(next).getTime())}`;
+  if (!next) return undefined;
+  const at = hostedAppointmentDate(next).getTime();
+  return `${relative(dayOf(at), dayOf(now.getTime()))}: ${next.title || "Untitled appointment"}, ${next.isAllDay ? "All day" : timeLabel(at)}`;
 };
 
-function useHomeCards() {
+function useHomeCards(account: ReturnType<typeof useSetup>["state"]) {
   const runtime = useRuntime();
-  const account = useSetup(runtime).state;
   const subscribe = useCallback((changed: () => void) => {
     const fiber = runtime.runFork(Stream.runForEach(homeUpdates, () => Effect.sync(changed)));
     return () => fiber.interruptUnsafe();
@@ -136,7 +134,7 @@ function captionActivity(turn: Turn, activity: Assistance): CaptionStripProps["a
 function Screen() {
   const runtime = useRuntime();
   const setup = useSetup(runtime).state;
-  const cards = useHomeCards();
+  const cards = useHomeCards(setup);
   const files = useFilesHome();
   const { workspace, can, send, say, current, privateHistory, stepPrivate } = useWorkspace();
   const calendarActions = useCalendarActions();
@@ -225,7 +223,7 @@ function Screen() {
 
   return (
     // A held tap on a control must not select its label: only text fields and messages keep text selection.
-    <TextScale percent={textScalePercent(volume)}><div data-benchmark-observable={!privateSurface && !workspace.browser.tabs.some((tab) => tab.manualSignIn)} className="fixed inset-0 overflow-hidden font-sans text-foreground select-none">
+    <TextScale percent={textScalePercent(volume)}><div data-benchmark-observable={!privateSurface && !workspace.browser.tabs.some((tab) => tab.manualSignIn)} className="fixed inset-0 overflow-clip font-sans text-foreground select-none">
       <div className="contents" {...under(sleeping)}>
       <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
       <Rail aria-label="Rail" battery={battery} time={`${clock.hour}:${clock.minute}`} period={clock.dayPeriod}
@@ -243,10 +241,10 @@ function Screen() {
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
             <HomeScreen className="inset-0" banner={<NoticeBanner reminders={reminders(calendars)} />} layout={docked ? (keyboard > 0 ? "greeting" : "compact") : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"} line="Here’s your day"
-              calendar={{ weekday: appointmentDay.format(now).toUpperCase(), day: now.getDate(), ...ours && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : calendarActions) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
-              const when = startOf(event);
+              calendar={{ weekday: appointmentWeekday(now), day: now.getDate(), ...ours && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : calendarActions) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
+              const { date, time } = hostedAppointmentDisplay(event);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
-                weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0,
+                weekday: appointmentWeekday(date), time, next: index === 0,
                 onClick: !cards || visit("Calendar").disabled ? undefined : () => void runtime.runPromise(Effect.flatMap(ManagedReads, (managed) =>
                   managed.send({ kind: "homeOccurrence", row: { accountId: cards.accountId, grant: cards.grant, id: event.externalId, version: event.etag ?? null } }))) };
             }) }, ...visit("Calendar") }}
@@ -266,7 +264,7 @@ function Screen() {
       {surface === "Browser" && <div className={cn(lifted, besideRail, "pointer-events-none z-[1]")} style={{ bottom }}><Browser {...under(covered)} /></div>}
       {surface === "Calendar" && ours && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Calendar now={now.getTime()} {...under(covered)} /></OverPage>}
       {surface === "Email" && ours && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Email {...under(covered)} /></OverPage>}
-      {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} /></OverPage>}
+      {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}><Settings {...under(covered)} hostedAppointment={owner === "Hosted" ? cards?.events[0] : undefined} /></OverPage>}
       {surface === "Passwords" && (
         <OverPage className={cn(lifted, besideRail, "z-[2]")} style={{ bottom }}>
           <AppWindow {...under(covered)} title="Passwords" icon={<KeyRound size={26} aria-hidden />} closeLabel="Close Passwords" onClose={visit("Home").onClick}>
