@@ -227,6 +227,7 @@ const PluginCall = {
 };
 const Step = Schema.Union([
   Schema.Struct({ tap: Schema.NonEmptyString }),
+  Schema.Struct({ touch: Schema.NonEmptyString, on: Schema.Literals(["website", "grace"]) }),
   Schema.Struct({ homeCard: Schema.NonEmptyString }),
   Schema.Struct({ type: Schema.String, into: Schema.NonEmptyString, replace: Schema.optional(Schema.Boolean) }),
   Schema.Struct({ press: Schema.Literal("Enter") }),
@@ -244,12 +245,14 @@ const Step = Schema.Union([
   Schema.Struct({ forget: Schema.NonEmptyString }),
   Schema.Struct({ approve: Schema.NonEmptyString }),
   Schema.Struct({ notification: Schema.String.check(Schema.isPattern(/^[\w ,.-]+$/)) }),
+  Schema.Struct({ instrumented: Schema.String.check(Schema.isPattern(/^[\w.]+(,[\w.]+)*$/)) }),
   Schema.Struct({ restart: Schema.Literal("force-stop") }),
 ]);
 type Step = typeof Step.Type;
-type OnDevice = Extract<Step, { service: string } | { leaveFor: string } | { key: string } | { grant: string } | { forget: string } | { approve: string } | { notification: string }>;
+type OnDevice = Extract<Step, { service: string } | { leaveFor: string } | { key: string } | { grant: string } | { forget: string } | { approve: string } | { notification: string } | { instrumented: string }>;
+type Touch = Extract<Step, { touch: string }>;
 type InSession = Exclude<Step, { restart: string }>;
-const isOnDevice = (step: InSession): step is OnDevice => "service" in step || "leaveFor" in step || "key" in step || "grant" in step || "forget" in step || "approve" in step || "notification" in step;
+const isOnDevice = (step: InSession): step is OnDevice => "service" in step || "leaveFor" in step || "key" in step || "grant" in step || "forget" in step || "approve" in step || "notification" in step || "instrumented" in step;
 const Benchmark = Schema.Struct({
   taskId: Schema.NonEmptyString,
   intent: Schema.NonEmptyString,
@@ -415,7 +418,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
 }) {
   const selected = cloudProfiles[cloudProfile];
   const output = fixture?.output ?? apkOutput(cloudProfile);
-  const project = cloudProfile === standaloneProfile ? androidPaths.project : `${output}/gradle`;
+  const project = gradleProject(output, cloudProfile);
   const webDir = cloudProfile === standaloneProfile ? androidPaths.web : `${output}/web`;
   const agentDirectory = `${output}/agent`;
   const { version } = Schema.decodeUnknownSync(Schema.Struct({ version: Schema.String }))(readJson(path.join(app, "package.json")));
@@ -476,6 +479,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
       prepare: [
         { command: "pnpm", args: ["run", "build", "--outDir", webDir] },
         { command: path.join(app, "node_modules/.bin/cap"), args: ["copy", "android"] },
+        ...(release ? [] : [{ gradleTasks: [":eliza-browser-surface:assembleDebugAndroidTest"] }]),
       ],
       verify: { command: process.execPath, args: [import.meta.filename, "--cloud-profile", cloudProfile,
         ...(fixture ? ["--verify-billworld-run", path.basename(fixture.output)] : ["--verify"])] },
@@ -727,7 +731,10 @@ const homeControlPoint = (controlName: HomeControl) => `(() => {
   const x = left + width / 2, y = top + height / 2;
   return control.contains(document.elementFromPoint(x, y)) ? { x, y } : null;
 })()`;
-const Targets = Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, type: Schema.String, url: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String) }));
+const Targets = Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, type: Schema.String, url: Schema.String, webSocketDebuggerUrl: Schema.optional(Schema.String), description: Schema.optional(Schema.String) }));
+const TargetView = Schema.fromJsonString(Schema.Struct({ visible: Schema.Boolean, screenX: Schema.Number, screenY: Schema.Number, width: Schema.Number, height: Schema.Number }));
+const Touches = Schema.NullOr(Schema.Struct({ pointerdown: Schema.Number, click: Schema.Number }));
+const armTouches = `(() => { const seen = globalThis.graceTouches ??= Object.fromEntries(["pointerdown", "click"].map((type) => (addEventListener(type, (event) => { if (event.isTrusted) seen[type]++; }, true), [type, 0]))); seen.pointerdown = seen.click = 0; return true; })()`;
 const MainFrame = Schema.Struct({ frameTree: Schema.Struct({ frame: Schema.Struct({ id: Schema.NonEmptyString, loaderId: Schema.NonEmptyString, url: Schema.NonEmptyString }) }) });
 const GraceReadback = Schema.Struct({ address: Schema.NullOr(Schema.String), visible: Schema.NullOr(Schema.String) });
 
@@ -787,7 +794,7 @@ async function devTools(url: string, signal: AbortSignal, cloudProfile: CloudPro
     return matches[0];
   };
 
-  const tap = async (target: string | { homeCard: string }, signal: AbortSignal) => {
+  const point = async (target: string | { homeCard: string }, signal: AbortSignal) => {
     let node = await find(target, signal);
     while (node === undefined) {
       await until("true", signal);
@@ -796,9 +803,13 @@ async function devTools(url: string, signal: AbortSignal, cloudProfile: CloudPro
     await send({ method: "DOM.scrollIntoViewIfNeeded", params: { backendNodeId: node }, schema: Nothing, signal });
     const { quads: [quad] } = await send({ method: "DOM.getContentQuads", params: { backendNodeId: node }, schema: Quads, signal });
     if (!quad) throw new Error(`${JSON.stringify(target)} is not on screen`);
-    const x = (quad[0] + quad[2] + quad[4] + quad[6]) / 4, y = (quad[1] + quad[3] + quad[5] + quad[7]) / 4;
-    await tapAt({ x, y }, signal);
+    return { x: (quad[0] + quad[2] + quad[4] + quad[6]) / 4, y: (quad[1] + quad[3] + quad[5] + quad[7]) / 4 };
   };
+
+  const tap = async (target: string | { homeCard: string }, signal: AbortSignal) => await tapAt(await point(target, signal), signal);
+
+  const value = async (expression: string, signal: AbortSignal) =>
+    (await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal })).result.value;
 
   const tapAt = async ({ x, y }: NonNullable<typeof HomePoint.Type>, signal: AbortSignal) => {
     for (const type of ["mousePressed", "mouseReleased"]) {
@@ -825,6 +836,8 @@ async function devTools(url: string, signal: AbortSignal, cloudProfile: CloudPro
   return {
     until,
     describe,
+    point,
+    value,
     tapAt,
     waitForHomeControl,
     async mainFrame(signal: AbortSignal) {
@@ -838,7 +851,7 @@ async function devTools(url: string, signal: AbortSignal, cloudProfile: CloudPro
       if (guidance === null) throw new Error("The benchmark cannot observe this surface");
       return guidance;
     },
-    async step(step: Exclude<InSession, OnDevice>, signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000)) {
+    async step(step: Exclude<InSession, OnDevice | Touch>, signal = AbortSignal.timeout("agent" in step ? 300_000 : 120_000)) {
       if ("agent" in step) {
         const expression = `new Promise((done) => { const agent = Capacitor.Plugins.EmbeddedAgent; const listening = agent.addListener("status", (status) => check(status)); const check = (status) => (status.state === "failed" || Object.entries(${JSON.stringify(step.agent)}).every(([key, value]) => status[key] === value)) && Promise.resolve(listening).then((listener) => listener.remove()).then(() => done({ state: status.state, failure: status.failure, error: status.error })); agent.getStatus().then(check); })`;
         const { result } = await send({ method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true }, schema: Evaluated, signal });
@@ -1015,7 +1028,55 @@ async function runBenchmark({ input, receipt }: BenchmarkRun, page: Awaited<Retu
   }
 }
 
-async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: OnDevice) {
+async function touch(serial: typeof EmulatorSerial.Type, grace: Awaited<ReturnType<typeof devTools>>, listTargets: () => Promise<typeof Targets.Type>, step: Touch) {
+  const signal = AbortSignal.timeout(120_000);
+  const shown = (await listTargets()).flatMap(({ type, url, webSocketDebuggerUrl, description }) => {
+    const view = type === "page" && webSocketDebuggerUrl && description ? Schema.decodeUnknownOption(TargetView)(description) : undefined;
+    return view?._tag === "Some" && view.value.visible ? [{ ...view.value, grace: URL.parse(url)?.origin === "https://localhost", socket: webSocketDebuggerUrl ?? "" }] : [];
+  });
+  const [host, ...otherHosts] = shown.filter((view) => view.grace);
+  const [page, ...otherPages] = shown.filter((view) => !view.grace);
+  if (!host || !page || otherHosts.length || otherPages.length) throw new Error(`Expected Grace over one shown website, found ${shown.length} shown WebViews`);
+  const website = await devTools(page.socket, signal);
+  try {
+    const [target, view] = step.on === "website" ? [website, page] : [grace, host];
+    const { x, y } = await target.point(step.touch, signal);
+    const [ratio, width] = Schema.decodeUnknownSync(Schema.Tuple([Schema.Number, Schema.Number]))(await target.value("[devicePixelRatio, innerWidth]", signal));
+    if (Math.abs(width * ratio - view.width) > 2) throw new Error(`The WebView is ${view.width} px wide on screen but ${width} CSS px at ${ratio}x`);
+    const screen = { x: Math.round(view.screenX + x * ratio), y: Math.round(view.screenY + y * ratio) };
+    if (screen.x < page.screenX || screen.x >= page.screenX + page.width || screen.y < page.screenY || screen.y >= page.screenY + page.height)
+      throw new Error(`${step.touch} is at ${screen.x},${screen.y}, outside the page's rect`);
+    const before = await website.mainFrame(signal);
+    for (const side of [grace, website]) await side.value(armTouches, signal);
+    await shell(serial, `input tap ${screen.x} ${screen.y}`);
+    const touches = async (side: typeof grace) => Schema.decodeUnknownSync(Touches)(await side.value("globalThis.graceTouches ?? null", signal));
+    const websiteReacted = async () => (await website.mainFrame(signal)).loaderId !== before.loaderId || ((await touches(website))?.click ?? 0) > 0;
+    const settled = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+    if (step.on === "grace") await grace.until("globalThis.graceTouches.pointerdown > 0", settled).catch(failing(`Grace never saw the touch at ${screen.x},${screen.y}`));
+    else while (!(await websiteReacted())) await website.until("true", settled).catch(failing(`The website never reacted to the touch at ${screen.x},${screen.y}`));
+    await grace.until("true", signal);
+    const reached = { grace: ((await touches(grace))?.pointerdown ?? 0) > 0, website: await websiteReacted() || ((await touches(website))?.pointerdown ?? 0) > 0 };
+    if (reached.grace !== (step.on === "grace") || reached.website !== (step.on === "website"))
+      throw new Error(`The touch at ${screen.x},${screen.y} reached ${JSON.stringify(reached)}`);
+  } finally {
+    website.close();
+  }
+}
+
+const surfaceTests = "ai.eliza.plugins.browsersurface.test";
+const gradleProject = (output: string, cloudProfile: CloudProfile) => cloudProfile === standaloneProfile ? androidPaths.project : `${output}/gradle`;
+
+async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: OnDevice, cloudProfile: CloudProfile) {
+  if ("instrumented" in step) {
+    const apk = path.join(app, gradleProject(apkOutput(cloudProfile), cloudProfile), "build/modules/eliza-browser-surface/outputs/apk/androidTest/debug/eliza-browser-surface-debug-androidTest.apk");
+    await adb(["-s", serial, "install", "-r", "-t", apk], 600);
+    await shell(serial, `appops set ${surfaceTests} SYSTEM_ALERT_WINDOW allow`);
+    const report = await shell(serial, `am instrument -w -e class ${step.instrumented} ${surfaceTests}/androidx.test.runner.AndroidJUnitRunner`, 900);
+    process.stdout.write(report);
+    if (!/^OK \(\d+ tests?\)$/m.test(report)) throw new Error(`${step.instrumented} did not pass on ${serial}`);
+    await shell(serial, `am start -W -n ${activity}`, 120);
+    return;
+  }
   if ("key" in step) {
     await shell(serial, `input keyevent KEYCODE_${step.key}`);
     return;
@@ -1113,7 +1174,7 @@ async function visit(serial: typeof EmulatorSerial.Type, exercise: ReadonlyArray
     await page.until(selectedHome, AbortSignal.timeout(180_000)).catch(showing("Waiting for Home"));
     for (const step of exercise) {
       const description = "into" in step ? `Enter text in ${step.into}` : JSON.stringify(step);
-      await (isOnDevice(step) ? onDevice(serial, pid, step) : page.step(step)).catch(showing(description));
+      await ("touch" in step ? touch(serial, page, listTargets, step) : isOnDevice(step) ? onDevice(serial, pid, step, cloudProfile) : page.step(step)).catch(showing(description));
       process.stdout.write(`${description} ok\n`);
     }
     if (benchmark) await runBenchmark(benchmark, page, listTargets);

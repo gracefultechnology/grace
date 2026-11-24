@@ -26,6 +26,9 @@
   { "type": "iana.org", "into": "Address" },
   { "tap": "Go" },
   { "expect": "iana.org" },
+  { "evaluate": "(async () => { const { promise, resolve } = Promise.withResolvers(); const listener = await Capacitor.Plugins.ElizaSurfaceManager.addListener('navigationChanged', (page) => { if (page.owner === 'grace-browser' && page.currentUrl.endsWith('iana.org/time-zones') && page.progress === 100 && !page.pageError) resolve(true); }); window.graceTouchedLink = promise.finally(() => listener.remove()); return true; })()", "returns": true },
+  { "touch": "Time Zone Database", "on": "website" },
+  { "evaluate": "window.graceTouchedLink", "returns": true },
   { "tap": "Open a new tab" },
   { "type": "ietf.org", "into": "Address" },
   { "tap": "Go" },
@@ -39,11 +42,17 @@
   { "tap": "2 more" },
   { "tap": "Close example.net" },
   { "expect": "1 more" },
+  { "tap": "Volume" },
+  { "touch": "Mute", "on": "grace" },
+  { "expect": "Unmute" },
+  { "touch": "Unmute", "on": "grace" },
+  { "tap": "Volume" },
   { "tap": "Open a new tab" },
   { "expect": "Recent websites" },
   { "tap": "Clear" },
   { "expect": "Forget every website on this list?" },
   { "tap": "Cancel" },
   { "tap": "Close browser" },
-  { "expect": "Good" }
+  { "expect": "Good" },
+  { "instrumented": "ai.eliza.plugins.browsersurface.BelowHostLayerInstrumentedTest,ai.eliza.plugins.browsersurface.BelowHostWebViewInstrumentedTest" }
 ]

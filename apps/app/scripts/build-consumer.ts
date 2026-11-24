@@ -5,7 +5,7 @@ type Command = { readonly command: string; readonly args: readonly string[] };
 type Retyped = {
   readonly variants: readonly string[];
   readonly verify: Command;
-  readonly prepare?: readonly Command[];
+  readonly prepare?: readonly (Command | { readonly gradleTasks: readonly string[] })[];
   readonly signing?: { readonly environment: readonly string[] } | null;
   readonly archive?: Inferred["archive"];
 };
