@@ -42,7 +42,7 @@ import { Keyboard } from "./app.vibe";
 import { BrowserGuide, type BrowserGuidance } from "./browserGuide.vibe";
 import { CalendarNews, dayOf, horizon, midnight, type Opening, openingPlan, relative, settled, timeLabel } from "./calendar.vibe";
 import { Conversation, type PersonTurn } from "./conversation.vibe";
-import type { Contact, MailContent } from "./connector.vibe";
+import type { MailContent } from "./connector.vibe";
 import { Instances } from "./instances.vibe";
 import { type Board, Mail } from "./mail.vibe";
 import { PageHost } from "./page.vibe";
@@ -739,9 +739,8 @@ function useCalendar(key: number) {
 export type MailInstance = NonNullable<ReturnType<typeof useMailbox>>;
 
 const silence = () => () => {};
-const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set(), unsendable: new Map() };
+const blank: Board = { note: undefined, undeleted: new Set(), replies: new Map(), unsaved: new Set(), unsendable: new Map(), people: undefined };
 const nothing = () => blank;
-const contactLists = new WeakMap<Mail["Service"], Map<string, Promise<readonly Contact[]>>>();
 
 type MailActions = {
   readonly service: Mail["Service"];
@@ -754,7 +753,6 @@ type MailActions = {
   readonly attach: (id: number, asset: SavedFile) => Promise<boolean>;
   readonly camera: Mail["Service"]["camera"];
   readonly capture: (id: number) => Promise<boolean>;
-  readonly contacts: (sources: string) => Promise<readonly Contact[]>;
 };
 
 const mailServiceCache = new WeakMap<Runtime, MailActions | null>();
@@ -778,14 +776,6 @@ function mailActionsFor(runtime: Runtime): MailActions | undefined {
     attach: (id: number, asset: SavedFile) => runtime.runPromise(mail.attach(id, asset)),
     camera: mail.camera,
     capture: (id: number) => runtime.runPromise(mail.capture(id)),
-    contacts: (sources: string) => {
-      const lists = contactLists.get(mail) ?? new Map<string, Promise<readonly Contact[]>>();
-      contactLists.set(mail, lists);
-      const knownList = lists.get(sources) ?? runtime.runPromise(mail.contacts());
-      if (!lists.has(sources)) lists.clear();
-      lists.set(sources, knownList);
-      return knownList;
-    },
   };
   mailServiceCache.set(runtime, actions);
   return actions;
@@ -807,7 +797,6 @@ export function useMail() {
     attach: actions.attach,
     camera: actions.camera,
     capture: actions.capture,
-    contacts: actions.contacts,
   }, [actions, board]);
 }
 
