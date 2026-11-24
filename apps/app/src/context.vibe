@@ -59,6 +59,7 @@ const pages: Record<SettingsPage, string> = {
   TextSizeSettings: "Text size", BrightnessSettings: "Brightness", VoiceSettings: "Voice", NetworkSettings: "Wi-Fi", AccountSettings: "Account", EmailCalendarSettings: "Email & calendar", AboutSettings: "About"
 }
 const companies: Record<Provider, string> = { Gmail: "Gmail", Outlook: "Outlook", Yahoo: "Yahoo", ICloud: "iCloud", Aol: "AOL", OtherEmail: "Other email" }
+const whereShown: Partial<Record<Folder, string>> = { TrashFolder: ", in Trash", SentFolder: ", their own email in Sent, which they can forward but not reply to" }
 const folders: Record<Folder, string> = { InboxFolder: "Inbox", SentFolder: "Sent", DraftsFolder: "Drafts", TrashFolder: "Trash", PurgedFolder: "deleted for good" }
 const problems: Record<Problem, string> = {
   NoProblem: "",
@@ -79,7 +80,8 @@ const outcomes: Record<Outcome, string> = {
   AlreadyInCalendar: "was not done: it is already in their calendar, or you already asked them",
   NothingAsked: "was not done: you are not waiting on their answer to a question",
   NotTheirAnswer: "was not done: the person has not answered your question yet, and asking you for help is not their answer, so it still waits for them",
-  NotOnScreen: "was not done: that is not on the screen"
+  NotOnScreen: "was not done: that is not on the screen",
+  RepeatsOnlyOnTablet: "was not done: only appointments kept On this tablet can repeat or stop repeating; an email account’s calendar keeps the repeats its company sent"
 }
 
 schema Field { type?: string; enum?: string[]; description?: string }
@@ -132,7 +134,7 @@ function calendarName(registry: Registry, key: number) {
 }
 
 function appointment(registry: Registry, key: number, d: EntryDetails) {
-  const extras = [cleaned(d.location), d.participant && `with ${cleaned(d.participant)}`, d.recurrence === "Weekly" ? "every week" : d.recurrence === "Monthly" ? "every month" : ""]
+  const extras = [cleaned(d.location), d.participant && `with ${cleaned(d.participant)}`, d.recurrence === "Weekly" ? "every week" : d.recurrence === "Monthly" ? "every month" : "", d.important ? "important" : ""]
   return `${quoted(cleaned(d.title))} ${when(d.startAt)}${extras.filter((e) => e !== "").map((e) => `, ${e}`).join("")} [${calendarName(registry, key)}]`
 }
 
@@ -181,6 +183,7 @@ function always(s: Scene, now: number): readonly string[] {
   const waiting = outboxCount(registry, mail)
   return [
     `The person’s calendar for the next two weeks: ${rows.length === 0 ? "nothing planned" : rows.map((r) => appointment(registry, r.key, r.details)).join("; ")}.`,
+    ...registry.accounts.some((a) => a.use.calendar) ? ["Only appointments On this tablet can repeat, start repeating or stop repeating; on an email account’s calendar keep the repeat it already has."] : [],
     ...pending.ask.tag === "NoAsk" ? [] : [`${asked(s, pending.ask)} It happens only if they say yes${pending.agreed > 0 ? ", and they have said yes" : ""}.`],
     `Email accounts on the tablet: ${registry.accounts.length === 0 ? "none yet" : registry.accounts.map((a) => {
       const box = mail.find((m) => m.account === a.id)
@@ -203,7 +206,7 @@ function reading(s: Scene, account: number, m: Mailbox): Part {
   const linked = linkPattern.test(c?.body ?? "")
   return {
     lines: [
-      `Email is showing ${sender(s, account, m.messageRef)}, sent to ${s.registry.accounts.find((a) => a.id === account)?.address ?? "them"}${messageRecord(m, m.messageRef).folder === "TrashFolder" ? ", in Trash" : ""}: ${said(cleaned(c === undefined ? "" : c.body))}.`,
+      `Email is showing ${sender(s, account, m.messageRef)}, sent to ${s.registry.accounts.find((a) => a.id === account)?.address ?? "them"}${whereShown[messageRecord(m, m.messageRef).folder] ?? ""}: ${said(cleaned(c === undefined ? "" : c.body))}.`,
       ...files.length === 0 ? [] : [`Attached: ${files.join(", ")}.`],
       ...photos === 0 ? [] : [`${counted(photos, "photo")} attached.`],
       ...scam ? ["The caution strip says this email looks like a scam."] : []
@@ -364,13 +367,14 @@ function browserScreen(s: Scene): Part {
   return { lines: [`The person already has a website open in the selected tab on ${url.hostname}. The page is loaded.`], targets: [] }
 }
 
-export type Help = "connectEmail" | "mailServers"
+export type Help = "connectEmail" | "mailServers" | "fixWifi"
 
 export function helpWith(need: Help, registry: Registry): string {
   const d = registry.signIn.domain
   return match (need) {
     when "connectEmail": "The person tapped Ask Grace for help connecting their email to the tablet. They sign in themselves on their email company’s own page; you never see or type passwords or codes. Ask which email they use, with answers like Gmail, Outlook or Hotmail, Yahoo and I’m not sure. If they are not sure, ask them to read you the part of their address after the @.";
-    when "mailServers": `The person tapped Ask Grace while connecting their ${d} email: the tablet could not find its mail server settings. The page shows Incoming mail server and Outgoing mail server, filled with the usual guesses mail.${d} and smtp.${d}. Explain in plain words what they are, that they are not secret, and that their email company lists them on its help page.`;
+    when "fixWifi": "The person tapped Fix Wi-Fi in Email: the tablet is not connected to the internet. Start helping them fix it with one simple question. Walk them through Settings, Wi-Fi, opening it for them and pointing at what to tap; they choose the network and type its password themselves, and you never see or type it.";
+    when "mailServers": `The person tapped Ask Grace while connecting their ${d} email: the tablet could not find its mail server settings. The page shows Incoming mail server and Outgoing mail server, filled with the usual guesses mail.${d} and smtp.${d}. Explain in plain words what they are, that they are not secret, and that their email company lists them on its help page; Look them up on that page looks them up from their address and fills the form for them to check before they tap Connect.`;
   }
 }
 

@@ -1,11 +1,11 @@
-// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"; spec/app/accounts.md, "An address at a listed company goes to that company’s own page"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "The settings pages go back one step at a time"; spec/app/accounts.md, "Signing in again renews the same account"; spec/app/accounts.md, "Turning a use off hides it and keeps the account"; spec/app/accounts.md, "Removing asks first and waits for unsent email"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"
+// spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"; spec/app/accounts.md, "An address at a listed company goes to that company’s own page"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/accounts.md, "Mail settings can be looked up from her address, and fill the form for her to check"; spec/app/accounts.md, "Remove anyway discards the waiting email only after she confirms how much"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "The settings pages go back one step at a time"; spec/app/accounts.md, "Signing in again renews the same account"; spec/app/accounts.md, "Turning a use off hides it and keeps the account"; spec/app/accounts.md, "Removing asks first and waits for unsent email"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"
 import {
-  type AccountColour, Alert, Button, EmailAccountList, EmailAccountPage, EmailAccountRow, type EmailProvider, emailProviders, MailServersForm, PageText,
-  OtherEmailForm, type OtherEmailProblem, ProviderGrid, RemoveAccountDialog, SettingsApp, type SettingsAppProps, SignInSheet, Spinner, Toast,
+  type AccountColour, Alert, Button, EmailAccountList, EmailAccountPage, EmailAccountRow, type EmailProvider, emailProviders, MailServersForm,
+  type MailServersFormProps, OtherEmailForm, type OtherEmailProblem, PageText, ProviderGrid, RemoveAccountDialog, SettingsApp, type SettingsAppProps, SignInSheet, Spinner, Toast,
 } from "@repo/ui";
 import { TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
-import { type Account, type AccountPage, type Accounts, type Event, type Problem, type Provider, providerOf } from "../gen/app__accounts.ts";
+import { type Account, type AccountPage, type Accounts, type Event, type Lookup, type Problem, type Provider, providerOf } from "../gen/app__accounts.ts";
 import { useMachine as useSetup } from "../gen/app__setup.react.ts";
 import { showsMailLeaseUpgrade } from "../gen/app__setup.ts";
 import { accountStatus, unsent } from "../gen/app__mailboxes.ts";
@@ -22,6 +22,8 @@ const colours = [1, 2, 3, 4, 5] as const satisfies readonly AccountColour[];
 const home = "Email & calendar";
 const add = "Add an email";
 const other = "Other email";
+
+const lookups = { NotLookedUp: undefined, LookingUp: "looking", LookupFound: "found", LookupMissed: "missing" } as const satisfies Record<Lookup, MailServersFormProps["lookup"]>;
 
 const notices: Partial<Record<Problem, string>> = {
   AlreadyOnTablet: "This email is already on the tablet.",
@@ -96,21 +98,25 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
       case "AddAccount":
         return <>{alert}<ProviderGrid bare onChoose={choose} guide={tileGuide} /></>;
       case "OtherEmailPage": {
-        const renewing = registry.accounts.find((a) => a.id === signIn.renewing)?.address ?? "";
+        const renewing = registry.accounts.find((a) => a.id === signIn.renewing);
+        const fromName = renewing?.fromName || flows.owner;
         return (
           <>
             {problem === "SignInUnfinished" && alert}
-            <OtherEmailForm key={renewing} defaultAddress={renewing} problem={otherProblem(registry)} checking={signIn.stage === "CheckingOther"}
-              accepts={(address) => can({ type: "submitOther", domain: domainOf(address) })}
-              onNext={({ address, password }) => void flows.other({ address, password: secretPassword(password) })}
+            <OtherEmailForm key={renewing?.id ?? 0} defaultAddress={renewing?.address} defaultName={fromName} problem={otherProblem(registry)}
+              checking={signIn.stage === "CheckingOther"} accepts={(address) => can({ type: "submitOther", domain: domainOf(address) })}
+              onNext={({ name, address, password }) => void flows.other({ name, address, password: secretPassword(password) })}
               onCancel={offer({ type: "goBack" })} />
           </>
         );
       }
       case "MailServersPage":
         return (
-          <MailServersForm key={signIn.domain} domain={signIn.domain} connecting={signIn.stage === "CheckingServers"} refused={problem === "ServersRefused"}
+          <MailServersForm key={`${signIn.domain}|${signIn.incoming}|${signIn.outgoing}`} domain={signIn.domain} connecting={signIn.stage === "CheckingServers"}
+            refused={problem === "ServersRefused"} lookup={lookups[signIn.lookup]}
+            defaultServers={signIn.lookup === "LookupFound" ? { incoming: signIn.incoming, outgoing: signIn.outgoing } : undefined}
             onConnect={can({ type: "submitServers" }) ? (servers) => void flows.servers(servers) : undefined}
+            onLookUp={can({ type: "lookUpServers" }) || signIn.lookup === "LookingUp" ? () => void flows.lookUp() : undefined}
             onCancel={offer({ type: "goBack" })} onAskGrace={askGrace("mailServers")} />
         );
       case "AccountDetail": {
@@ -123,7 +129,9 @@ function Settings({ registry, boxes, frame }: { registry: Accounts; boxes: reado
               onUseChange={can({ type: "setUse", id: shown.id, use: shown.use }) ? (use, on) => offer({ type: "setUse", id: shown.id, use: { ...shown.use, [use]: on } })?.() : undefined}
               onSignInAgain={offer({ type: "signInAgain", id: shown.id })} onRemove={offer({ type: "requestRemoval", id: shown.id })} />
             <RemoveAccountDialog open={registry.removing === shown.id} name={shown.name} keeper={shown.provider === "OtherEmail" ? shown.name : emailProviders[providers[shown.provider]].name}
-              waiting={waiting} onRemove={offer({ type: "removeAccount", id: shown.id, waiting })} onKeep={offer({ type: "keepAccount" })}
+              waiting={waiting} discarding={registry.discarding} onRemove={offer({ type: "removeAccount", id: shown.id, waiting })}
+              onRemoveAnyway={offer({ type: "removeAnyway", id: shown.id, waiting })} onDiscard={offer({ type: "discardAndRemove", id: shown.id, waiting })}
+              onKeep={offer({ type: "keepAccount" })}
               onOpenChange={(open) => { if (!open) offer({ type: "keepAccount" })?.(); }} />
           </>
         );

@@ -19,7 +19,7 @@ account whose calendar it is. The shell keeps one source per key, so a
 calendar is found by its key. A row carries its calendar’s key and the
 appointment as shown; the shell sorts rows by start time and composes every
 sentence the person or Grace reads, including an account’s name in a tag and
-the note "From the clinic’s email · Visit form attached", because the model
+the note "From Main St Clinic’s email · Visit form attached", which names the sender, because the model
 has no string building.
 
 ## Story: See every calendar together and know where each appointment lives
@@ -265,7 +265,8 @@ carries no scam warning; an email left open in an account that is not on
 screen does not count. The
 appointment names that email as its source, goes to the calendar chosen
 above, as that calendar is now, and is exactly one its calendar would take on
-her yes: a new appointment, never marked important. Grace does not ask while
+her yes: a new appointment, which she may propose marked important, as the
+clinic's appointment is in the prototype. Grace does not ask while
 any calendar already holds an appointment from that email, while she is
 already asking about it, or while Margaret’s yes to an earlier question is
 being applied. The source is the pair of the originating mailbox’s registry ID and the provider’s
@@ -293,7 +294,7 @@ pure def fromMessageAllowed(registry: A::Accounts, calendars: List[CalendarSourc
   val target = sourceAt(calendars, targetCalendar(registry, mail.account))
   M::showsMail(registry, mail.account) and box.view == E::Message and E::selectedMessageIsCurrent(box) and
   box.warning.evidence == "" and pending.agreed == 0 and
-  review.entry.identity.kind == C::Appointment and not(review.entry.details.important) and
+  review.entry.identity.kind == C::Appointment and
   matchesEmail(review.entry.identity, mail.account, box.messageRef) and target.key >= 0 and target.view.owner != "" and
   review.entry.identity.owner == target.view.owner and review.entry.identity.calendarId == target.view.calendarId and
   V::canConfirmAppointment(target.view, { entry: review.entry, review: review }, V::ViewConsent) and
@@ -317,9 +318,6 @@ pure def lawScamEmailMakesNoAppointment(registry: A::Accounts, calendars: List[C
     pending: P::Pending, review: V::AppointmentReview): bool =
   (openMail(registry, sources).mailbox.warning.evidence != "" or not(M::showsMail(registry, openMail(registry, sources).account))) implies
     not(fromMessageAllowed(registry, calendars, sources, pending, review))
-pure def lawEmailAppointmentIsNeverImportant(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
-    pending: P::Pending, review: V::AppointmentReview): bool =
-  review.entry.details.important implies not(fromMessageAllowed(registry, calendars, sources, pending, review))
 pure def lawEmailAppointmentIsOneTheCalendarTakes(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource],
     pending: P::Pending, review: V::AppointmentReview): bool =
   val target = sourceAt(calendars, targetCalendar(registry, openMail(registry, sources).account))

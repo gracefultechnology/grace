@@ -9,14 +9,17 @@ import { Panel } from "./Panel.tsx";
 
 export type EmailProvider = "gmail" | "outlook" | "yahoo" | "icloud" | "aol" | "other";
 
-/** Each email company the tablet signs in to: its name, the letter on its tile (none: an envelope) and a line under it. */
-export const emailProviders: Record<EmailProvider, { name: string; mark?: string; subtitle?: string }> = {
-  gmail: { name: "Gmail", mark: "G" },
-  outlook: { name: "Outlook", mark: "O", subtitle: "Also Hotmail, Live and MSN" },
-  yahoo: { name: "Yahoo", mark: "Y" },
-  icloud: { name: "iCloud", mark: "i", subtitle: "Apple’s email" },
-  aol: { name: "AOL", mark: "A" },
-  other: { name: "Other email" },
+/**
+ * Each email company the tablet signs in to: its name, the article its name takes by how it is said ("an Outlook",
+ * "a Yahoo"), the letter on its tile (none: an envelope) and a line under it.
+ */
+export const emailProviders: Record<EmailProvider, { name: string; article: "a" | "an"; mark?: string; subtitle?: string }> = {
+  gmail: { name: "Gmail", article: "a", mark: "G" },
+  outlook: { name: "Outlook", article: "an", mark: "O", subtitle: "Also Hotmail, Live and MSN" },
+  yahoo: { name: "Yahoo", article: "a", mark: "Y" },
+  icloud: { name: "iCloud", article: "an", mark: "i", subtitle: "Apple’s email" },
+  aol: { name: "AOL", article: "an", mark: "A" },
+  other: { name: "Other email", article: "an" },
 };
 
 const allProviders = Object.keys(emailProviders) as EmailProvider[];

@@ -5,6 +5,7 @@ import type { CalendarEventFormProps } from "./CalendarEventForm.tsx";
 
 const { heading: _heading, ...fields } = form;
 const pick = fn();
+const markImportant = fn();
 
 export const meta: ComponentMeta<CalendarEventFormProps> = {
   args: {
@@ -23,6 +24,11 @@ export const meta: ComponentMeta<CalendarEventFormProps> = {
       title: "Bridge club",
       time: { ...fields.time, open: true },
     },
+    Important: {
+      ...fields,
+      title: "Doctor’s appointment",
+      important: { checked: true, onCheckedChange: markImportant },
+    },
   },
   decorator: onWindow,
   play: {
@@ -32,6 +38,12 @@ export const meta: ComponentMeta<CalendarEventFormProps> = {
       await expect(args.onTitleChange).toHaveBeenCalledWith("B");
       await userEvent.click(canvas.getByRole("radio", { name: "Every week" }));
       await expect(args.repeat.onChange).toHaveBeenCalledWith("Every week");
+    },
+    Important: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const mark = within(canvasElement).getByRole("switch", { name: "Important" });
+      await expect(mark).toBeChecked();
+      await userEvent.click(mark);
+      await expect(markImportant).toHaveBeenCalledWith(false);
     },
     "Picking a day": async () => {
       await userEvent.click(await screen.findByRole("button", { name: "Tomorrow · Nov 14" }));

@@ -78,6 +78,7 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
     "Attachments refused": { files: clinic.files, onOpenPhoto: undefined, onSaveAll: undefined, onOpenFile: undefined },
     Attachment: clinic,
     "In Trash": { ...clinic, backLabel: "Trash", inTrash: true, onRestore: fn(), onDeleteForever: fn() },
+    "In Sent": { ...clinic, from: { name: "Margaret", tone: 3 }, subject: "Re: Reminder: your appointment tomorrow at 10 am", body: "Thank you, I will be there.", files: undefined, backLabel: "Sent", sent: true, onReply: undefined },
     Loading: { status: "loading" },
     "Couldn’t open": { status: "failed", onRetry: retry },
     "Photos saved": { saveAllStatus: "saved" },
@@ -98,6 +99,11 @@ export const meta: ComponentMeta<MailMessageViewProps> = {
     Loading: async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       const canvas = within(canvasElement);
       await expect(["Reply", "Forward"].map((name) => canvas.getByRole<HTMLButtonElement>("button", { name }).disabled)).toEqual([true, true]);
+    },
+    "In Sent": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
+      const canvas = within(canvasElement);
+      await expect(canvas.queryByRole("button", { name: "Reply" })).toBeNull();
+      await expect(canvas.getByRole("button", { name: "Forward" })).toBeTruthy();
     },
     "Couldn’t open": async ({ canvasElement }: { canvasElement: HTMLElement }) => {
       await userEvent.click(within(canvasElement).getByRole("button", { name: "Try again" }));

@@ -34,13 +34,16 @@ A user approves a revision; only its durable storage acknowledgment saves it.
 An appointment made from an email retains the source mailbox's registry ID and
 the provider's message reference, including when it is saved to the tablet's
 calendar. Zero records an occurrence without an identified source mailbox.
+`version` is the company's revision of the saved entry as the tablet last read
+it, which a change or deletion at the company names; it is empty for the
+tablet's own calendar and for an entry the company has not yet shown.
 
 ```quint
 type CalendarActor = CalendarUser | CalendarStore | CalendarClock
 type EntryKind = Appointment | Bill
 type CalendarPhase = Empty | Editing | Saved | DeleteReview | DeleteApproved | Deleted
 type Recurrence = Once | Weekly | Monthly
-type StorageError = NoStorageError | SaveFailure | DeleteFailure
+type StorageError = NoStorageError | SaveFailure | DeleteFailure | ChangedElsewhere
 type ReminderStatus = ReminderOff | ReminderWaiting | ReminderShown | ReminderDismissed
 type EntryIdentity = {
   owner: str, calendarId: str, occurrenceId: str, sourceRef: str, sourceAccount: int,
@@ -53,7 +56,8 @@ type EntryDetails = {
 type Calendar = {
   phase: CalendarPhase, identity: EntryIdentity,
   committed: EntryDetails, draft: EntryDetails, hasSaved: bool,
-  revision: int, approvedRevision: int, storageError: StorageError, clock: int, reminder: ReminderStatus, remindAt: int
+  revision: int, approvedRevision: int, storageError: StorageError, clock: int, reminder: ReminderStatus, remindAt: int,
+  version: str
 }
 pure val noIdentity: EntryIdentity = {
   owner: "", calendarId: "", occurrenceId: "", sourceRef: "", sourceAccount: 0,
@@ -65,7 +69,8 @@ pure val noDetails: EntryDetails = {
 }
 pure val initial: Calendar = {
   phase: Empty, identity: noIdentity, committed: noDetails, draft: noDetails,
-  hasSaved: false, revision: 0, approvedRevision: -1, storageError: NoStorageError, clock: 0, reminder: ReminderOff, remindAt: 0
+  hasSaved: false, revision: 0, approvedRevision: -1, storageError: NoStorageError, clock: 0, reminder: ReminderOff, remindAt: 0,
+  version: ""
 }
 pure def validIdentity(identity: EntryIdentity): bool =
   identity.owner != "" and identity.calendarId != "" and identity.occurrenceId != "" and identity.sourceAccount >= 0 and
@@ -95,12 +100,16 @@ new appointment is a default; existing duration and real calendar dates are not
 restricted to its sample 21-day picker or half-hour daytime options. Repeat UI
 choices are Never, Every week and Every month. Reminder UI choices are No, Day
 before and 1 hour before, interpreted in the occurrence timezone. An entry
-marked important by its source, such as the clinic appointment that came from
-the clinic's email, draws the red bar, red month label and red Home day label
-(`Grace Prototype.html:1800,1876,1895,1908`). The form has no control for it,
-so Calendar view refuses a new entry marked important, `formDetails` keeps
-the draft's mark on every edit, and Calendar view keeps each member's own mark
-when a repeating event is edited and saved as a series.
+marked important, such as the clinic appointment that came from the clinic's
+email, draws the red bar, red month label and red Home day label
+(`Grace Prototype.html:1800,1876,1895,1908`). By the owner's decision the form
+has an Important switch, which the prototype's form lacks, so she can mark or
+unmark any appointment herself, and Grace can propose the mark with an
+appointment or a change she agrees to. The mark is the tablet's own: it is
+never sent to an email account's company, and a refresh from the company
+keeps it. `formDetails` takes it from the form, and Calendar view keeps each
+other member's own mark when a repeating event is edited and saved as a
+series.
 
 ```quint
 pure def canCreate(c: Calendar, identity: EntryIdentity, by: CalendarActor): bool =
@@ -131,8 +140,8 @@ the end to one hour after the start on every save (`Grace Prototype.html:2171`),
 which silently shortens the 90-minute "Lunch with Susan"
 (`Grace Prototype.html:1801`); the model keeps the duration. Only a new
 appointment's seed carries the one-hour default length. `formDetails` takes the
-title, location, repeat (with its series ID) and reminder from the form; the
-fields it has no control for, the participant, notes, important mark, timezone
+title, location, repeat (with its series ID), reminder and important mark from
+the form; the fields it has no control for, the participant, notes, timezone
 and all-day flag, stay as they are in the draft.
 
 ```quint
@@ -140,7 +149,7 @@ pure def withStart(details: EntryDetails, startAt: int): EntryDetails =
   { ...details, startAt: startAt, endAt: startAt + (details.endAt - details.startAt) }
 pure def formDetails(draft: EntryDetails, form: EntryDetails): EntryDetails =
   { ...withStart(draft, form.startAt), title: form.title, location: form.location, seriesId: form.seriesId,
-    recurrence: form.recurrence, reminderEnabled: form.reminderEnabled, leadTime: form.leadTime }
+    recurrence: form.recurrence, reminderEnabled: form.reminderEnabled, leadTime: form.leadTime, important: form.important }
 pure def lawChangingStartKeepsDuration(details: EntryDetails, startAt: int): bool =
   val shifted = withStart(details, startAt)
   shifted.startAt == startAt and shifted.endAt - shifted.startAt == details.endAt - details.startAt and
@@ -149,7 +158,7 @@ pure def lawFormKeepsLengthAndImportedFields(draft: EntryDetails, form: EntryDet
   val applied = formDetails(draft, form)
   applied.startAt == form.startAt and applied.endAt - applied.startAt == draft.endAt - draft.startAt and
     applied.participant == draft.participant and applied.notes == draft.notes and
-    applied.important == draft.important and applied.timezone == draft.timezone and applied.allDay == draft.allDay
+    applied.important == form.important and applied.timezone == draft.timezone and applied.allDay == draft.allDay
 ```
 
 ### Saving requires the current complete draft and explicit confirmation
@@ -203,13 +212,47 @@ pure def alwaysCalendarCounters(c: Calendar): bool =
   c.revision >= 0 and c.clock >= 0 and c.approvedRevision >= -1
 pure def alwaysStorageErrorHasContext(c: Calendar): bool =
   (c.storageError == SaveFailure implies c.phase == Editing) and
-  (c.storageError == DeleteFailure implies c.phase == DeleteReview)
+  (c.storageError == DeleteFailure implies c.phase == DeleteReview) and
+  (c.storageError == ChangedElsewhere implies c.phase == Saved)
 pure def alwaysSaveApprovalIsCurrent(c: Calendar): bool =
   c.approvedRevision != -1 implies (c.phase == Editing and c.approvedRevision == c.revision)
 pure def sometimesAppointmentSaved(c: Calendar): bool =
   c.phase == Saved and c.identity.kind == Appointment
 pure def sometimesBillSaved(c: Calendar): bool =
   c.phase == Saved and c.identity.kind == Bill
+```
+
+### A change the company has since changed shows the company's version
+
+A change to an entry the company holds names the `version` the tablet last
+read. If an older tablet record has no provider version, it first reads the
+current event for the person to review. When the company says its event has
+changed, the store reads it again. In both cases the entry returns
+to Saved with the company's current details and version, its reminder
+scheduled from them, and `ChangedElsewhere` telling her that her change was
+not made. The reread details keep the tablet's own fields, such as the
+important mark and the reminder. The revision moves, so an approval of the
+old draft cannot apply. `withCurrent` is the same answer for a deletion the
+company refused for the same reason, published as a refresh of the saved
+entry.
+
+```quint
+pure def withCurrent(c: Calendar, latest: EntryDetails, version: str): Calendar =
+  { ...save({ ...c, draft: latest }, c.revision, true, CalendarStore),
+    version: version, revision: c.revision + 1, storageError: ChangedElsewhere }
+pure def canSaveOutdated(c: Calendar, revision: int, latest: EntryDetails, version: str, by: CalendarActor): bool =
+  canSaveFailed(c, revision, by) and c.hasSaved and validDetails(latest)
+pure def saveOutdated(c: Calendar, revision: int, latest: EntryDetails, version: str, by: CalendarActor): Calendar =
+  withCurrent(c, latest, version)
+pure def noticed(c: Calendar): Calendar =
+  if (c.storageError == ChangedElsewhere) { ...c, storageError: NoStorageError } else c
+pure def lawOutdatedSaveKeepsTheCompanysVersion(c: Calendar, revision: int, latest: EntryDetails, version: str, by: CalendarActor): bool =
+  val after = saveOutdated(c, revision, latest, version, by)
+  canSaveOutdated(c, revision, latest, version, by) implies
+    (after.phase == Saved and after.committed == latest and after.draft == latest and after.version == version and
+      after.approvedRevision == -1 and after.revision > c.revision and after.identity == c.identity and
+      not(canSave(after, revision, true, CalendarStore)))
+pure def sometimesChangedElsewhere(c: Calendar): bool = c.storageError == ChangedElsewhere
 ```
 
 ### Deleting an occurrence requires confirmation and leaves payment records alone
@@ -367,6 +410,8 @@ pure val identityValues = Set(noIdentity, appointmentIdentity, billIdentity)
 pure val detailsValues = Set(noDetails, timedDetails, repeatingDetails, { ...timedDetails, recurrence: Weekly, seriesId: "weeklySeries" })
 pure val draftValues = detailsValues
 pure val formValues = detailsValues
+pure val latestValues = Set(timedDetails, { ...timedDetails, title: "Changed elsewhere", startAt: 5, endAt: 6 })
+pure val versionValues = Set("", "v1", "v2")
 pure val nextIdValues = Set("", "periodA", "periodB")
 pure val nextBillRefValues = Set("", "billA", "billB")
 pure val nextSourceRefValues = Set("", "messageA", "messageB")

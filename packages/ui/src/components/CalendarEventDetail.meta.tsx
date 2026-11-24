@@ -22,6 +22,7 @@ export const meta: ComponentMeta<CalendarEventDetailProps> = {
       reminder: "Reminder 1 hour before",
     },
     "Edit and Delete refused": { onEdit: undefined, onDelete: undefined },
+    "Changed elsewhere": { ...doctor, notice: "Gmail has a newer version of this appointment, so the tablet didn’t change it. This is how it is now." },
     Bill: {
       ...doctor,
       who: undefined,
