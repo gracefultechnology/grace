@@ -1,5 +1,5 @@
-// spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"
-import { Duration, Effect, type Exit, type ManagedRuntime, Option, Stream } from "effect";
+// spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"; spec/app/wake.md, "Settings and the sleep screen say when wake detection is unavailable"
+import { Duration, Effect, type Exit, type ManagedRuntime, Option, Stream, SubscriptionRef } from "effect";
 import { createContext, createElement, type ReactNode, use, useMemo, useState, useSyncExternalStore } from "react";
 import type { Accounts as AccountsState, Event as AccountEvent } from "../gen/app__accounts.ts";
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe";
@@ -32,7 +32,7 @@ import { filesAccount } from "./files.vibe";
 import { ManagedReads, type HomeCards, type ManagedSnapshot } from "./managedReads.vibe";
 import type { AccountActions } from "./graceAccount.vibe";
 import { ReplyControls, type ReplyOffer } from "./replyControls.vibe";
-import type { SpeechActions } from "./graceSpeech.vibe";
+import { SpeechActions, type WakeStatus } from "./graceSpeech.vibe";
 import { Machine as PasswordView } from "../gen/app.effect.vibe";
 import type { PasswordGuide, PasswordView as PasswordViewState } from "../gen/app.ts";
 import { Passwords } from "./passwords.vibe";
@@ -65,6 +65,10 @@ export function useRuntime(): Runtime {
 type SubscriptionStore<T> = {
   readonly subscribe: (notify: () => void) => () => void;
   readonly get: () => T;
+};
+
+type ValueStore<T> = SubscriptionStore<T> & {
+  readonly seed: (value: T) => void;
 };
 
 export function shallowEqual<T extends Record<string, unknown>>(a: T, b: T): boolean {
@@ -114,29 +118,26 @@ function useStoreSelector<S, T>(
 }
 
 function createStreamStore<S, E>(
-  cache: WeakMap<Runtime, SubscriptionStore<S>>,
   runtime: Runtime,
   stream: Stream.Stream<E, never, RuntimeEnv>,
   get: (active: boolean) => S,
-  onStart: () => void,
+  onStart: (emit: () => void) => void,
   onEmit: (event: E, emit: () => void) => void,
 ): SubscriptionStore<S> {
-  const known = cache.get(runtime);
-  if (known) return known;
   const listeners = new Set<() => void>();
   let active: object | undefined;
   let stop: (() => void) | undefined;
   const emit = () => {
     for (const listener of listeners) listener();
   };
-  const store: SubscriptionStore<S> = {
+  return {
     get: () => get(active !== undefined),
     subscribe: (notify) => {
       listeners.add(notify);
       if (!active) {
         const token = {};
         active = token;
-        onStart();
+        onStart(emit);
         const fiber = runtime.runFork(
           Stream.runForEach(
             stream,
@@ -158,29 +159,39 @@ function createStreamStore<S, E>(
       };
     },
   };
-  cache.set(runtime, store);
-  return store;
 }
 
 function createValueStreamStore<S>(
-  cache: WeakMap<Runtime, SubscriptionStore<S>>,
+  cache: WeakMap<Runtime, ValueStore<S>>,
   runtime: Runtime,
   initial: S,
   stream: Stream.Stream<S, never, RuntimeEnv>,
-): SubscriptionStore<S> {
+): ValueStore<S> {
+  const known = cache.get(runtime);
+  if (known) return known;
   let seen = initial;
-  return createStreamStore(
-    cache,
+  let notify = () => {};
+  const base = createStreamStore(
     runtime,
     stream,
     () => seen,
-    () => undefined,
+    (emit) => { notify = emit; },
     (next, emit) => {
       if (Object.is(seen, next)) return;
       seen = next;
       emit();
     },
   );
+  const store: ValueStore<S> = {
+    ...base,
+    seed: (value) => {
+      if (seen !== undefined || Object.is(seen, value)) return;
+      seen = value;
+      notify();
+    },
+  };
+  cache.set(runtime, store);
+  return store;
 }
 
 function createReadStreamStore<S>(
@@ -189,10 +200,11 @@ function createReadStreamStore<S>(
   read: () => S,
   changes: Stream.Stream<unknown, never, RuntimeEnv>,
 ): SubscriptionStore<S> {
+  const known = cache.get(runtime);
+  if (known) return known;
   let initialized = false;
   let seen: S;
-  return createStreamStore(
-    cache,
+  const store = createStreamStore(
     runtime,
     changes,
     (isActive) => {
@@ -214,6 +226,8 @@ function createReadStreamStore<S>(
       emit();
     },
   );
+  cache.set(runtime, store);
+  return store;
 }
 
 const workspaceChanges = Stream.unwrap(Effect.map(Effect.service(Workspaces), (m) => m.changes));
@@ -228,19 +242,21 @@ const fileLibraryHomeChanges = Stream.unwrap(Effect.map(FileLibrary, (files) => 
 const managedReadsChanges = Stream.unwrap(Effect.map(ManagedReads, (reads) => reads.state));
 const managedHomeChanges = Stream.unwrap(Effect.map(ManagedReads, (reads) => reads.home));
 const replyOfferChanges = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
+const wakeStatusChanges = Stream.unwrap(Effect.map(SpeechActions, (speech) => SubscriptionRef.changes(speech.wakeStatus)));
 
-const workspaceStores = new WeakMap<Runtime, SubscriptionStore<Workspace | undefined>>();
-const setupStores = new WeakMap<Runtime, SubscriptionStore<SetupState | undefined>>();
-const passwordViewStores = new WeakMap<Runtime, SubscriptionStore<PasswordViewState | undefined>>();
-const pageLayerStores = new WeakMap<Runtime, SubscriptionStore<PageLayer | undefined>>();
-const accountsStores = new WeakMap<Runtime, SubscriptionStore<AccountsState | undefined>>();
-const keyboardStores = new WeakMap<Runtime, SubscriptionStore<number>>();
+const workspaceStores = new WeakMap<Runtime, ValueStore<Workspace | undefined>>();
+const setupStores = new WeakMap<Runtime, ValueStore<SetupState | undefined>>();
+const passwordViewStores = new WeakMap<Runtime, ValueStore<PasswordViewState | undefined>>();
+const pageLayerStores = new WeakMap<Runtime, ValueStore<PageLayer | undefined>>();
+const accountsStores = new WeakMap<Runtime, ValueStore<AccountsState | undefined>>();
+const keyboardStores = new WeakMap<Runtime, ValueStore<number>>();
 const filesStores = new WeakMap<Runtime, SubscriptionStore<LibraryFiles>>();
 const fileLibraryStores = new WeakMap<Runtime, SubscriptionStore<FileSnapshot>>();
 const fileLibraryHomeStores = new WeakMap<Runtime, SubscriptionStore<FileHome | undefined>>();
 const managedReadsStores = new WeakMap<Runtime, SubscriptionStore<ManagedSnapshot>>();
 const managedHomeStores = new WeakMap<Runtime, SubscriptionStore<HomeCards | undefined>>();
 const replyOfferStores = new WeakMap<Runtime, SubscriptionStore<ReplyOffer | undefined>>();
+const wakeStatusStores = new WeakMap<Runtime, SubscriptionStore<WakeStatus>>();
 const minuteStores = new WeakMap<Runtime, SubscriptionStore<Date>>();
 
 function workspaceStoreFor(runtime: Runtime) {
@@ -261,6 +277,30 @@ function pageLayerStoreFor(runtime: Runtime) {
 
 function accountsStoreFor(runtime: Runtime) {
   return createValueStreamStore<AccountsState | undefined>(accountsStores, runtime, undefined, accountsChanges);
+}
+
+const primedRuntimes = new WeakSet<Runtime>();
+
+export function isRuntimePrimed(runtime: Runtime): boolean {
+  return primedRuntimes.has(runtime);
+}
+
+export async function primeRuntime(runtime: Runtime): Promise<void> {
+  const [workspace, setup, passwordView, pageLayer, accounts] = await runtime.runPromise(
+    Effect.all([
+      Effect.flatMap(Effect.service(Workspaces), (m) => m.get()),
+      Effect.flatMap(Effect.service(Setup), (m) => m.get()),
+      Effect.flatMap(Effect.service(PasswordView), (m) => m.get()),
+      Effect.flatMap(Effect.service(PageLayers), (m) => m.get()),
+      Effect.flatMap(Effect.service(Accounts), (m) => m.get()),
+    ]),
+  );
+  workspaceStoreFor(runtime).seed(workspace);
+  setupStoreFor(runtime).seed(setup);
+  passwordViewStoreFor(runtime).seed(passwordView);
+  pageLayerStoreFor(runtime).seed(pageLayer);
+  accountsStoreFor(runtime).seed(accounts);
+  primedRuntimes.add(runtime);
 }
 
 function minuteStoreFor(runtime: Runtime): SubscriptionStore<Date> {
@@ -591,6 +631,17 @@ export function useFiles(): LibraryFiles {
     runtime,
     () => runtime.runSync(Effect.flatMap(Library, (library) => library.get())),
     libraryChanges,
+  );
+  return useSyncExternalStore(store.subscribe, store.get, store.get);
+}
+
+export function useWakeStatus(): WakeStatus {
+  const runtime = useRuntime();
+  const store = createReadStreamStore(
+    wakeStatusStores,
+    runtime,
+    () => runtime.runSync(Effect.flatMap(SpeechActions, (speech) => SubscriptionRef.get(speech.wakeStatus))),
+    wakeStatusChanges,
   );
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }

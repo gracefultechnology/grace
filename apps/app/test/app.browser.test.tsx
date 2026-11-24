@@ -30,7 +30,7 @@ import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, modelTurns, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
 import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
-import { actOnScreen, browserAccountResponse, mount, signInToGrace, tapHomeCalendar, tabletView } from "./screen.tsx";
+import { actOnScreen, browserAccountResponse, fixtureListener, mount, signInToGrace, tapHomeCalendar, tabletView, wakeBoundary } from "./screen.tsx";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -243,7 +243,8 @@ const deviceAgent = (model?: (history: readonly Said[], text: string) => Promise
       }
       return Promise.resolve({ id: input.id });
     },
-    ...agentEvents(listeners),
+    abort: () => Promise.resolve({ aborted: true }),
+    addListener: fixtureListener(listeners),
   };
   const answer = (index: number, reply: object) => act(() => {
     const { id } = requests[index];
@@ -1092,16 +1093,6 @@ it('Use the current typed Passwords command when cloud speech is unavailable (sp
   await expect.element(page.getByRole("button", { name: "Close Passwords" })).toBeVisible();
 });
 
-function agentEvents(listeners: Map<string, (input: unknown) => void>): Pick<EmbeddedAgent, "abort" | "addListener"> {
-  return {
-    abort: () => Promise.resolve({ aborted: true }),
-    addListener: (event, listener) => {
-      listeners.set(event, listener);
-      return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
-    },
-  };
-}
-
 it('Ask for email help (spec/app/conversation.md, "A turn may start without her words, marked with where it came from")', async () => {
   const { agent, requests, answer } = deviceAgent();
   const runtime = ManagedRuntime.make(application(undefined, undefined, { native: true, agent }));
@@ -1320,8 +1311,10 @@ it(`Open a control from the agent reply (spec/app/workspace.md, "Story: Open an 
   }
 });
 
-it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card inputs out of chat", "Open Passwords by voice"] as const)(
-  '%s via metered speech (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', async (journey) => {
+const wakeJourney = "Wake using the phrase";
+const speechJourneys = ["Talk and hear a reply", "Answer a spoken question", "Keep private card inputs out of chat", "Open Passwords by voice"] as const;
+
+async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wakeJourney) {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
   const token = "8".repeat(64);
   const speechPath = "/api/v1/voice/speech";
@@ -1442,8 +1435,10 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
     }
   }
   vi.stubGlobal("WebSocket", FixtureSocket);
-  const { agent, requests, created, refused } = deviceAgent(() => Promise.resolve(replies.shift() ?? voiceOutput));
-  const runtime = ManagedRuntime.make(application(undefined, undefined, { native: false, agent }));
+  const wake = journey === wakeJourney ? wakeBoundary() : undefined;
+  const { agent, requests, answer, created, refused } = deviceAgent(wake ? undefined : () => Promise.resolve(replies.shift() ?? voiceOutput));
+  const app = application(undefined, undefined, { native: false, agent, wake: wake?.port });
+  const runtime = ManagedRuntime.make(app.pipe(Layer.provideMerge(wake ? TestClock.layer() : Layer.empty)));
   const host = document.body.appendChild(document.createElement("div"));
   const root = createRoot(host);
   try {
@@ -1459,6 +1454,58 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
     const choosePage = (page: "MainCards" | "PasswordsCard") => runtime.runPromise(Effect.flatMap(Workspaces, (machine) =>
       machine.send({ type: "chooseHomePage", page }, "Person")));
     const refresh = () => act(async () => { await runtime.runPromise(Effect.flatMap(AccountActions, (account) => account.run({ kind: "refresh" }))); });
+    if (wake) {
+      const button = (name: string) => page.getByRole("button", { name, exact: true });
+      await press(button("Settings"));
+      await press(button("Grace’s voice"));
+      await press(button("Set up “Hey Grace”"));
+      await press(button("Continue"));
+      await expect.poll(wake.armed).not.toBeNull();
+      await act(() => runtime.runPromise(TestClock.adjust("3 seconds")));
+      const hearWake = async () => {
+        const earlier = wake.armed();
+        await press(button("Show sleep screen"));
+        await expect.element(button("Wake Grace")).toBeVisible();
+        await expect.poll(() => {
+          const generation = wake.armed();
+          return generation !== null && generation !== earlier;
+        }).toBe(true);
+        await wake.detect();
+        await expect.element(button("Wake Grace")).not.toBeInTheDocument();
+      };
+      expect([audio.mock.calls.length, calls, sockets]).toEqual([0, [], []]);
+      await hearWake();
+      await expect.poll(() => ({
+        input: sentTurn(requests[0]?.body).said,
+        turn: workspace().assistant.conversation.turn,
+        captured: recordedFrames > 0,
+        refused,
+      }), { timeout: 10_000 }).toEqual({ input: voiceInput, turn: "Thinking", captured: true, refused: [] });
+      await answer(0, { text: voiceOutput });
+      await act(async () => {
+        await expect.poll(() => ({
+          turn: workspace().assistant.conversation.turn,
+          messages: workspace().assistant.conversation.messages.map((turn) => turn.text),
+          tracks: captures.map((track) => track.readyState),
+        }), { timeout: 10_000 }).toEqual({ turn: "Ready", messages: [voiceInput, voiceOutput], tracks: ["ended"] });
+      });
+      await expect.poll(() => calls).toEqual(speechSession);
+      expect(wake.chimes()).toBe(1);
+      await press(button("Close Grace"));
+      const beforeSilence = recordedFrames;
+      await hearWake();
+      await expect.poll(() => recordedFrames).toBeGreaterThan(beforeSilence);
+      expect(workspace().assistant.conversation.voice).toBe(true);
+      await act(() => runtime.runPromise(TestClock.adjust("8 seconds")));
+      await expect.poll(() => workspace().wake.phase).toBe("SilenceNotice");
+      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended"]);
+      await expect.element(button("Close Grace")).toBeVisible();
+      await act(() => runtime.runPromise(TestClock.adjust("8 seconds")));
+      await expect.element(button("Close Grace")).not.toBeInTheDocument();
+      await expect.poll(wake.armed).not.toBeNull();
+      expect(requests.map(({ body }) => sentTurn(body).said)).toEqual([voiceInput]);
+      return;
+    }
     if (journey === "Talk and hear a reply" || journey === "Answer a spoken question") {
       await press(page.getByRole("button", { name: "Settings", exact: true }));
       await press(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Grace’s voice" }));
@@ -1662,7 +1709,10 @@ it.each(["Talk and hear a reply", "Answer a spoken question", "Keep private card
     audio.mockRestore();
     vi.unstubAllGlobals();
   }
-});
+}
+
+it.each(speechJourneys)('%s via metered speech (spec/app/conversation.md, "Story: Talk or type without losing the conversation")', meteredSpeech);
+it('Wake by voice (spec/app/wake.md, "Story: Call Grace from any app or while the screen sleeps")', () => meteredSpeech(wakeJourney));
 
 
 it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read the Google mail and calendar I connected")', async () => {

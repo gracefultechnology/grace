@@ -8,6 +8,7 @@ import { type Accounts, allowedUse, chooseProvider, initial, type Provider, shee
 import { Machine as Setup, signedInTablet } from "../gen/app__setup.effect.vibe";
 import { application } from "../src/app.vibe";
 import type { CloudLink } from "../src/conversation.vibe";
+import type { WakePort } from "../src/graceSpeechPlatform.ts";
 import { App } from "../src/App.tsx";
 import type { Runtime } from "../src/useApp.ts";
 
@@ -102,6 +103,45 @@ export async function mount(runtime: Runtime) {
   onTestFinished(view.dispose);
   await view.render();
   return view;
+}
+
+export function fixtureListener(listeners: Map<string, (value: unknown) => void>) {
+  return (event: string, listener: (value: unknown) => void) => {
+    listeners.set(event, listener);
+    return Promise.resolve({ remove: () => { listeners.delete(event); return Promise.resolve(); } });
+  };
+}
+
+export function wakeBoundary() {
+  const key = "grace/voice-disclosure/wake";
+  const previous = localStorage.getItem(key);
+  localStorage.removeItem(key);
+  onTestFinished(() => {
+    if (previous === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, previous);
+  });
+  const listeners = new Map<string, (value: unknown) => void>();
+  let permitted = false;
+  let generation: number | null = null;
+  let chimes = 0;
+  const status = () => Promise.resolve({ available: true, permitted });
+  const port: WakePort = {
+    status,
+    requestPermission: () => { permitted = true; return status(); },
+    configure: (choice) => { generation = choice.generation; return Promise.resolve(); },
+    chime: () => { chimes++; return Promise.resolve(); },
+    addListener: fixtureListener(listeners),
+  };
+  return {
+    port,
+    armed: (): number | null => generation,
+    permitted: () => permitted,
+    chimes: () => chimes,
+    detect: (value = generation) => {
+      if (value === null) throw new Error("Wake needs to be armed before it detects a phrase");
+      return act(() => Promise.resolve(listeners.get("wakeDetected")?.({ generation: value })));
+    },
+  };
 }
 
 export async function signInToGrace(runtime: Runtime) {

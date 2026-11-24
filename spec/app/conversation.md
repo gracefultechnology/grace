@@ -71,10 +71,9 @@ pure def appended(author: MessageAuthor, text: str, c: Conversation): Conversati
 Opening Grace, receiving a typed response, tapping an answer and moving a
 window never activate the microphone. The workspace also invokes this entry
 after an authenticated enabled “Hey Grace” detection, including from sleep;
-that separate wake lifecycle never grants website or payment authority. No
-wake detector ships in the MVP, so the [wake host](./wake.md) reports detection
-unavailable and only Talk starts an exchange. Talk also deliberately resets the
-consecutive unusable-speech limit and invalidates old response callbacks.
+that separate wake lifecycle never grants website or payment authority. The
+[wake host](./wake.md) processes the wake phrase locally. Both entry points reset the
+consecutive unusable-speech limit and invalidate old response callbacks.
 
 ```quint
 pure def canTalk(c: Conversation, by: ConversationActor): bool = by == ConversationUser
@@ -486,10 +485,10 @@ cloud voice.
 pure val voiceDisclosure = "When you talk to Grace, your voice goes to Grace's cloud service to be understood."
 ```
 
-### Only Talk opens the microphone, so her voice is sent only in an exchange she started
+### Talk and the wake phrase open cloud capture only for the current exchange
 
-Talk opens one cloud speech session for its exchange, and the session closes
-when the exchange ends. Her audio is sent only while that exchange is open:
+Talk or an admitted wake phrase opens one cloud speech session for its
+exchange. The session closes when the exchange ends. Her audio is sent only while that exchange is open:
 while Grace listens, while Grace speaks with the microphone on so that she can
 be interrupted, and while Grace waits for the answer to a question she asked
 aloud in it. No reply, finished speech, failure or turn the
