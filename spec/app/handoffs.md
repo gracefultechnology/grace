@@ -344,13 +344,15 @@ pure val commitmentValues = Set(CM::initial,
 
 ### Every entry point of one subject reaches the one commitment kept for it, and no other subject shares its record
 
-The registry and the commitments agree on one record per subject: the
-commitments keep at most one commitment for any subject, and every subject the
-registry has bound has exactly one. A usable source of a bound subject, such as
-a bill's email or its calendar entry, or a booking request in the conversation
-or the clinic's page, therefore reaches that subject's only commitment and shows
-its actual outcome. A source of another subject never reaches the same record
-and never shows that commitment's receipt, whatever kind either subject is.
+When the commitments keep at most one commitment for any subject and every
+subject the registry has bound has exactly one, a usable source of a bound
+subject, such as a bill's email or its calendar entry, or a booking request in
+the conversation or the clinic's page, reaches that subject's only commitment
+and shows its actual outcome. A source of another subject then never reaches the
+same record and never shows that commitment's receipt, whatever kind either
+subject is. This spec does not keep the registry and the commitments together,
+so that agreement is a condition here, not a guarantee; a spec that keeps both
+must state it as its own rule.
 
 ```quint
 pure def commitmentFor(commitments: List[CM::Commitment], key: T::Subject): CM::Commitment =
@@ -605,6 +607,7 @@ pure def lawStaleHomeRowOpensNothing(device: S::Shell, calendarView: V::Calendar
   val handoff = openHomeEvent(device, calendarView, eventRow, by)
   (eventRow.owner != calendarView.owner or eventRow.calendarId != calendarView.calendarId or
     eventRow.generation != calendarView.generation or
+    V::hasEditing(calendarView) or calendarView.deletion != V::NoDeletion or
     V::entryAt(calendarView, eventRow.occurrenceId).revision != eventRow.revision or
     not(V::entryAt(calendarView, eventRow.occurrenceId).hasSaved)) implies (match handoff {
     | EventDeclined => true
