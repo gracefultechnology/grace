@@ -333,13 +333,8 @@ and shared Eliza Cloud Gradle hosts in `artifacts/cloud-profiles/<profile>/gradl
 `android/host.json` with upstream Eliza's `generateAndroidConsumerHost` (`vendor/eliza`, Gradle and
 AGP 8.13), then upstream's `buildAndroidConsumer` builds the web UI with Vite, copies it in with
 `cap copy android`, runs Gradle and copies the APKs out. The host's inputs are in `android/`: the
-<<<<<<< HEAD
-manifests, `MainActivity.java`, `GraceAgentService.java`, `GraceWakePlugin.java`,
-`GraceDevicePlugin.java`, `agent.json` and `res/`. Both flavors may
-=======
 manifests, `MainActivity.java`, `GraceAgentService.java`, `GraceSpeechPlugin.java`,
-`GraceDevicePlugin.java`, `agent.json` and `res/`. Grace may
->>>>>>> origin/develop
+`GraceWakePlugin.java`, `GraceDevicePlugin.java`, `agent.json` and `res/`. Grace may
 ask for location and the camera, for a website, after the person's Allow.
 
 The one flavor, `launcher`, is the tablet's Home (HOME intent filter): Back never leaves it, and
