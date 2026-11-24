@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "build": "(node -e \"process.exit(process.env.TURBO_HASH ? 0 : 1)\" || pnpm -w all //#gen) && pnpm --dir ../../vendor/eliza --filter @elizaos/cloud run build:worker && vibelang -p tsconfig.json",
+    "typecheck": "vibelang --noEmit -p .",
     "dev": "pnpm build && wrangler dev --local --port 8787",
     "bundle": "pnpm build && pnpm --filter @repo/app build && wrangler deploy --env production --dry-run --outdir .wrangler/bundle",
     "deploy": "pnpm build && pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Browse and return to the page I left' && pnpm --filter @repo/app build && wrangler deploy --env production",
