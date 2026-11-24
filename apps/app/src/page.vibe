@@ -430,6 +430,14 @@ effect function listenForPageSignals(workspace: Workspaces.Shape, native: Native
   try fork.scoped Stream.runForEach(visibility, (signal) => Queue.offer(signals, signal))
 }
 
+effect function reopenWhenOnline(workspace: Workspaces.Shape) {
+  const reconnected = Stream.filter(Stream.drop(Stream.changes(Stream.map(workspace.changes, (w) => w.device.connectivity === "Online")), 1), (online) => online)
+  try Stream.runForEach(reconnected, () => effect {
+    const { browser } = try workspace.get()
+    workspace.send({ type: "changePage", browserInput: { tag: "ReopenWhenOnline", id: browser.selected, revision: browser.revision } }, "Host") catch () => undefined
+  })
+}
+
 function browserProtection() {
   const privacy = privateViewPlugin
   let privateWindow = false
@@ -783,11 +791,7 @@ effect function makePageHost(openApp: OpenPrivateVerificationApp | undefined) {
   try fork.scoped routePages(native, layer, pages, routes, signals)
   try listenForPageSignals(workspace, native, signals, routes)
   try waitForLoads(workspace, requests, signals)
-  const reconnected = Stream.filter(Stream.drop(Stream.changes(Stream.map(workspace.changes, (w) => w.device.connectivity === "Online")), 1), (online) => online)
-  try fork.scoped Stream.runForEach(reconnected, () => effect {
-    const { browser } = try workspace.get()
-    workspace.send({ type: "changePage", browserInput: { tag: "ReopenWhenOnline", id: browser.selected, revision: browser.revision } }, "Host") catch () => undefined
-  })
+  try fork.scoped reopenWhenOnline(workspace)
   try fork.scoped effect {
     while (true) {
       for (const signal of try Queue.takeAll(signals)) try apply(signal)
