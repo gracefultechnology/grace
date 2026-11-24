@@ -42,11 +42,14 @@ const backEvents: Record<Exclude<BackAction, "Unconsumed" | "PrivatePageBack" | 
 };
 
 /** A window right of the rail, 6px from the screen's edges (design.md, "Windows"); its bottom follows Grace's compact window and the keyboard (prototype `layout()`). */
-const lifted = "absolute top-1.5 right-1.5 transition-[bottom] duration-window ease-standard motion-reduce:transition-none";
+const lifted = "absolute top-1.5 right-1.5";
 /** What expanded Grace covers is out of reach, for touch and for assistive technology. */
 const homeUpdates = Stream.unwrap(Effect.map(ManagedReads, (managed) => managed.home));
 const appointmentClock = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 const appointmentDay = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+const railClock = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+const railDate = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" });
+const sleepDate = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
 const startOf = (event: HomeCards["events"][number]) => new Date(event.isAllDay && event.startAt.length === 10 ? event.startAt + "T12:00:00" : event.startAt);
 const managedNext = (cards: HomeCards | undefined, now: Date) => {
   const next = cards?.events[0];
@@ -149,7 +152,7 @@ function Screen() {
   const covered = !privateSurface && assistant.presentation === "Expanded";
   const docked = !privateSurface && assistant.presentation === "Compact";
   const bottom = keyboard + (docked ? 6 + graceHeight + 6 : 6);
-  const clock = Object.fromEntries(new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).formatToParts(now).map((p) => [p.type, p.value]));
+  const clock = Object.fromEntries(railClock.formatToParts(now).map((p) => [p.type, p.value]));
   const hour = now.getHours();
   const sleeping = device.readiness === "Sleeping";
   const wake = () => {
@@ -162,7 +165,7 @@ function Screen() {
       <div className="contents" {...under(sleeping)}>
       <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
       <Rail aria-label="Rail" time={`${clock.hour}:${clock.minute}`} period={clock.dayPeriod}
-        date={now.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })}
+        date={railDate.format(now)}
         status={<RailButton icon={online ? <Wifi {...tile} /> : <WifiSlash />} label="Wi-Fi" aria-label={online ? "Wi-Fi" : "Wi-Fi, not connected"} {...toggle("WifiPopover")} />}
         footer={<RailButton icon={<Gear {...tile} />} label="Settings" selected={surface === "DeviceSettings"} {...visit("DeviceSettings")} />}
         ask={privateSurface ? undefined : <AskGraceButton selected={assistant.presentation !== "Closed"} glow={assistant.presentation === "Closed" ? "rest" : "off"} onClick={() => { if (can({ type: "openGrace" })) void send({ type: "openGrace" }); }} />}>
@@ -176,7 +179,7 @@ function Screen() {
           <WithMailboxes ids={accounts?.accounts.map((a) => a.id) ?? []}>{(boxes) => (
             <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
             <HomeScreen className="inset-0" banner={<NoticeBanner reminders={reminders(calendars)} />} layout={docked ? "compact" : "full"} {...under(covered)} greeting={hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}
-              calendar={{ weekday: now.toLocaleDateString(undefined, { weekday: "short" }).toUpperCase(), day: now.getDate(), ...ours && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : calendarActions) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
+              calendar={{ weekday: appointmentDay.format(now).toUpperCase(), day: now.getDate(), ...ours && accounts ? homeCalendar(accounts, calendars, now.getTime(), visit("Calendar").disabled ? undefined : calendarActions) : { events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
               const when = startOf(event);
               return { id: event.externalId, title: event.title || "Untitled appointment", detail: event.location || undefined,
                 weekday: appointmentDay.format(when).toUpperCase(), time: event.isAllDay ? "All day" : appointmentClock.format(when), next: index === 0,
@@ -243,7 +246,7 @@ function Screen() {
       {sleeping && <WithCalendars keys={accounts ? calendarKeys(accounts) : []}>{(calendars) => (
         <SleepScreen role="button" tabIndex={0} aria-label="Wake Grace"
         time={`${clock.hour}:${clock.minute}`}
-        date={now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+        date={sleepDate.format(now)}
         next={ours ? accounts && nextAppointment(accounts, calendars, now.getTime()) : managedNext(cards, now)}
         hint="Touch the screen to wake it" onClick={wake} onKeyDown={(event) => {
           if (event.key === "Enter" || event.key === " ") { event.preventDefault(); wake(); }
