@@ -388,7 +388,7 @@ export function ManagedRead({ view, now }: { view: ReadView; now: number }) {
       if (!opened) setFailed({ key: mailProjection, text: "This link couldn’t open. Reopen the email to check its current contents." });
     });
     const reviewLink = snapshot.linkReview?.link;
-    const canFollow = signedIn !== undefined && actionableMailBody(selected) && !snapshot.replying && !snapshot.attachment && !snapshot.proposed;
+    const canFollow = actionableMailBody(selected) && !snapshot.replying && !snapshot.attachment && !snapshot.proposed;
     const suggested = snapshot.proposed?.proposal;
     const draft = suggested?.kind === "draft" ? snapshot.proposed : undefined;
     const photos = selected?.attachments.filter((part) => part.mimeType.startsWith("image/")) ?? [];
