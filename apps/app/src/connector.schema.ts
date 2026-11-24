@@ -44,7 +44,7 @@ export const WireEvent = Schema.Struct({
   calendarId: Text, externalId: Schema.NonEmptyString, title: Text, description: Text, location: Text, startAt: Text, endAt: Text, isAllDay: Flag, timezone: NullableText,
   etag: optional(NullableText),
   attendees: Schema.Array(Schema.Struct({ email: NullableText, displayName: NullableText, self: Flag })),
-  recurrence: optional(Texts), reminders: optional(Schema.Struct({ useDefault: Flag, overrides: optional(Reminders) })),
+  seriesId: optional(NullableText), reminders: optional(Schema.Struct({ useDefault: Flag, overrides: optional(Reminders) })),
 })
 export const Feed = Schema.Struct({ events: Schema.Array(WireEvent), defaultReminders: optional(Reminders) })
 export const Stored = Schema.Struct({ event: WireEvent })

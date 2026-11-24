@@ -80,7 +80,6 @@ export type CalendarConnection = {
   readonly write: (entry: Calendar, view: CalendarView, dispatch?: GuidedDispatch) => StoreReceipt!NeedsSignIn
   readonly verifySaved: (view: CalendarView, occurrence: string, expected: EntryDetails) => (EntryDetails | undefined)!ConnectorFailure
   readonly remove: (entry: Calendar, scope: DeleteScope) => DeletionReceipt!NeedsSignIn
-  readonly removeRepetition: (series: Calendar, occurrence: EntryDetails) => DeletionReceipt!NeedsSignIn
 }
 
 export service Connector {
@@ -221,21 +220,37 @@ function participantOf(e: ProviderEvent) {
 }
 
 type Reminder = { readonly method: string; readonly minutes: number }
-const weekdays = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
 
-function repeatsOf(zones: ReadonlySet<string>, lines: readonly string[], startAt: number, timeZone: string): Recurrence {
-  const rule = lines.length === 1 && zones.has(timeZone) ? /^RRULE:(.+)$/.exec(lines[0]) : null
-  if (rule === null) return "Once"
-  const parts = new Map(rule[1].split(";").map((part) => part.split("=") as [string, string]))
-  const date = dateIn(startAt, timeZone)
-  const allowed: Record<string, string | undefined> = {
-    FREQ: parts.get("FREQ"), INTERVAL: "1", WKST: parts.get("WKST"),
-    BYDAY: parts.get("FREQ") === "WEEKLY" ? weekdays[new Date(`${date}T00:00:00Z`).getUTCDay()] : undefined,
-    BYMONTHDAY: parts.get("FREQ") === "MONTHLY" ? String(Number(date.slice(8))) : undefined
+const clockFormats = new Map<string, Intl.DateTimeFormat>()
+function clockIn(at: number, timeZone: string) {
+  let formatter = clockFormats.get(timeZone)
+  if (formatter === undefined) {
+    formatter = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    clockFormats.set(timeZone, formatter)
   }
-  if (![...parts].every(([key, value]) => value !== undefined && allowed[key] === value)) return "Once"
-  return parts.get("FREQ") === "WEEKLY" ? "Weekly" : parts.get("FREQ") === "MONTHLY" ? "Monthly" : "Once"
+  return formatter.format(at)
 }
+
+function civil(at: number, timeZone: string) {
+  const date = dateIn(at, timeZone)
+  return { day: Date.parse(`${date}T00:00:00Z`) / 86_400_000, month: Number(date.slice(0, 4)) * 12 + Number(date.slice(5, 7)), date: date.slice(8), clock: clockIn(at, timeZone) }
+}
+
+function fits(recurrence: Recurrence, anchor: number, at: number, timeZone: string) {
+  const [a, b] = [civil(anchor, timeZone), civil(at, timeZone)]
+  if (a.clock !== b.clock) return false
+  return recurrence === "Weekly" ? (b.day - a.day) % 7 === 0 : recurrence === "Monthly" && a.date === b.date
+}
+
+function cadence(starts: readonly number[], timeZone: string): Recurrence {
+  const days = starts.map((at) => civil(at, timeZone))
+  const steps = (key: "day" | "month") => days.slice(1).map((d, i) => d[key] - days[i][key])
+  const repeats = (recurrence: Recurrence, key: "day" | "month", step: number) =>
+    days.length > 1 && starts.every((at) => fits(recurrence, starts[0], at, timeZone)) && steps(key).every((s) => s > 0) && steps(key).includes(step)
+  return repeats("Weekly", "day", 7) ? "Weekly" : repeats("Monthly", "month", 1) ? "Monthly" : "Once"
+}
+
+const sameText = (e: ProviderEvent, d: EntryDetails) => e.title === d.title && e.location === d.location && e.description === d.notes
 
 function reminderOf(e: ProviderEvent, defaults: readonly Reminder[]) {
   const set = e.reminders === undefined ? [] : e.reminders.useDefault ? defaults : e.reminders.overrides ?? []
@@ -245,9 +260,24 @@ function reminderOf(e: ProviderEvent, defaults: readonly Reminder[]) {
 
 type Kept = Pick<EntryDetails, "participant" | "seriesId" | "recurrence" | "reminderEnabled" | "leadTime" | "important">
 
-function providerFields(zones: ReadonlySet<string>, e: ProviderEvent, startAt: number, timezone: string, defaults: readonly Reminder[]): Kept {
-  const recurrence = repeatsOf(zones, e.recurrence ?? [], startAt, timezone)
-  return { participant: participantOf(e), seriesId: recurrence === "Once" ? "" : e.externalId, recurrence, ...reminderOf(e, defaults), important: false }
+function providerFields(e: ProviderEvent, defaults: readonly Reminder[]): Kept {
+  return { participant: participantOf(e), seriesId: "", recurrence: "Once", ...reminderOf(e, defaults), important: false }
+}
+
+type Timed = { readonly e: ProviderEvent; readonly startAt: number; readonly endAt: number; readonly verified: boolean; readonly timezone: string }
+
+function seriesOf(zones: ReadonlySet<string>, view: CalendarView, timed: readonly Timed[], keptOf: (t: Timed) => Kept): ReadonlyMap<string, Kept> {
+  const repeating = timed.filter((t) => t.verified && zones.has(t.timezone) && (t.e.seriesId ?? "") !== "")
+  return new Map([...new Set(repeating.map((t) => t.e.seriesId ?? ""))].flatMap((seriesId) => {
+    const { version, details: known } = seriesAt(view, seriesId)
+    const sorted = repeating.filter((t) => t.e.seriesId === seriesId).sort((a, b) => a.startAt - b.startAt)
+    const like = version >= 0 ? known : { ...details(sorted[0].e, sorted[0].startAt, sorted[0].endAt, sorted[0].timezone, keptOf(sorted[0])), seriesId }
+    const alike = sorted.filter((t) => sameText(t.e, like) && t.e.isAllDay === like.allDay && t.timezone === like.timezone)
+    const recurrence = version >= 0 ? known.recurrence : cadence(alike.map((t) => t.startAt), like.timezone)
+    const members = recurrence === "Once" ? [] : alike.filter((t) => fits(recurrence, like.startAt, t.startAt, like.timezone))
+    const kept: Kept = { ...like, seriesId, recurrence }
+    return members.map((t) => [t.e.externalId, kept] as const)
+  }))
 }
 
 function details(e: ProviderEvent, startAt: number, endAt: number, timezone: string, kept: Kept): EntryDetails {
@@ -283,13 +313,22 @@ function published(zones: ReadonlySet<string>, view: CalendarView, events: reado
   const ownById = new Map(own.map((c) => [c.identity.occurrenceId, c]))
   const eventIds = new Set(events.map((e) => e.externalId))
   const kept = new Set(waiting)
-  const changed = events.flatMap((e) => {
-    const known = ownById.get(e.externalId)
+  const timed = events.map((e): Timed => {
     const timezone = e.timezone ?? view.timezone
-    const { startAt, endAt, verified } = schedule(zones, e, timezone)
+    return { e, timezone, ...schedule(zones, e, timezone) }
+  })
+  const knownOf = (e: ProviderEvent) => ownById.get(e.externalId)
+  const keptOf = ({ e }: Timed): Kept => {
+    const was = (knownOf(e) ?? bindings.get(e.externalId))?.committed ?? providerFields(e, defaults)
+    return { ...was, seriesId: "", recurrence: "Once" }
+  }
+  const series = seriesOf(zones, view, timed, keptOf)
+  const changed = timed.flatMap((t) => {
+    const { e, timezone, startAt, endAt, verified } = t
+    const known = knownOf(e)
     const created = known === undefined ? bindings.get(e.externalId) : undefined
     if (created?.phase === "Editing") return []
-    const entry = details(e, startAt, endAt, timezone, (known ?? created)?.committed ?? providerFields(zones, e, startAt, timezone, defaults))
+    const entry = details(e, startAt, endAt, timezone, series.get(e.externalId) ?? keptOf(t))
     const incoming = validDetails(entry) ? refreshed(known, view, e, entry, created) : undefined
     if (incoming === undefined && created !== undefined) kept.add(created)
     return incoming === undefined ? [] : [{ incoming, seriesVersion: seriesVersionOf(view, entry.seriesId), scheduleVerified: verified }]
@@ -478,8 +517,7 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
   const removal = effect (id: string, calendarId: string, version: string) =>
     atRevision(HttpClientRequest.setUrlParams(HttpClientRequest.make("DELETE")(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId }), version)
 
-  effect function reread(entry: Calendar): (Current | undefined)!NeedsSignIn {
-    const { calendarId, occurrenceId: id } = entry.identity
+  effect function readEvent(id: string, calendarId: string): (ProviderEvent | undefined)!NeedsSignIn {
     const read = effect {
       const request = HttpClientRequest.setUrlParams(HttpClientRequest.get(url(`/events/${encodeURIComponent(id)}`)), { grantId: try grantOf(account), calendarId })
       return (try fetched(Effect.succeed(request), Stored)).event
@@ -488,30 +526,67 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
       when NeedsSignIn: throw cause;
       default: undefined;
     }
-    if (e === undefined || e.externalId !== id || e.calendarId !== calendarId) return undefined
+    return e === undefined || e.externalId !== id || e.calendarId !== calendarId || versionOf(e) === "" ? undefined : e
+  }
+
+  effect function reread(entry: Calendar): (Current | undefined)!NeedsSignIn {
+    const e = try readEvent(entry.identity.occurrenceId, entry.identity.calendarId)
+    if (e === undefined) return undefined
     const timezone = e.timezone ?? entry.committed.timezone
     const { startAt, endAt, verified } = schedule(zones, e, timezone)
     const latest = details(e, startAt, endAt, timezone, entry.committed)
-    const version = versionOf(e)
-    return verified && version !== "" && validDetails(latest) ? { latest, version } : undefined
+    return verified && validDetails(latest) ? { latest, version: versionOf(e) } : undefined
   }
 
-  effect function removed(entry: Calendar, id: string, absent: DeletionReceipt): DeletionReceipt!NeedsSignIn {
-    const status = entry.version === "" ? 412 : (Effect.as(call(removal(id, entry.identity.calendarId, entry.version)), 0) catch effect (e) => match (e) {
+  effect function unchanged(entry: Calendar, status: number) {
+    const now = status === 412 ? try reread(entry) : undefined
+    return { now, retry: now !== undefined && now.version !== entry.version && sameDetails(now.latest, entry.committed) ? now.version : undefined }
+  }
+
+  effect function deletion(id: string, calendarId: string, version: string) {
+    return Effect.as(call(removal(id, calendarId, version)), 0) catch effect (e) => match (e) {
       when NeedsSignIn: throw e;
       when ProviderRefused: e.status;
       when Unreachable: -1;
-    })
+    }
+  }
+
+  effect function removed(entry: Calendar): DeletionReceipt!NeedsSignIn {
+    const { occurrenceId: id, calendarId } = entry.identity
+    const first = entry.version === "" ? 412 : try deletion(id, calendarId, entry.version)
+    const { now, retry } = try unchanged(entry, first)
+    const status = retry === undefined ? first : try deletion(id, calendarId, retry)
     if (status === 0) return { succeeded: true, evidence: `deleted:${id}` }
-    if (status === 404) return absent
     if (status === -1) return { succeeded: false, evidence: "" }
-    if (status !== 412 || id !== entry.identity.occurrenceId) return { succeeded: false, evidence: `refused:${status}` }
-    const outdated = try reread(entry)
+    if (status !== 412) return { succeeded: false, evidence: `refused:${status}` }
+    const outdated = retry === undefined ? now : try reread(entry)
     return { succeeded: false, evidence: `changed:${id}`, ...outdated === undefined ? {} : { outdated } }
   }
 
+  effect function removedSeries(entry: Calendar): DeletionReceipt!NeedsSignIn {
+    const { committed: { seriesId }, identity: { calendarId } } = entry
+    if (seriesId === "") return { succeeded: false, evidence: "series-unsupported" }
+    const master = try readEvent(seriesId, calendarId)
+    if (master === undefined || !sameText(master, entry.committed)) return { succeeded: false, evidence: `changed:${seriesId}` }
+    const status = try deletion(seriesId, calendarId, versionOf(master))
+    if (status === 0) return { succeeded: true, evidence: `deleted:${seriesId}` }
+    return { succeeded: false, evidence: status === -1 ? "" : `refused:${status}` }
+  }
 
-  effect function stored(entry: Calendar, dispatch: GuidedDispatch | undefined) {
+  effect function seriesChange(entry: Calendar, view: CalendarView) {
+    const { committed: { seriesId }, identity: { calendarId }, draft: d } = entry
+    const { details: was } = seriesAt(view, seriesId)
+    const master = try readEvent(seriesId, calendarId)
+    if (master === undefined || !sameText(master, was)) throw new ProviderRefused({ status: 412 })
+    const text = { title: d.title, description: d.notes, location: d.location }
+    const [shift, stretch] = [d.startAt - was.startAt, d.endAt - was.endAt]
+    if (shift === 0 && stretch === 0 && d.timezone === was.timezone) return { id: seriesId, version: versionOf(master), fields: text }
+    if (d.allDay || was.allDay || master.isAllDay) throw new ProviderRefused({ status: 422 })
+    return { id: seriesId, version: versionOf(master), fields: { ...text, startAt: iso(Date.parse(master.startAt) + shift), endAt: iso(Date.parse(master.endAt) + stretch), timeZone: d.timezone } }
+  }
+
+
+  effect function stored(entry: Calendar, view: CalendarView, dispatch: GuidedDispatch | undefined) {
     const { calendarId, occurrenceId: id } = entry.identity
     const grantId = try grantOf(account)
     if (!entry.hasSaved) {
@@ -524,12 +599,13 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
       if (bound._tag !== "Received") throw new ProviderRefused({ status: 409 })
       return { id: bound.providerId, version: bound.version }
     }
-    const fields = event(entry)
-    if (fields === undefined) throw new ProviderRefused({ status: 422 })
-    const request = atRevision(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(id)}`)), { ...fields, calendarId, grantId }), entry.version)
+    const fields = entry.committed.seriesId === "" ? event(entry) : undefined
+    const target = fields === undefined ? (entry.committed.seriesId === "" ? undefined : try seriesChange(entry, view)) : { id, version: entry.version, fields }
+    if (target === undefined) throw new ProviderRefused({ status: 422 })
+    const request = atRevision(HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.patch(url(`/events/${encodeURIComponent(target.id)}`)), { ...target.fields, calendarId, grantId }), target.version)
     const { event: saved } = try fetched(Effect.succeed(request), Stored)
-    if (saved.calendarId !== calendarId || saved.externalId !== id) throw new ProviderRefused({ status: 409 })
-    return { id, version: versionOf(saved) }
+    if (saved.calendarId !== calendarId || saved.externalId !== target.id) throw new ProviderRefused({ status: 409 })
+    return { id, version: target.id === id ? versionOf(saved) : "" }
   }
 
   effect function readEvents(view: CalendarView, from: number, until: number, grantId: string) {
@@ -569,29 +645,26 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
       const observed = details(saved, startAt, endAt, timezone, expected)
       return verified && sameDetails(observed, expected) ? observed : undefined
     },
-    write: effect (entry, _view, dispatch) => {
+    write: effect (entry, view, dispatch) => {
       const revision = entry.revision
-      const status = entry.hasSaved && entry.version === "" ? 412 : (Effect.map(stored(entry, dispatch), (saved): StoreReceipt => ({
+      const attempt = effect (target: Calendar) => Effect.map(stored(target, view, dispatch), (saved): StoreReceipt => ({
         revision, succeeded: true, published: [], ...saved.version === "" ? {} : { version: saved.version },
         ...entry.hasSaved ? {} : { providerId: saved.id }
       })) catch effect (e) => match (e) {
         when NeedsSignIn: throw e;
         when ProviderRefused: e.status;
         default: 0;
-      })
+      }
+      const single = entry.hasSaved && entry.committed.seriesId === ""
+      const first = single && entry.version === "" ? 412 : try attempt(entry)
+      if (typeof first !== "number") return first
+      const { now, retry } = single ? try unchanged(entry, first) : { now: undefined, retry: undefined }
+      const status = retry === undefined ? first : try attempt({ ...entry, version: retry })
       if (typeof status !== "number") return status
-      const outdated = status === 412 && entry.hasSaved ? try reread(entry) : undefined
+      const outdated = status !== 412 || !single ? undefined : retry === undefined ? now : try reread(entry)
       return { revision, succeeded: false, published: [], ...outdated === undefined ? {} : { outdated } }
     },
-    remove: effect (entry, scope) => {
-      if (scope === "EntireSeries") return { succeeded: false, evidence: "series-unsupported" }
-      return try removed(entry, entry.identity.occurrenceId, { succeeded: false, evidence: "refused:404" })
-    },
-    removeRepetition: effect (series, { startAt, allDay, timezone }) => {
-      const id = series.identity.occurrenceId
-      const instance = `${id}_${allDay ? dateIn(startAt, timezone).replaceAll("-", "") : iso(startAt).replace(/[-:]|\.\d+/g, "")}`
-      return try removed(series, instance, { succeeded: true, evidence: `kept-here:${instance}` })
-    }
+    remove: (entry, scope) => scope === "EntireSeries" ? removedSeries(entry) : removed(entry)
   }
 }
 

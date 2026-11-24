@@ -537,8 +537,6 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
       const afterRename = (try birthdayIn("Asia/Tokyo", [birthday]))?.incoming.committed
       const current = { ...refreshed, version: changed.version ?? "" }
       const removed = [try calendar.remove(current, "ThisOccurrence"), try calendar.remove(current, "ThisOccurrence"), try calendar.remove(eyeCheck, "EntireSeries")]
-      const eyeInstance = `eye-check_${new Date(eyeCheck.committed.startAt).toISOString().replace(/[-:]|\.\d+/g, "")}`
-      const repetitionKeptHere = try calendar.removeRepetition(eyeCheck, eyeCheck.committed)
       const gone = (try feed([eyeCheck, visit])).filter((p) => p.incoming.identity.occurrenceId === visit.identity.occurrenceId).map((p) => p.incoming.phase)
       const held = approveSave(create(noEntry, { ...identity, occurrenceId: "delayed-visit" }, { ...details, title: "Second appointment" }, "CalendarUser"), 1, "CalendarUser")
       try outage(cloud, secret, false, "beforeCreate")
@@ -594,7 +592,7 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         allDay: [seen?.incoming.committed.allDay, seen?.incoming.committed.startAt === tokyoMidnight, seen?.incoming.committed.timezone, seen?.scheduleVerified],
         floating: [elsewhereSeen?.incoming.committed.startAt === tokyoMidnight + 9 * hour, elsewhereSeen?.incoming.committed.timezone, elsewhereSeen?.scheduleVerified],
         stored: [renamed.succeeded, shifted.succeeded, newAllDay.succeeded, afterRename?.title, afterRename?.allDay, afterRename?.startAt === tokyoMidnight],
-        removed, repetitionKeptHere, gone
+        removed, gone
       }, {
         eyeCheck: ["Saved", "Dr. Patel", true],
         added: { revision: 2, succeeded: true, published: [], providerId: visit.identity.occurrenceId },
@@ -614,7 +612,6 @@ it.live("Browse my calendar and open an exact occurrence, and add and correct an
         floating: [true, "UTC", true],
         stored: [true, false, false, "Joan’s 80th birthday", true, true],
         removed: [{ succeeded: true, evidence: `deleted:${visit.identity.occurrenceId}` }, { succeeded: false, evidence: "" }, { succeeded: false, evidence: "series-unsupported" }],
-        repetitionKeptHere: { succeeded: true, evidence: `kept-here:${eyeInstance}` },
         gone: ["Deleted"]
       }))
     }
