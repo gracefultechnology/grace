@@ -36,6 +36,7 @@ import workspace as WS from "./workspace"
 import assistant as A from "./assistant"
 import execution as X from "./execution"
 import commitment as CM from "./commitment"
+import task as T from "./task"
 import websiteRequests as WR from "./websiteRequests"
 
 pure def currentOrdinaryEffect(x: X::Execution, operation: X::WebsiteEffect): bool = match operation {
@@ -99,6 +100,7 @@ import shell as S from "./shell"
 import browser as B from "./browser"
 import conversation as C from "./conversation"
 import wake as W from "./wake"
+import preferences as R from "./preferences"
 import interaction as I from "./interaction"
 
 pure def observedSample(starting: WS::Workspace): WS::Workspace = {
