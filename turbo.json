@@ -374,6 +374,7 @@
       "dependsOn": [
         "@repo/design-system#build",
         "@repo/app#typecheck",
+        "@repo/benchmark#typecheck",
         "@grace/cloud#typecheck",
         "vibestack-studio#typecheck"
       ],

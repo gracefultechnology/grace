@@ -97,6 +97,13 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name })));
     const changed = () => act(() => Promise.resolve(window.dispatchEvent(new Event("android-network-changed"))));
     const shown = () => act(() => Promise.resolve(document.dispatchEvent(new Event("visibilitychange"))));
+    const seeUnvalidatedJoin = async (ssid: string) => {
+      tablet.ssid = ssid;
+      tablet.validated = false;
+      await changed();
+      await joinedTo("Internet connection");
+      await expect.element(button("Try again")).toBeVisible();
+    };
     const signInLabel = "Sign in to this network";
     const signIn = button(signInLabel);
     let fixes = 0;
@@ -152,11 +159,7 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     await changed();
     await joinedTo("Sunrise Community Center");
     await expect.element(button("Try again")).toBeVisible();
-    tablet.ssid = "NETGEAR-4F2";
-    tablet.validated = false;
-    await changed();
-    await joinedTo("Internet connection");
-    await expect.element(button("Try again")).toBeVisible();
+    await seeUnvalidatedJoin("NETGEAR-4F2");
     tablet.validated = true;
     tablet.visible = false;
     tablet.currentPoint = nearby("NETGEAR-4F2", -40, "open", "02:11:22:33:44:99");
@@ -216,11 +219,7 @@ describe('Wi-Fi (spec/app/network.md, "Story: Join the network I choose")', () =
     tablet.delayed = true;
     await act(() => userEvent.type(page.getByLabelText("Password"), "garden2024{Enter}"));
     await expect.element(button("Try again")).toBeVisible();
-    tablet.ssid = "NETGEAR-4F2";
-    tablet.validated = false;
-    await changed();
-    await joinedTo("Internet connection");
-    await expect.element(button("Try again")).toBeVisible();
+    await seeUnvalidatedJoin("NETGEAR-4F2");
     tablet.validated = true;
     const legacyObservation = vi.spyOn(device, "getWifiSignIn").mockResolvedValue({ required: false, validated: true });
     await changed();
