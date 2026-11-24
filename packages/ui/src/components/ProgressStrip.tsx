@@ -7,7 +7,7 @@ export type ProgressStripProps = Omit<ComponentProps<"div">, "title"> & {
   title: string;
   /** Which step it is, from 1; held between 1 and `total`. */
   step: number;
-  /** How many steps set-up shows: 10 on the launcher, 9 on the standalone app, which has no Wi-Fi step. */
+  /** How many steps set-up shows: 10. */
   total: number;
   /** "Step {step} of {total}", for another language. */
   countLabel?: (step: number, total: number) => string;

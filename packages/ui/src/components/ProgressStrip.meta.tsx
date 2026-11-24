@@ -7,6 +7,5 @@ export const meta: ComponentMeta<ProgressStripProps> = {
   examples: {
     First: { title: "Wi-Fi", step: 1 },
     Last: { title: "Bring Grace back", step: 10 },
-    "Standalone app": { title: "Your email", step: 1, total: 9 },
   },
 };
