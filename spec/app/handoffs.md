@@ -607,7 +607,8 @@ pure def lawOpeningAnEventKeepsTheEvents(device: S::Shell, calendarView: V::Cale
   match handoff {
     | EventDeclined => true
     | OpenedEvent(result) => result.calendar.entries.length() == calendarView.entries.length() and
-        result.calendar.series == calendarView.series and result.calendar.deletedSeries == calendarView.deletedSeries
+        result.calendar.series == calendarView.series and
+        result.calendar.deletedSeries.subseteq(calendarView.deletedSeries) and calendarView.deletedSeries.subseteq(result.calendar.deletedSeries)
   }
 pure val savedEventView: V::CalendarView = { ...V::initial, owner: "owner", calendarId: "calendar", timezone: "UTC",
   entries: List({ ...C::initial, phase: C::Saved, hasSaved: true,
