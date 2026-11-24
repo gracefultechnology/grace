@@ -2,11 +2,13 @@
 import { Button, Dialog, DialogActions, DialogClose, DialogContent, DialogTitle, DialogTrigger, EmptyState, GuideRing, SearchField } from "@repo/ui";
 import { Effect } from "effect";
 import { ChevronRight, KeyRound, Plus } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { type LoginSummary, type PasswordGuide, type VaultIssue, type VaultNotice } from "../gen/app.ts";
 import { useMachine } from "../gen/app.react.ts";
 import { Passwords, type PasswordAction } from "./passwords.vibe";
 import { useRuntime } from "./useApp.ts";
+
+const collator = new Intl.Collator();
 
 const vaultMessage: Record<VaultIssue, string> = {
   LegacyAuthorization: "Android needs your permission to open passwords saved by an earlier version of Grace.",
@@ -34,15 +36,32 @@ type OpenLoginsProps = {
 };
 
 const focusEntryHeading = (heading: HTMLHeadingElement | null) => { heading?.focus(); };
+const emptyEntries: LoginSummary[] = [];
 
 function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: OpenLoginsProps) {
   const [query, setQuery] = useState("");
   const returnFocusRef = useRef<string | undefined>(undefined);
-  const entry = entries.find((row) => row.id === selected);
+  const entry = useMemo(() => (selected === "" ? undefined : entries.find((row) => row.id === selected)), [entries, selected]);
   const search = query.trim().toLocaleLowerCase();
-  const matching = entries.filter(({ label, username, bindings }) =>
-    [label, username, ...bindings.map(({ display }) => display)].join(" ").toLocaleLowerCase().includes(search),
-  ).toSorted((first, second) => first.label.localeCompare(second.label));
+  const matching = useMemo(() => {
+    if (entry) return emptyEntries;
+    const filtered = search === ""
+      ? entries
+      : entries.filter(({ label, username, bindings }) =>
+          [label, username, ...bindings.map(({ display }) => display)].join(" ").toLocaleLowerCase().includes(search),
+        );
+    return filtered.toSorted((first, second) => collator.compare(first.label, second.label));
+  }, [entries, search, entry]);
+  const focusReturning = useCallback((list: HTMLUListElement | null) => {
+    const id = returnFocusRef.current;
+    if (!list || id === undefined) return;
+    const control = list.querySelector<HTMLButtonElement>(`button[data-login-id="${CSS.escape(id)}"]`);
+    if (control) {
+      returnFocusRef.current = undefined;
+      control.focus();
+    }
+  }, []);
+
   if (entry) {
     return (
       <div className="flex flex-col items-start gap-4">
@@ -92,15 +111,10 @@ function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: Open
       {matching.length === 0 && <div role="status"><EmptyState title={entries.length === 0 ? "No saved passwords yet." : "No passwords match your search."} /></div>}
       {matching.length > 0 && (guide === "ShowPasswordGuide" || guide === "CopyPasswordGuide") && <p role="status" className="text-body">Choose a sign-in first.</p>}
       {matching.length > 0 && (
-        <ul aria-label="Saved sign-ins" className="flex flex-col gap-3">
+        <ul ref={focusReturning} aria-label="Saved sign-ins" className="flex flex-col gap-3">
           {matching.map(({ id, label, username, bindings }) => (
             <li key={id}>
-              <Button ref={(control) => {
-                if (control && returnFocusRef.current === id) {
-                  returnFocusRef.current = undefined;
-                  control.focus();
-                }
-              }} variant="capsule" size="pill" className="w-full justify-start" onClick={() => choose(id)}>
+              <Button data-login-id={id} variant="capsule" size="pill" className="w-full justify-start" onClick={() => choose(id)}>
                 <KeyRound aria-hidden className="shrink-0" />
                 <span className="min-w-0 flex-1 truncate text-left">{label || bindings[0]?.display || "Saved sign-in"}{username && <span className="ml-3 text-muted-foreground">{username}</span>}</span>
                 <ChevronRight aria-hidden className="shrink-0" />
@@ -116,14 +130,14 @@ function OpenLogins({ entries, selected, choose, act, guide, finishGuide }: Open
 export function PasswordsApp() {
   const runtime = useRuntime();
   const { state, can, send } = useMachine(runtime);
-  const act = (action: PasswordAction) => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.act(action)));
+  const act = useCallback((action: PasswordAction) => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.act(action))), [runtime]);
   const vault = state?.vault;
   const guide = state?.guide ?? "NoPasswordGuide";
-  const finishGuide = () => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.finishGuide()));
-  const choose = (id: string) => {
+  const finishGuide = useCallback(() => void runtime.runPromiseExit(Effect.flatMap(Effect.service(Passwords), (service) => service.finishGuide())), [runtime]);
+  const choose = useCallback((id: string) => {
     const event = { type: "selectLogin", id } as const;
     if (can(event, "PasswordsPerson")) void send(event, "PasswordsPerson");
-  };
+  }, [can, send]);
 
   return (
     <div className="flex flex-col gap-5 p-6">

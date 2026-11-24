@@ -29,7 +29,7 @@ export function PhotoStage({ src, alt, onPrevious, onNext, previousLabel = "Prev
       <Button variant="capsule" size="pill-icon" aria-label={previousLabel} onClick={onPrevious} className={cn("text-chrome transition-none active:scale-96", !onPrevious && "invisible")}>
         <ChevronLeft size={30} strokeWidth={2.4} aria-hidden />
       </Button>
-      <img alt={alt} src={src} className="h-[520px] w-[780px] flex-none rounded-day object-cover shadow-photo" />
+      <img alt={alt} src={src} decoding="async" className="h-[520px] w-[780px] flex-none rounded-day object-cover shadow-photo" />
       <Button variant="capsule" size="pill-icon" aria-label={nextLabel} onClick={onNext} className={cn("text-chrome transition-none active:scale-96", !onNext && "invisible")}>
         <ChevronRight size={30} strokeWidth={2.4} aria-hidden />
       </Button>

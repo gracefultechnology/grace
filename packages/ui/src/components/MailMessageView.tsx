@@ -48,7 +48,7 @@ export function MailPhotoGrid({ photos, onSelect, className, ...props }: MailPho
   return (
     <ul className={cn("m-0 grid list-none grid-cols-3 gap-4 p-0", className)} {...props}>
       {photos.map((photo, i) => {
-        const image = <img src={photo.src} alt={photo.alt} className="size-full object-cover" />;
+        const image = <img src={photo.src} alt={photo.alt} decoding="async" loading="lazy" className="size-full object-cover" />;
         return (
           <li key={photo.src}>
             {onSelect ? (

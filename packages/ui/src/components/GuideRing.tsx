@@ -21,8 +21,8 @@ export type GuideRingProps = Omit<ComponentProps<"div">, "children"> & {
 };
 
 const looks = {
-  guide: [["--shadow-elevation-guide", "animate-guide-pulse"], ["--shadow-guide-tight", "animate-guide-pulse-tight"]],
-  ok: [["--shadow-guide-ok", "animate-guide-pulse-ok"], ["--shadow-guide-tight-ok", "animate-guide-pulse-tight-ok"]],
+  guide: { base: "shadow-elevation-guide", peak: "shadow-guide-peak", tight: "shadow-guide-tight" },
+  ok: { base: "shadow-guide-ok", peak: "shadow-guide-peak-ok", tight: "shadow-guide-tight-ok" },
 } as const;
 
 /**
@@ -32,24 +32,35 @@ const looks = {
  */
 export function GuideRing({ rect, gap = 8, radius = 12, tone = "guide", tight = false, motion = "pulse", className, style, ...props }: GuideRingProps) {
   const { top, right, bottom, left } = typeof gap === "number" ? { top: gap, right: gap, bottom: gap, left: gap } : gap;
-  const [shadow, pulse] = looks[tone][Number(tight)];
+  const look = looks[tone];
+  const active = motion !== "still";
   return (
     <div
       aria-hidden
       className={cn(
-        "pointer-events-none absolute motion-reduce:animate-none",
-        pulse,
-        motion === "pulse" && "[animation-iteration-count:3]",
-        motion === "still" && "animate-none",
+        "pointer-events-none absolute",
+        tight ? look.tight : look.base,
+        tight && active && "animate-guide-pulse-tight motion-reduce:animate-none",
+        tight && motion === "pulse" && "[animation-iteration-count:3]",
         className,
       )}
       style={{
         ...(rect ? { left: rect.x - left, top: rect.y - top, width: rect.width + left + right, height: rect.height + top + bottom } : { left: -left, top: -top, right: -right, bottom: -bottom }),
         borderRadius: radius,
-        boxShadow: `var(${shadow})`,
         ...style,
       }}
       {...props}
-    />
+    >
+      {!tight && active && (
+        <span
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-0 [border-radius:inherit] animate-guide-pulse motion-reduce:animate-none",
+            look.peak,
+            motion === "pulse" && "[animation-iteration-count:3]",
+          )}
+        />
+      )}
+    </div>
   );
 }

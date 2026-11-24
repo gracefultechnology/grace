@@ -98,7 +98,7 @@ export function PhotoViewer({ src, alt, first = false, last = false, onPrevious,
         <div className="relative h-full">
           <PhotoStage src={src} alt={alt} onPrevious={first ? undefined : onPrevious} onNext={last ? undefined : onNext} previousLabel={l.previous} nextLabel={l.next} className="h-full justify-center" />
           {saveStatus && (
-            <MailActionStatus status={saveStatus} onRetry={onRetrySave} labels={statusLabels} className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full bg-glass/85 py-2 pr-2 pl-5 whitespace-nowrap shadow-capsule backdrop-blur-capsule [&:not(:has(button))]:pr-5" />
+            <MailActionStatus status={saveStatus} onRetry={onRetrySave} labels={statusLabels} className="absolute bottom-0 left-1/2 -translate-x-1/2 rounded-full bg-glass/92 py-2 pr-2 pl-5 whitespace-nowrap shadow-capsule [&:not(:has(button))]:pr-5" />
           )}
         </div>
       ) : (

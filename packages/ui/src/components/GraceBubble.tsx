@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode } from "react";
+import { memo, type ComponentProps, type ReactNode } from "react";
 import { ShieldCheck } from "lucide-react";
 import { bubbleTail } from "../lib/outline.ts";
 import { cn } from "../lib/cn.ts";
@@ -29,7 +29,7 @@ export type GraceBubbleProps = Omit<ComponentProps<"div">, "children"> & {
  * @model spec/app/conversation.md
  * @design packages/design-system/design.md#grace
  */
-export function GraceBubble({
+export const GraceBubble = memo(function GraceBubble({
   rest,
   activity,
   activityLabel,
@@ -69,7 +69,7 @@ export function GraceBubble({
       </div>
     </div>
   );
-}
+});
 
 /** The fixed notice in place of a message that held something private: a shield and the notice, in muted ink. */
 export function RemovedNotice({ label }: { label: string }) {

@@ -428,6 +428,14 @@ effect function reobserveSortName(
     again.label === correction.label && again.url === correction.url && (try browserReadAccount(setup)) === account
 }
 
+effect function followNews<S>(scope: Scope.Scope, changes: Stream.Stream<S>, tell: (words: string) => void!!, words: (before: S, after: S) => string!!) {
+  const last = try Ref.make<S | undefined>(undefined)
+  try fork.in(scope) Stream.runForEach(changes, effect (after) => {
+    const before = try Ref.getAndSet(last, after)
+    if (before !== undefined) try tell(try words(before, after))
+  })
+}
+
 export const conversation = (link: CloudLink | undefined) => Layer.effect(Conversation, effect {
   const website = try WebsiteTask
   const workspace = try Workspaces
@@ -452,28 +460,24 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
     if (words !== "" && link !== undefined) try Ref.update(told, (all) => [...all, words])
   }
 
-  effect function following<S>(changes: Stream.Stream<S>, words: (before: S, after: S) => string!!) {
-    const last = try Ref.make<S | undefined>(undefined)
-    try fork.in(scope) Stream.runForEach(changes, effect (after) => {
-      const before = try Ref.getAndSet(last, after)
-      if (before !== undefined) try tell(try words(before, after))
+  if (link !== undefined) {
+    const watched = new Set<number>()
+    try fork.in(scope) Stream.runForEach(registry.changes, effect (now: Registry) => {
+      for (const { id } of now.accounts) {
+        const box = watched.has(id) ? undefined : shelf.mail(id) catch () => undefined
+        if (box === undefined) continue
+        watched.add(id)
+        try followNews(scope, box.changes, tell, effect (was, after) => {
+          const mailNews = mailTold(id, was, after)
+          if (mailNews.news === "NoMailNews") return ""
+          const s = try look()
+          return showsMail(s.registry, id) ? toldOfMail(s, mailNews) : ""
+        })
+      }
     })
+    try followNews(scope, registry.changes, tell, effect (before: Registry, after: Registry) => toldOfAccounts(before, after))
+    try fork.scoped Stream.runForEach(news.reports, effect (report) => tell(toldOfCalendar(try look(), report)))
   }
-
-  const watched = new Set<number>()
-  try fork.in(scope) Stream.runForEach(registry.changes, effect (now: Registry) => {
-    for (const { id } of now.accounts) {
-      const box = watched.has(id) ? undefined : shelf.mail(id) catch () => undefined
-      if (box === undefined) continue
-      watched.add(id)
-      try following(box.changes, effect (was, after) => {
-        const s = try look()
-        return showsMail(s.registry, id) ? toldOfMail(s, mailTold(id, was, after)) : ""
-      })
-    }
-  })
-  try following(registry.changes, effect (before: Registry, after: Registry) => toldOfAccounts(before, after))
-  try fork.scoped Stream.runForEach(news.reports, effect (report) => tell(toldOfCalendar(try look(), report)))
 
   effect function turnSource(generation: number): TurnSource!! {
     const turn = try accepting.withPermit(Ref.get(asked))

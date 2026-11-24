@@ -1,5 +1,5 @@
 // spec/app/files.md, "Story: Find and open something I saved"; spec/app/files.md, "Story: Save, share and remove the chosen file"; spec/app/files.md, "Sharing a photo opens a draft without sending it"
-import { type Files, type FileActor, type Event, enabled, fileAt, initial, step } from "../gen/app__files.effect.vibe"
+import { type Files, type FileActor, type Event, type SavedFile, enabled, fileAt, initial, step } from "../gen/app__files.effect.vibe"
 import { enabled as deskEnabled, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Mail } from "./mail.vibe"
@@ -118,6 +118,41 @@ function fileContents({ port, advance, keep, exposeCatalog, readAttachmentImport
   return { readSelected, importOwner, deletePhoto }
 }
 
+function loadMissingThumbs(port: FileStorage.Shape["port"], lease: string, entries: readonly SavedFile[], thumbs: Record<string, string>) {
+  return Effect.forEach(
+    entries.filter((entry) => thumbs[entry.id] === undefined),
+    effect (entry) => {
+      const preview = fileImage(port, lease, entry.id, 0, true) catch () => undefined
+      return [entry.id, preview] as const
+    },
+    { concurrency: 3 }
+  )
+}
+
+effect function fillRemainingThumbs(
+  port: FileStorage.Shape["port"],
+  latest: SubscriptionRef.SubscriptionRef<FileSnapshot>,
+  admitted: () => (string | undefined)!!,
+  keep: (ready: Ready) => void!FilesRejected,
+  lease: string,
+  owner: string,
+  rest: readonly SavedFile[],
+  thumbs: Record<string, string>
+) {
+  for (let offset = 0; offset < rest.length; offset += 8) {
+    const current = try SubscriptionRef.get(latest)
+    if (current.kind !== "ready" || current.lease !== lease || (try admitted()) !== owner) return
+    const batch = try loadMissingThumbs(port, lease, rest.slice(offset, offset + 8), thumbs)
+    const loaded = batch.filter(([, preview]) => preview !== undefined)
+    if (loaded.length === 0) continue
+    const fresh = try SubscriptionRef.get(latest)
+    if (fresh.kind !== "ready" || fresh.lease !== lease || (try admitted()) !== owner) return
+    const nextThumbs = { ...fresh.thumbs }
+    for (const [id, preview] of loaded) if (preview !== undefined) nextThumbs[id] = preview
+    try keep({ ...fresh, thumbs: nextThumbs })
+  }
+}
+
 export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(FileLibrary, effect {
   const { port } = try FileStorage
   const desk = try Workspaces
@@ -150,14 +185,19 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
   effect function exposeCatalog(ready: Ready) {
     const photos = ready.model.entries.filter((entry) => entry.kind === "Photo")
     const document = ready.model.entries.find((entry) => entry.kind === "Pdf")
-    const thumbnails = try Effect.forEach(photos.slice(0, 40), effect (entry) => {
-      const preview = fileImage(port, ready.lease, entry.id, 0, true) catch () => undefined
-      return [entry.id, preview] as const
-    }, { concurrency: 3 })
-    const thumbs = Object.fromEntries(thumbnails.flatMap(([id, preview]) => preview ? [[id, preview]] : []))
+    const capped = photos.slice(0, 40)
+    const thumbs: Record<string, string> = {}
+    for (const entry of capped) {
+      const existing = ready.thumbs[entry.id]
+      if (existing !== undefined) thumbs[entry.id] = existing
+    }
+    const initialBatch = try loadMissingThumbs(port, ready.lease, capped.slice(0, 6), thumbs)
+    for (const [id, preview] of initialBatch) if (preview !== undefined) thumbs[id] = preview
     const projected = photos.slice(0, 3).flatMap((entry) => thumbs[entry.id] ? [{ src: thumbs[entry.id], alt: entry.name }] : [])
-    try keep({ ...ready, thumbs })
+    try keep({ ...ready, thumbs: { ...thumbs } })
     try SubscriptionRef.set(home, { photos: projected, document: document ? { name: document.name } : undefined })
+    const rest = capped.slice(6).filter((entry) => thumbs[entry.id] === undefined)
+    if (rest.length > 0) try fork.in(scope) Effect.ignore(fillRemainingThumbs(port, latest, admitted, keep, ready.lease, ready.owner, rest, thumbs))
   }
 
   effect function locate(finding: Ready) {
@@ -343,8 +383,12 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
     }))
   }
 
-  const contexts = Stream.changes(Stream.map(Stream.zipLatest(desk.changes, setup.changes), ([w, account]) =>
-    JSON.stringify([filesAccount(account.graceAccount) ?? "", w.device.surface === "Files" && w.device.readiness === "Ready"])))
+  const filesVisible = Stream.changes(Stream.map(desk.changes, (w) => w.device.surface === "Files" && w.device.readiness === "Ready"))
+  const accountOwner = Stream.changes(Stream.map(setup.changes, (account) => filesAccount(account.graceAccount) ?? ""))
+  const contexts = Stream.changesWith(
+    Stream.zipLatest(filesVisible, accountOwner),
+    ([aVisible, aOwner], [bVisible, bOwner]) => aVisible === bVisible && aOwner === bOwner
+  )
   let lastOwner: string | undefined
   try fork.scoped Stream.runForEach(Stream.merge(Stream.map(contexts, () => false), Stream.map(accountRefreshes(), () => true)), effect (renew) => {
     const w = try desk.get()

@@ -260,7 +260,7 @@ export effect function observeRecordCollection(page: NativePage.Shape, id: PageI
   const identitiesSeen = new Set<string>()
   for (const { id: nodeId, href, selector } of anchors) {
     const rowSelector = `${grid} > tbody > tr:has(:is(${selector}))`
-    const values = try Effect.forEach(indices, (index) => read(`${rowSelector} > :is(td,th):nth-child(${index})`))
+    const values = try Effect.forEach(indices, (index) => read(`${rowSelector} > :is(td,th):nth-child(${index})`), { concurrency: 3 })
     const recordId = identity(values[0] ?? "")
     let date = dateValue(values[1] ?? "", monthFirst)
     if (date === undefined) {
