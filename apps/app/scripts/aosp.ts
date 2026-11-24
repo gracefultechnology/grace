@@ -38,9 +38,10 @@ const chromium = {
   "sha256": "750b839d8b7fd3dd3ca43268cc5a8c4ac3ab57ae051a2b1b2814984f5b8c9cc1",
   "signerSha256": "32a2fc74d731105859e5a85df16d95f102d85b22099b8064c5d8915c61dad1e0"
 };
+const releaseSigner = () => Schema.decodeUnknownSync(ReleaseSigner)(JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../android/release-signer.json"), "utf8")));
 const pin = development
   ? createDevelopmentLauncherDescriptor({identity, apk, apksigner: tool("apksigner"), development})
-  : {schemaVersion: 1, ...identity, apkSha256: createHash("sha256").update(fs.readFileSync(apk)).digest("hex"), certificateSha256: Schema.decodeUnknownSync(ReleaseSigner)(JSON.parse(fs.readFileSync(path.resolve(import.meta.dirname, "../android/release-signer.json"), "utf8"))).certificateSha256};
+  : {schemaVersion: 1, ...identity, apkSha256: createHash("sha256").update(fs.readFileSync(apk)).digest("hex"), certificateSha256: releaseSigner().certificateSha256};
 const descriptor = validateDescriptor({...pin, partition: "product"});
 const output = path.join(staged, `grace-${descriptor.apkSha256.slice(0, 12)}`);
 const pending = path.join(staged, "pending");

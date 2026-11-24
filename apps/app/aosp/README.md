@@ -64,7 +64,7 @@ QA signs this output.
 adb wait-for-device && adb shell 'while [ "$(getprop sys.boot_completed)" != 1 ]; do sleep 2; done'
 adb shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME
 #   last line: technology.graceful.grace/.MainActivity
-adb shell dumpsys package technology.graceful.grace | sed -n '/runtime permissions:/,$p' | grep 'granted=true'
+adb shell dumpsys package technology.graceful.grace | awk '/runtime permissions:/ { block = 1; next } !/granted=/ { block = 0 } block && /granted=true/'
 #   nothing: no runtime permission is granted before Grace asks
 adb shell ls -l /product/app/Grace/lib/x86_64/libeliza_node.so
 #   -rwxr-xr-x root root, the agent's Node executable

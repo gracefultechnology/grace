@@ -593,7 +593,8 @@ const adb = async (args: string[], seconds = 60) => {
 };
 const shell = (serial: string, command: string, seconds?: number) => adb(["-s", serial, "shell", command], seconds);
 const forever = new Promise<never>(() => {});
-const emulators = async () => (await adb(["devices"])).split("\n").map((line) => line.split("\t")[0]).filter((serial) => /^emulator-\d+$/.test(serial));
+const devices = async () => (await adb(["devices"])).split("\n").map((line) => line.split("\t")[0]);
+const emulators = async () => (await devices()).filter((serial) => /^emulator-\d+$/.test(serial));
 const avds = () => execFileSync(sdk("emulator/emulator"), ["-list-avds"], { encoding: "utf8", timeout: 60_000 }).split("\n");
 
 type Target = { serial: typeof EmulatorSerial.Type; exited: Promise<never>; stop: () => void };
@@ -1460,7 +1461,7 @@ if (import.meta.main) {
   if (exercise && release) throw new Error("--exercise drives Grace's page over its debugging socket, which a release build does not open; walk the debug build");
   if (release && (install || emulator) && !Object.values(signing).every((name) => process.env[name]?.trim()))
     throw new Error(`An unsigned release APK cannot be installed; set ${Object.values(signing).join(", ")}`);
-  if (install && !(await emulators()).includes(install)) throw new Error(`No emulator ${install} is attached`);
+  if (install && !(await devices()).includes(install)) throw new Error(`No virtual device ${install} is attached`);
   if (emulator && !avds().includes(emulator)) throw new Error(`No AVD named ${emulator}`);
   const steps = exercise ? Schema.decodeUnknownSync(Schema.NonEmptyArray(Step), { onExcessProperty: "error" })(readJson(path.join(app, "test/device", `${exercise}.json`))) : [];
   const trial = benchmark && receipt ? { input: Schema.decodeUnknownSync(Benchmark, { onExcessProperty: "error" })(readJson(benchmark)), receipt } : undefined;
