@@ -2501,8 +2501,8 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
   await signInToGrace(runtime);
   await act(() => runtime.runPromise(Effect.flatMap(Workspaces, (workspace) =>
     workspace.send({ type: "chooseHomePage", page: "FilesCard" }, "Person"))));
+  await act(() => userEvent.click(page.getByRole("button", { name: /^Files\b/ })));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
-  await tap("Files");
   await tap("Garden.jpg");
   await tap("Delete");
   await expect.element(page.getByText("This photo wasn’t deleted.")).toBeVisible();

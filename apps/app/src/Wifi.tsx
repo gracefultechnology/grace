@@ -42,7 +42,6 @@ const offlineSteps = "Check that the internet box is plugged in and its lights a
 const fix = { type: "openGrace" } as const;
 const showBrowser = { type: "visit", destination: "Browser" } as const;
 const portalProbe = "http://connectivitycheck.gstatic.com/generate_204";
-// A tap may Navigate; OpenWindow is the host's alone, so a tapped OpenWindow was refused and left a blank tab.
 const signInPage = { type: "changePage", browserInput: { tag: "Navigate", url: portalProbe } } as const;
 const unnamed: WifiNetwork = { name: "Internet connection" };
 

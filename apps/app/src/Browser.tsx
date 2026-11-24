@@ -260,7 +260,6 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
   const fixWifi = { type: "chooseSettingsPage", page: "NetworkSettings" } as const;
   const secureAddress = showsSecureIndicator(browser, false) ? activeUrl : undefined;
   const failure = failures[active.load];
-  // A network waiting for its sign-in reaches its own sign-in page, so it draws pages rather than the offline page.
   const view = pageView(active, workspace.device.connectivity === "Online" || workspace.device.connectivity === "CaptivePortal");
   const privateFailure = active.manualSignIn && active.load === "LoadFailed";
   const fillNotice = guide === "FillPasswordGuide"
