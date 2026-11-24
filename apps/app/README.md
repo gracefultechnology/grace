@@ -199,9 +199,12 @@ The `staging` environment in `apps/cloud/wrangler.jsonc` registers this key inst
 `grace-cloud-staging`, serves `https://api-staging.graceforseniors.com` and
 `https://app-staging.graceforseniors.com`, and its `NATIVE_CLIENT_REGISTRY` lists
 `technology.graceful.grace` with the debug SHA-256 above and the sign-in return
-`https://app-staging.graceforseniors.com/android/auth/callback`, so a debug build verifies that App
-Link on staging. Production's registry keeps only the release certificate. `pnpm --filter @grace/cloud
-test` reads both environments from the Wrangler configuration and checks each one's
+`https://app-staging.graceforseniors.com/android/auth/callback`. No debug build uses that return yet:
+the build takes its sign-in return from the selected profile in `apps/app/capacitor.config.ts`, which
+has no standalone staging profile, and `MOBILE_ENVIRONMENT` in
+`apps/app/android/standalone-cloud/java/technology/graceful/grace/GraceAccount.java` is fixed to
+`production`. Until the app gains a standalone staging profile, a debug APK cannot sign in to
+staging. Production's registry keeps only the release certificate. `pnpm --filter @grace/cloud test` reads both environments from the Wrangler configuration and checks each one's
 `assetlinks.json` through the Grace Worker. Staging has no Stripe or SMS configuration, so
 subscriptions and text codes are off there. To bring staging up:
 
@@ -219,8 +222,9 @@ subscriptions and text codes are off there. To bring staging up:
    password backup pages call the API origin the build names, so build it for staging before the
    deploy: from `apps/cloud`, run `VITE_GRACE_CLOUD_API_ORIGIN=https://api-staging.graceforseniors.com
    VITE_GRACE_CLOUD_WEB_ORIGIN=https://app-staging.graceforseniors.com pnpm --filter @repo/app build`
-   and then `pnpm exec wrangler deploy --env staging`. The next production deploy rebuilds the bundle
-   with the production origins.
+   and then `pnpm exec wrangler deploy --env staging`. The bundle script ends with the production
+   build in `apps/app/dist`, so deploying staging straight after it ships production origins to
+   staging. The next production deploy rebuilds the bundle with the production origins.
 4. In the Google project of the staging web client, register an Android OAuth client for
    `technology.graceful.grace` with the debug SHA-1 above, and add
    `https://api-staging.graceforseniors.com/api/auth/google/callback` and
