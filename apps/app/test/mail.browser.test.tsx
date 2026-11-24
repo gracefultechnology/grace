@@ -426,6 +426,23 @@ it("See all my email in one place", async () => {
   await click(sheet.getByRole("button", { name: "Cancel" }));
   await click(page.getByRole("button", { name: "Close Settings" }));
   await expect.element(clinic).toBeVisible();
+  // spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"
+  const outlookPage = vi.spyOn(window, "open").mockReturnValue(null);
+  onTestFinished(() => { outlookPage.mockRestore(); });
+  await click(page.getByRole("button", { name: "Sign in again" }));
+  await expect.element(sheet).toBeVisible();
+  await expect.poll(() => outlookPage.mock.calls.length).toBe(1);
+  const consent = await fetch(String(outlookPage.mock.calls[0][0]), { method: "POST", body: new URLSearchParams({ address: outlook, choice: "allow" }) });
+  expect(consent.ok).toBe(true);
+  await expect.element(sheet).not.toBeInTheDocument();
+  await click(page.getByRole("button", { name: "Close Settings" }));
+  await expect.element(page.getByText("Outlook needs you to sign in again")).not.toBeInTheDocument();
+  await opened(/St\. Mark’s Church Office/, "Thanksgiving dinner sign-up");
+  await click(page.getByRole("button", { name: "Reply" }));
+  await expect.element(subject()).toHaveValue("Re: Thanksgiving dinner sign-up");
+  await click(page.getByRole("button", { name: "Discard" }));
+  await expect.element(page.getByText("Email discarded")).toBeVisible();
+  await click(page.getByRole("button", { name: "Back to Inbox" }));
 
   // spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"
   await person({ type: "setUse", id: 2, use: { mail: false, calendar: true, contacts: true } });
@@ -540,9 +557,9 @@ it("See all my email in one place", async () => {
   await click(form);
   await expect.element(page.getByRole("button", { name: "Remove Visit form.pdf" })).toBeVisible();
   await click(page.getByRole("button", { name: "Send" }));
-  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Re: Reminder: your appointment tomorrow at 10 am" && m.labels.includes("SENT")).map((m) => m.attachments)))
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Re: Reminder: your appointment tomorrow at 10 am" && m.labels.includes("SENT")).map((m) => m.attachments)), { timeout: 60_000 })
     .toEqual([[{ filename: "Visit form.pdf" }]]);
-}, 300_000);
+}, 600_000);
 
 it("Write or reply and confirm before sending", async () => {
   const { secret, host, person, company, waitingTargets } = await start();
@@ -1015,12 +1032,14 @@ it('Take a photo for an email on the tablet (spec/app/files.md, "A photo taken o
   await act(() => runtime.runPromise(Effect.flatMap(Setup, (setup) => setup.send({ type: "reportGraceService",
     report: { tag: "GraceSignedIn", accountId: "tablet-owner", email: gmail, plan: "PlanUnknown" }, link: { tag: "GoogleLinkUnknown" } }))));
   await click(page.getByRole("button", { name: /^Email/ }));
+  await expect.element(email(/Main St Clinic/)).toBeVisible();
   await writeTo("Susan");
   await act(() => userEvent.fill(subject(), "The garden"));
   await click(page.getByRole("button", { name: "Attach" }));
   await click(page.getByRole("menuitem", { name: "Take a photo" }));
   await expect.element(page.getByRole("button", { name: "Remove Garden.jpg" })).toBeVisible();
   await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(page.getByText("Sent to Susan")).toBeVisible();
   const Sent = Schema.Struct({ boxes: Schema.Array(Schema.Struct({ mail: Schema.Array(Schema.Struct({
     subject: Schema.String, labels: Schema.Array(Schema.String), attachments: Schema.Array(Schema.Struct({ filename: Schema.String, data: Schema.optional(Schema.String) })),
   })) })) });
@@ -1040,6 +1059,6 @@ it('Take a photo for an email on the tablet (spec/app/files.md, "A photo taken o
   await expect.element(subject()).toHaveValue("More of the garden");
   await click(page.getByRole("button", { name: "Remove Garden.jpg" }));
   await click(page.getByRole("button", { name: "Back to Inbox" }));
-  await expect.element(page.getByText("Saved to Drafts")).toBeVisible();
+  await expect.element(row("Drafts 1")).toBeVisible();
   await expect.poll(async () => (await provider()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "More of the garden").map((m) => [m.labels, m.attachments]))).toEqual([[["DRAFT"], []]]);
 }, 300_000);

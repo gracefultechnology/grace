@@ -37,7 +37,10 @@ export type Contact = { readonly name: string; readonly address: string }
 export type Attached = { readonly mimeType: string; readonly data: string }
 export type Restored = { readonly snapshot: DraftSnapshot; readonly verified: boolean }
 export type ChangeOp = { readonly identity: MessageIdentity; readonly change: Exclude<MessageChange, "NoMessageChange">; readonly revision: number; readonly version: string }
-export type DraftStored = { readonly draftId: string; readonly persisted: boolean; readonly unsendable?: readonly string[] }
+export type Unsendable = { readonly name: string; readonly reason: "Unsupported" | "TooLarge" | "Unreadable" }
+type Part = { readonly name: string; readonly mimeType: string; readonly dataBase64: string }
+type Prepared = { readonly file: SavedFile; readonly part?: Part; readonly reason?: Unsendable["reason"] }
+export type DraftStored = { readonly draftId: string; readonly persisted: boolean; readonly unsendable?: readonly Unsendable[] }
 export type SendOutcome = { readonly resultStatus: Extract<SendStatus, "Sent" | "SendFailed" | "SendUnknown">; readonly evidence: string }
 export type Published = { readonly incoming: Calendar; readonly seriesVersion: number; readonly scheduleVerified: boolean }
 export type Current = { readonly latest: EntryDetails; readonly version: string }
@@ -647,32 +650,35 @@ function connectedMail(link: CloudLink, account: AccountRef,
     return { mimeType: got.mimeType, data: got.dataBase64 }
   }
 
-  effect function uploaded(file: SavedFile, held: Attached | undefined) {
-    let got = held
-    if (got === undefined) {
-      if (file.origin !== account.provider || file.account !== account.address) throw new ProviderRefused({ status: 422 })
-      const { message } = try read(file.container)
-      got = try attachmentOf(file, message.metadata.historyId ?? "")
-    }
-    if (!sendableAttachment(file, got)) throw new ProviderRefused({ status: 422 })
-    return { name: file.name, mimeType: got.mimeType, dataBase64: got.data }
+  effect function reread(file: SavedFile) {
+    const { message } = try read(file.container)
+    return try attachmentOf(file, message.metadata.historyId ?? "")
+  }
+
+  effect function uploaded(file: SavedFile, held: Attached | undefined): Prepared!(NeedsSignIn | Unreachable) {
+    const fromHere = file.origin === account.provider && file.account === account.address
+    if (held === undefined && !fromHere) return { file, reason: "Unsupported" }
+    const got = held ?? (reread(file) catch effect (e) => match (e) {
+      when ProviderRefused: undefined;
+      when NeedsSignIn: throw e;
+      when Unreachable: throw e;
+    })
+    if (got === undefined) return { file, reason: "Unreadable" }
+    return sendableAttachment(file, got) ? { file, part: { name: file.name, mimeType: got.mimeType, dataBase64: got.data } } : { file, reason: "Unsupported" }
   }
 
   effect function prepared(attachments: readonly SavedFile[], held: ReadonlyMap<string, Attached>) {
     if (!sendableAttachments(attachments)) throw new ProviderRefused({ status: 422 })
-    const tried = try Effect.forEach(attachments, effect (file) => {
-      const part = uploaded(file, held.get(file.id)) catch effect (e) => match (e) {
-        when ProviderRefused: undefined;
-        when NeedsSignIn: throw e;
-        when Unreachable: throw e;
-      }
-      return { file, part }
-    })
-    const files = tried.flatMap(({ part }) => part === undefined ? [] : [part])
-    const refused = tried.filter(({ part }) => part === undefined).map(({ file }) => file.name)
-    const largest = files.toSorted((a, b) => b.dataBase64.length - a.dataBase64.length).slice(0, 1).map((file) => file.name)
-    const tooLarge = files.reduce((length, file) => length + file.dataBase64.length, 0) >= maxMailMimeBytes
-    return { files, unsendable: refused.length > 0 ? refused : tooLarge ? largest : [], status: refused.length > 0 ? 422 : 413 }
+    const tried = try Effect.forEach(attachments, (file) => uploaded(file, held.get(file.id)))
+    const parts = tried.flatMap((t) => t.part === undefined ? [] : [t.part])
+    const refused = tried.flatMap((t): Unsendable[] => t.reason === undefined ? [] : [{ name: t.file.name, reason: t.reason }])
+    const largestFirst = parts.toSorted((a, b) => b.dataBase64.length - a.dataBase64.length)
+    const total = parts.reduce((length, file) => length + file.dataBase64.length, 0)
+    const left = largestFirst.reduce((kept, file) => kept.length >= maxMailMimeBytes ? { length: kept.length - file.dataBase64.length, out: [...kept.out, file] } : kept,
+      { length: total, out: [] as Part[] })
+    const tooLarge = left.out.map((file): Unsendable => ({ name: file.name, reason: "TooLarge" }))
+    const unsendable = [...refused, ...tooLarge]
+    return { files: parts, unsendable, status: refused.length > 0 ? 422 : 413 }
   }
 
   effect function uploads(attachments: readonly SavedFile[], held: ReadonlyMap<string, Attached>) {
@@ -721,7 +727,8 @@ function connectedMail(link: CloudLink, account: AccountRef,
     header: effect (ref, generation) => {
       const { message } = try read(ref)
       const sent = message.labels.includes("SENT")
-      const address = (sent ? (message.to.length === 1 ? [bare(message.to[0])] : []) : [message.replyTo, message.fromEmail]).find((a) => a?.includes("@"))
+      const named = (sent ? (message.to.length === 1 ? [bare(message.to[0])] : []) : [message.replyTo, message.fromEmail]).find((a): a is string => a?.includes("@") === true)
+      const address = named !== undefined && bare(named).toLowerCase() === account.address.toLowerCase() ? account.address : named
       return { ref, generation, address: address ?? "", subject: /^re:/i.test(message.subject) ? message.subject : `Re: ${message.subject}`, verified: address !== undefined && message.externalId === ref }
     },
     attachment: attachmentOf,

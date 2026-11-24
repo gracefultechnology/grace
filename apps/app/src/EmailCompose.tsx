@@ -6,7 +6,7 @@ import { Effect } from "effect";
 import { Suspense, use, useMemo, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
 import type { ComposeChoice, DraftContent, Event as MailEvent, Mailbox, SendStatus } from "../gen/app__email.ts";
-import { draftMovable, contactAccounts, fromChoices, type MailSource, pickerBack, showsCopies, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
+import { draftMovable, fromChoices, type MailSource, pickerBack, showsCopies, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import { sendableAttachments, type Contact } from "./connector.vibe";
 import { Library, type SavedPreview } from "./files.vibe";
 import { keptOnTablet, recipientsOf, recipientsValid } from "./mail.vibe";
@@ -119,9 +119,11 @@ function RecipientChoice({ field, people, backLabel, onBack, onPick, frame }: Pi
   );
 }
 
+const nobody: readonly Contact[] = [];
+
 /** @model spec/app/email.md */
 export function EmailCompose({ registry, boxes, box, mail, sender, frame }: EmailComposeProps) {
-  const people = use(mail.contacts(contactAccounts(registry).join(",")));
+  const people = mail.people?.contacts ?? nobody;
   const { guide } = useWorkspace();
   const [typed, setTyped] = useState<Partial<Record<Field, string>>>({});
   const [tries, setTries] = useState(0);
