@@ -286,19 +286,13 @@ pure def interrupted(device: S::Shell, browser: B::Browser, w: Workspace): Works
     execution: quietExecution(w.execution), commitment: quietCommitment(w.commitment),
     wake: W::cancel(w.wake, W::WakeHost)
   }
-pure def alwaysDeviceRules(w: Workspace): bool =
-  S::alwaysContextVersionIsNonnegative(w.device) and S::alwaysReturnDestinationIsAnApplication(w.device)
+pure def alwaysDeviceRules(w: Workspace): bool = S::validShell(w.device)
 pure def alwaysBrowserRules(w: Workspace): bool =
   B::alwaysTabsAreWellFormed(w.browser) and B::alwaysTabIdentifiersAreUnique(w.browser) and
   B::alwaysSelectedTabExists(w.browser) and B::alwaysBrowserCountersAreValid(w.browser) and
   B::alwaysOnlyALoadedPageIsSecure(w.browser) and B::alwaysRecentDestinationsAreDistinct(w.browser)
-pure def alwaysAssistantRules(w: Workspace): bool = I::validAssistant(w.assistant)
-pure def alwaysExecutionRules(w: Workspace): bool =
-  X::alwaysIdentity(w.execution) and X::alwaysGenerations(w.execution) and
-  X::alwaysFactsAreQuoted(w.execution) and X::alwaysObservedContextExists(w.execution) and
-  X::alwaysQueuedStepIsGraces(w.execution) and X::alwaysPrepared(w.execution) and X::alwaysExplainedBlock(w.execution) and
-  X::alwaysFailureCount(w.execution) and X::alwaysFailedApproachIsConcrete(w.execution) and
-  X::alwaysNoExhaustedApproachQueued(w.execution)
+pure def alwaysAssistantRules(w: Workspace): bool = A::validAssistant(w.assistant)
+pure def alwaysExecutionRules(w: Workspace): bool = X::validExecution(w.execution)
 pure def alwaysCommitmentRules(w: Workspace): bool =
   CM::validCommitment(w.commitment) and w.otherCommitments.every(p => CM::validCommitment(p))
 pure def alwaysCommitmentRegistryIsCanonical(w: Workspace): bool =
@@ -347,8 +341,7 @@ pure def alwaysOperationHasVisibleTask(w: Workspace): bool =
   iff w.assistant.activity == A::DoingWork
 pure def alwaysEvidenceVersionsAreNonnegative(w: Workspace): bool =
   w.observedDevice >= 0 and w.observedBrowser >= 0
-pure def alwaysWakeRules(w: Workspace): bool =
-  W::alwaysWakeCounters(w.wake) and W::alwaysActiveWakeHasDeadline(w.wake)
+pure def alwaysWakeRules(w: Workspace): bool = W::validWake(w.wake)
 pure def alwaysActiveWakePausesWebsiteWork(w: Workspace): bool =
   w.wake.phase != W::Dormant implies w.execution.phase == X::Idle or w.execution.phase == X::Paused
 pure def alwaysPreferencesRules(w: Workspace): bool =

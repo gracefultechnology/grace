@@ -660,3 +660,14 @@ pure def sometimesReplyOnlyWritten(c: Conversation): bool =
   not(c.voice) and c.turn == Ready and c.messages.some(m => m.author == HumanMessage) and
   c.messages.nthOr(c.messages.length() - 1, emptyHumanMessage).author == GraceMessage
 ```
+
+### A conversation is valid when it meets every rule above
+
+The [assistant](./assistant.md) requires `validConversation` of its conversation, the conjunction of every `always` rule of this spec, rather than repeating them. Whoever adds an `always` rule here adds it to this conjunction too.
+
+```quint
+pure def validConversation(c: Conversation): bool =
+  alwaysListeningHasAnActiveExchange(c) and alwaysAnswersBelongToTheQuestion(c) and alwaysPausedMicrophoneIsOff(c) and
+  alwaysInterruptionsMarkMessages(c) and alwaysRecognitionRetriesAreBounded(c) and alwaysReadingPositionExists(c) and
+  alwaysGenerationsAreNonnegative(c) and alwaysMessagesHaveContent(c)
+```

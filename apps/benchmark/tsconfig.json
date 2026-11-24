@@ -1,0 +1,32 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "allowArbitraryExtensions": true,
+    "allowJs": true,
+    "customConditions": ["eliza-source"],
+    "jsx": "react-jsx",
+    "lib": [
+      "es2023",
+      "dom",
+      "dom.iterable"
+    ],
+    "types": [
+      "node",
+      "vite/client"
+    ],
+    "rootDir": "../..",
+    "rootDirs": [
+      ".",
+      ".vibe/declarations/apps/benchmark",
+      "../app",
+      "../app/.vibe/declarations/apps/app"
+    ]
+  },
+  "include": [
+    "test",
+    "*.config.ts"
+  ],
+  "vibe": {
+    "sidecarDir": ".vibe/declarations"
+  }
+}
