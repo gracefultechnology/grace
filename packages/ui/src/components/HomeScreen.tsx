@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, type ComponentProps, type MouseEvent, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ComponentProps, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import { KeyRound } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { play } from "../lib/motion.ts";
@@ -156,14 +156,15 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
   const railRef = useRef<Rail | null>(null);
   const swipeRef = useRef<Swipe | null>(null);
   const swipedRef = useRef(false);
+  const [dragging, setDragging] = useState(false);
   const settle = useCallback((stage: HTMLDivElement | null) => {
     if (!stage) return;
     const entering = railRef.current?.stage !== stage;
     const rail = railOf(stage);
     railRef.current = rail;
-    paint(rail, full, rest);
+    paint(rail, full, dragging && swipeRef.current?.moved ? swipeRef.current.shift : rest);
     if (entering) play(stage, [{ opacity: 0 }, { opacity: 1 }], { duration: "quick", ease: "out-cubic" });
-  }, [full, rest]);
+  }, [full, rest, dragging]);
   const startDrag = (event: PointerEvent<HTMLDivElement>) => {
     if (!event.isPrimary || event.button !== 0) return;
     swipedRef.current = false;
@@ -180,6 +181,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     if (!swipe.moved) {
       if (Math.abs(dx) <= SWIPE.threshold) return;
       swipe.moved = true;
+      setDragging(true);
       event.currentTarget.setPointerCapture(event.pointerId);
       rail.stage.dataset.dragging = "";
     }
@@ -193,6 +195,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     swipeRef.current = null;
     if (!swipe?.moved || !rail) return;
     swipedRef.current = true;
+    setDragging(false);
     delete rail.stage.dataset.dragging;
     const over = cancelled ? committed : nearestTo(swipe.shift);
     const to = over === committed || onPageChange?.(over) !== false ? over : committed;
@@ -204,12 +207,18 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     event.stopPropagation();
     event.preventDefault();
   };
+  const active = pageCards[committed];
+  const calendarTurns = full && (dragging || !active.includes("calendar"));
+  const emailTurns = full && (dragging || !active.includes("email"));
+  const internetTurns = full && (dragging || !active.includes("internet"));
+  const filesTurns = full && (dragging || !active.includes("files"));
+  const passwordsTurns = full && (dragging || !active.includes("passwords"));
   const cards: Record<Slot, ReactNode> = {
-    calendar: useMemo(() => <HomeCalendarCard {...calendar} compact={compact} turns={full} className={cn("size-full", calendar.className)} />, [calendar, compact, full]),
-    email: useMemo(() => <HomeEmailCard {...email} compact={compact} turns={full} className={cn("size-full", email.className)} />, [email, compact, full]),
-    internet: useMemo(() => <InternetCard {...internet} compact={compact} turns={full} className={cn("size-full", internet.className)} />, [internet, compact, full]),
-    files: useMemo(() => <FilesCard {...files} compact={compact} turns={full} className={cn("size-full", files.className)} />, [files, compact, full]),
-    passwords: useMemo(() => passwords && <LauncherCard {...passwords} title="Passwords" compact={compact} turns={full} className="size-full">{keyArt}</LauncherCard>, [passwords, compact, full]),
+    calendar: useMemo(() => <HomeCalendarCard {...calendar} compact={compact} turns={calendarTurns} className={cn("size-full", calendar.className)} />, [calendar, compact, calendarTurns]),
+    email: useMemo(() => <HomeEmailCard {...email} compact={compact} turns={emailTurns} className={cn("size-full", email.className)} />, [email, compact, emailTurns]),
+    internet: useMemo(() => <InternetCard {...internet} compact={compact} turns={internetTurns} className={cn("size-full", internet.className)} />, [internet, compact, internetTurns]),
+    files: useMemo(() => <FilesCard {...files} compact={compact} turns={filesTurns} className={cn("size-full", files.className)} />, [files, compact, filesTurns]),
+    passwords: useMemo(() => passwords && <LauncherCard {...passwords} title="Passwords" compact={compact} turns={passwordsTurns} className="size-full">{keyArt}</LauncherCard>, [passwords, compact, passwordsTurns]),
   };
   const place = (slot: Slot) => {
     const frame = full ? { left: slots[slot].x, top: slots[slot].top, width: slots[slot].w, height: slots[slot].h } : { left: columns[slot] * columnStep, top: 0, width: columnStep - columnGap, height: "100%" };

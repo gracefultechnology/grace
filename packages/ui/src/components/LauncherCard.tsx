@@ -32,7 +32,7 @@ const heads = {
 const fading = "transition-[opacity,visibility] duration-slow ease-out-cubic will-change-[opacity] group-data-dragging/home:transition-none motion-reduce:transition-none";
 
 export const turnsNear = { "data-turn": "near", className: fading } as const;
-const turnsFar = { "data-turn": "far", className: cn("opacity-0", fading) } as const;
+const turnsFar = { "data-turn": "far", className: cn("invisible opacity-0", fading) } as const;
 
 export type Turning = { near: HTMLElement[]; far: HTMLElement[] };
 
@@ -50,6 +50,7 @@ export function showTurn({ near, far }: Turning, away: number, side: 1 | -1) {
   }
   for (const part of far) {
     part.style.opacity = blurred;
+    part.style.visibility = away > 0 ? "visible" : "hidden";
     part.style.setProperty("--far", toward);
   }
 }
