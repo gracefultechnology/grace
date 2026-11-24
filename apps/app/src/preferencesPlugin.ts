@@ -1,5 +1,6 @@
-// spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/workspace.md, "An authenticated restart restores the reviewed plan paused at its next outcome"; spec/app/network.md, "Android handles Wi-Fi sign-in"
+// spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/workspace.md, "An authenticated restart restores the reviewed plan paused at its next outcome"; spec/app/network.md, "Wi-Fi sign-in opens in Grace's browser"; spec/app/network.md, "Only the current OS result can complete or challenge the join"
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import type { JoinableWiFiSecurity } from "@elizaos/os/bridges/definitions/wifi";
 
 export interface PreferenceRecords {
   read(input: { name: "preferences" }): Promise<unknown>;
@@ -27,13 +28,14 @@ export interface PreferenceDevice {
   addListener?(event: "volume", listener: () => void): Promise<{ remove(): Promise<void> }>;
 }
 
-export interface WifiSignIn {
+export interface GraceWifi {
   getWifiSignIn(): Promise<unknown>;
-  openWifiSignIn(): Promise<void>;
+  joinWifi(input: { ssid: string; security: JoinableWiFiSecurity; password?: string }): Promise<unknown>;
+  turnOnWifi(): Promise<void>;
 }
 
 const device = Capacitor.isPluginAvailable("GraceDevice")
-  ? registerPlugin<PreferenceDevice & WifiSignIn>("GraceDevice") : undefined;
+  ? registerPlugin<PreferenceDevice & GraceWifi>("GraceDevice") : undefined;
 
 export const preferenceDevice: PreferenceDevice | undefined = device;
-export const wifiSignIn: WifiSignIn | undefined = device;
+export const graceWifi: GraceWifi | undefined = device;

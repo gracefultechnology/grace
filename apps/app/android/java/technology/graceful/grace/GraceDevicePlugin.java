@@ -1,7 +1,6 @@
 package technology.graceful.grace;
 
 import android.Manifest;
-import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -16,7 +15,6 @@ import android.net.wifi.WifiInfo;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.PowerManager;
-import android.provider.Settings;
 import android.view.Window;
 import android.view.WindowManager;
 import androidx.core.content.ContextCompat;
@@ -105,15 +103,23 @@ public class GraceDevicePlugin extends Plugin {
   call.resolve(status);
  }
 
- @PluginMethod public void openWifiSignIn(PluginCall call) {
-  getBridge().executeOnMainThread(() -> {
-   try {
-    getActivity().startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS));
-    call.resolve();
-   } catch (ActivityNotFoundException | SecurityException unavailable) {
-    call.reject("Android’s Wi-Fi settings could not be opened", "unavailable", unavailable);
-   }
-  });
+ @PluginMethod public void turnOnWifi(PluginCall call) {
+  if (!GraceDeviceOwner.manages(getContext())) call.reject("Grace does not manage this tablet", "NOT_MANAGED");
+  else getBridge().executeOnMainThread(() -> new GraceWifiJoin(getContext()).turnOn(call));
+ }
+
+ @PluginMethod public void joinWifi(PluginCall call) {
+  String ssid = call.getString("ssid");
+  GraceWifiJoin.Security security = GraceWifiJoin.security(call.getString("security"));
+  String password = call.getString("password");
+  call.getData().remove("password");
+  if (!GraceDeviceOwner.manages(getContext())) {
+   call.reject("Grace does not manage this tablet", "NOT_MANAGED");
+  } else if (ssid == null || ssid.isEmpty() || security == null || !GraceWifiJoin.acceptsPassword(security, password)) {
+   call.reject("The network or its password is not one Android can join", "INVALID_ARGUMENT");
+  } else {
+   getBridge().executeOnMainThread(() -> new GraceWifiJoin(getContext()).join(ssid, security, password, call));
+  }
  }
 
  @PluginMethod public void setVolume(PluginCall call) {

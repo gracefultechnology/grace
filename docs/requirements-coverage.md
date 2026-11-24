@@ -27,9 +27,9 @@ acceptance list holds the planned state:
 - The browser has no zoom control (decision 21).
 - Grace dismisses a reminder on request but never snoozes one, while her own
   snooze stays (decision 19).
-- Grace joins open and password networks in her own screen; company networks
-  and hotel sign-in pages go to Android's panel (decision 22). `network` on
-  develop still models them, and its change is in flight.
+- Grace joins open and password networks in her own screen and opens hotel
+  sign-in pages in her browser, as the tablet's device owner, with no
+  location prompt (decisions 22 and 43). Company networks are not listed.
 - Saved details are her name, phone and address, saved only with her approval
   and deleted in Settings (decision 23). `memory` already has those kinds; the
   saved-details spec that shows and deletes them is in flight.
@@ -42,7 +42,7 @@ acceptance list holds the planned state:
 | Browser | Home → ordinary address/search navigation → current page or explicit loading/security failure → tabs/back/forward/zoom/history (zoom is still modeled on develop; decision 21 removes the control) → Home retaining pages or Close discarding tabs. Grace opening, hiding, keyboard changes and manual navigation invalidate dependent observation without making browser use depend on inference. | `shell`, `browser`, `assistant`, `conversation`, `execution`, `workspace` |
 | A task: bill payment, the first kind, from Calendar, Email or Grace | Select canonical bill → verify site/account → private sign-in if needed → inspect current facts and existing payment → choose amount/date/funding → populate/read back → exact review → durable unresolved window → website tap or fresh voice approval → one submission → observed outcome → save evidence. Pause, correction, restart, prior manual payment, mismatched identity and uncertain outcomes cannot create a blind retry. | `task`, `handoffs`, `billpay`, `execution`, `payment`, `assistant`, `workspace` |
 | Set-up | Wi-Fi → connect an email account, or Not now (accounts are per provider) → her name → speaking pace and text size with a live preview → one sentence on what Grace does → practise Talk, Type, Close and reopen → "What would you like to do?". Resumes at the step it reached after a restart (`setup.md` "The host's report starts set-up, and a restart keeps the step"; decision 16). | `setup`, `shell`, `preferences` |
-| Settings and connectivity | Rail popovers retain the current app; Settings selects its intended pane. Text size, voice pace/output, device volume/mute, brightness and night dimming preserve current choices and Undo. Wi-Fi joins use current OS results and private password entry; on develop the model also has enterprise entry, certificate decisions and captive-portal consent, which decision 22 hands to Android's panel. Email & calendar lists the accounts and turns each one's Email, Calendar and Contacts on or off. | `shell`, `preferences`, `network`, `accounts`, `workspace` |
+| Settings and connectivity | Rail popovers retain the current app; Settings selects its intended pane. Text size, voice pace/output, device volume/mute, brightness and night dimming preserve current choices and Undo. Wi-Fi joins use current OS results and private password entry; on develop the model also has enterprise entry, certificate decisions and captive-portal consent, which decision 22 retires: company networks are not listed and Grace opens sign-in pages herself. Email & calendar lists the accounts and turns each one's Email, Calendar and Contacts on or off. | `shell`, `preferences`, `network`, `accounts`, `workspace` |
 
 The replacement `prototype/Grace Prototype.html` now supplies actual Email, Calendar and Files screens as well as Home, settings, the browser shell and bill-payment presentation. Its application flows supersede the former placeholder assessment and are mapped in [the email/calendar requirements](email-calendar-requirements.md), [Files audit](new-prototype-files-audit.md) and executable models. Calendar-launched bill payment remains required by this request even though the prototype calendar demonstrates appointments.
 
