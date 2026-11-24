@@ -123,6 +123,17 @@ const apkPolicy = {
 const builtApks = (directory: string) => existsSync(directory)
   ? readdirSync(directory).filter((name) => name.startsWith(`${variant}-`) && name.endsWith(".apk"))
   : [];
+const discardApks = (directory: string) => {
+  for (const name of [...builtApks(directory), "apk-manifest.json"]) rmSync(path.join(directory, name), { force: true });
+};
+const ApkManifest = Schema.Array(Schema.Struct({ name: Schema.String, sha256: Schema.String }));
+export function checkedApk(file: string) {
+  const listing = path.join(path.dirname(file), "apk-manifest.json");
+  const digest = sha256(readFileSync(file));
+  const entry = existsSync(listing) ? Schema.decodeUnknownSync(ApkManifest)(readJson(listing)).find(({ name }) => name === path.basename(file)) : undefined;
+  if (entry?.sha256 !== digest) throw new Error(`${file} is not the checked build ${listing} lists; rebuild it`);
+  return digest;
+}
 const unzipEntry = (archive: string, entry: string) => execFileSync("unzip", ["-p", archive, entry], { maxBuffer: wakeLimit });
 const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 
@@ -469,7 +480,7 @@ function buildAndroid({ release = false, abi, cloudProfile = standaloneProfile, 
         ...(fixture ? ["--verify-billworld-run", path.basename(fixture.output)] : ["--verify"])] },
     });
   } catch (error) {
-    for (const name of [...builtApks(path.join(app, output)), "apk-manifest.json"]) rmSync(path.join(app, output, name), { force: true });
+    discardApks(path.join(app, output));
     throw error;
   }
 }
@@ -518,6 +529,15 @@ function checkPolicy(bundle: string) {
 }
 
 function writeApkManifest(cloudProfile: CloudProfile, directory = path.join(app, apkOutput(cloudProfile)), episodeCertificate = false) {
+  try {
+    writeCheckedManifest(cloudProfile, directory, episodeCertificate);
+  } catch (error) {
+    discardApks(directory);
+    throw error;
+  }
+}
+
+function writeCheckedManifest(cloudProfile: CloudProfile, directory: string, episodeCertificate: boolean) {
   const apksigner = buildTool("apksigner");
   const aapt = buildTool("aapt");
   const selected = cloudProfiles[cloudProfile];
@@ -995,6 +1015,7 @@ async function onDevice(serial: typeof EmulatorSerial.Type, pid: string, step: O
 }
 
 async function installGrace(serial: typeof EmulatorSerial.Type, apk: string) {
+  checkedApk(apk);
   await adb(["-s", serial, "install", "-r", apk], 1800).catch(async (error: unknown) => {
     if (!(error instanceof Error && String(error.cause).includes("INSTALL_FAILED_UPDATE_INCOMPATIBLE"))) throw error;
     process.stdout.write(`${serial} holds Grace signed by another key; uninstalling her and her data\n`);
@@ -1303,7 +1324,7 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
           cleanup.push(() => adb(["-s", serial, "reverse", "--remove", `tcp:${port}`]));
         }
         step = "install the episode-specific signed APK";
-        const digest = createHash("sha256").update(readFileSync(apk)).digest("hex");
+        const digest = checkedApk(apk);
         const remote = `/data/local/tmp/grace-billworld-${runId}.apk`;
         cleanup.push(() => shell(serial, `rm -f ${remote}`));
         await adb(["-s", serial, "push", apk, remote], 180);
