@@ -46,6 +46,7 @@ set-up is ending.
 
 ```quint
 import preferences as P from "./preferences"
+import shell as S from "./shell"
 type SetupStage = WifiStep | AccountStep | NameStep | PaceStep | TextSizeStep | ExplainStep | TalkStep | TypeStep | CloseStep | ReopenStep | HandOverStep
 type SetupPhase = Unstarted | Answering | Away | Ending | EndFailed | Ended
 type SetupFacts = { ownsWifi: bool, online: bool, accountConnected: bool, cloudUsable: bool, named: bool, speechAvailable: bool }
@@ -544,9 +545,12 @@ A tablet signed in with its own session never offers checkout or the payment
 provider: it opens Grace's web account to manage the subscription. That
 Settings opens Account without a network connection is [the device
 shell](./shell.md)'s "Settings and rail popovers preserve the surface
-underneath": no connectivity check gates opening Settings. Nothing yet keeps
-account details out of screenshots: the Settings account page marks itself
-sensitive, but no code reads that marking and no rule checks it. Account settings offers to clear the old tablet
+underneath": no connectivity check gates opening Settings. Account details
+stay private by keeping them out of captures: whenever Settings shows the
+Account page, the tablet's window is closed to screenshots, screen recording
+and the recent-apps preview, from the moment the page opens until another
+page or surface replaces it, while a rail popover covers part of it, while
+the tablet sleeps on it and whatever the network does. Account settings offers to clear the old tablet
 sign-in when the device reports that it needs cleanup. Until the person
 confirms and the tablet reports an ordinary signed-out state, new sign-in
 is unavailable. Cleanup does not verify an owner.
@@ -675,6 +679,9 @@ pure val reportValues: Set[GraceAccount] = Set(
 )
 pure val accountValues: Set[GraceAccount] = reportValues
 pure val accountIdValues: Set[str] = Set("", "known", "other")
+pure val tValues: Set[TabletSignIn] = Set(NoTabletSignIn, TabletSignInAsked, TabletSignInConfirmed({ accountId: "known" }), TabletSignInConfirmed({ accountId: "other" }))
+pure val mailLeaseValues: Set[MailLeaseUpgradePhase] = Set(LeaseUpgradeNotRequired, LeaseUpgradeRequired,
+  LeaseMailReady({ accountId: "known", leaseVersion: "first" }), LeaseMailReady({ accountId: "known", leaseVersion: "" }))
 pure def lawAnActivePlanDoesNotOfferCheckout(account: GraceAccount): bool =
   match account {
     | GraceSignedIn(info) => (info.plan == PlanActive or info.plan == PlanActiveManaged) implies not(mayStartCheckout(account))
@@ -683,6 +690,23 @@ pure def lawAnActivePlanDoesNotOfferCheckout(account: GraceAccount): bool =
 pure def lawAReturningCustomerMayManageAndSubscribeAgain(accountId: str, email: str): bool =
   val returning = GraceSignedIn({ accountId: accountId, email: email, plan: PlanInactiveManagedCheckout })
   mayStartCheckout(returning) and mayOpenBillingPortal(returning)
+pure def accountDetailsShown(device: S::Shell): bool =
+  device.surface == S::DeviceSettings and device.settingsPage == S::AccountSettings
+pure def lawOpeningTheAccountPageClosesTheWindowToCaptures(device: S::Shell): bool =
+  S::canChooseSettingsPage(device, S::AccountSettings) implies accountDetailsShown(S::chooseSettingsPage(device, S::AccountSettings))
+pure def lawTheAccountPageStaysClosedToCapturesUntilItIsReplaced(device: S::Shell, cover: S::RailPopover, network: S::Connectivity): bool =
+  accountDetailsShown(device) implies
+    (accountDetailsShown(S::togglePopover(device, cover)) and accountDetailsShown(S::dismissPopover(device)) and
+     accountDetailsShown(S::sleep(device)) and accountDetailsShown(S::wake(device)) and
+     accountDetailsShown(S::setConnectivity(device, network)))
+pure val readyDevice: S::Shell = S::finishStartup(S::initial, true)
+pure val deviceValues: Set[S::Shell] = Set(
+  S::initial, readyDevice, S::openSurface(readyDevice, S::Browser),
+  S::chooseSettingsPage(readyDevice, S::NetworkSettings),
+  S::chooseSettingsPage(readyDevice, S::AccountSettings),
+  S::togglePopover(S::chooseSettingsPage(readyDevice, S::AccountSettings), S::WifiPopover),
+  S::sleep(S::chooseSettingsPage(readyDevice, S::AccountSettings))
+)
 ```
 
 
@@ -907,7 +931,7 @@ pure def isSelectedVersion(selectedId: str, selectedVersion: str, id: str, versi
   id != "" and version != "" and id == selectedId and version == selectedVersion
 pure def lawOnlyTheSelectedVersionIsChanged(selectedId: str, selectedVersion: str, id: str, version: str): bool =
   (isSelectedVersion(selectedId, selectedVersion, selectedId, selectedVersion) == (selectedId != "" and selectedVersion != "")) and
-  (isSelectedVersion(selectedId, selectedVersion, id, version) implies (id == selectedId and version == selectedVersion))
+  ((id != selectedId or version != selectedVersion) implies not(isSelectedVersion(selectedId, selectedVersion, id, version)))
 pure def trashableVersion(inTrashFolder: bool, inboxLabel: bool, trashLabel: bool, version: str): str =
   if (not(inTrashFolder) and inboxLabel and not(trashLabel)) version else ""
 pure def lawOnlyAnInboxMessageOutsideTrashCanBeSelectedForTrash(inTrashFolder: bool, inboxLabel: bool, trashLabel: bool, id: str, version: str): bool =
@@ -916,8 +940,8 @@ pure def lawOnlyAnInboxMessageOutsideTrashCanBeSelectedForTrash(inTrashFolder: b
 pure def isTheSelectedSeries(selectedId: str, selectedSeriesId: str, seriesFor: str, seriesId: str): bool =
   seriesFor != "" and selectedId == seriesFor and selectedSeriesId != "" and selectedSeriesId == seriesId
 pure def lawASeriesChangeNeedsItsOccurrenceStillSelected(selectedId: str, selectedSeriesId: str, seriesFor: str, seriesId: str): bool =
-  isTheSelectedSeries(selectedId, selectedSeriesId, seriesFor, seriesId) implies
-    (seriesFor != "" and seriesFor == selectedId and seriesId != "" and seriesId == selectedSeriesId)
+  (seriesFor == "" or seriesFor != selectedId or seriesId == "" or seriesId != selectedSeriesId) implies
+    not(isTheSelectedSeries(selectedId, selectedSeriesId, seriesFor, seriesId))
 type AppointmentReview = { id: str, version: str, seriesFor: str, frequency: str, timeZone: str, details: str }
 pure def isAReviewableAppointment(review: AppointmentReview): bool =
   review.details != "" and (review.frequency == "" or (review.id == "" and review.timeZone != ""))
@@ -934,6 +958,7 @@ pure val reviewedValues: Set[AppointmentReview] = Set(appointmentReviewSample)
   .union(Set({ ...appointmentReviewSample, id: "visit", version: "v1" }))
   .union(Set({ ...appointmentReviewSample, id: "series", version: "v1", seriesFor: "visit", frequency: "", timeZone: "" }))
 pure val sentValues: Set[AppointmentReview] = reviewedValues
+pure val reviewValues: Set[AppointmentReview] = reviewedValues
 pure def lawARepeatingAppointmentIsSentWithTheFrequencyAndTimeZoneItsReviewShowed(reviewed: AppointmentReview, sent: AppointmentReview): bool =
   (isTheReviewedAppointment(reviewed, sent) and sent.frequency != "") implies
     (sent.frequency == reviewed.frequency and sent.timeZone == reviewed.timeZone and sent.timeZone != "" and sent.id == "")
@@ -951,8 +976,8 @@ pure def lawAMonthlySeriesWarnsOnlyWhenSomeMonthLacksItsDay(frequency: str, dayO
 pure def changeReceiptMatches(accountId: str, receiptAccountId: str, itemId: str, receiptItemId: str, operation: str, receiptOperation: str): bool =
   managedReadMatches(accountId, receiptAccountId, itemId, receiptItemId) and operation != "" and operation == receiptOperation
 pure def lawAChangeReceiptNamesTheSameAccountItemAndOperation(accountId: str, receiptAccountId: str, itemId: str, receiptItemId: str, operation: str, receiptOperation: str): bool =
-  changeReceiptMatches(accountId, receiptAccountId, itemId, receiptItemId, operation, receiptOperation) implies
-    (accountId != "" and accountId == receiptAccountId and itemId == receiptItemId and operation != "" and operation == receiptOperation)
+  (accountId == "" or accountId != receiptAccountId or itemId != receiptItemId or operation == "" or operation != receiptOperation) implies
+    not(changeReceiptMatches(accountId, receiptAccountId, itemId, receiptItemId, operation, receiptOperation))
 pure def undoesTheTrashReceipt(trashedId: str, trashedVersion: str, trashOperation: str, id: str, version: str, prior: str): bool =
   trashOperation != "" and prior == trashOperation and isSelectedVersion(trashedId, trashedVersion, id, version)
 pure def lawUndoReversesOnlyTheConfirmedMoveToTrash(trashedId: str, trashedVersion: str, trashOperation: str, id: str, version: str, prior: str): bool =

@@ -22,7 +22,7 @@ export const passwordClient = Capacitor.isPluginAvailable("ElizaPasswords")
 export type PrivateVerificationApp = "email" | "messages";
 
 type PrivateViewPlugin = {
-  protect(input: { view: "vault" | "browser"; active: boolean }): Promise<void>;
+  protect(input: { view: "vault" | "browser" | "account"; active: boolean }): Promise<void>;
   openVerificationApp(input: { app: PrivateVerificationApp }): Promise<void>;
 };
 

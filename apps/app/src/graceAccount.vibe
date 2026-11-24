@@ -1,11 +1,11 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"
 import {
-  type GoogleLink, type GraceAccount, type GracePlan, type MailLeaseUpgradePhase, type TabletMailAuthority, isTheRequestsOwnReturn, Machine as Setup, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, signedInTablet, tabletSignInConfirmed
+  type GoogleLink, type GraceAccount, accountDetailsShown, type GracePlan, type MailLeaseUpgradePhase, type TabletMailAuthority, isTheRequestsOwnReturn, Machine as Setup, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, signedInTablet, tabletSignInConfirmed
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { accountPlugin, accountReadResponse, type AccountBridge } from "./accountPlugin.ts"
 import type { AccountRequest, accountRequests, TabletGoogleRead } from "./cloudRequests.vibe"
-import { webView } from "./surfacePlugin.ts"
+import { privateViewPlugin, webView } from "./surfacePlugin.ts"
 
 const filesScope = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
 const Session = Schema.Struct({ account: Schema.NullOr(Schema.Struct({ id: Schema.NonEmptyString, email: Schema.NullOr(Schema.String) })) })
@@ -381,6 +381,11 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
   }
 
   try fork.scoped gate.withPermit(refresh())
+  const privacy = privateViewPlugin
+  if (privacy !== undefined) {
+    try fork.scoped Stream.runForEach(Stream.changes(Stream.map(workspace.changes, (w) => accountDetailsShown(w.device))),
+      effect (active: boolean) => { tryPromise(() => privacy.protect({ view: "account", active })) catch () => undefined })
+  }
   if (webView.window.location.hash === "#account") {
     try fork.scoped effect {
       try Stream.runHead(Stream.filter(workspace.changes, (w) => w.device.readiness === "Ready"))
