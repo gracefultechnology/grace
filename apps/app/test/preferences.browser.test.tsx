@@ -192,7 +192,7 @@ it('Call Grace from any app or while the screen sleeps (spec/app/wake.md, "Story
   await wake.report();
   await expect.poll(wake.armed).toBeNull();
   hidden.mockReturnValue(false);
-  await act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+  await act(() => Promise.resolve(document.dispatchEvent(new Event("visibilitychange"))));
   await expect.poll(wake.armed).not.toBeNull();
   await wake.detect();
   await expect.element(sleepScreen).not.toBeInTheDocument();

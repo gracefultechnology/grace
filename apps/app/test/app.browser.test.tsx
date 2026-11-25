@@ -1537,6 +1537,23 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
       await act(() => runtime.runPromise(TestClock.adjust("4 seconds")));
       await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended", "ended", "ended"]);
       expect(calls).toEqual(unavailableCalls);
+      heldWorklet = undefined;
+      pendingWorklet.release.openUnsafe();
+      await press(button("Close Grace"));
+      nextTranscript = voiceInput;
+      holdComplete = true;
+      await hearWake();
+      await expect.poll(() => requests.map(({ body }) => sentTurn(body).said)).toEqual([voiceInput, voiceInput]);
+      const priorFinishes = finishes;
+      const writtenReply = "It is just past noon.";
+      await answer(1, { text: writtenReply });
+      await expect.poll(() => [workspace().assistant.conversation.turn, finishes, captures.at(-1)?.readyState])
+        .toEqual(["Speaking", priorFinishes + 1, "live"]);
+      await act(() => Promise.resolve(disconnect()));
+      await expect.poll(() => [workspace().assistant.conversation.turn, workspace().assistant.conversation.voice, captures.at(-1)?.readyState])
+        .toEqual(["Ready", false, "ended"]);
+      await expect.element(page.getByText(writtenReply, { exact: true })).toBeVisible();
+      await expect.poll(() => calls).toEqual([...unavailableCalls, ...speechSession]);
       return;
     }
     if (journey === "Talk and hear a reply" || journey === "Answer a spoken question") {

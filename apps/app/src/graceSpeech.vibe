@@ -373,6 +373,24 @@ effect function voiceNoticeScope(native: boolean, setup: Setup.Shape) {
     ? "device/" + status.voiceDisclosureScope : undefined
 }
 
+effect function failWake(workspace: Workspaces.Shape, session: Workspace["wake"], text: string) {
+  workspace.send({ type: "interact", input: { tag: "ServiceFailure", token: session.conversationVersion, text } }, "Host",
+    (state) => state.wake.phase === "AwaitingSpeech" && state.wake.generation === session.generation) catch () => undefined
+}
+
+effect function watchWakeTimers(workspace: Workspaces.Shape, readyWake: Ref.Ref<number | null>, heardIn: Ref.Ref<number | null>) {
+  const timers = Stream.changesWith(Stream.map(workspace.changes, (state) => state.wake),
+    (previous, next) => previous.phase === next.phase && previous.generation === next.generation)
+  try Stream.runDrain(Stream.switchMap(timers, (session) => session.phase === "Dormant" ? Stream.empty : Stream.fromEffect(effect {
+    const now = try Clock.currentTimeMillis
+    try Effect.sleep(Math.max(0, session.deadline - now))
+    const timer = { generation: session.generation, conversationVersion: session.conversationVersion, now: try Clock.currentTimeMillis }
+    if (session.phase === "SilenceNotice") workspace.send({ type: "wakeReturn", timer }, "Host") catch () => undefined
+    else if ((try Ref.get(readyWake)) !== session.generation) try failWake(workspace, session, wakeServiceUnavailable)
+    else if ((try Ref.get(heardIn)) !== session.conversationVersion) workspace.send({ type: "wakeNoSpeech", timer }, "Host") catch () => undefined
+  })))
+}
+
 export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(SpeechActions, effect {
   const workspace = try Workspaces
   const setup = try Setup
@@ -444,10 +462,6 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
     try SubscriptionRef.set(wakeStatus, { ...status, disclosed, armed: previous.armed && status.available && status.permitted })
     if (status.available || previous.available) try reportMic(status.permitted && (try pageVisible()))
   }
-  effect function failWake(session: Workspace["wake"], text: string) {
-    workspace.send({ type: "interact", input: { tag: "ServiceFailure", token: session.conversationVersion, text } }, "Host",
-      (state) => state.wake.phase === "AwaitingSpeech" && state.wake.generation === session.generation) catch () => undefined
-  }
   effect function startWake(value: unknown) {
     if (!wake) return
     const observed = Schema.decodeUnknownEffect(NativeWakeDetection)(value) catch () => undefined
@@ -472,7 +486,7 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
     if (current.wake.generation !== exchange.generation || !current.assistant.conversation.voice || !(try pageVisible())) return
     const opened = timeout(tryPromise((signal) => openMicrophone(signal)), "4 seconds") catch () => null
     if (opened === null) {
-      try failWake(exchange, speechFailureText("MicrophoneProblem"))
+      try failWake(workspace, exchange, speechFailureText("MicrophoneProblem"))
       return
     }
     const after = try workspace.get()
@@ -509,16 +523,7 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
     })))
     try addFinalizer(() => Effect.ignore(tryPromise(() => wake.configure({ generation: null }))))
   }
-  const wakeTimers = Stream.changesWith(Stream.map(workspace.changes, (state) => state.wake),
-    (previous, next) => previous.phase === next.phase && previous.generation === next.generation)
-  try fork.scoped Stream.runDrain(Stream.switchMap(wakeTimers, (session) => session.phase === "Dormant" ? Stream.empty : Stream.fromEffect(effect {
-    const now = try Clock.currentTimeMillis
-    try Effect.sleep(Math.max(0, session.deadline - now))
-    const timer = { generation: session.generation, conversationVersion: session.conversationVersion, now: try Clock.currentTimeMillis }
-    if (session.phase === "SilenceNotice") workspace.send({ type: "wakeReturn", timer }, "Host") catch () => undefined
-    else if ((try Ref.get(readyWake)) !== session.generation) try failWake(session, wakeServiceUnavailable)
-    else if ((try Ref.get(heardIn)) !== session.conversationVersion) workspace.send({ type: "wakeNoSpeech", timer }, "Host") catch () => undefined
-  })))
+  try fork.scoped watchWakeTimers(workspace, readyWake, heardIn)
   const changed = Stream.changes(Stream.map(workspace.changes, speechWanted))
   try fork.scoped Stream.runDrain(Stream.switchMap(changed, (wanted) => wanted ? Stream.fromEffect(effect {
     const captureReady = opening.withPermits(1)(Effect.void)
@@ -526,11 +531,11 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
     const current = try workspace.get()
     if (current.wake.phase === "AwaitingSpeech" && (try Ref.get(mic)) === null) return
     scoped(runSpeech(native, workspace, mic, () => activeMic, heardIn, readyWake, wake)) catch effect () => {
-      if (current.wake.phase === "AwaitingSpeech") {
-        try failWake(current.wake, wakeServiceUnavailable)
+      const latest = try workspace.get()
+      if (latest.wake.phase === "AwaitingSpeech") {
+        if (latest.wake.generation === current.wake.generation) try failWake(workspace, latest.wake, wakeServiceUnavailable)
         return
       }
-      const latest = try workspace.get()
       const token = latest.assistant.conversation.generation
       workspace.send({ type: "interact", input: { tag: "FinishSpeech", token, played: false } }, "Host") catch () => undefined
       try reportMic(false)
