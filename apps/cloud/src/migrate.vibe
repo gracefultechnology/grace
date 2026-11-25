@@ -1,5 +1,5 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
-import { migrate, storeLayer } from "@elizaos/cloud-worker"
+import { migrate, readIdentity, Store, storeLayer } from "@elizaos/cloud-worker"
 import { NodeFileSystem } from "@effect/platform-node"
 
 const Binding = Schema.Struct({
@@ -7,6 +7,10 @@ const Binding = Schema.Struct({
   CLOUD_ENVIRONMENT: Schema.Literals(["staging", "production"])
 })
 const Worker = Schema.Struct({ vars: Binding, env: Schema.Struct({ production: Schema.Struct({ vars: Binding }) }) })
+const renamedMigrations = [
+  ["0125_device_mail_lease.sql", "0126_device_mail_lease.sql"],
+  ["0126_normalize_renewed_device_grants.sql", "0127_normalize_renewed_device_grants.sql"]
+] as const
 
 error EnvironmentMismatch
 
@@ -20,8 +24,20 @@ const migration = effect {
   if (vars.CLOUD_ENVIRONMENT !== environment) throw new EnvironmentMismatch()
   const url = Redacted.value(try Config.Redacted("DATABASE_URL"))
   const now = try Clock.currentTimeMillis
-  const result = try Effect.provide(migrate({ digest: vars.CLOUD_IDENTITY_DIGEST, environment, now }), storeLayer({ kind: "pg", url }))
-  try annotateLogs(logInfo("Grace database is ready"), { environment, migrations: result.applied })
+  const options = { digest: vars.CLOUD_IDENTITY_DIGEST, environment, now }
+  provide storeLayer({ kind: "pg", url }) {
+    const store = try Store
+    try store.transaction(effect (tx) => {
+      try tx.query("SELECT pg_advisory_xact_lock(4242001)")
+      const identity = try readIdentity(tx)
+      if (identity.kind !== "identified" || identity.digest !== options.digest || identity.environment !== options.environment) return
+      for (const [previous, current] of renamedMigrations) {
+        try tx.query("INSERT INTO schema_migrations (name, applied_at) SELECT $1, applied_at FROM schema_migrations WHERE name = $2 ON CONFLICT DO NOTHING", [current, previous])
+      }
+    })
+    const result = try migrate(options)
+    try annotateLogs(logInfo("Grace database is ready"), { environment, migrations: result.applied })
+  }
 }
 
 await Effect.runPromise(Effect.provide(migration, NodeFileSystem.layer))
