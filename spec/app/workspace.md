@@ -1198,7 +1198,9 @@ A late observation is rejected even if its task name still matches. It must
 match the current device context, current selected document revision, current
 task generation and current controller generation. The trusted host checks
 the actual origin, account and redaction before it supplies this evidence.
-No observation or operation is accepted while a website's question holds the person.
+Ordinary observation, preparation and dispatch are blocked while a website's
+question holds the person. A current wrong-origin report can still stop the
+task and leave it waiting for the person.
 
 ```quint
 pure def observationArrives(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
