@@ -480,8 +480,8 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
             files={{
               photos,
               document: files?.document,
-              status: homeFilesStatus(photos.length) === "NoPhotosYet" ? "No photos yet" : undefined,
-              hint: homeFilesHint(photos.length, files?.document ? 1 : 0) ? "Photos you save from email will appear here." : undefined,
+              status: files && homeFilesStatus(photos.length) === "NoPhotosYet" ? "No photos yet" : undefined,
+              hint: files && homeFilesHint(photos.length, files.document ? 1 : 0) ? "Photos you save from email will appear here." : undefined,
               ...visitProps.files,
             }}
             passwords={passwordsProps(savedPasswords, visitProps.passwords)}
