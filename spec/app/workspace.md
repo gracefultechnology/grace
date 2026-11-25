@@ -855,8 +855,11 @@ native detector. Capture after detection requires microphone permission, an
 online connection and an available reasoning route. From Browser, Grace opens with a written
 notice and leaves the microphone available to the website. When voice is
 unavailable, Grace opens with a written notice and keeps Type available.
-Detection availability is distinct from reasoning availability. While a wake exchange or its silence notice is
-active, website execution is idle or paused. Starting or resuming website work
+Detection availability is distinct from reasoning availability. If the
+microphone or speech service fails after detection, the current listening
+exchange ends with an explanation and the window remains available for typing.
+While a wake exchange or its silence notice is active, website execution is
+idle or paused. Starting or resuming website work
 cancels that wake exchange before its timer can hide Grace.
 
 When the silence notice restores a closed Grace window, it also quiets any

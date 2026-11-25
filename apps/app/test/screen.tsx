@@ -137,6 +137,7 @@ export function wakeBoundary() {
     armed: (): number | null => generation,
     permitted: () => permitted,
     chimes: () => chimes,
+    report: () => act(async () => { listeners.get("wakeStatus")?.(await status()); }),
     detect: (value = generation) => {
       if (value === null) throw new Error("Wake needs to be armed before it detects a phrase");
       return act(() => Promise.resolve(listeners.get("wakeDetected")?.({ generation: value })));

@@ -286,13 +286,14 @@ pure def sometimesBargedIn(c: Conversation): bool = c.interrupted.length() > 0
 ### A current speech or response failure leaves a usable typed fallback
 
 A late failure cannot overwrite a newer turn. The runtime provides a plain
-failure explanation and offers the existing Talk and Type controls; no
-automatic listening or guessed answer follows.
+failure explanation and offers the existing Talk and Type controls. It can
+end a current listening exchange when capture or the speech service fails.
+The person can choose when to try again.
 
 ```quint
 pure def canServiceFailure(c: Conversation, token: int, text: str, by: ConversationActor): bool =
   by == ConversationRuntime and token == c.generation and text != "" and
-  (c.turn == Thinking or c.turn == Speaking)
+  (c.turn == Thinking or c.turn == Speaking or c.turn == Listening)
 pure def serviceFailure(c: Conversation, token: int, text: str, by: ConversationActor): Conversation =
   { ...appended(GraceMessage, text, c), voice: false, turn: Ready, generation: c.generation + 1 }
 ```

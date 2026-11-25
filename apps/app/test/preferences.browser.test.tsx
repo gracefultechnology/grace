@@ -1,7 +1,7 @@
 import { Layer, ManagedRuntime } from "effect";
 import { TestClock } from "effect/testing";
 import { act } from "react";
-import { expect, it, onTestFinished } from "vitest";
+import { expect, it, onTestFinished, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { defaults } from "../gen/app__preferences.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
@@ -187,6 +187,13 @@ it('Call Grace from any app or while the screen sleeps (spec/app/wake.md, "Story
     const armed = wake.armed();
     return armed !== null && armed !== beforeSleep;
   }).toBe(true);
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  onTestFinished(() => { hidden.mockRestore(); });
+  await wake.report();
+  await expect.poll(wake.armed).toBeNull();
+  hidden.mockReturnValue(false);
+  await act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+  await expect.poll(wake.armed).not.toBeNull();
   await wake.detect();
   await expect.element(sleepScreen).not.toBeInTheDocument();
   await expect.element(page.getByRole("button", { name: "Close Grace" })).toBeVisible();
