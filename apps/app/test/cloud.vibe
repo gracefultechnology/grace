@@ -356,7 +356,7 @@ function appointment(written: Stored): Appointment {
 
 const dateIn = (at: string, timeZone: string) => new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(Date.parse(at))
 
-function offsetAt(at: number, timeZone: string) {
+export function offsetAt(at: number, timeZone: string) {
   const name = new Intl.DateTimeFormat("en-US", { timeZone, timeZoneName: "shortOffset" }).formatToParts(at).find((p) => p.type === "timeZoneName")?.value ?? "GMT"
   const [, sign, hours, minutes] = /^GMT(?:([+-])(\d{1,2})(?::?(\d{2}))?)?$/.exec(name) ?? []
   return sign === undefined ? 0 : (sign === "+" ? 1 : -1) * (Number(hours) * 60 + Number(minutes ?? 0)) * 60 * 1000
@@ -381,13 +381,12 @@ function googleEvent(e: Appointment) {
 
 const stampOf = (at: number) => new Date(at).toISOString().replace(/[-:]|\.\d+/g, "")
 
-function nthStart(start: number, freq: string, n: number) {
-  if (freq === "MONTHLY") {
-    const d = new Date(start)
-    d.setUTCMonth(d.getUTCMonth() + n)
-    return d.getTime()
-  }
-  return start + n * (freq === "DAILY" ? 1 : 7) * 24 * 60 * 60 * 1000
+function nthStart(start: number, freq: string, n: number, timeZone: string) {
+  const wall = new Date(start + offsetAt(start, timeZone))
+  if (freq === "MONTHLY") wall.setUTCMonth(wall.getUTCMonth() + n)
+  else wall.setUTCDate(wall.getUTCDate() + n * (freq === "DAILY" ? 1 : 7))
+  const local = wall.getTime()
+  return local - offsetAt(local - offsetAt(local, timeZone), timeZone)
 }
 
 function during(e: Appointment, timeMin: string, timeMax: string) {
@@ -395,7 +394,7 @@ function during(e: Appointment, timeMin: string, timeMax: string) {
   if (e.recurrence === undefined) return start < max && end > min
   const freq = /FREQ=(DAILY|WEEKLY|MONTHLY)/.exec(e.recurrence.join(";"))?.[1]
   if (freq === undefined) return start < max
-  for (let n = 0, at = start; at < max; n++, at = nthStart(start, freq, n)) {
+  for (let n = 0, at = start; at < max; n++, at = nthStart(start, freq, n, e.timezone ?? "UTC")) {
     if (at + end - start > min && !(e.cancelled ?? []).includes(`${e.externalId}_${stampOf(at)}`)) return true
   }
   return false
@@ -407,7 +406,7 @@ function instancesOf(e: Appointment, timeMin: string, timeMax: string): Appointm
   const [start, end, min, max] = [e.startAt, e.endAt, timeMin, timeMax].map(Date.parse)
   const { recurrence: _rule, cancelled = [], ...master } = e
   const found: Appointment[] = []
-  for (let n = 0, at = start; freq !== undefined && at < max; n++, at = nthStart(start, freq, n)) {
+  for (let n = 0, at = start; freq !== undefined && at < max; n++, at = nthStart(start, freq, n, e.timezone ?? "UTC")) {
     const stamp = stampOf(at)
     const etag = `"${e.etag.replaceAll("\"", "")}-${stamp}"`
     const instance = { ...master, externalId: `${e.externalId}_${stamp}`, startAt: new Date(at).toISOString(), endAt: new Date(at + end - start).toISOString(), etag,

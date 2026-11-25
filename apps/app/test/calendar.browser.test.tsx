@@ -13,7 +13,7 @@ import { consent, type Request } from "../gen/app__request.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { day, dayOf, hour, longDate, midnight, timeLabel } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
-import { client, expire, modelTurns, outage, script, signIn } from "./cloud.vibe";
+import { client, expire, modelTurns, offsetAt, outage, script, signIn } from "./cloud.vibe";
 import { actOnScreen, homeCalendarLauncher, mountGmail, tapHomeCalendar } from "./screen.tsx";
 import "../src/main.css";
 
@@ -25,6 +25,15 @@ const atCloud = { timeout: 20_000 };
 const cloud = inject("cloud");
 const gmail = "owner@grace.test";
 const click = (name: string | RegExp) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
+const dayChoice = (n: number) => {
+  const ahead = n - dayOf(Date.now());
+  const d = new Date(midnight(n));
+  const short = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  if (ahead === 0) return `Today · ${short}`;
+  if (ahead === 1) return `Tomorrow · ${short}`;
+  if (ahead > 1 && ahead < 7) return `${d.toLocaleDateString("en-US", { weekday: "long" })} · ${short}`;
+  return longDate(n);
+};
 const row = (title: string, tag?: string) => page.getByRole("button", { name: new RegExp(`${title}${tag ? `.*${tag}` : ""}`) });
 const mondayOf = (n: number) => n - ((new Date(n * day).getUTCDay() + 6) % 7);
 const ringed = (title: string, mark: string) => page.getByRole("group", { name: mark }).getByRole("button", { name: new RegExp(title) });
@@ -558,17 +567,58 @@ it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: De
   await expect.poll(async () => (await physios()).map((e) => e.cancelled), atCloud).toEqual([[`${physio.externalId}_${nextWeek}`]]);
   await click("Previous week");
   await expect.element(row("Physio with Sam", "Gmail").first()).toBeVisible();
+  // spec/app/calendarView.md, "A repeating appointment renamed at the company stays one repeating appointment"
+  expect((await atCompany(secret, physio.externalId, { method: "PATCH", body: { title: "Physio in the pool" } })).ok).toBe(true);
+  await click("Close Calendar");
+  await toEyeWeek();
   await click("Next week");
   await click("Next week");
-  await act(() => userEvent.click(row("Physio with Sam", "Gmail").first()));
+  await act(() => userEvent.click(row("Physio in the pool", "Gmail").first()));
   await expect.element(page.getByText("Repeats every week")).toBeVisible();
   await click("Delete");
   await click("Delete every one");
-  await expect.element(row("Physio with Sam")).not.toBeInTheDocument();
+  await expect.element(row("Physio in the pool")).not.toBeInTheDocument();
   await expect.poll(physios, atCloud).toEqual([]);
   await click("Previous week");
   await click("Previous week");
-  await expect.element(row("Physio with Sam")).not.toBeInTheDocument();
+  await expect.element(row("Physio in the pool")).not.toBeInTheDocument();
+
+  // spec/app/calendarView.md, "An email account's calendar is asked to keep only what its company keeps"
+  const zone = "America/New_York";
+  const dateThere = (at: number) => new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(at);
+  const wall = (at: number) => `${new Intl.DateTimeFormat("en-US", { timeZone: zone, weekday: "short" }).format(at)} ${new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(at)}`;
+  const tenThere = (at: number) => { const ten = Date.parse(`${dateThere(at)}T10:00:00Z`); return ten - offsetAt(ten - offsetAt(ten, zone), zone); };
+  let changedAt = eyeDay * day;
+  while (offsetAt(changedAt - day, zone) === offsetAt(changedAt, zone)) changedAt -= day;
+  const choirAt = tenThere(changedAt - 2 * day);
+  const choirCreated = await fetch(new URL("/api/v1/eliza/google/calendar/events", cloud), {
+    method: "POST", headers: { authorization: `Bearer ${secret}`, "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() },
+    body: JSON.stringify({ title: "Choir", location: "", startAt: new Date(choirAt).toISOString(), endAt: new Date(choirAt + hour).toISOString(), timeZone: zone, recurrence: ["RRULE:FREQ=WEEKLY"] }),
+  });
+  expect(choirCreated.status).toBe(201);
+  const { event: choir } = await choirCreated.json() as { event: { externalId: string } };
+  const choirs = async () => (await run(selectedGmailCalendar)).entries
+    .filter((e) => e.phase === "Saved" && e.committed.seriesId === choir.externalId && e.committed.startAt > Date.now() && e.committed.startAt < Date.now() + 28 * day)
+    .map((e) => wall(e.committed.startAt));
+  await click("Close Calendar");
+  await toEyeWeek();
+  const choirDay = Array.from({ length: 7 }, (_, i) => mondayOf(eyeDay) + i).find((n) => new Date(midnight(n)).getDay() === new Date(choirAt).getDay()) ?? eyeDay;
+  await act(() => userEvent.click(page.getByRole("button", { name: tile(choirDay) })));
+  await act(() => userEvent.click(row("Choir", "Gmail").first()));
+  await expect.element(page.getByText("Repeats every week")).toBeVisible();
+  await expect.poll(async () => new Set(await choirs())).toEqual(new Set([wall(choirAt)]));
+  await click("Edit");
+  const anchored = (await run(selectedGmailCalendar)).entries.find((e) => e.phase === "Editing")?.draft.startAt ?? 0;
+  let movedTo = dayOf(anchored) + 2;
+  while (movedTo < dayOf(Date.now())) movedTo += 7;
+  await click("Change Day");
+  await click(dayChoice(movedTo));
+  await click("Save");
+  const expected = wall(tenThere(midnight(movedTo) + 12 * hour));
+  await expect.poll(async () => wall(Date.parse((await company(secret)).find((e) => e.externalId === choir.externalId)?.startAt ?? "")), atCloud).toBe(expected);
+  await click("Close Calendar");
+  await toEyeWeek();
+  await expect.poll(async () => new Set(await choirs()), atCloud).toEqual(new Set([expected]));
 }, journey);
 
 it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event")', async () => {
@@ -590,7 +640,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
     await click("Add");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), title));
     await click("Change Day");
-    await click(`Today · ${new Date(midnight(today)).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`);
+    await click(dayChoice(today));
     await click("Change Time");
     await click(time);
     await act(() => userEvent.click(page.getByRole("radio", { name: "Day before" })));

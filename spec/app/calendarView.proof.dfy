@@ -333,11 +333,49 @@ lemma CalendarDistinctUnique(v: CalendarView)
   }
 }
 
-lemma CalendarPublishedView(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
+lemma CalendarRenamesAdmissible(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
+  requires alwaysEntriesUseSeries(v)
   requires publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_)
-  ensures publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_).entries ==
-    ProofLib.Filter((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries) + [incoming]
+  ensures app__calendar_admissibleOccurrence(
+    (if renamesSeries(v, incoming, seriesVersion) then
+      (var local_3 := renamedSeries(seriesAt(v, incoming.committed.seriesId).details, incoming.committed);
+       var s_map := v.entries;
+       seq(|s_map|, i_map requires 0 <= i_map < |s_map| => var c := s_map[i_map]; renamedMember(c, local_3)))
+     else v.entries),
+    incoming)
 {
+  if renamesSeries(v, incoming, seriesVersion) {
+    var local_3 := renamedSeries(seriesAt(v, incoming.committed.seriesId).details, incoming.committed);
+    var s_map := v.entries;
+    var base := seq(|s_map|, i_map requires 0 <= i_map < |s_map| => var c := s_map[i_map]; renamedMember(c, local_3));
+    forall c | c in base && app__calendar_sameOccurrence(c, incoming)
+      ensures c.identity == incoming.identity && (c == incoming || (!c.phase.Deleted? && incoming.revision > c.revision))
+    {
+      var i :| 0 <= i < |s_map| && base[i] == c;
+      var orig := v.entries[i];
+      assert orig.identity == c.identity;
+      assert orig.phase == c.phase;
+      assert orig.revision == c.revision;
+      if orig == incoming {
+        assert orig.hasSaved && !orig.phase.Deleted? && orig.committed.seriesId == incoming.committed.seriesId;
+        assert sameSeriesFields(orig.committed, seriesAt(v, incoming.committed.seriesId).details);
+        assert false;
+      }
+    }
+  }
+}
+
+lemma CalendarPublishedView(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
+  requires alwaysEntriesUseSeries(v) && publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_)
+  ensures publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_).entries ==
+    ProofLib.Filter((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)),
+      (if renamesSeries(v, incoming, seriesVersion) then
+        (var local_3 := renamedSeries(seriesAt(v, incoming.committed.seriesId).details, incoming.committed);
+         var s_map := v.entries;
+         seq(|s_map|, i_map requires 0 <= i_map < |s_map| => var c := s_map[i_map]; renamedMember(c, local_3)))
+       else v.entries)) + [incoming]
+{
+  CalendarRenamesAdmissible(v, incoming, seriesVersion, scheduleVerified, by_);
 }
 
 lemma CalendarDeletedSeriesView(v: CalendarView, generation: int, succeeded: bool, evidence: string, by_: ViewActor)
@@ -367,15 +405,34 @@ lemma PublishAllowedEnsures(v: CalendarView, incoming: app__calendar_Calendar, s
   if inv(v) && publishAllowed(v, incoming, seriesVersion, scheduleVerified, by_) {
     CalendarUniqueDistinct(v);
     CalendarPublishedView(v, incoming, seriesVersion, scheduleVerified, by_);
-    var remaining := ProofLib.Filter((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries);
-    ProofLib.FilterKeepsDistinctBy((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries,
+    var renamed := renamedSeries(seriesAt(v, incoming.committed.seriesId).details, incoming.committed);
+    var base := if renamesSeries(v, incoming, seriesVersion) then
+      (var s_map := v.entries;
+       seq(|s_map|, i_map requires 0 <= i_map < |s_map| => var c := s_map[i_map]; renamedMember(c, renamed)))
+      else v.entries;
+    assert |base| == |v.entries|;
+    forall i | 0 <= i < |base|
+      ensures base[i].identity == v.entries[i].identity
+      ensures validStored(base[i]) && base[i].identity.owner == v.owner && base[i].identity.calendarId == v.calendarId
+    {
+      assert base[i] == (if renamesSeries(v, incoming, seriesVersion) then renamedMember(v.entries[i], renamed) else v.entries[i]);
+    }
+    forall i, j | 0 <= i < |base| && 0 <= j < |base| && i != j
+      ensures (base[i].identity.owner, base[i].identity.calendarId, base[i].identity.occurrenceId) !=
+        (base[j].identity.owner, base[j].identity.calendarId, base[j].identity.occurrenceId)
+    {
+      assert base[i].identity == v.entries[i].identity;
+      assert base[j].identity == v.entries[j].identity;
+    }
+    var remaining := ProofLib.Filter((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), base);
+    ProofLib.FilterKeepsDistinctBy((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), base,
       (c: app__calendar_Calendar) => (c.identity.owner, c.identity.calendarId, c.identity.occurrenceId));
-    ProofLib.FilterSubset((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries);
+    ProofLib.FilterSubset((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), base);
     forall c | c in remaining
       ensures (c.identity.owner, c.identity.calendarId, c.identity.occurrenceId) !=
         (incoming.identity.owner, incoming.identity.calendarId, incoming.identity.occurrenceId)
     {
-      ProofLib.FilterMember((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries, c);
+      ProofLib.FilterMember((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), base, c);
     }
     ProofLib.DistinctByConcat(remaining, [incoming],
       (c: app__calendar_Calendar) => (c.identity.owner, c.identity.calendarId, c.identity.occurrenceId));
@@ -388,10 +445,34 @@ lemma PublishAllowedEnsures(v: CalendarView, incoming: app__calendar_Calendar, s
         ensures seriesAt(after, c.committed.seriesId).version >= 0 && sameSeriesFields(c.committed, seriesAt(after, c.committed.seriesId).details)
       {
         if c != incoming {
-          ProofLib.FilterMember((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries, c);
+          ProofLib.FilterMember((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), base, c);
           SeriesAtMember(v, c.committed.seriesId);
           assert c.committed.seriesId != incoming.committed.seriesId;
           assert seriesAt(after, c.committed.seriesId) == seriesAt(v, c.committed.seriesId);
+        }
+      }
+    } else if renamesSeries(v, incoming, seriesVersion) {
+      SeriesAtMember(v, incoming.committed.seriesId);
+      var known := seriesAt(v, incoming.committed.seriesId);
+      assert known in v.series && app__calendar_validDetails(known.details);
+      SeriesPut(v, after, SeriesDefinition(seriesVersion, renamed));
+      forall c | c in after.entries && c.hasSaved && !c.phase.Deleted? && c.committed.seriesId != ""
+        ensures seriesAt(after, c.committed.seriesId).version >= 0 && sameSeriesFields(c.committed, seriesAt(after, c.committed.seriesId).details)
+      {
+        if c == incoming {
+          assert seriesAt(after, c.committed.seriesId) == SeriesDefinition(seriesVersion, renamed);
+        } else {
+          ProofLib.FilterMember((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), base, c);
+          var idx :| 0 <= idx < |base| && base[idx] == c;
+          var orig := v.entries[idx];
+          assert c == renamedMember(orig, renamed);
+          if orig.committed.seriesId == renamed.seriesId {
+            assert sameSeriesFields(orig.committed, known.details);
+            assert sameSeriesFields(c.committed, renamed);
+          } else {
+            SeriesAtMember(v, orig.committed.seriesId);
+            assert seriesAt(after, orig.committed.seriesId) == seriesAt(v, orig.committed.seriesId);
+          }
         }
       }
     } else {
@@ -402,7 +483,7 @@ lemma PublishAllowedEnsures(v: CalendarView, incoming: app__calendar_Calendar, s
         if c == incoming {
           SeriesLookup(v, incoming.committed.seriesId);
         } else {
-          ProofLib.FilterMember((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries, c);
+          ProofLib.FilterMember((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), base, c);
         }
       }
     }
@@ -412,8 +493,23 @@ lemma PublishAllowedEnsures(v: CalendarView, incoming: app__calendar_Calendar, s
       } else {
         var selected := entryAt(v, v.selectedId);
         CalendarEntryMember(v, v.selectedId);
-        ProofLib.FilterMember((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), v.entries, selected);
-        CalendarEntryFind(after, selected);
+        var idx :| 0 <= idx < |v.entries| && v.entries[idx] == selected;
+        var mapped := base[idx];
+        assert !(app__calendar_sameOccurrence(mapped, incoming));
+        ProofLib.FilterMember((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), base, mapped);
+        CalendarEntryFind(after, mapped);
+      }
+    }
+    forall prior, laterEntry | prior in v.entries && laterEntry in after.entries && app__calendar_sameOccurrence(prior, laterEntry)
+      ensures prior.identity == laterEntry.identity
+    {
+      if laterEntry == incoming {
+        assert app__calendar_sameOccurrence(prior, incoming);
+      } else {
+        ProofLib.FilterMember((c: app__calendar_Calendar) => !(app__calendar_sameOccurrence(c, incoming)), base, laterEntry);
+        var li :| 0 <= li < |base| && base[li] == laterEntry;
+        assert base[li].identity == v.entries[li].identity;
+        CalendarSameKey(v, prior, v.entries[li]);
       }
     }
   }
@@ -1452,5 +1548,43 @@ lemma lawSeeDetailsKeepsReminder_ensures(v: CalendarView, id: string, owner: str
     var expected := seq(|v.entries|, i requires 0 <= i < |v.entries| => if v.entries[i].identity.occurrenceId == id then app__calendar_noticed(v.entries[i]) else v.entries[i]);
     assert after.entries == expected;
     assert forall i :: 0 <= i < |v.entries| ==> after.entries[i].reminder == v.entries[i].reminder;
+  }
+}
+
+lemma lawRenameKeepsEveryOccurrenceInSeries_ensures(v: CalendarView, incoming: app__calendar_Calendar, seriesVersion: int, scheduleVerified: bool, by_: ViewActor)
+  ensures (lawRenameKeepsEveryOccurrenceInSeries(v, incoming, seriesVersion, scheduleVerified, by_) == true)
+{
+  if alwaysEntriesUseSeries(v) && canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_) && renamesSeries(v, incoming, seriesVersion) {
+    var after := publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by_);
+    var known := seriesAt(v, incoming.committed.seriesId);
+    var renamed := renamedSeries(known.details, incoming.committed);
+    SeriesAtMember(v, incoming.committed.seriesId);
+    SeriesPutView(v.series, SeriesDefinition(seriesVersion, renamed));
+    var id := incoming.committed.seriesId;
+    var prefix := ProofLib.Filter((s: SeriesDefinition) => (s.details.seriesId != renamed.seriesId), v.series);
+    ProofLib.FilterAppend((s: SeriesDefinition) => (s.details.seriesId == id), prefix, SeriesDefinition(seriesVersion, renamed));
+    forall x | x in prefix
+      ensures x.details.seriesId != id
+    {
+      ProofLib.FilterMember((s: SeriesDefinition) => (s.details.seriesId != renamed.seriesId), v.series, x);
+    }
+    ProofLib.FilterNone((s: SeriesDefinition) => (s.details.seriesId == id), prefix);
+    assert ProofLib.Filter((s: SeriesDefinition) => (s.details.seriesId == id), after.series) == [SeriesDefinition(seriesVersion, renamed)];
+    assert seriesAt(after, id).version == seriesVersion;
+    CalendarPublishedView(v, incoming, seriesVersion, scheduleVerified, by_);
+    var s_map := v.entries;
+    var base := seq(|s_map|, i_map requires 0 <= i_map < |s_map| => var c := s_map[i_map]; renamedMember(c, renamed));
+    forall c | c in after.entries && c.hasSaved && !c.phase.Deleted? && c.committed.seriesId == id
+      ensures sameSeriesFields(c.committed, incoming.committed)
+    {
+      if c != incoming {
+        ProofLib.FilterMember((x: app__calendar_Calendar) => !(app__calendar_sameOccurrence(x, incoming)), base, c);
+        var idx :| 0 <= idx < |base| && base[idx] == c;
+        var orig := v.entries[idx];
+        assert c == renamedMember(orig, renamed);
+        assert orig.hasSaved && !orig.phase.Deleted? && orig.committed.seriesId == id;
+        assert sameSeriesFields(orig.committed, known.details);
+      }
+    }
   }
 }

@@ -217,6 +217,13 @@ function schedule(zones: ReadonlySet<string>, e: ProviderEvent, timeZone: string
   return { startAt: startAt ?? Number.NaN, endAt: endAt ?? Number.NaN, verified: exact.every((t) => t !== undefined) }
 }
 
+function movedLike(first: number, from: number, fromZone: string, to: number, toZone: string) {
+  const [origin, anchor, target] = [civil(first, fromZone), civil(from, fromZone), civil(to, toZone)]
+  const date = new Date((origin.day + target.day - anchor.day) * 86_400_000).toISOString().slice(0, 10)
+  const moved = Option.getOrUndefined(DateTime.makeZoned(`${date}T${target.clock}:00Z`, { timeZone: toZone, adjustForTimeZone: true }))
+  return moved === undefined ? undefined : DateTime.toEpochMillis(moved)
+}
+
 function participantOf(e: ProviderEvent) {
   const other = e.attendees.find((a) => !a.self)
   return other?.displayName ?? other?.email ?? ""
@@ -269,17 +276,29 @@ function providerFields(e: ProviderEvent, defaults: readonly Reminder[]): Kept {
 
 type Timed = { readonly e: ProviderEvent; readonly startAt: number; readonly endAt: number; readonly verified: boolean; readonly timezone: string }
 
-function seriesOf(zones: ReadonlySet<string>, view: CalendarView, timed: readonly Timed[], keptOf: (t: Timed) => Kept): ReadonlyMap<string, Kept> {
+type Grouped = { readonly kept: Kept & Pick<EntryDetails, "title" | "location" | "notes">; readonly version: number }
+
+const textOf = (d: Pick<EntryDetails, "title" | "location" | "notes">) => JSON.stringify([d.title, d.location, d.notes])
+
+function seriesOf(zones: ReadonlySet<string>, view: CalendarView, timed: readonly Timed[], keptOf: (t: Timed) => Kept): ReadonlyMap<string, Grouped> {
   const repeating = timed.filter((t) => t.verified && zones.has(t.timezone) && (t.e.seriesId ?? "") !== "")
   return new Map([...new Set(repeating.map((t) => t.e.seriesId ?? ""))].flatMap((seriesId) => {
     const { version, details: known } = seriesAt(view, seriesId)
     const sorted = repeating.filter((t) => t.e.seriesId === seriesId).sort((a, b) => a.startAt - b.startAt)
-    const like = version >= 0 ? known : { ...details(sorted[0].e, sorted[0].startAt, sorted[0].endAt, sorted[0].timezone, keptOf(sorted[0])), seriesId }
-    const alike = sorted.filter((t) => sameText(t.e, like) && t.e.isAllDay === like.allDay && t.timezone === like.timezone)
+    const texts = sorted.map((t) => textOf({ ...t.e, notes: t.e.description }))
+    const counts = texts.map((text) => texts.filter((other) => other === text).length)
+    const most = Math.max(...counts)
+    const favoured = version >= 0 && texts.some((text, i) => text === textOf(known) && counts[i] === most) ? textOf(known) : texts[counts.indexOf(most)]
+    const renamed = version >= 0 && favoured !== textOf(known) && most > 1
+    const shared = version >= 0 && !renamed ? textOf(known) : favoured
+    const first = sorted[texts.indexOf(shared)] ?? sorted[0]
+    const like = version < 0 ? { ...details(first.e, first.startAt, first.endAt, first.timezone, keptOf(first)), seriesId }
+      : renamed ? { ...known, title: first.e.title, location: first.e.location, notes: first.e.description } : known
+    const alike = sorted.filter((t, i) => texts[i] === shared && t.e.isAllDay === like.allDay && t.timezone === like.timezone)
     const recurrence = version >= 0 ? known.recurrence : cadence(alike.map((t) => t.startAt), like.timezone)
     const members = recurrence === "Once" ? [] : alike.filter((t) => fits(recurrence, like.startAt, t.startAt, like.timezone))
-    const kept: Kept = { ...like, seriesId, recurrence }
-    return members.map((t) => [t.e.externalId, kept] as const)
+    const grouped: Grouped = { kept: { ...like, seriesId, recurrence }, version: version < 0 ? 0 : renamed ? version + 1 : version }
+    return members.map((t) => [t.e.externalId, grouped] as const)
   }))
 }
 
@@ -331,13 +350,20 @@ function published(zones: ReadonlySet<string>, view: CalendarView, events: reado
     const known = knownOf(e)
     const created = known === undefined ? bindings.get(e.externalId) : undefined
     if (created?.phase === "Editing") return []
-    const entry = details(e, startAt, endAt, timezone, series.get(e.externalId) ?? keptOf(t))
+    const grouped = series.get(e.externalId)
+    const entry = details(e, startAt, endAt, timezone, grouped?.kept ?? keptOf(t))
     const incoming = validDetails(entry) ? refreshed(known, view, e, entry, created) : undefined
     if (incoming === undefined && created !== undefined) kept.add(created)
-    return incoming === undefined ? [] : [{ incoming, seriesVersion: seriesVersionOf(view, entry.seriesId), scheduleVerified: verified }]
+    return incoming === undefined ? [] : [{ incoming, seriesVersion: grouped?.version ?? 0, scheduleVerified: verified }]
   })
+  const renaming = new Map([...series.values()].filter((g) => g.version > seriesVersionOf(view, g.kept.seriesId)).map((g) => [g.kept.seriesId, g] as const))
   const gone = own.filter((c) => c.phase === "Saved" && c.committed.startAt < view.window.untilTime && c.committed.endAt > view.window.fromTime && !eventIds.has(c.identity.occurrenceId) && !kept.has(c))
-  return [...changed, ...gone.map((c) => ({ incoming: deleted(c), seriesVersion: seriesVersionOf(view, c.committed.seriesId), scheduleVerified: true }))]
+  return [...changed, ...gone.map((c) => {
+    const renamed = renaming.get(c.committed.seriesId)
+    const text = renamed === undefined ? {} : { title: renamed.kept.title, location: renamed.kept.location, notes: renamed.kept.notes }
+    const now = { ...c, committed: { ...c.committed, ...text }, draft: { ...c.draft, ...text } }
+    return { incoming: deleted(now), seriesVersion: renamed?.version ?? seriesVersionOf(view, c.committed.seriesId), scheduleVerified: true }
+  })]
 }
 
 function event({ draft: d, committed: c, hasSaved }: Calendar) {
@@ -582,10 +608,12 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
     const master = try readEvent(seriesId, calendarId)
     if (master === undefined || !sameText(master, was)) throw new ProviderRefused({ status: 412 })
     const text = { title: d.title, description: d.notes, location: d.location }
-    const [shift, stretch] = [d.startAt - was.startAt, d.endAt - was.endAt]
-    if (shift === 0 && stretch === 0 && d.timezone === was.timezone) return { id: seriesId, version: versionOf(master), fields: text }
-    if (d.allDay || was.allDay || master.isAllDay) throw new ProviderRefused({ status: 422 })
-    return { id: seriesId, version: versionOf(master), fields: { ...text, startAt: iso(Date.parse(master.startAt) + shift), endAt: iso(Date.parse(master.endAt) + stretch), timeZone: d.timezone } }
+    if (d.startAt === was.startAt && d.endAt === was.endAt && d.timezone === was.timezone) return { id: seriesId, version: versionOf(master), fields: text }
+    const first = Date.parse(master.startAt)
+    if (d.allDay || was.allDay || master.isAllDay || Number.isNaN(first) || !zones.has(was.timezone) || !zones.has(d.timezone)) throw new ProviderRefused({ status: 422 })
+    const [startAt, endAt] = [d.startAt, d.endAt].map((at) => movedLike(first, was.startAt, was.timezone, at, d.timezone))
+    if (startAt === undefined || endAt === undefined) throw new ProviderRefused({ status: 422 })
+    return { id: seriesId, version: versionOf(master), fields: { ...text, startAt: iso(startAt), endAt: iso(endAt), timeZone: d.timezone } }
   }
 
 

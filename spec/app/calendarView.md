@@ -108,8 +108,9 @@ pure def publishAllowed(v: CalendarView, incoming: C::Calendar, seriesVersion: i
   C::admissibleOccurrence(v.entries, incoming) and scheduleVerified and followsSeries(v, incoming) and
   (incoming.committed.seriesId == "" or
     (if (seriesAt(v, incoming.committed.seriesId).version == -1) seriesVersion == 0
-     else seriesVersion == seriesAt(v, incoming.committed.seriesId).version and
-       sameSeriesFields(incoming.committed, seriesAt(v, incoming.committed.seriesId).details) and
+     else ((seriesVersion == seriesAt(v, incoming.committed.seriesId).version and
+         sameSeriesFields(incoming.committed, seriesAt(v, incoming.committed.seriesId).details)) or
+         renamesSeries(v, incoming, seriesVersion)) and
        (incoming.phase == C::Deleted or seriesAt(v, incoming.committed.seriesId).details.recurrence != C::Once or
          (incoming.committed.startAt == seriesAt(v, incoming.committed.seriesId).details.startAt and
           v.entries.every(c => c.phase == C::Deleted or c.committed.seriesId != incoming.committed.seriesId or
@@ -122,9 +123,12 @@ pure def followsSeries(v: CalendarView, incoming: C::Calendar): bool =
     C::followingAllowed(c, incoming.identity.occurrenceId, incoming.identity.billRef, incoming.identity.sourceRef, incoming.committed))
 pure def publishOccurrence(v: CalendarView, incoming: C::Calendar, seriesVersion: int, scheduleVerified: bool, by: ViewActor): CalendarView =
   val targetChanged = v.selectedId == incoming.identity.occurrenceId and entryAt(v, v.selectedId) != incoming
-  { ...v, entries: C::upsertOccurrence(v.entries, incoming),
+  val renaming = renamesSeries(v, incoming, seriesVersion)
+  val renamed = renamedSeries(seriesAt(v, incoming.committed.seriesId).details, incoming.committed)
+  { ...v, entries: C::upsertOccurrence(if (renaming) v.entries.listMap(c => renamedMember(c, renamed)) else v.entries, incoming),
     series: if (incoming.committed.seriesId != "" and seriesAt(v, incoming.committed.seriesId).version == -1)
-      putSeries(v.series, { version: 0, details: incoming.committed }) else v.series,
+      putSeries(v.series, { version: 0, details: incoming.committed })
+      else if (renaming) putSeries(v.series, { version: seriesVersion, details: renamed }) else v.series,
     selectedId: if (targetChanged and (incoming.phase == C::Deleted or not(v.opened))) "" else v.selectedId,
     deletion: if (targetChanged) NoDeletion else v.deletion }
 pure def alwaysViewIdentity(v: CalendarView): bool =
@@ -431,15 +435,55 @@ had, and so is the important mark, which the company never receives.
 
 Eliza Cloud's feed sends a repeating appointment as its single occurrences,
 each with its own ID and revision and its event's ID (Google's
-`singleEvents`), never the repetition rule. The tablet shows those
-occurrences as one repeating appointment: those of one event that share its
-title, place, notes, timezone and time of day and fall on the same weekday a
-week apart repeat every week, or on the same date a month apart every month.
-An occurrence that fits neither, such as one moved or retitled at the company,
-or the only one in reach, shows as an appointment of its own. Since the company
-sends every occurrence, an email account's calendar makes no repetition of its
-own. A change to the repeating appointment is made to the company's event, at
-the event's revision, by its ID.
+`singleEvents` and `recurringEventId`), never the repetition rule. The tablet
+groups occurrences by that event ID, never by their title, and shows them as
+one repeating appointment: those of one event that share the title, place and
+notes most of them have, its timezone and time of day and fall on the same
+weekday a week apart repeat every week, or on the same date a month apart
+every month. An occurrence that fits neither, such as one moved or retitled on
+its own at the company, or the only one in reach, shows as an appointment of
+its own. Since the company sends every occurrence, an email account's calendar
+makes no repetition of its own. A change to the repeating appointment is made
+to the company's event, at the event's revision, by its ID. A change of day or
+time moves the event by the same change of date and local time in its
+timezone, never by a fixed number of hours, so every occurrence keeps her local
+time across a daylight-saving change.
+
+### A repeating appointment renamed at the company stays one repeating appointment
+
+When the company renames a whole repeating appointment, changing its title,
+place or notes, its occurrences arrive with the new text. The tablet keeps them
+one repeating appointment, with Repeats and Delete every one: the first
+occurrence published with the next version of the series renames the series
+and every occurrence of it the tablet holds, and keeps everything else about
+it, its timezone, repeat, reminder and important mark. Only an email account's
+calendar is renamed this way; the tablet's own calendar changes only through
+the form. The new text is the series' only when at least two occurrences in
+reach carry it; a renamed series with a single occurrence in reach shows that
+occurrence as an appointment of its own until more arrive. The rename replaces
+the text of every occurrence the tablet holds, the one being edited included,
+as any newer revision from the company replaces an edit in progress.
+
+```quint
+pure def renamedSeries(known: C::EntryDetails, text: C::EntryDetails): C::EntryDetails =
+  { ...known, title: text.title, location: text.location, notes: text.notes }
+pure def renamedMember(c: C::Calendar, renamed: C::EntryDetails): C::Calendar =
+  if (c.hasSaved and c.phase != C::Deleted and c.committed.seriesId == renamed.seriesId)
+    { ...c, committed: renamedSeries(c.committed, renamed), draft: renamedSeries(c.draft, renamed) }
+  else c
+pure def renamesSeries(v: CalendarView, incoming: C::Calendar, seriesVersion: int): bool =
+  val known = seriesAt(v, incoming.committed.seriesId)
+  not(keepsRepetition(v)) and incoming.phase == C::Saved and incoming.committed.seriesId != "" and
+  known.version >= 0 and seriesVersion == known.version + 1 and
+  not(sameSeriesFields(incoming.committed, known.details)) and
+  sameSeriesFields(renamedSeries(known.details, incoming.committed), incoming.committed)
+pure def lawRenameKeepsEveryOccurrenceInSeries(v: CalendarView, incoming: C::Calendar, seriesVersion: int, scheduleVerified: bool, by: ViewActor): bool =
+  val after = publishOccurrence(v, incoming, seriesVersion, scheduleVerified, by)
+  (alwaysEntriesUseSeries(v) and canPublishOccurrence(v, incoming, seriesVersion, scheduleVerified, by) and renamesSeries(v, incoming, seriesVersion)) implies
+    (seriesAt(after, incoming.committed.seriesId).version == seriesVersion and
+      after.entries.every(c => (c.hasSaved and c.phase != C::Deleted and c.committed.seriesId == incoming.committed.seriesId) implies
+        sameSeriesFields(c.committed, incoming.committed)))
+```
 
 ```quint
 pure val tabletCalendarId: str = "tablet"
