@@ -42,7 +42,7 @@ configuration. The migration refuses an occupied database on first install.
 | Subscriptions | Grace Plus costs USD 30 per month. The production configuration maps `plus_monthly` to its dedicated live product and price in Eliza Labs. Bind `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` to Grace and enable the hosted customer portal. Register `https://api.graceforseniors.com/api/v1/billing/webhook` for checkout completion, subscription changes, paid invoices, refunds and dispute changes. The Worker verifies the event signature, retrieves the customer's current subscription and applies each paid invoice once. [Grace Plus in Stripe](https://dashboard.stripe.com/acct_1SRAVOJjh0QG9ZAX/products/prod_VeHYVJT4exsbJE) |
 | Inference | The production Worker uses its own `AI` binding in Grace’s Cloudflare account. The profile maps Grace’s `qwen-3.8-27b` to `@cf/qwen/qwen3.8-27b` and selects BGE Base English for embeddings. Model identifiers, response limits and prices in microdollars per 1,000 tokens are in `apps/cloud/wrangler.jsonc`. [Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/) |
 | Browser guidance | Grace imports the decision client from `@elizaos/cloud/clef-decisions`. The signed-in browser or tablet sends page candidates to the Grace API at `POST /api/v1/decisions`. The upstream Worker uses Grace’s `AI` binding to select a candidate with Clef Flash. Grace checks the current page again and highlights the link for the person to tap. |
-| Speech | The Worker uses its Grace-specific `CARTESIA_API_KEY` in the Eliza organization and Julia – Gentle Guide, a stock English voice. The organization's Startup model overage costs USD 45 per million credits. At three credits per second of transcription and one per character of synthesis, Grace meters 135 and 45 microdollars respectively. Each account can start up to 120 one-minute speech sessions per rolling day, carrying forward the previous integration's 120-minute ceiling. Grace owns the `SPEECH_RELAY_SESSIONS` Durable Objects. |
+| Speech | The Worker uses its Grace-specific `CARTESIA_API_KEY` in the Eliza organization and Julia – Gentle Guide, a stock English voice. The organization's Startup model overage costs USD 45 per million credits. At three credits per second of transcription and one per character of synthesis, Grace meters 135 and 45 microdollars respectively. Each account can start up to 120 one-minute speech sessions per rolling day, carrying forward the previous integration's 120-minute ceiling. |
 | Android | Register the Grace app package, release signer SHA-256 fingerprint, HTTPS return URLs and `credentialTtlMs: 604800000` (seven days) in `NATIVE_CLIENT_REGISTRY`, and select its `NATIVE_CLIENT_ID`. The app host serves the resulting Digital Asset Links document. Only the native app receives the inference credential. |
 
 For Grace’s restricted Stripe key, allow the Worker to create customers, Checkout sessions and
@@ -64,6 +64,10 @@ The deployment targets `app.graceforseniors.com` for Grace and
 Use `pnpm --filter @grace/cloud bundle` to build the UI and dry-run the Worker.
 The production command is `pnpm --filter @grace/cloud deploy` after the Grace
 database, Cloudflare bindings, provider registrations and launch journeys are ready.
+
+Drain active speech relay connections before applying the `speech-v2` Wrangler
+migration. It retires the `SpeechRelayCoordinator` namespace. The retired class
+kept its active relay and revocation flag in memory.
 
 For the first upgrade from Grace’s stock Cloud to Eliza’s current device-grant
 schema, take a database backup and drain HTTP writes, scheduled jobs and webhook
