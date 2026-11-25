@@ -82,9 +82,10 @@ function currentMailRecord(text: string) {
 effect function upgradedCalendar(text: string, account: number) {
   let changed = false
   const parsed: unknown = try Effect.try(() => JSON.parse(text, (key: string, value: unknown): unknown => {
-    if (key === "" && typeof value === "object" && value !== null && "entries" in value && !("picker" in value)) {
+    if (key === "" && typeof value === "object" && value !== null && "entries" in value) {
+      if ("picker" in value && "feedNeedsSignIn" in value) return value
       changed = true
-      return { ...value, picker: "NoPicker" }
+      return { picker: "NoPicker", feedNeedsSignIn: false, ...value }
     }
     if (typeof value === "object" && value !== null && "approvedRevision" in value && !("version" in value)) {
       changed = true

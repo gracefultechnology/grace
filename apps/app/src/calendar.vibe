@@ -9,7 +9,7 @@ import { Machine as Proposal, targetOf, type Ask, type Pending } from "../gen/ap
 import { GuidedRecovery } from "./guidedRecovery.vibe"
 import { enabled as admits, guidedSavePending, hasNext, isAppointmentSave, nextOutcome, Machine as Workspaces, type GuidedCalendarApproval, type Workspace } from "../gen/app__workspace.effect.vibe"
 import type { Watched } from "./accounts.vibe"
-import { Connector, type DeletionReceipt, type GuidedDispatch, type Published, type StoreReceipt } from "./connector.vibe"
+import { Connector, NeedsSignIn, type DeletionReceipt, type GuidedDispatch, type Published, type StoreReceipt } from "./connector.vibe"
 import { followAccounts, Instances, tablet } from "./instances.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
 import { Machine as Notices } from "../gen/app__notices.effect.vibe"
@@ -793,13 +793,25 @@ export const calendarFeeds = Layer.effectDiscard(effect {
       Stream.drop(Stream.tick("5 minutes"), 1), Stream.as(signedIn, undefined), Stream.as(reopened, undefined),
       Stream.as(reconnected, undefined), Stream.as(recovered, undefined)
     ], { concurrency: "unbounded" }), () => spanOf(lead))
+    effect function reportSignIn(attempt: number, needsSignIn: boolean) {
+      const current = try registry.get()
+      if (current.signIn.stage !== "NotSigningIn" || current.signIn.attempt !== attempt ||
+          !current.accounts.some((a) => a.id === account.id && a.use.calendar)) return
+      box.send({ type: "reportFeedSignIn", needsSignIn }, "ViewStore") catch () => undefined
+    }
     const fill = Stream.runForEach(Stream.merge(grown, again), effect (span) => {
       const v = provided(try box.get())
+      const { signIn } = try registry.get()
+      const attempt = signIn.stage === "NotSigningIn" ? signIn.attempt : -1
       const feed = link.feed({ ...v, window: { ...v.window, ...span } })
       effect {
         try Stream.runForEach(feed, (p) => Effect.ignore(box.send({ type: "publishOccurrence", ...p }, "ViewStore")))
         try shelf.stamp("calendar", account.id)
-      } catch effect (cause) => try annotateLogs(logWarning("Calendar feed not fetched; asked again on sign-in, reconnection, opening Calendar or within 5 minutes", cause), { account: account.id })
+        try reportSignIn(attempt, false)
+      } catch effect (cause) => {
+        if (cause instanceof NeedsSignIn) try reportSignIn(attempt, true)
+        try annotateLogs(logWarning("Calendar feed not fetched; asked again on sign-in, reconnection, opening Calendar or within 5 minutes", cause), { account: account.id })
+      }
       try repeat(box, span)
     })
     return try fork.scoped Effect.asVoid(Effect.all([keep(account.id, box, store, news.publish, spanOf(lead), workspace, recovery, deletedBy(host)), fill], { concurrency: "unbounded" }))
