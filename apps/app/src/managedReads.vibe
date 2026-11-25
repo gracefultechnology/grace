@@ -157,7 +157,7 @@ type ReadIntent = Intent & { homeOccurrence?: HomeOccurrence }
 type Command = (({ kind: "mailFolder"; folder: ManagedFolder; search: string } | { kind: "calendarWindow"; move: Navigation; day: number }) & WriteScope) | { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" | "saveAttachment" | "savePhotos" }
 
 export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | { kind: "confidentialMail" } | (
-  { accountId: string; googleEmail: string; grant: string; id: string; version: string } &
+  { accountId: string; googleEmail: string; owner: string; grant: string; id: string; version: string } &
   ({ kind: "mail"; subjectForGrace: string } | { kind: "calendar"; title: string; startAt: string })
 )
 
@@ -172,6 +172,10 @@ export function surfaceOwner(setup: Pick<SetupState, "graceAccount" | "googleLin
 
 export type GuidedAuthority = { device: string; connected: string | undefined }
 
+function managedGuidedOwner(accountId: string, email: string): string {
+  return JSON.stringify(["google", accountId, email])
+}
+
 export function guidedAuthority(setup: SetupState | undefined, hash: string): GuidedAuthority {
   const account = setup?.graceAccount
   const link = setup?.googleLink
@@ -179,7 +183,7 @@ export function guidedAuthority(setup: SetupState | undefined, hash: string): Gu
   const owner = surfaceOwner(setup, hash)
   const connected = owner === "Ours" ? "tablet" : owner === "Hosted" &&
     account?.tag === "GraceSignedIn" && link?.tag === "GoogleLinkConnected" && link.email.trim() !== ""
-      ? JSON.stringify(["google", account.accountId, link.email.trim().toLowerCase()]) : undefined
+      ? managedGuidedOwner(account.accountId, link.email.trim().toLowerCase()) : undefined
   return { device, connected }
 }
 
@@ -768,7 +772,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
         (shown.kind === "mail") !== (scope.view === "Email")) return { kind: "unavailable" }
     const googleEmail = account.googleLink.email.trim().toLowerCase()
     if (googleEmail === "" || scope.grant === "") return { kind: "unavailable" }
-    const ownership = { accountId: scope.accountId, grant: scope.grant, googleEmail }
+    const ownership = { accountId: scope.accountId, grant: scope.grant, googleEmail, owner: managedGuidedOwner(scope.accountId, googleEmail) }
     if (shown.kind === "mail") {
       const selected = shown.selected
       const version = selected?.message.metadata?.historyId
