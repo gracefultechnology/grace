@@ -349,6 +349,22 @@ lemma lawHomeCountsOnlyShownMail_ensures(registry: app__accounts_Accounts, sourc
   }
 }
 
+lemma lawBannerNamesASignedOutShownAccount_ensures(registry: app__accounts_Accounts, sources: seq<MailSource>)
+  ensures (lawBannerNamesASignedOutShownAccount(registry, sources) == true)
+{
+  var visible := shown(registry, sources);
+  var signedOutSources := signedOut(registry, sources);
+  if |signedOutSources| > 0 {
+    var first := signedOutSources[0];
+    assert first in signedOutSources;
+    assert signedOutSources == ProofLib.Filter((s: MailSource) => needsSignIn(s.mailbox), visible);
+    ProofLib.FilterMember((s: MailSource) => needsSignIn(s.mailbox), visible, first);
+    OpenSourceFilter(registry, sources);
+    ProofLib.FilterMember((s: MailSource) => showsMail(registry, s.account), sources, first);
+    assert first.account == homeSignIn(registry, sources);
+  }
+}
+
 lemma lawDraftsCountOnlyShownMail_ensures(registry: app__accounts_Accounts, sources: seq<MailSource>)
   ensures (lawDraftsCountOnlyShownMail(registry, sources) == true)
 {

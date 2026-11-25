@@ -21,6 +21,7 @@ lemma lawControlsPreserveBrowser_ensures(b: app__browser_Browser, browserInput: 
       case Back => app__browser_goBack_ensures(b);
       case Forward => app__browser_goForward_ensures(b);
       case Reload => app__browser_reload_ensures(b);
+      case ReopenWhenOnline(id, revision) => app__browser_reload_ensures(b);
       case ResizeTabs(revision, capacity) => app__browser_resize_ensures(b, capacity);
       case RememberPage(id, revision, scroll, pagePanel) => app__browser_rememberPagePosition_ensures(b, scroll, pagePanel);
       case ZoomPage(percent) => app__browser_zoomPage_ensures(b, percent);
