@@ -144,7 +144,7 @@ calendar shows, or an email whose calendar shows needs her to sign in
 again, it keeps the appointments it has and says "Last updated" with when
 it last did; Home’s banner says why
 ([Notices](./notices.md)). Only then does it say "Last updated". Otherwise it
-says "Today" when a shown appointment is saved for today, "Nothing today"
+says "Today" when a shown upcoming appointment starts today, "Nothing today"
 when the next is on a later day, and "Nothing planned" when none is coming
 (`prototype/Grace Prototype.html:1942–1945`). With nothing planned, faded rows
 keep the card’s shape and Grace’s hint under her sparkle reads "Ask Grace to
@@ -161,9 +161,10 @@ pure def cantUpdate(registry: A::Accounts, calendars: List[CalendarSource], sour
   val signedOut = M::signedOut(registry, sources)
   shown.some(s => not(online) or signedOut.some(mail => mail.account == s.key))
 pure def homeCalendarStatus(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool, fromTime: int, untilTime: int, dayStart: int, dayEnd: int): HomeCalendarStatus =
+  val shown = upcoming(registry, calendars, fromTime, untilTime)
   if (cantUpdate(registry, calendars, sources, online)) CalendarLastUpdated
-  else if (upcoming(registry, calendars, fromTime, untilTime).length() == 0) NothingPlanned
-  else if (upcoming(registry, calendars, dayStart, dayEnd).length() > 0) CalendarToday
+  else if (shown.length() == 0) NothingPlanned
+  else if (shown.some(r => r.details.startAt >= dayStart and r.details.startAt < dayEnd)) CalendarToday
   else NothingToday
 pure def homeCalendarHint(status: HomeCalendarStatus): bool = status == NothingPlanned
 pure def lawLastUpdatedOnlyWhileItCantUpdate(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool, fromTime: int, untilTime: int, dayStart: int, dayEnd: int): bool =
