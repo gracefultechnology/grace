@@ -3,7 +3,7 @@ import { AccountFacts, Button, Checkbox, Input, PageHeading, PageText, RetryNoti
 import { Effect, Exit } from "effect";
 import { useId, useState, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
-import { managesOnTheWeb, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCheckAccountAgain, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, showsMailLeaseUpgrade, showsTabletSignIn } from "../gen/app__setup.ts";
+import { hasActiveSubscription, managesOnTheWeb, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCheckAccountAgain, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, showsMailLeaseUpgrade, showsTabletSignIn } from "../gen/app__setup.ts";
 import { AccountActions, type Operation } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
 import { GraceSignInCode } from "./GraceSignInCode.tsx";
@@ -31,6 +31,7 @@ export function GraceAccountSettings() {
   const [calendar, setCalendar] = useState(false);
   const [expectedEmail, setExpectedEmail] = useState("");
   const googleAddressId = useId();
+  const membershipCodeId = useId();
   const run = (operation: Operation, onSuccess?: () => void) => startTransition(async () => {
     setFailed(undefined);
     setReturnFailed("");
@@ -47,7 +48,7 @@ export function GraceAccountSettings() {
   const accountAction = needsCleanup ? "cleanupLegacySignIn" : signedIn || snapshot?.tag === "GraceDeviceSignedIn" ? "signOut" : undefined;
   const confirmingSignOut = accountAction !== undefined && confirmation === accountAction;
   const canRetry = snapshot !== undefined && mayCheckAccountAgain(snapshot);
-  const active = signedIn && (snapshot.plan === "PlanActive" || snapshot.plan === "PlanActiveManaged");
+  const active = signedIn && hasActiveSubscription(snapshot);
   return (
     <section data-sensitive="true" aria-busy={pending || undefined} className="flex flex-col items-start gap-5">
       <PageHeading>Grace account</PageHeading>
@@ -105,6 +106,19 @@ export function GraceAccountSettings() {
           )}
           {mayOpenBillingPortal(snapshot) && (
             <Button variant="prominent" size="pill" disabled={pending || confirmingSignOut} onClick={() => run({ kind: "portal" })}>Manage subscription</Button>
+          )}
+          {mayRedeemMembershipCode(snapshot) && (
+            <form key={snapshot.accountId} className="flex flex-col items-start gap-3" onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const code = new FormData(form).get("membership-code");
+              if (typeof code === "string") run({ kind: "redeemMembershipCode", code }, () => form.reset());
+            }}>
+              <label htmlFor={membershipCodeId}>Membership code</label>
+              <Input id={membershipCodeId} name="membership-code" autoComplete="off" autoCapitalize="characters" spellCheck={false}
+                disabled={pending || confirmingSignOut} required />
+              <Button type="submit" variant="capsule" size="pill" disabled={pending || confirmingSignOut}>Redeem code</Button>
+            </form>
           )}
           {link?.tag === "GoogleLinkConnected" && (
             <>

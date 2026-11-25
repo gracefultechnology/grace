@@ -1,8 +1,9 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"
 import {
-  type GoogleLink, type GraceAccount, accountDetailsShown, type GracePlan, type MailLeaseUpgradePhase, type TabletMailAuthority, isTheRequestsOwnReturn, Machine as Setup, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, signedInTablet, tabletSignInConfirmed
+  type GoogleLink, type GraceAccount, accountDetailsShown, type GracePlan, type MailLeaseUpgradePhase, type TabletMailAuthority, hasActiveSubscription, isTheRequestsOwnReturn, Machine as Setup, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, signedInTablet, tabletSignInConfirmed
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { checkoutFromResponse, normalizeSubscriptionCode, redeemResultFromResponse, snapshotFromResponse, type BillingSnapshot } from "@elizaos/cloud"
 import { accountPlugin, accountReadResponse, type AccountBridge } from "./accountPlugin.ts"
 import type { AccountRequest, accountRequests, TabletGoogleRead } from "./cloudRequests.vibe"
 import { privateViewPlugin, webView } from "./surfacePlugin.ts"
@@ -21,7 +22,8 @@ const upgradePhase = {
   acknowledgmentPending: { tag: "LeaseUpgradeAcknowledgmentPending" },
 } as const satisfies Record<string, MailLeaseUpgradePhase>
 schema Providers { google: boolean; email: boolean; sms: boolean }
-schema Subscription { status: "inactive" | "active"; canManage: boolean; canCheckout: boolean }
+const gracePlus = "plus_monthly"
+const PlanCatalog = Schema.Struct({ plans: Schema.Array(Schema.Struct({ key: Schema.String })) })
 schema Destination { url: string }
 schema DeviceApproval { redirectUrl: string }
 schema DeviceAttempt { challenge: string; state: string }
@@ -77,6 +79,7 @@ type AccountOperation =
   | { kind: "authorizeDevice"; expectedAccountId: string }
   | { kind: "signIn"; method?: "browser" }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
+  | { kind: "redeemMembershipCode"; code: string }
   | { kind: "connectGoogle"; mail: boolean; calendar: boolean; sendMail: boolean; trashMail: boolean; writeCalendar: boolean; expectedEmail: string }
   | { kind: "verifyCode"; provider: CodeProvider; address: string; code: string }
 export type Operation = AccountOperation | UpgradeOperation
@@ -123,8 +126,11 @@ effect function decode<A>(response: Response, decoder: Schema.Decoder<A>) {
   return try Schema.decodeUnknownEffect(decoder)(input)
 }
 
-function planFrom({ status, canManage, canCheckout }: typeof Subscription.Type): GracePlan {
-  if (status === "active") return canManage ? "PlanActiveManaged" : "PlanActive"
+function planFrom(snapshot: BillingSnapshot, checkoutOffered: boolean): GracePlan {
+  const status = snapshot.subscription?.status
+  const canManage = checkoutOffered && status !== undefined
+  if (snapshot.plan.source !== "free") return canManage ? "PlanActiveManaged" : "PlanActive"
+  const canCheckout = checkoutOffered && (status === undefined || status === "canceled" || status === "incomplete_expired")
   if (canManage) return canCheckout ? "PlanInactiveManagedCheckout" : "PlanInactiveManaged"
   return canCheckout ? "PlanInactive" : "PlanInactiveBlocked"
 }
@@ -182,10 +188,21 @@ effect function readAccount(transport: Transport): GraceAccount!unknown {
     const providers = try decode(try accepted(transport, "/api/auth/providers", "GET"), Providers)
     return { tag: "GraceSignedOut", google: providers.google, emailCode: providers.email, smsCode: providers.sms }
   }
-  const subscription = effect {
-    return try decode(try accepted(transport, "/api/v1/billing/subscription", "GET"), Subscription)
-  } catch () => undefined
-  return { tag: "GraceSignedIn", accountId: account.id, email: account.email ?? "", plan: subscription === undefined ? "PlanUnknown" : planFrom(subscription) }
+  const plan = effect {
+    const [snapshot, checkoutOffered] = try.all [
+      effect {
+        const response = try accepted(transport, "/api/v1/billing/limits", "GET")
+        return try snapshotFromResponse(try tryPromise(() => response.json()))
+      },
+      effect {
+        const response = try accepted(transport, "/api/v1/subscriptions/plans", "GET")
+        const catalog = try decode(response, PlanCatalog)
+        return catalog.plans.some(({ key }) => key === gracePlus)
+      } catch () => false
+    ]
+    return planFrom(snapshot, checkoutOffered)
+  } catch () => "PlanUnknown" as const
+  return { tag: "GraceSignedIn", accountId: account.id, email: account.email ?? "", plan }
 }
 
 effect function googleLink(response: Response, accountId: string): GoogleLink!unknown {
@@ -225,12 +242,31 @@ effect function connectGoogle(transport: Transport, operation: Extract<Operation
 }
 
 effect function openBilling(transport: Transport, operation: "checkout" | "portal") {
-  const path = operation === "checkout" ? "/api/v1/billing/checkout" : "/api/v1/billing/portal"
-  const { url } = try decode(try accepted(transport, path, "POST"), Destination)
+  const url = operation === "portal"
+    ? (try decode(try accepted(transport, "/api/v1/subscriptions/portal", "POST"), Destination)).url
+    : (try checkoutUrl(transport))
   const destination = try Effect.try(() => new URL(url))
   const origin = operation === "checkout" ? "https://checkout.stripe.com" : "https://billing.stripe.com"
   if (destination.origin !== origin || destination.username !== "" || destination.password !== "") throw new AccountRequestFailed()
   try transport.openExternal(destination)
+}
+
+effect function checkoutUrl(transport: Transport) {
+  const idempotencyKey = try Effect.try(() => webView.window.crypto.randomUUID())
+  const response = try accepted(transport, "/api/v1/subscriptions/checkout", "POST", { planKey: gracePlus, idempotencyKey, presentation: "shared" })
+  const checkout = try checkoutFromResponse(try tryPromise(() => response.json()))
+  if (checkout.status !== "open" || !("checkoutUrl" in checkout)) throw new AccountRequestFailed()
+  return checkout.checkoutUrl
+}
+
+effect function redeemMembershipCode(transport: Transport, typedCode: string) {
+  const code = normalizeSubscriptionCode(typedCode)
+  if (code === null) return false
+  const idempotencyKey = try Effect.try(() => webView.window.crypto.randomUUID())
+  const response = try accepted(transport, "/api/v1/subscription/redeem", "POST", { code, idempotencyKey })
+  const now = try Clock.currentTimeMillis
+  const result = try redeemResultFromResponse(try tryPromise(() => response.json()), now)
+  return result.kind === "redeemed"
 }
 
 export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin: AccountBridge | undefined = accountPlugin) => Layer.effect(AccountActions, effect {
@@ -358,6 +394,12 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     }
     const account = try refresh()
     if (original.tag !== "GraceSignedIn" || account.tag !== "GraceSignedIn" || account.accountId !== original.accountId) return false
+    if (operation.kind === "redeemMembershipCode") {
+      if (!mayRedeemMembershipCode(account)) return false
+      const redeemed = redeemMembershipCode(transport, operation.code) catch () => false
+      const refreshed = try refresh()
+      return redeemed && refreshed.tag === "GraceSignedIn" && refreshed.accountId === account.accountId && hasActiveSubscription(refreshed)
+    }
     if (operation.kind === "connectGoogle") {
       if (!mayOfferGoogleLink(account, (try setup.get()).googleLink) || (!operation.mail && !operation.calendar)) return false
       if (account.email === "" && operation.expectedEmail === "") return false

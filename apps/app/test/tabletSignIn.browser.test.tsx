@@ -4,10 +4,70 @@ import { expect, it, onTestFinished, vi } from "vitest";
 import { cdp, page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import { AccountActions } from "../src/graceAccount.vibe";
-import { actOnScreen, tabletView } from "./screen.tsx";
+import { actOnScreen, browserBillingSnapshot, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
+
+it('Redeem a membership code and reopen the Grace account (spec/app/setup.md, "A signed-in web account with an inactive subscription can redeem a membership code")', async () => {
+  const original = location.href;
+  history.replaceState(null, "", "#account");
+  const account = { id: "membership-owner", email: "member@example.test" };
+  const now = Date.now();
+  const granted = { id: "grace-grant", effectiveFrom: now, effectiveUntil: now + 183 * 86400000 };
+  let grant: typeof granted | null = null;
+  const redemption: unknown[] = [];
+  const charges: string[] = [];
+  const network = window.fetch.bind(window);
+  const service = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : input, location.href);
+    switch (url.pathname) {
+      case "/api/auth/session": return Response.json({ account });
+      case "/api/v1/eliza/google/status": return Response.json({ accountId: account.id, provider: "google", side: "owner", mode: "cloud_managed", configured: false, connected: false, grantedCapabilities: [], identity: null });
+      case "/api/v1/billing/limits": return Response.json(browserBillingSnapshot(grant));
+      case "/api/v1/subscriptions/plans": return Response.json({ plans: [{ key: "plus_monthly" }] });
+      case "/api/v1/subscriptions/checkout":
+        charges.push(url.pathname);
+        return new Response(null, { status: 503 });
+      case "/api/v1/subscription/redeem": {
+        const submitted: unknown = await new Response(init?.body).json();
+        redemption.push(submitted);
+        if (redemption.length === 1) return Response.json({ error: "grant_code_invalid" }, { status: 400 });
+        grant = granted;
+        const { data } = browserBillingSnapshot(grant);
+        return Response.json({ replayed: false, grant: data.grant, entitlement: { plan: data.plan } });
+      }
+      default: return network(input, init);
+    }
+  });
+  onTestFinished(() => { service.mockRestore(); history.replaceState(null, "", original); });
+  const first = tabletView(ManagedRuntime.make(application(undefined)));
+  try {
+    await first.render();
+    const code = page.getByRole("textbox", { name: "Membership code" });
+    const redeem = page.getByRole("button", { name: "Redeem code" });
+    await act(() => userEvent.fill(code, "FFFF-FFFF-FFFF-FFFF"));
+    await act(() => userEvent.click(redeem));
+    await expect.element(page.getByRole("alert")).toBeVisible();
+    await expect.element(code).toHaveValue("FFFF-FFFF-FFFF-FFFF");
+    await act(() => userEvent.fill(code, "1234-5678-90ab-cdef"));
+    await act(() => userEvent.click(redeem));
+    await expect.element(page.getByText("Active", { exact: true })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Subscribe", exact: true })).not.toBeInTheDocument();
+    expect(redemption).toEqual([
+      { code: "FFFFFFFFFFFFFFFF", idempotencyKey: expect.any(String) },
+      { code: "1234567890ABCDEF", idempotencyKey: expect.any(String) },
+    ]);
+    expect(charges).toEqual([]);
+  } finally {
+    await first.dispose();
+  }
+  const reopened = tabletView(ManagedRuntime.make(application(undefined)));
+  onTestFinished(() => reopened.dispose());
+  await reopened.render();
+  await expect.element(page.getByText("Active", { exact: true })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Redeem code" })).not.toBeInTheDocument();
+});
 
 it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
   const original = location.href;
@@ -47,7 +107,7 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
     const path = typeof input === "string" ? new URL(input, location.href).pathname : "";
     await beforeReply?.(path);
     if (path === "/api/auth/session") return Response.json({ account: { id: accountId, email: accountId + "@example.test" } });
-    if (path === "/api/v1/billing/subscription") return Response.json({ status: "inactive", canManage: false, canCheckout: false });
+    if (path === "/api/v1/billing/limits") return Response.json(browserBillingSnapshot());
     if (path === "/api/v1/eliza/google/status") return Response.json({ accountId, provider: "google", side: "owner", mode: "cloud_managed", configured: false, connected: false, grantedCapabilities: [], identity: null });
     if (path !== "/api/auth/device/authorize") return network(input, init);
     authorizations.push(await new Response(init?.body).json());
