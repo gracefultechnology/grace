@@ -2,7 +2,7 @@
 import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { act } from "react";
-import { expect, inject, it, onTestFinished } from "vitest";
+import { expect, inject, it, onTestFinished, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import type { Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { approveSave, create, initial as newEntry, save } from "../gen/app__calendar.ts";
@@ -547,8 +547,11 @@ it('Delete one occurrence, then its series (spec/app/calendarView.md, "Story: De
 
 it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and open its event")', async () => {
   // spec/app/notices.md, "Story: See what needs me on Home"
-  const now = Date.now();
-  const { run } = await start({ clockAt: now });
+  const today = dayOf(Date.now());
+  const now = midnight(today) + 6 * hour;
+  vi.setSystemTime(now);
+  onTestFinished(() => { vi.useRealTimers(); });
+  const { card, run } = await start({ clockAt: now });
   const network = { online: true };
   Object.defineProperty(navigator, "onLine", { configurable: true, get: () => network.online });
   onTestFinished(() => { Reflect.deleteProperty(navigator, "onLine"); });
@@ -557,7 +560,6 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
     window.dispatchEvent(new Event(online ? "online" : "offline"));
   });
   // spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
-  const today = dayOf(now);
   const addToday = async (title: string, time: string) => {
     await click("Add");
     await act(() => userEvent.fill(page.getByRole("textbox", { name: "What" }), title));
@@ -618,4 +620,10 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await click("Back to Calendar");
   await click("Close Calendar");
   await expect.element(page.getByRole("button", { name: "See details" })).not.toBeInTheDocument();
+  // spec/app/calendars.md, "Home’s calendar card says Last updated only while it can’t update, and otherwise what is planned"
+  await tapHomeCalendar();
+  vi.setSystemTime(midnight(today) + 10 * hour);
+  await click("Close Calendar");
+  await expect.element(homeCalendarLauncher()).toHaveAccessibleName("Calendar Nothing today");
+  await expect.element(card.getByRole("button", { name: /Joan’s birthday/ })).toBeVisible();
 }, journey);
