@@ -115,5 +115,8 @@ export async function startBrowserReadPlan(
   await userEvent.click(ui.getByRole("button", { name: "Send", exact: true }));
   await expect.element(ui.getByRole("region", { name: "Review read plan" })).toBeVisible();
   await userEvent.click(ui.getByRole("button", { name: "Collapse", exact: true }));
+  const grace = ui.getByRole("region", { name: "Grace", exact: true });
+  await expect.element(grace.getByRole("button", { name: "Expand", exact: true })).toBeVisible();
+  await expect.poll(() => grace.query()?.getAnimations().length).toBe(0);
   await userEvent.click(ui.getByRole("button", { name: "Start read plan" }));
 }
