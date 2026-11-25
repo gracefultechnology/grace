@@ -53,7 +53,7 @@ export function GraceAccountSettings() {
     <section data-sensitive="true" aria-busy={pending || undefined} className="flex flex-col items-start gap-5">
       <PageHeading>Grace account</PageHeading>
       {returnFailed && <RetryNotice role="alert">{returnFailed}</RetryNotice>}
-      {failed && (failed !== "authorizeDevice" || tabletRequested) && <RetryNotice role="alert">Grace couldn’t finish that request. Try again.</RetryNotice>}
+      {failed && (failed !== "authorizeDevice" || tabletRequested) && <RetryNotice role="alert">{failed === "redeemMembershipCode" ? "Grace couldn’t redeem that code. Check it and try again." : "Grace couldn’t finish that request. Try again."}</RetryNotice>}
       {snapshot === undefined || snapshot.tag === "CheckingAccount" ? <PageText role="status">Checking your account…</PageText> : null}
       {snapshot?.tag === "GraceSignedOut" && (provider === undefined ? (
         <div className="flex flex-wrap gap-3">

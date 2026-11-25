@@ -189,17 +189,16 @@ effect function readAccount(transport: Transport): GraceAccount!unknown {
     return { tag: "GraceSignedOut", google: providers.google, emailCode: providers.email, smsCode: providers.sms }
   }
   const plan = effect {
-    const [snapshot, checkoutOffered] = try.all [
-      effect {
-        const response = try accepted(transport, "/api/v1/billing/limits", "GET")
-        return try snapshotFromResponse(try tryPromise(() => response.json()))
-      },
-      effect {
-        const response = try accepted(transport, "/api/v1/subscriptions/plans", "GET")
-        const catalog = try decode(response, PlanCatalog)
-        return catalog.plans.some(({ key }) => key === gracePlus)
-      } catch () => false
-    ]
+    const readSnapshot = effect {
+      const response = try accepted(transport, "/api/v1/billing/limits", "GET")
+      return try snapshotFromResponse(try tryPromise(() => response.json()))
+    }
+    const readOffer = effect {
+      const response = try accepted(transport, "/api/v1/subscriptions/plans", "GET")
+      const catalog = try decode(response, PlanCatalog)
+      return catalog.plans.some(({ key }) => key === gracePlus)
+    }
+    const [snapshot, checkoutOffered] = try.all [readSnapshot, Effect.orElseSucceed(readOffer, () => false)]
     return planFrom(snapshot, checkoutOffered)
   } catch () => "PlanUnknown" as const
   return { tag: "GraceSignedIn", accountId: account.id, email: account.email ?? "", plan }
