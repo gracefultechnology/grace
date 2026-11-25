@@ -1911,7 +1911,7 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  not(isNamedDestination(report.step)) and not(isPublicSort(report.step)) and
+  report.step != ReadMail and not(isNamedDestination(report.step)) and not(isPublicSort(report.step)) and
   not(isLatestRecord(report.step)) and not(isPublicSearch(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
@@ -2281,7 +2281,8 @@ pure val eval_witness_canConfirmGuidedRecord = (
 ### A calendar save must come from the selected email and a separately approved write
 
 Checking a selected open email records its current account, identity and
-version. A later calendar step may recognize a save from that same email
+version. A generic observation cannot finish the email step without that
+binding. A later calendar step may recognize a save from that same email
 and account. Starting the plan cannot write. The calendar's separate
 approved proposal is still what authorizes saving the exact appointment.
 The provider must return the saved occurrence and a fresh read must find
@@ -2293,14 +2294,11 @@ No email is recorded or rebound and no calendar approval, save or reconciliation
 
 ```quint
 pure def canConfirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): bool =
-  val reportedStep = mailCheck.report.step
-  val opensMail = match reportedStep {
-    | ReadMail => true
-    | _ => false
-  }
-  opensMail and canConfirmGuided(w, mailCheck.report, by) and
+  mailCheck.report.step == ReadMail and guidedObservationCurrent(w, mailCheck.report, by) and
   mailCheck.mail.account > 0 and mailCheck.mail.owner != "" and mailCheck.mail.address != "" and mailCheck.mail.ref != "" and
   mailCheck.mail.generation >= 0 and mailCheck.mail.revision >= 0 and not(heldByWebsite(w))
+pure def lawMailNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  report.step == ReadMail implies not(canConfirmGuided(w, report, by))
 pure def confirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): Workspace =
   val after = confirmGuided(w, mailCheck.report, by)
   { ...after, plan: { ...after.plan, mail: mailCheck.mail } }
