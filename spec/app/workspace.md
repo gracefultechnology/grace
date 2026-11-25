@@ -2300,7 +2300,7 @@ No email is recorded or rebound and no calendar approval, save or reconciliation
 
 ```quint
 pure def allowsManagedGuidedReading(plan: GuidedPlan): bool =
-  not(plan.steps.some(step => isAppointmentSave(step)))
+  not(plan.steps.some(guidedStep => isAppointmentSave(guidedStep)))
 pure def canConfirmGuidedMail(w: Workspace, mailConfirmation: GuidedMailConfirmation, by: WorkspaceActor): bool = {
   val selection = mailConfirmation.selection
   mailConfirmation.report.step == ReadMail and guidedObservationCurrent(w, mailConfirmation.report, by) and
