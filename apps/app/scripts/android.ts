@@ -356,10 +356,7 @@ function resolveNodeRuntime(directory: string, lock: typeof NodeLock.Type, abi: 
 }
 
 function bundleAgent(commit: string, bundle: string) {
-  for (const owner of ["core", "cloud", "agent"]) {
-    execFileSync(process.execPath, ["vibestack/spec.ts", "gen", "--owner", owner], { cwd: upstream, stdio: "inherit" });
-  }
-  execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/core", "--filter", "@elizaos/core-node", "--filter", "@elizaos/cloud", "--filter", "@elizaos/agent", "run", "build"], { stdio: "inherit" });
+  execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/core-node", "--filter", "@elizaos/cloud", "run", "build"], { stdio: "inherit" });
   execFileSync("pnpm", ["--dir", upstream, "--filter", "@elizaos/agent-host", "exec", "vibelang", "-p", "tsconfig.device.json"], { stdio: "inherit" });
   const build = path.join(upstream, "packages/agent-host/dist/src/bundle/build.js");
   execFileSync(process.execPath, ["--input-type=module", "--eval", [
