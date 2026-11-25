@@ -149,10 +149,10 @@ pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser
 
 From the repository root, run `git submodule update --init vendor/eliza` and then Eliza's own
 install from the [root setup](../../README.md#run-grace-cloud); without it Eliza's Core does not
-compile. Grace uses the Android consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
-The Android build generates Eliza's Core, Cloud and Agent models from the pinned checkout.
-It builds Core and the browser-safe Cloud client before compiling the Android Agent entry.
-The verified device bundle is written to `vendor/eliza/packages/agent/dist/bundle`. The build
+compile. Grace uses the Android consumer host and APK inspection from the pinned Eliza OS package,
+with WebView, Wi-Fi and Passwords bridges from Eliza OS Bridges. The Android build generates
+Eliza’s Core, Cloud and Agent models from the pinned checkout. It builds the device entry from
+Eliza Agent Host and writes the verified bundle to `vendor/eliza/packages/agent-host/dist/bundle`. The build
 downloads each target's pinned Node runtime from Eliza's public Android Node prerelease when the
 executable and build manifest are absent in `vendor/eliza/packages/os/dist/android/<abi>`. The
 runtime lock is Eliza's `packages/os/aosp/runtime/node.lock.json`. The OS stager checks the runtime digest,
@@ -183,8 +183,8 @@ directories and the selected cloud profile's `VITE_GRACE_CLOUD_*` origins, never
 environment, so `CI` and `TURBO_*` do not reach the nested code generation. `artifacts/apk-manifest.json` lists each APK this build
 produced with its processor type, size, SHA-256, requested permissions and the signer verified by `apksigner` from
 Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. Each APK
-passes upstream's distribution check (`apkDistributionProblems` in `@elizaos/os/android/apk-distribution.mjs`)
-with Grace's policy in `scripts/android.ts`. Backups are disabled and only listed components can
+is checked against Grace's distribution policy in `scripts/android.ts`, using the manifest
+and signer parsers from `@elizaos/os`. Backups are disabled and only listed components can
 be exported, with their required permissions. The check also requires a version and rejects source
 maps and test-only names. Grace checks the compiled network security resource that Android uses.
 Standard builds allow cleartext HTTP app-wide so the browser can open HTTP pages, including

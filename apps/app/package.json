@@ -17,8 +17,8 @@
     "typecheck": "vibelang --noEmit -p .",
     "test": "vitest run",
     "test:browser": "vitest run --project browser",
-    "android": "node scripts/android.ts",
-    "aosp": "node scripts/aosp.ts"
+    "android": "pnpm -w all //#gen:eliza --only && node scripts/android.ts",
+    "aosp": "pnpm -w all //#gen:eliza --only && node scripts/aosp.ts"
   },
   "dependencies": {
     "@capacitor/android": "8.5.2",

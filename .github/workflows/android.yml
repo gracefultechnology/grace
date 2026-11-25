@@ -83,7 +83,7 @@ jobs:
       - name: Reuse the pinned agent bundle
         uses: actions/cache@v6
         with:
-          path: vendor/eliza/packages/agent/dist/bundle
+          path: vendor/eliza/packages/agent-host/dist/bundle
           key: android-agent-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.agent-source.outputs.pin }}-${{ steps.agent-source.outputs.tools }}-${{ hashFiles('apps/app/agent/policy.json', 'apps/app/scripts/android.ts', '.github/actions/setup/action.yml', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'tsconfig*.json', 'patches/**', 'vibestack/*.ts', 'vibestack/gen/**', 'vibestack/std/**', 'vibestack/proof/**', 'vibestack/testing/**', 'vibestack/stories/**', 'vibestack/design/**', '!vibestack/**/node_modules/**', '!vibestack/**/.cache/**', '!vibestack/selftest.ts', '!vibestack/remote-cache.ts', '!vibestack/testing/test/**', '!vibestack/stories/test/**', '!vibestack/design/test/**') }}
       - run: pnpm --filter @repo/app android --abi ${{ matrix.abi }}
         env:

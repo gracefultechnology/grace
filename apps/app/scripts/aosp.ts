@@ -6,9 +6,8 @@ import os from "node:os";
 import {parseArgs} from "node:util";
 import {Schema} from "effect";
 import {isAndroidExecutableForAbi} from "@elizaos/os/android/android-runtime-inventory.mjs";
-import {readApkEntries, readApkSignerDigest} from "@elizaos/os/android/apk-distribution.mjs";
 import {createDevelopmentLauncherDescriptor, stageLauncher, validateDescriptor} from "@elizaos/os/aosp/stage-launcher-overlay.ts";
-import {buildTool as tool, checkedApk, identity as capacitor} from "./android.ts";
+import {buildTool as tool, checkedApk, identity as capacitor, readApkEntries, readApkSignerDigest} from "./android.ts";
 
 const {appId, appName} = capacitor;
 const identity = {brand: appName.toLowerCase(), moduleName: appName, packageName: appId};
@@ -61,7 +60,7 @@ try {
     throw new Error("The Chromium APK differs from the reviewed x86_64 build");
   const badging = execFileSync(tool("aapt"), ["dump", "badging", browserApk], {encoding: "utf8"});
   const expected = `package: name='${chromium.packageName}' versionCode='${chromium.versionCode}' versionName='${chromium.versionName}'`;
-  if (!badging.startsWith(expected) || readApkSignerDigest(browserApk, {apksigner: tool("apksigner")}) !== chromium.signerSha256)
+  if (!badging.startsWith(expected) || readApkSignerDigest(browserApk, tool("apksigner")) !== chromium.signerSha256)
     throw new Error("The browser package, version or signer differs from the reviewed Chromium build");
   fs.writeFileSync(path.join(browserDir, "Android.bp"), `android_app_import {
     name: "GraceChromium",
