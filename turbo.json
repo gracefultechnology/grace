@@ -146,11 +146,17 @@
       "inputs": [
         "vendor/eliza/{package.json,pnpm-lock.yaml,pnpm-workspace.yaml}",
         "vendor/eliza/{apps,packages}/*/package.json",
+        "vendor/eliza/packages/{agent,core,os}/src/**",
+        "vendor/eliza/packages/{agent,core,os}/tsconfig*.json",
         "vendor/eliza/spec/**/*.md",
+        "vendor/eliza/tsconfig.base.json",
         "vendor/eliza/vibestack/**",
         "!vendor/eliza/vibestack/**/{node_modules,.cache,.spec-cache,dist,gen}/**"
       ],
-      "outputs": ["vendor/eliza/packages/{cloud,cloud-worker,os,os-bridges}/gen/**"]
+      "outputs": [
+        "vendor/eliza/packages/{agent,agent-host,cloud,cloud-worker,core,core-node,os,os-bridges}/gen/**",
+        "vendor/eliza/packages/{agent,core,os}/dist/{gen,src}/**"
+      ]
     },
     "//#gen": {
       "dependsOn": ["//#gen:eliza"],
