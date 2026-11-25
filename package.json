@@ -10,7 +10,7 @@
     "studio": "node vibestack/spec.ts studio",
     "check": "node vibestack/spec.ts check",
     "gen": "node vibestack/spec.ts gen",
-    "gen:eliza": "node vibestack/spec.ts gen --owner cloud vendor/eliza && node vibestack/spec.ts gen --owner os vendor/eliza",
+    "gen:eliza": "pnpm --dir vendor/eliza gen --owner cloud && pnpm --dir vendor/eliza gen --owner os",
     "accept": "node vibestack/spec.ts accept",
     "new": "node vibestack/spec.ts new",
     "demo": "pnpm -C vibestack/examples/order demo",
