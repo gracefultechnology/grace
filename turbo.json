@@ -78,7 +78,11 @@
         "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/tsconfig*.json",
         "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/src/**"
       ],
-      "outputs": ["dist/**", "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/dist/{gen,src}/**"]
+      "outputs": [
+        "dist/**",
+        "$TURBO_ROOT$/vendor/eliza/packages/cloud/dist/{gen,src}/**",
+        "$TURBO_ROOT$/vendor/eliza/packages/cloud-worker/dist/{gen,src,pages}/**"
+      ]
     },
     "@grace/cloud#typecheck": {
       "dependsOn": ["@grace/cloud#build"],
