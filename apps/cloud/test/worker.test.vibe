@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { NodeFileSystem } from "@effect/platform-node"
 import { HttpClientRequest, HttpClientResponse } from "effect/http"
-import { nativeAssetLinks } from "@elizaos/cloud/worker"
+import { nativeAssetLinks } from "@elizaos/cloud-worker"
 
 schema Vars {
   PUBLIC_API_ORIGIN: string

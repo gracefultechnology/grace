@@ -1316,7 +1316,7 @@ const speechJourneys = ["Talk and hear a reply", "Answer a spoken question", "Ke
 
 async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wakeJourney) {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
-  const token = "8".repeat(64);
+  const token = "8".repeat(42) + "A";
   const speechPath = "/api/v1/voice/speech";
   const firstAccount = crypto.randomUUID();
   const secondAccount = crypto.randomUUID();

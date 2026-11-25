@@ -1,5 +1,5 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"
-import { migrate, storeLayer } from "@elizaos/cloud/store"
+import { migrate, storeLayer } from "@elizaos/cloud-worker"
 import { NodeFileSystem } from "@effect/platform-node"
 
 const Binding = Schema.Struct({
