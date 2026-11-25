@@ -36,6 +36,7 @@ so saving never changes a reminder she did not change. UI sorts each day's rows 
 Discovered by the proof: publishing a persisted row requires the collection's
 owner, calendar and display timezone to be bound first. An event's own timezone
 cannot establish the collection's independently chosen display timezone.
+A needs-sign-in report also requires a bound provider collection.
 
 A new bill occurrence published into a series that already has live saved
 members must pass Calendar's `followingAllowed` against each of them: it comes
@@ -127,7 +128,8 @@ pure def publishOccurrence(v: CalendarView, incoming: C::Calendar, seriesVersion
     selectedId: if (targetChanged and (incoming.phase == C::Deleted or not(v.opened))) "" else v.selectedId,
     deletion: if (targetChanged) NoDeletion else v.deletion }
 pure def alwaysViewIdentity(v: CalendarView): bool =
-  (v.opened or v.entries.length() > 0 or v.series.length() > 0) implies (v.owner != "" and v.calendarId != "" and v.timezone != "")
+  ((v.opened or v.entries.length() > 0 or v.series.length() > 0) implies (v.owner != "" and v.calendarId != "" and v.timezone != "")) and
+  (v.feedNeedsSignIn implies hasProviderFeed(v))
 pure def alwaysViewWindow(v: CalendarView): bool = validWindow(v.window) and v.generation >= 0
 pure def alwaysEntriesBelongToCalendar(v: CalendarView): bool =
   v.entries.every(c => validStored(c) and c.identity.owner == v.owner and c.identity.calendarId == v.calendarId)
@@ -196,12 +198,12 @@ result of a fetch for the same account and sign-in attempt while Calendar is
 still enabled.
 
 ```quint
-pure def hasProviderFeed(v: CalendarView): bool = v.owner != "" and v.calendarId != "" and v.calendarId != tabletCalendarId
+pure def hasProviderFeed(v: CalendarView): bool =
+  v.owner != "" and v.calendarId != "" and v.timezone != "" and v.calendarId != tabletCalendarId
 pure def canReportFeedSignIn(v: CalendarView, needsSignIn: bool, by: ViewActor): bool =
   by == ViewStore and hasProviderFeed(v) and needsSignIn != v.feedNeedsSignIn
 pure def reportFeedSignIn(v: CalendarView, needsSignIn: bool, by: ViewActor): CalendarView =
   { ...v, feedNeedsSignIn: needsSignIn }
-pure def alwaysOnlyProviderFeedsNeedSignIn(v: CalendarView): bool = v.feedNeedsSignIn implies hasProviderFeed(v)
 pure def sometimesFeedNeedsSignIn(v: CalendarView): bool = v.feedNeedsSignIn
 ```
 
