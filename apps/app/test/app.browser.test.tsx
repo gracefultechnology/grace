@@ -14,7 +14,7 @@ import { defaults, effectiveBrightness } from "../gen/app__preferences.ts";
 import { machineOver, Machine as Workspaces, type GuidedCheckpoint } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { agentTextLimit, personSays, tabletShows } from "../src/agentTurn.ts";
-import { PasswordsClientError } from "@elizaos/os/bridges/passwords";
+import { PasswordsClientError } from "@elizaos/os-bridges";
 import character from "../agent/character.json" with { type: "json" };
 import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";

@@ -5,13 +5,9 @@ import { Capacitor, registerPlugin } from "@capacitor/core";
 import { Effect, Schema } from "effect";
 import type { PluginListenerHandle } from "@capacitor/core";
 import { accountPlugin } from "./accountPlugin.ts";
-import type { ElizaSurfaceManagerPlugin } from "@elizaos/os/bridges/definitions/browser-surface";
-import type { WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
-import { createPasswordsClient } from "@elizaos/os/bridges/passwords";
-import type { ElizaPasswordsPlugin } from "@elizaos/os/bridges/definitions/passwords";
+import { createPasswordsClient, type ElizaPasswordsPlugin, type ElizaSurfaceManagerPlugin, type WiFiPlugin } from "@elizaos/os-bridges";
 
-export type { ElizaSurfaceManagerPlugin as SurfacePlugin } from "@elizaos/os/bridges/definitions/browser-surface";
-export type { WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
+export type { ElizaSurfaceManagerPlugin as SurfacePlugin, WiFiPlugin } from "@elizaos/os-bridges";
 
 /** The plugin on Android; elsewhere (Vite in a browser) there is no native page under the interface. */
 export const devicePlugin = Capacitor.isNativePlatform() ? registerPlugin<ElizaSurfaceManagerPlugin>("ElizaSurfaceManager") : undefined;

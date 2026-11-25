@@ -1,6 +1,6 @@
 // spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/workspace.md, "An authenticated restart restores the reviewed plan paused at its next outcome"; spec/app/network.md, "Wi-Fi sign-in opens in Grace's browser"; spec/app/network.md, "Only the current OS result can complete or challenge the join"
 import { Capacitor, registerPlugin } from "@capacitor/core";
-import type { JoinableWiFiSecurity } from "@elizaos/os/bridges/definitions/wifi";
+import type { JoinableWiFiSecurity } from "@elizaos/os-bridges";
 
 export interface PreferenceRecords {
   read(input: { name: "preferences" }): Promise<unknown>;

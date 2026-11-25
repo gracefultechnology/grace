@@ -25,6 +25,7 @@
     "@capacitor/core": "8.5.2",
     "@elizaos/cloud": "link:../../vendor/eliza/packages/cloud",
     "@elizaos/os": "link:../../vendor/eliza/packages/os",
+    "@elizaos/os-bridges": "link:../../vendor/eliza/packages/os-bridges",
     "@repo/design-system": "workspace:*",
     "@repo/ui": "workspace:*",
     "effect": "4.1.1",

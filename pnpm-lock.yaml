@@ -287,6 +287,9 @@ importers:
       '@elizaos/os':
         specifier: link:../../vendor/eliza/packages/os
         version: link:../../vendor/eliza/packages/os
+      '@elizaos/os-bridges':
+        specifier: link:../../vendor/eliza/packages/os-bridges
+        version: link:../../vendor/eliza/packages/os-bridges
       '@repo/design-system':
         specifier: workspace:*
         version: link:../../packages/design-system

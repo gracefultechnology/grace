@@ -1,5 +1,5 @@
 // spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"
-import type { JoinableWiFiSecurity, WiFiNetwork, WiFiPlugin } from "@elizaos/os/bridges/definitions/wifi";
+import type { JoinableWiFiSecurity, WiFiNetwork, WiFiPlugin } from "@elizaos/os-bridges";
 import { Deferred, Effect, ManagedRuntime } from "effect";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
