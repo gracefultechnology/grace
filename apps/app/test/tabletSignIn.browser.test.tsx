@@ -1,4 +1,4 @@
-import { Effect, Latch, ManagedRuntime } from "effect";
+import { Effect, Latch, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { expect, it, onTestFinished, vi } from "vitest";
 import { cdp, page, userEvent } from "vitest/browser";
@@ -16,7 +16,9 @@ it('Redeem a membership code and reopen the Grace account (spec/app/setup.md, "A
   const now = Date.now();
   const granted = { id: "grace-grant", effectiveFrom: now, effectiveUntil: now + 183 * 86400000 };
   let grant: typeof granted | null = null;
-  const redemption: unknown[] = [];
+  const Redemption = Schema.Struct({ code: Schema.String, idempotencyKey: Schema.NonEmptyString });
+  const readRedemption = Schema.decodeUnknownSync(Redemption);
+  const redemption: Array<typeof Redemption.Type> = [];
   const charges: string[] = [];
   const network = window.fetch.bind(window);
   const service = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
@@ -31,7 +33,7 @@ it('Redeem a membership code and reopen the Grace account (spec/app/setup.md, "A
         return new Response(null, { status: 503 });
       case "/api/v1/subscription/redeem": {
         const submitted: unknown = await new Response(init?.body).json();
-        redemption.push(submitted);
+        redemption.push(readRedemption(submitted));
         if (redemption.length === 1) return Response.json({ error: "grant_code_invalid" }, { status: 400 });
         grant = granted;
         const { data } = browserBillingSnapshot(grant);
@@ -54,10 +56,8 @@ it('Redeem a membership code and reopen the Grace account (spec/app/setup.md, "A
     await act(() => userEvent.click(redeem));
     await expect.element(page.getByText("Active", { exact: true })).toBeVisible();
     await expect.element(page.getByRole("button", { name: "Subscribe", exact: true })).not.toBeInTheDocument();
-    expect(redemption).toEqual([
-      { code: "FFFFFFFFFFFFFFFF", idempotencyKey: expect.any(String) },
-      { code: "1234567890ABCDEF", idempotencyKey: expect.any(String) },
-    ]);
+    expect(redemption.map(({ code }) => code)).toEqual(["FFFFFFFFFFFFFFFF", "1234567890ABCDEF"]);
+    expect(new Set(redemption.map(({ idempotencyKey }) => idempotencyKey)).size).toBe(2);
     expect(charges).toEqual([]);
   } finally {
     await first.dispose();
