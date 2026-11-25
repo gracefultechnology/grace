@@ -57,17 +57,9 @@
         "SPEECH_TTS_MICROS_PER_CHARACTER": "45",
         "SPEECH_DAILY_SESSION_LIMIT": "120"
       },
-      "durable_objects": {
-        "bindings": [
-          {
-            "name": "SPEECH_RELAY_SESSIONS",
-            "class_name": "SpeechRelayCoordinator"
-          }
-        ]
-      },
       "triggers": {
         "crons": [
-          "*/5 * * * *"
+          "* * * * *"
         ]
       },
       "ai": {
@@ -129,17 +121,9 @@
         "SMS_ALLOWED_COUNTRY_CODES": "+1",
         "SMS_HOURLY_BUDGET": "300"
       },
-      "durable_objects": {
-        "bindings": [
-          {
-            "name": "SPEECH_RELAY_SESSIONS",
-            "class_name": "SpeechRelayCoordinator"
-          }
-        ]
-      },
       "triggers": {
         "crons": [
-          "*/5 * * * *"
+          "* * * * *"
         ]
       },
       "hyperdrive": [
@@ -161,14 +145,6 @@
       ]
     }
   },
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "SPEECH_RELAY_SESSIONS",
-        "class_name": "SpeechRelayCoordinator"
-      }
-    ]
-  },
   "migrations": [
     {
       "tag": "speech-v1",
@@ -179,7 +155,7 @@
   ],
   "triggers": {
     "crons": [
-      "*/5 * * * *"
+      "* * * * *"
     ]
   }
 }
