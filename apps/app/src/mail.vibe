@@ -84,6 +84,7 @@ function leftOutbox(before: Mailbox, after: Mailbox): QueuedSend[] {
 }
 
 effect function expired(box: MailMachine.Shape) {
+  if ((try box.get()).connection === "Expired") return
   box.send({ type: "endConnection", resultStatus: "Expired" }, "MailConnector") catch () => undefined
 }
 
@@ -144,6 +145,11 @@ effect function outcome(box: MailMachine.Shape, sent: SendOutcome!NeedsSignIn) {
   }
 }
 
+effect function failedOnSignIn(sent: SendOutcome!NeedsSignIn): { readonly result: SendOutcome; readonly expired: boolean }!! {
+  const result = sent catch effect () => undefined
+  return result === undefined ? { result: { resultStatus: "SendFailed", evidence: "needs-sign-in" }, expired: true } : { result, expired: false }
+}
+
 effect function dispatch(account: Account, mail: MailConnection, library: Library.Shape, box: MailMachine.Shape, m: Mailbox, online: boolean) {
   const operationId = `send-${account.id}-${(try Clock.currentTimeMillis).toString(36)}-${(try Random.nextInt).toString(36)}`
   const recipientValid = recipientsValid(m.draft)
@@ -159,8 +165,9 @@ effect function dispatch(account: Account, mail: MailConnection, library: Librar
   const started = box.send({ type: "sendDraft", operationId, recipientValid, persisted: true }, "MailHost") catch () => undefined
   if (started === undefined) return
   const draft = currentDraft(m)
-  const result = try outcome(box, mail.send(operationId, draft, try library.contents(draft.attachments)))
-  if (result !== undefined) box.send({ type: "sendResult", operationId, ...result, persisted: true }, "MailConnector") catch () => undefined
+  const sent = try failedOnSignIn(mail.send(operationId, draft, try library.contents(draft.attachments)))
+  box.send({ type: "sendResult", operationId, ...sent.result, persisted: true }, "MailConnector") catch () => undefined
+  if (sent.expired) try expired(box)
 }
 
 effect function flush(box: MailMachine.Shape, mail: MailConnection, library: Library.Shape, m: Mailbox) {
@@ -168,9 +175,9 @@ effect function flush(box: MailMachine.Shape, mail: MailConnection, library: Lib
     if (q.status === "Waiting") {
       const begun = box.send({ type: "dispatchQueued", operationId: q.operationId, reachable: true }, "MailHost") catch () => undefined
       if (begun === undefined) continue
-      const result = try outcome(box, mail.send(q.operationId, q.snapshot, try library.contents(q.snapshot.attachments)))
-      if (result === undefined) return
-      box.send({ type: "queuedResult", operationId: q.operationId, ...result, persisted: true }, "MailConnector") catch () => undefined
+      const sent = try failedOnSignIn(mail.send(q.operationId, q.snapshot, try library.contents(q.snapshot.attachments)))
+      box.send({ type: "queuedResult", operationId: q.operationId, ...sent.result, persisted: true }, "MailConnector") catch () => undefined
+      if (sent.expired) return try expired(box)
     }
     if (q.status === "DispatchUnknown") {
       const found = try outcome(box, mail.lookup(q.operationId))
@@ -363,13 +370,15 @@ export const mailing = Layer.effect(Mail, effect {
 
   effect function drive(account: Account, mail: MailConnection, box: MailMachine.Shape, current?: Mailbox) {
     let m = current ?? (try box.get())
-    const needsOnlineWork = (m.sendStatus === "Reviewing" && m.approvedRevision === m.revision && !draftStoreBusy(m)) ||
+    const needsOnlineWork = m.connection === "Connected" && (
+      (m.sendStatus === "Reviewing" && m.approvedRevision === m.revision && !draftStoreBusy(m)) ||
       m.sentDrafts.length > 0 || (m.sendStatus === "SendUnknown" && m.operationId !== "") ||
       m.outbox.some((q) => q.status === "Waiting" || q.status === "DispatchUnknown")
+    )
     const needsStore = m.draftStorage === "DraftSaving" || m.draftStorage === "DraftDeleting"
     if (!needsOnlineWork && !needsStore) return
     const online = needsOnlineWork ? try reachable() : false
-    if (m.sendStatus === "Reviewing" && m.approvedRevision === m.revision && !draftStoreBusy(m)) {
+    if (m.connection === "Connected" && m.sendStatus === "Reviewing" && m.approvedRevision === m.revision && !draftStoreBusy(m)) {
       try dispatch(account, mail, library, box, m, online)
       m = try box.get()
     }
@@ -377,7 +386,7 @@ export const mailing = Layer.effect(Mail, effect {
       try store(account, mail, box, m)
       m = try box.get()
     }
-    if (!online) return
+    if (!online || m.connection !== "Connected") return
     if (m.sentDrafts.length > 0) {
       try removeSent(mail, box, m)
       m = try box.get()

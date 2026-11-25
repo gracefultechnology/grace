@@ -441,9 +441,35 @@ it("See all my email in one place", async () => {
   await opened(/St\. Mark’s Church Office/, "Thanksgiving dinner sign-up");
   await click(page.getByRole("button", { name: "Reply" }));
   await expect.element(subject()).toHaveValue("Re: Thanksgiving dinner sign-up");
-  await click(page.getByRole("button", { name: "Discard" }));
-  await expect.element(page.getByText("Email discarded")).toBeVisible();
-  await click(page.getByRole("button", { name: "Back to Inbox" }));
+  await act(() => userEvent.type(words(), "Count me in."));
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(page.getByText(/^Sent to St\. Mark/)).toBeVisible();
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Re: Thanksgiving dinner sign-up" && m.labels.includes("SENT")).map(() => b.address)), { timeout: 60_000 })
+    .toEqual([outlook]);
+  // spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/accounts.md, "Signing in again renews the same account"
+  await opened(/St\. Mark’s Church Office/, "Thanksgiving dinner sign-up");
+  await click(page.getByRole("button", { name: "Reply" }));
+  await act(() => userEvent.type(words(), "We will bring a pie."));
+  await Effect.runPromise(Effect.provide(expire(cloud, secret, outlook), client));
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(page.getByText("The email wasn’t sent. Check it and press Send again.")).toBeVisible();
+  await click(page.getByRole("button", { name: "Settings", exact: true }));
+  await click(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Email & calendar" }));
+  await click(page.getByRole("button", { name: /margaret@outlook\.com/ }));
+  await click(page.getByRole("button", { name: "Sign in again" }));
+  await expect.element(sheet).toBeVisible();
+  await expect.poll(() => outlookPage.mock.calls.length).toBe(2);
+  const renewed = await fetch(String(outlookPage.mock.calls[1][0]), { method: "POST", body: new URLSearchParams({ address: outlook, choice: "allow" }) });
+  expect(renewed.ok).toBe(true);
+  await expect.element(sheet).not.toBeInTheDocument();
+  await click(page.getByRole("button", { name: "Close Settings" }));
+  await expect.element(words()).toHaveValue("We will bring a pie.");
+  await act(() => userEvent.type(words(), " And a salad."));
+  await click(page.getByRole("button", { name: "Send" }));
+  await expect.element(page.getByText(/^Sent to St\. Mark/)).toBeVisible();
+  await expect.poll(async () => (await company()).boxes.flatMap((b) => b.mail.filter((m) => m.subject === "Re: Thanksgiving dinner sign-up" && m.labels.includes("SENT")).map(() => b.address)), { timeout: 60_000 })
+    .toEqual([outlook, outlook]);
+  await expect.element(page.getByText("Outlook needs you to sign in again")).not.toBeInTheDocument();
 
   // spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"
   await person({ type: "setUse", id: 2, use: { mail: false, calendar: true, contacts: true } });

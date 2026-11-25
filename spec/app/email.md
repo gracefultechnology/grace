@@ -833,7 +833,10 @@ pure def sometimesGraceReplyOpen(m: Mailbox): bool =
 
 The adapter validates recipient syntax and persists the operation identifier
 before dispatch. A verified provider acknowledgment establishes Sent; it does not claim
-the recipient read or received it. A verified non-send establishes SendFailed.
+the recipient read or received it. A verified non-send establishes SendFailed:
+her email company refusing the send because she must sign in again is one, so
+the connection then ends as Expired and, once she has signed in again, she can
+send that email again instead of waiting on one that never left.
 Timeout, disconnect or crash leaves SendUnknown. Reconciliation must inspect the
 same operation and produce actual provider evidence; it cannot treat a missing
 confirmation as proof of failure. A failed draft requires edit/review/approval
