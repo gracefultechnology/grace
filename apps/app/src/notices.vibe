@@ -7,6 +7,7 @@ import type { ReminderPlugin } from "./accountPlugin.ts"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Machine as Accounts, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { homeSignIn, type MailSource, showsConnect } from "../gen/app__mailboxes.effect.vibe"
+import { homeCalendarSignIn, type CalendarSource } from "../gen/app__calendars.effect.vibe"
 import { Instances } from "./instances.vibe"
 import { surfaceOwner } from "./managedReads.vibe"
 import { type WiFiPlugin, webView } from "./surfacePlugin.ts"
@@ -82,15 +83,24 @@ const host = (wifi: WiFiPlugin | undefined, reminderPort?: ReminderPlugin) => La
   const connection = Stream.changes(Stream.concat(Stream.fromEffect(connected(wifi)), Stream.drop(Stream.changes(Stream.map(workspace.changes, (w) => w.device.connectivity === "Online")), 1)))
   try fork.scoped Stream.runForEach(connection, (online) => Effect.orDie(notices.send({ type: "observeConnection", online }, "Host")))
   effect function causesOf(registry: Registry) {
-    const watched: Stream.Stream<MailSource>[] = []
+    const mail: Stream.Stream<MailSource>[] = []
+    const calendars: Stream.Stream<CalendarSource>[] = []
     for (const account of registry.accounts) {
-      if (!account.use.mail) continue
-      const box = shelf.mail(account.id) catch () => undefined
-      if (box !== undefined) watched.push(Stream.map(box.changes, (mailbox) => ({ account: account.id, mailbox })))
+      if (account.use.mail) {
+        const box = shelf.mail(account.id) catch () => undefined
+        if (box !== undefined) mail.push(Stream.map(box.changes, (mailbox) => ({ account: account.id, mailbox })))
+      }
+      if (account.use.calendar) {
+        const calendar = shelf.calendar(account.id) catch () => undefined
+        if (calendar !== undefined) calendars.push(Stream.map(calendar.changes, (view) => ({ key: account.id, view })))
+      }
     }
-    const sources: Stream.Stream<readonly MailSource[]> = watched.length === 0 ? Stream.make([]) : Stream.zipLatestAll(...watched)
-    return Stream.map(sources, (current) => {
-      const named = registry.accounts.find((a) => a.id === homeSignIn(registry, [...current]))
+    const sources: Stream.Stream<readonly MailSource[]> = mail.length === 0 ? Stream.make([]) : Stream.zipLatestAll(...mail)
+    const views: Stream.Stream<readonly CalendarSource[]> = calendars.length === 0 ? Stream.make([]) : Stream.zipLatestAll(...calendars)
+    return Stream.map(Stream.zipLatest(sources, views), ([currentMail, currentCalendars]) => {
+      const mailId = homeSignIn(registry, [...currentMail])
+      const id = mailId === 0 ? homeCalendarSignIn(registry, [...currentCalendars]) : mailId
+      const named = registry.accounts.find((a) => a.id === id)
       return { signIn: named === undefined ? "" : named.name || named.address, noEmail: showsConnect(registry) }
     })
   }

@@ -63,13 +63,13 @@ type CalendarView = {
   owner: str, calendarId: str, timezone: str, opened: bool, window: ViewWindow,
   entries: List[C::Calendar], selectedId: str, deletedSeries: Set[str], cancelledIds: Set[str],
   series: List[SeriesDefinition],
-  deletion: DeleteStatus, scope: DeleteScope, generation: int, picker: FormPicker
+  deletion: DeleteStatus, scope: DeleteScope, generation: int, picker: FormPicker, feedNeedsSignIn: bool
 }
 pure val emptyWindow: ViewWindow = { mode: WeekView, anchorDay: 0, selectedDay: 0, fromTime: 0, untilTime: 1 }
 pure val initial: CalendarView = {
   owner: "", calendarId: "", timezone: "", opened: false, window: emptyWindow,
   entries: List(), selectedId: "", deletedSeries: Set(), cancelledIds: Set(), series: List(), deletion: NoDeletion,
-  scope: ThisOccurrence, generation: 0, picker: NoPicker
+  scope: ThisOccurrence, generation: 0, picker: NoPicker, feedNeedsSignIn: false
 }
 pure def validWindow(window: ViewWindow): bool = window.fromTime < window.untilTime
 pure def validStored(c: C::Calendar): bool =
@@ -183,6 +183,26 @@ pure def lawBoundCalendarStaysBound(v: CalendarView, owner: str, calendarId: str
   (v.owner != "" and canBindCalendar(v, owner, calendarId, timezone, by)) implies
     (owner == v.owner and calendarId == v.calendarId and timezone == v.timezone)
 pure def sometimesSavedWhileClosed(v: CalendarView): bool = not(v.opened) and v.entries.some(c => c.hasSaved)
+```
+
+### A provider calendar remembers when its feed needs sign-in
+
+The store records when the bound provider calendar's feed reports that its
+account needs sign-in. A successful feed read clears that report, even if no
+appointments came back. An outage or other failure leaves the report as it
+was. The report does not change any appointment or authorize an account, and
+the tablet's own calendar never needs sign-in. The store reports only the
+result of a fetch for the same account and sign-in attempt while Calendar is
+still enabled.
+
+```quint
+pure def hasProviderFeed(v: CalendarView): bool = v.owner != "" and v.calendarId != "" and v.calendarId != tabletCalendarId
+pure def canReportFeedSignIn(v: CalendarView, needsSignIn: bool, by: ViewActor): bool =
+  by == ViewStore and hasProviderFeed(v) and needsSignIn != v.feedNeedsSignIn
+pure def reportFeedSignIn(v: CalendarView, needsSignIn: bool, by: ViewActor): CalendarView =
+  { ...v, feedNeedsSignIn: needsSignIn }
+pure def alwaysOnlyProviderFeedsNeedSignIn(v: CalendarView): bool = v.feedNeedsSignIn implies hasProviderFeed(v)
+pure def sometimesFeedNeedsSignIn(v: CalendarView): bool = v.feedNeedsSignIn
 ```
 
 ### Navigation clears detail and only accepts a validated calendar interval
