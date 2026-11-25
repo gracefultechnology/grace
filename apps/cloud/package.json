@@ -8,8 +8,8 @@
     "typecheck": "vibelang --noEmit -p .",
     "test": "vitest run",
     "dev": "pnpm build && wrangler dev --local --port 8787",
-    "bundle": "pnpm build && VITE_GRACE_CLOUD_API_ORIGIN=https://api-staging.graceforseniors.com VITE_GRACE_CLOUD_WEB_ORIGIN=https://app-staging.graceforseniors.com pnpm --filter @repo/app build && wrangler deploy --env staging --dry-run --outdir .wrangler/bundle/staging && pnpm --filter @repo/app build && wrangler deploy --env production --dry-run --outdir .wrangler/bundle/production",
-    "deploy": "pnpm build && pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Browse and return to the page I left' && pnpm --filter @repo/app build && wrangler deploy --env production",
+    "bundle": "pnpm build && node -e \"const { execFileSync } = require('node:child_process'); const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8')); for (const [environment, { assets, vars }] of Object.entries(config.env)) { const outDir = path.resolve(assets.directory); if (path.dirname(outDir) !== path.resolve('.wrangler/assets')) throw new Error('Worker assets must be in a directory under .wrangler/assets'); fs.rmSync(outDir, { recursive: true, force: true }); fs.cpSync('../../vendor/eliza/packages/cloud-worker/dist/pages', outDir, { recursive: true }); const env = { ...process.env, VITE_GRACE_CLOUD_API_ORIGIN: vars.PUBLIC_API_ORIGIN, VITE_GRACE_CLOUD_WEB_ORIGIN: vars.WEB_ORIGIN }; execFileSync('pnpm', ['--filter', '@repo/app', 'build', '--outDir', outDir, '--emptyOutDir=false'], { env, stdio: 'inherit' }); execFileSync('wrangler', ['deploy', '--env', environment, '--dry-run', '--outdir', '.wrangler/bundle/' + environment], { stdio: 'inherit' }); }\"",
+    "deploy": "pnpm bundle && pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Browse and return to the page I left' && wrangler deploy --env production",
     "migrate": "pnpm build && node --env-file-if-exists=.dev.vars dist/src/migrate.js"
   },
   "dependencies": {

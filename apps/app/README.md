@@ -238,14 +238,10 @@ subscriptions and text codes are off there. To bring staging up:
    `CLOUD_IDENTITY_DIGEST` in `wrangler.jsonc`, and staging values of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
    `EMAIL_CODE_SECRET`, `GOOGLE_CONNECT_TOKEN_KEY`, `DEVICE_LEASE_SEAL_KEY` and `CARTESIA_API_KEY`.
    Staging takes no Stripe, Blooio or Twilio secret.
-3. Run `pnpm --filter @grace/cloud bundle`, which dry-runs both environments, each with the web
-   bundle built for its own origins. The Worker serves `apps/app/dist`, whose sign-in return and
-   password backup pages call the API origin the build names, so build it for staging before the
-   deploy: from `apps/cloud`, run `VITE_GRACE_CLOUD_API_ORIGIN=https://api-staging.graceforseniors.com
-   VITE_GRACE_CLOUD_WEB_ORIGIN=https://app-staging.graceforseniors.com pnpm --filter @repo/app build`
-   and then `pnpm exec wrangler deploy --env staging`. The bundle script ends with the production
-   build in `apps/app/dist`, so deploying staging straight after it ships production origins to
-   staging. The next production deploy rebuilds the bundle with the production origins.
+3. Run `pnpm --filter @grace/cloud bundle`, which dry-runs both environments. Each Worker uses
+   its own assets directory under `apps/cloud/.wrangler/assets/`, with Grace built for that
+   environment’s origins and Eliza’s return-page templates at their original filenames. In
+   `apps/cloud`, run `pnpm exec wrangler deploy --env staging` after both dry-runs pass.
 4. In the Google project of the staging web client, register an Android OAuth client for
    `technology.graceful.grace` with the debug SHA-1 above, and add
    `https://api-staging.graceforseniors.com/api/auth/google/callback` and
