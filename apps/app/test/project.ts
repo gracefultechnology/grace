@@ -23,7 +23,7 @@ type GraceTests = {
 export const graceTests = ({ root, commands, provide, browser = {}, reporters }: GraceTests) => {
   const base = project({ root, plugins: [tailwindcss()] });
   return defineConfig(async (env) => {
-    const config = await base(env);
+    const config = await (typeof base === "function" ? base(env) : base);
     const projects = config.test?.projects?.map((entry) =>
       typeof entry === "object" && "test" in entry && entry.test?.browser
         ? {
