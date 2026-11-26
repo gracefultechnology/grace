@@ -1,5 +1,5 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "Story: Approve a password backup in my browser"
-import { cloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud-worker"
+import { graceCloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud-worker"
 import { HttpServerResponse } from "effect/http"
 import { forwardedRequest, isReturnTemplate, stripeWebhookRequest } from "./workerRequest.ts"
 
@@ -34,7 +34,7 @@ function scopeResponse(status: number, payload: unknown) {
   return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(payload, { status, headers: { "cache-control": "private, no-store" } }))
 }
 
-const cloud = cloudWorker<GraceCloud>(async (request, _env, db, account) => {
+const cloud = graceCloudWorker<GraceCloud>(async (request, _env, db, account) => {
   if (new URL(request.url).pathname !== "/api/product/files/scope" || request.method !== "GET") return scopeResponse(404, { error: "not_found" })
   const credential = browserSessionCookie(request)
   if (credential === undefined) return scopeResponse(401, { error: "authentication_required" })
