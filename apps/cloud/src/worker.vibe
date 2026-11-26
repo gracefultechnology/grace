@@ -1,4 +1,5 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "Story: Approve a password backup in my browser"
+// spec/app/conversation.md, "Story: Talk with Grace through her cloud voice"
 import { cloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud-worker"
 import { HttpServerResponse } from "effect/http"
 import { forwardedRequest, isReturnTemplate } from "./workerRequest.ts"
@@ -6,19 +7,24 @@ import { forwardedRequest, isReturnTemplate } from "./workerRequest.ts"
 type GraceCloud = CloudBindings & { ASSETS?: { fetch(request: Request): Promise<Response> } }
 const sessionCookie = "__Host-eliza-session="
 const sessionToken = /^eliza_session_[A-Za-z0-9_-]{43}$/
-const hostedBillingRoutes = new Set([
+const hostedSessionRoutes: ReadonlySet<string> = new Set<`${"GET" | "POST"} /${string}`>([
   "GET /api/v1/billing/limits",
   "POST /api/v1/subscriptions/checkout",
   "POST /api/v1/subscriptions/portal",
+  "POST /api/v1/voice/speech/consent",
+  "POST /api/v1/voice/speech/session",
 ])
+const hostedSpeechRevoke = /^POST \/api\/v1\/voice\/speech\/session\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/revoke$/
 
 function browserSessionCookie(request: Request): string | undefined {
   const cookies = (request.headers.get("cookie") ?? "").split(";").map((part) => part.trim()).filter((part) => part.startsWith(sessionCookie))
   return cookies.length === 1 ? cookies[0] : undefined
 }
 
-function billingRequest(request: Request, url: URL, webOrigin: string): Request {
-  if (request.headers.get("origin") !== webOrigin || request.headers.has("authorization") || !hostedBillingRoutes.has(`${request.method} ${url.pathname}`)) return request
+export function hostedSessionRequest(request: Request, url: URL, webOrigin: string): Request {
+  if (request.headers.get("origin") !== webOrigin || request.headers.has("authorization")) return request
+  const route = `${request.method} ${url.pathname}`
+  if (!hostedSessionRoutes.has(route) && !hostedSpeechRevoke.test(route)) return request
   const session = browserSessionCookie(request)?.slice(sessionCookie.length)
   return session !== undefined && sessionToken.test(session) ? forwardedRequest(request, "authorization", `Bearer ${session}`) : request
 }
@@ -75,6 +81,6 @@ export default {
     }
     if (url.origin !== env.PUBLIC_API_ORIGIN) return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
     const forwarded = request.headers.has("x-forwarded-host") ? forwardedRequest(request, "x-forwarded-host", url.host) : request
-    return cloud.fetch(billingRequest(forwarded, url, env.WEB_ORIGIN), env, lifetime)
+    return cloud.fetch(hostedSessionRequest(forwarded, url, env.WEB_ORIGIN), env, lifetime)
   }
 }
