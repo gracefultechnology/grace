@@ -2,7 +2,7 @@
 // spec/app/conversation.md, "Story: Talk with Grace through her cloud voice"
 import { cloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud-worker"
 import { HttpServerResponse } from "effect/http"
-import { forwardedRequest, isReturnTemplate } from "./workerRequest.ts"
+import { forwardedRequest, isReturnTemplate, stripeWebhookRequest } from "./workerRequest.ts"
 
 type GraceCloud = CloudBindings & { ASSETS?: { fetch(request: Request): Promise<Response> } }
 const sessionCookie = "__Host-eliza-session="
@@ -81,6 +81,7 @@ export default {
     }
     if (url.origin !== env.PUBLIC_API_ORIGIN) return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
     const forwarded = request.headers.has("x-forwarded-host") ? forwardedRequest(request, "x-forwarded-host", url.host) : request
-    return cloud.fetch(hostedSessionRequest(forwarded, url, env.WEB_ORIGIN), env, lifetime)
+    const authorized = hostedSessionRequest(forwarded, url, env.WEB_ORIGIN)
+    return cloud.fetch(stripeWebhookRequest(authorized, url), env, lifetime)
   }
 }
