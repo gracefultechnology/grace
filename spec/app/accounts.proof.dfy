@@ -295,7 +295,7 @@ lemma MappedDistinct(a: Accounts, b: Accounts)
   AddressView(b); IdView(b); NameView(b);
 }
 
-lemma MappedMatch(a: Accounts, b: Accounts, via: string)
+lemma MappedMatchIndex(a: Accounts, b: Accounts)
   requires alwaysIdsAreIssued(a)
   requires |b.accounts| == |a.accounts|
   requires forall i :: 0 <= i < |a.accounts| ==> (b.accounts[i].id == a.accounts[i].id && b.accounts[i].address == a.accounts[i].address &&
@@ -303,7 +303,6 @@ lemma MappedMatch(a: Accounts, b: Accounts, via: string)
   ensures forall x, y :: (x in a.accounts && y in b.accounts && y.id == x.id) ==>
     (exists i :: 0 <= i < |a.accounts| && a.accounts[i] == x && b.accounts[i] == y)
   ensures forall id :: hasAccount(b, id) == hasAccount(a, id)
-  ensures stepRenewalKeepsTheAccount(a, b) && stepRemovalNeedsTheQuestion(a, via, b)
   ensures forall x :: x in a.accounts ==> (exists i :: 0 <= i < |a.accounts| && a.accounts[i] == x && b.accounts[i] in b.accounts)
 {
   forall x, y | x in a.accounts && y in b.accounts && y.id == x.id
@@ -332,6 +331,31 @@ lemma MappedMatch(a: Accounts, b: Accounts, via: string)
       assert a.accounts[i] in a.accounts;
     }
   }
+}
+
+lemma MappedMatchSteps(a: Accounts, b: Accounts, via: string)
+  requires alwaysIdsAreIssued(a)
+  requires |b.accounts| == |a.accounts|
+  requires forall i :: 0 <= i < |a.accounts| ==> (b.accounts[i].id == a.accounts[i].id && b.accounts[i].address == a.accounts[i].address &&
+    b.accounts[i].name == a.accounts[i].name && b.accounts[i].provider == a.accounts[i].provider && b.accounts[i].colour == a.accounts[i].colour)
+  ensures stepRenewalKeepsTheAccount(a, b) && stepRemovalNeedsTheQuestion(a, via, b)
+{
+  MappedMatchIndex(a, b);
+}
+
+lemma MappedMatch(a: Accounts, b: Accounts, via: string)
+  requires alwaysIdsAreIssued(a)
+  requires |b.accounts| == |a.accounts|
+  requires forall i :: 0 <= i < |a.accounts| ==> (b.accounts[i].id == a.accounts[i].id && b.accounts[i].address == a.accounts[i].address &&
+    b.accounts[i].name == a.accounts[i].name && b.accounts[i].provider == a.accounts[i].provider && b.accounts[i].colour == a.accounts[i].colour)
+  ensures forall x, y :: (x in a.accounts && y in b.accounts && y.id == x.id) ==>
+    (exists i :: 0 <= i < |a.accounts| && a.accounts[i] == x && b.accounts[i] == y)
+  ensures forall id :: hasAccount(b, id) == hasAccount(a, id)
+  ensures stepRenewalKeepsTheAccount(a, b) && stepRemovalNeedsTheQuestion(a, via, b)
+  ensures forall x :: x in a.accounts ==> (exists i :: 0 <= i < |a.accounts| && a.accounts[i] == x && b.accounts[i] in b.accounts)
+{
+  MappedMatchIndex(a, b);
+  MappedMatchSteps(a, b, via);
 }
 
 lemma MappedRenewing(a: Accounts, b: Accounts)
@@ -400,6 +424,79 @@ lemma GrownAccounts(a: Accounts, b: Accounts, n: Account, via: string)
   }
 }
 
+lemma AdmittedExistingMap(a: Accounts, b: Accounts, provider: Provider, address: string, name: string, use: Use, fromName: string)
+  requires b == admitted(provider, a, address, name, use, fromName) && accountWith(a, address).id != 0
+  requires accountWith(a, address).id == a.signIn.renewing
+  ensures |b.accounts| == |a.accounts|
+  ensures forall i :: 0 <= i < |a.accounts| ==> b.accounts[i] == (if a.accounts[i].id == accountWith(a, address).id && fromName != "" then a.accounts[i].(fromName := fromName) else a.accounts[i])
+  ensures b.nextId == a.nextId && b.lastFrom == a.lastFrom && b.inboxFilter == a.inboxFilter
+  ensures b.signIn.renewing == a.signIn.renewing && b.signIn.provider == a.signIn.provider
+  ensures b.signIn.attempt == a.signIn.attempt && b.page.AccountDetail? && b.shown == accountWith(a, address).id
+{
+}
+
+lemma AdmittedExistingRenewingDistinct(a: Accounts, b: Accounts, existingId: int, fromName: string)
+  requires inv(a) && |b.accounts| == |a.accounts| && hasAccount(a, existingId)
+  requires forall i :: 0 <= i < |a.accounts| ==> b.accounts[i] == (if a.accounts[i].id == existingId && fromName != "" then a.accounts[i].(fromName := fromName) else a.accounts[i])
+  requires b.nextId == a.nextId && b.signIn.renewing == a.signIn.renewing && b.signIn.provider == a.signIn.provider
+  requires b.page.AccountDetail? && b.shown == existingId
+  ensures alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b)
+  ensures alwaysRenewingNamesAnAccount(b) && (b.page.AccountDetail? ==> hasAccount(b, b.shown))
+{
+  MappedDistinct(a, b);
+  MappedMatchIndex(a, b);
+  MappedRenewing(a, b);
+}
+
+lemma AdmittedExistingRenewingWellFormed(a: Accounts, b: Accounts, existingId: int, fromName: string)
+  requires inv(a) && |b.accounts| == |a.accounts| && existingId == a.signIn.renewing && existingId != 0
+  requires forall i :: 0 <= i < |a.accounts| ==> b.accounts[i] == (if a.accounts[i].id == existingId && fromName != "" then a.accounts[i].(fromName := fromName) else a.accounts[i])
+  requires b.signIn.attempt == a.signIn.attempt && b.signIn.renewing == a.signIn.renewing
+  requires fromName != "" ==> a.signIn.provider.OtherEmail?
+  ensures alwaysAccountsAreWellFormed(b) && alwaysOnlyOtherEmailKeepsAFromName(b)
+{
+  forall y | y in b.accounts
+    ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && (y.fromName != "" ==> y.provider.OtherEmail?)
+  {
+    var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
+    assert a.accounts[i] in a.accounts;
+    if a.accounts[i].id == existingId && fromName != "" {
+      AccountAtIs(a, a.accounts[i]);
+    }
+  }
+}
+
+lemma AdmittedExistingRenewingFilterHistory(a: Accounts, b: Accounts, existingId: int, fromName: string)
+  requires inv(a) && |b.accounts| == |a.accounts|
+  requires forall i :: 0 <= i < |a.accounts| ==> b.accounts[i] == (if a.accounts[i].id == existingId && fromName != "" then a.accounts[i].(fromName := fromName) else a.accounts[i])
+  requires b.lastFrom == a.lastFrom && b.inboxFilter == a.inboxFilter
+  ensures alwaysFilterNamesAnEmailAccount(b) && alwaysFromHistoryNamesAccounts(b)
+{
+  MappedMatchIndex(a, b);
+  HistoryView(a);
+  HistoryView(b);
+  if b.inboxFilter != 0 {
+    var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
+    MailMember(a, x);
+    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
+    MailMember(b, b.accounts[i]);
+  }
+}
+
+lemma AdmittedExistingRenewingSteps(a: Accounts, b: Accounts, via: string, existingId: int, fromName: string)
+  requires alwaysIdsAreIssued(a) && |b.accounts| == |a.accounts|
+  requires forall i :: 0 <= i < |a.accounts| ==> b.accounts[i] == (if a.accounts[i].id == existingId && fromName != "" then a.accounts[i].(fromName := fromName) else a.accounts[i])
+  ensures stepAccountsGrowOnlyFromASignIn(a, via, b)
+  ensures stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, via, b) && stepRemovalNeedsTheQuestion(a, via, b)
+{
+  MappedMatch(a, b, via);
+  forall x, y | x in a.accounts && y in b.accounts && y.id == x.id
+    ensures y.use == x.use
+  {
+    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x && b.accounts[i] == y;
+  }
+}
+
 lemma AdmittedExisting(a: Accounts, b: Accounts, via: string, provider: Provider, address: string, name: string, use: Use, fromName: string)
   requires inv(a) && b == admitted(provider, a, address, name, use, fromName) && accountWith(a, address).id != 0
   requires fromName != "" ==> (a.signIn.renewing != 0 ==> a.signIn.provider.OtherEmail?)
@@ -411,39 +508,17 @@ lemma AdmittedExisting(a: Accounts, b: Accounts, via: string, provider: Provider
   ensures stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, via, b) && stepRemovalNeedsTheQuestion(a, via, b)
 {
   var existing := accountWith(a, address);
-  AccountWithFinds(a.accounts, address, noAccount);
-  assert existing in a.accounts;
   if existing.id != a.signIn.renewing {
     SameAccountsAlways(a, b);
     SameAccountsSteps(a, b, via);
   } else {
-    assert |b.accounts| == |a.accounts|;
-    assert forall i :: 0 <= i < |a.accounts| ==> b.accounts[i] == (if a.accounts[i].id == existing.id && fromName != "" then a.accounts[i].(fromName := fromName) else a.accounts[i]);
-    MappedDistinct(a, b);
-    MappedMatch(a, b, via);
-    MappedRenewing(a, b);
-    HistoryView(a);
-    HistoryView(b);
-    forall x, y | x in a.accounts && y in b.accounts && y.id == x.id
-      ensures y.use == x.use
-    {
-      var i :| 0 <= i < |a.accounts| && a.accounts[i] == x && b.accounts[i] == y;
-    }
-    forall y | y in b.accounts
-      ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && (y.fromName != "" ==> y.provider.OtherEmail?)
-    {
-      var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
-      assert a.accounts[i] in a.accounts;
-      if a.accounts[i].id == existing.id && fromName != "" {
-        AccountAtIs(a, a.accounts[i]);
-      }
-    }
-    if b.inboxFilter != 0 {
-      var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
-      MailMember(a, x);
-      var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
-      MailMember(b, b.accounts[i]);
-    }
+    AdmittedExistingMap(a, b, provider, address, name, use, fromName);
+    AccountWithFinds(a.accounts, address, noAccount);
+    assert existing in a.accounts;
+    AdmittedExistingRenewingDistinct(a, b, existing.id, fromName);
+    AdmittedExistingRenewingWellFormed(a, b, existing.id, fromName);
+    AdmittedExistingRenewingFilterHistory(a, b, existing.id, fromName);
+    AdmittedExistingRenewingSteps(a, b, via, existing.id, fromName);
   }
 }
 
@@ -1171,6 +1246,64 @@ lemma serversResult_ensures(a: Accounts, check: OtherReport, name: string, fromN
   }
 }
 
+lemma SetUseAlwaysDistinct(a: Accounts, id: int, use: Use, by_: AccountActor)
+  requires inv(a) && canSetUse(a, id, use, by_)
+  ensures alwaysOneAccountPerAddress(setUse(a, id, use, by_))
+  ensures alwaysIdsAreIssued(setUse(a, id, use, by_))
+  ensures alwaysNamesAreDistinct(setUse(a, id, use, by_))
+  ensures alwaysPagesNameAnAccount(setUse(a, id, use, by_))
+  ensures alwaysRenewingNamesAnAccount(setUse(a, id, use, by_))
+{
+  var b := setUse(a, id, use, by_);
+  SetUseView(a, id, use, by_);
+  MappedDistinct(a, b);
+  MappedMatchIndex(a, b);
+  MappedRenewing(a, b);
+}
+
+lemma SetUseAlwaysBody(a: Accounts, id: int, use: Use, by_: AccountActor)
+  requires inv(a) && canSetUse(a, id, use, by_)
+  ensures alwaysAccountsAreWellFormed(setUse(a, id, use, by_))
+  ensures alwaysOnlyOtherEmailKeepsAFromName(setUse(a, id, use, by_))
+  ensures alwaysFromHistoryNamesAccounts(setUse(a, id, use, by_))
+  ensures alwaysFilterNamesAnEmailAccount(setUse(a, id, use, by_))
+{
+  var b := setUse(a, id, use, by_);
+  SetUseView(a, id, use, by_);
+  MappedMatchIndex(a, b);
+  HistoryView(a);
+  HistoryView(b);
+  forall y | y in b.accounts
+    ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && (y.fromName != "" ==> y.provider.OtherEmail?)
+  {
+    var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
+    assert a.accounts[i] in a.accounts;
+  }
+  if b.inboxFilter != 0 {
+    var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
+    MailMember(a, x);
+    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
+    MailMember(b, b.accounts[i]);
+  }
+}
+
+lemma SetUseSteps(a: Accounts, id: int, use: Use, by_: AccountActor)
+  requires inv(a) && canSetUse(a, id, use, by_)
+  ensures stepRenewalKeepsTheAccount(a, setUse(a, id, use, by_))
+  ensures stepRemovalNeedsTheQuestion(a, "setUse", setUse(a, id, use, by_))
+  ensures stepUseChangesKeepAccounts(a, "setUse", setUse(a, id, use, by_))
+{
+  var b := setUse(a, id, use, by_);
+  SetUseView(a, id, use, by_);
+  MappedMatch(a, b, "setUse");
+  forall x | x in a.accounts
+    ensures exists y :: y in b.accounts && y.id == x.id && y.address == x.address
+  {
+    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
+    assert b.accounts[i] in b.accounts;
+  }
+}
+
 lemma SetUsePreserved(a: Accounts, id: int, use: Use, by_: AccountActor)
   requires inv(a) && canSetUse(a, id, use, by_)
   ensures alwaysOneAccountPerAddress(setUse(a, id, use, by_))
@@ -1186,31 +1319,9 @@ lemma SetUsePreserved(a: Accounts, id: int, use: Use, by_: AccountActor)
   ensures stepRemovalNeedsTheQuestion(a, "setUse", setUse(a, id, use, by_))
   ensures stepUseChangesKeepAccounts(a, "setUse", setUse(a, id, use, by_))
 {
-  var b := setUse(a, id, use, by_);
-  SetUseView(a, id, use, by_);
-  MappedDistinct(a, b);
-  MappedMatch(a, b, "setUse");
-  MappedRenewing(a, b);
-  HistoryView(a);
-  HistoryView(b);
-  forall y | y in b.accounts
-    ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && (y.fromName != "" ==> y.provider.OtherEmail?)
-  {
-    var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
-    assert a.accounts[i] in a.accounts;
-  }
-  if b.inboxFilter != 0 {
-    var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
-    MailMember(a, x);
-    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
-    MailMember(b, b.accounts[i]);
-  }
-  forall x | x in a.accounts
-    ensures exists y :: y in b.accounts && y.id == x.id && y.address == x.address
-  {
-    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
-    assert b.accounts[i] in b.accounts;
-  }
+  SetUseAlwaysDistinct(a, id, use, by_);
+  SetUseAlwaysBody(a, id, use, by_);
+  SetUseSteps(a, id, use, by_);
 }
 
 lemma setUse_ensures(a: Accounts, id: int, use: Use, by_: AccountActor)
@@ -1239,6 +1350,62 @@ lemma setUse_ensures(a: Accounts, id: int, use: Use, by_: AccountActor)
   }
 }
 
+lemma NoteSentDistinct(a: Accounts, recipient: string, id: int, by_: AccountActor)
+  requires inv(a) && canNoteSent(a, recipient, id, by_)
+  ensures alwaysOneAccountPerAddress(noteSent(a, recipient, id, by_))
+  ensures alwaysIdsAreIssued(noteSent(a, recipient, id, by_))
+  ensures alwaysNamesAreDistinct(noteSent(a, recipient, id, by_))
+  ensures alwaysPagesNameAnAccount(noteSent(a, recipient, id, by_))
+  ensures alwaysRenewingNamesAnAccount(noteSent(a, recipient, id, by_))
+{
+  var b := noteSent(a, recipient, id, by_);
+  NoteSentView(a, recipient, id, by_);
+  MappedDistinct(a, b);
+  MappedMatchIndex(a, b);
+  MappedRenewing(a, b);
+}
+
+lemma NoteSentBody(a: Accounts, recipient: string, id: int, by_: AccountActor)
+  requires inv(a) && canNoteSent(a, recipient, id, by_)
+  ensures alwaysAccountsAreWellFormed(noteSent(a, recipient, id, by_))
+  ensures alwaysOnlyOtherEmailKeepsAFromName(noteSent(a, recipient, id, by_))
+  ensures alwaysFromHistoryNamesAccounts(noteSent(a, recipient, id, by_))
+  ensures alwaysFilterNamesAnEmailAccount(noteSent(a, recipient, id, by_))
+{
+  var b := noteSent(a, recipient, id, by_);
+  NoteSentView(a, recipient, id, by_);
+  MappedMatchIndex(a, b);
+  forall y | y in b.accounts
+    ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && (y.fromName != "" ==> y.provider.OtherEmail?)
+  {
+    var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
+    assert a.accounts[i] in a.accounts;
+  }
+  if b.inboxFilter != 0 {
+    var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
+    MailMember(a, x);
+    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
+    MailMember(b, b.accounts[i]);
+  }
+  NoteSentHistory(a, b, recipient, id);
+}
+
+lemma NoteSentSteps(a: Accounts, recipient: string, id: int, by_: AccountActor)
+  requires inv(a) && canNoteSent(a, recipient, id, by_)
+  ensures stepRenewalKeepsTheAccount(a, noteSent(a, recipient, id, by_))
+  ensures stepUsesChangeOnlyByHerSwitch(a, "noteSent", noteSent(a, recipient, id, by_))
+  ensures stepRemovalNeedsTheQuestion(a, "noteSent", noteSent(a, recipient, id, by_))
+{
+  var b := noteSent(a, recipient, id, by_);
+  NoteSentView(a, recipient, id, by_);
+  MappedMatch(a, b, "noteSent");
+  forall x, y | x in a.accounts && y in b.accounts && y.id == x.id
+    ensures y.use == x.use
+  {
+    var i :| 0 <= i < |a.accounts| && a.accounts[i] == x && b.accounts[i] == y;
+  }
+}
+
 lemma noteSent_ensures(a: Accounts, recipient: string, id: int, by_: AccountActor)
   ensures (inv(a) ==> canNoteSent(a, recipient, id, by_) ==> alwaysOneAccountPerAddress(noteSent(a, recipient, id, by_)))
   ensures (inv(a) ==> canNoteSent(a, recipient, id, by_) ==> alwaysIdsAreIssued(noteSent(a, recipient, id, by_)))
@@ -1261,34 +1428,9 @@ lemma noteSent_ensures(a: Accounts, recipient: string, id: int, by_: AccountActo
   ensures (inv(a) ==> canNoteSent(a, recipient, id, by_) ==> stepDiscardFollowsHerConfirm(a, "noteSent", noteSent(a, recipient, id, by_)))
 {
   if inv(a) && canNoteSent(a, recipient, id, by_) {
-    var b := noteSent(a, recipient, id, by_);
-    assert alwaysOneAccountPerAddress(b) && alwaysIdsAreIssued(b) && alwaysNamesAreDistinct(b) && alwaysAccountsAreWellFormed(b) &&
-      alwaysPagesNameAnAccount(b) && alwaysOnlyOtherEmailKeepsAFromName(b) && alwaysRenewingNamesAnAccount(b) &&
-      alwaysFromHistoryNamesAccounts(b) && alwaysFilterNamesAnEmailAccount(b) &&
-      stepRenewalKeepsTheAccount(a, b) && stepUsesChangeOnlyByHerSwitch(a, "noteSent", b) && stepRemovalNeedsTheQuestion(a, "noteSent", b) by {
-      NoteSentView(a, recipient, id, by_);
-      MappedDistinct(a, b);
-      MappedMatch(a, b, "noteSent");
-      MappedRenewing(a, b);
-      forall x, y | x in a.accounts && y in b.accounts && y.id == x.id
-        ensures y.use == x.use
-      {
-        var i :| 0 <= i < |a.accounts| && a.accounts[i] == x && b.accounts[i] == y;
-      }
-      forall y | y in b.accounts
-        ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && (y.fromName != "" ==> y.provider.OtherEmail?)
-      {
-        var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
-        assert a.accounts[i] in a.accounts;
-      }
-      if b.inboxFilter != 0 {
-        var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
-        MailMember(a, x);
-        var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
-        MailMember(b, b.accounts[i]);
-      }
-      NoteSentHistory(a, b, recipient, id);
-    }
+    NoteSentDistinct(a, recipient, id, by_);
+    NoteSentBody(a, recipient, id, by_);
+    NoteSentSteps(a, recipient, id, by_);
   }
 }
 

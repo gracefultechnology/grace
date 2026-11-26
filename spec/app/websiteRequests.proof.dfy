@@ -173,14 +173,54 @@ lemma hideBrowser_ensures(s: WebsiteRequests, by_: WebsiteActor)
   if inv(s) && canHideBrowser(s, by_) { Follows(s, viewOf(s).(shown := false), by_); }
 }
 
-lemma Follows(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
+lemma FollowsStateA(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
   requires inv(s)
-  ensures inv(followView(s, view, by_).state)
-  ensures stepAnsweredRequestsNeverReturn(s, followView(s, view, by_).state)
-  ensures stepOnlyThePersonGrants(s, followView(s, view, by_).state, followView(s, view, by_).out)
-  ensures stepPagesAreToldTheStoredDecision(s, followView(s, view, by_).state, followView(s, view, by_).out)
-  ensures stepOneAndroidCallPerWebsite(s, followView(s, view, by_).state, followView(s, view, by_).out)
-  ensures stepEveryAndroidWaitHasACall(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures alwaysRequestsBelongToTheirPage(followView(s, view, by_).state)
+  ensures alwaysPagesAreValid(followView(s, view, by_).state)
+  ensures alwaysOnlyTheShownTabHoldsRequests(followView(s, view, by_).state)
+  ensures alwaysNoMessageWaitsWhilePaused(followView(s, view, by_).state)
+  ensures alwaysATabHoldsOneOfEach(followView(s, view, by_).state)
+{
+  var gone := ProofLib.Filter((r: WebsiteRequest) => !(heldInView(view, r)), s.requests);
+  var kept := ProofLib.Filter((r: WebsiteRequest) => heldInView(view, r), s.requests);
+  var goneA := ProofLib.Filter((r: WebsiteRequest) => !(askingInView(view, r)), s.asking);
+  var keptA := ProofLib.Filter((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  assert followView(s, view, by_) == (var left := stopAsking(goneA, keptA, withdraw(gone, kept, s));
+    WebsiteResult(left.state.(shown := view.shown, selected := view.selected, paused := view.paused), left.out));
+  Members((r: WebsiteRequest) => !(heldInView(view, r)), s.requests);
+  Members((r: WebsiteRequest) => heldInView(view, r), s.requests);
+  Members((r: WebsiteRequest) => !(askingInView(view, r)), s.asking);
+  Members((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  Stable((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  Ended(goneA, keptA, gone, kept, s);
+  EndedRules(goneA, keptA, gone, kept, s, followView(s, view, by_).state);
+}
+
+lemma FollowsStateB1(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
+  requires inv(s)
+  ensures alwaysDownloadsAreRecorded(followView(s, view, by_).state)
+  ensures alwaysDecisionsNameAWebsite(followView(s, view, by_).state)
+  ensures alwaysAWebsiteIsAskedOnce(followView(s, view, by_).state)
+{
+  var gone := ProofLib.Filter((r: WebsiteRequest) => !(heldInView(view, r)), s.requests);
+  var kept := ProofLib.Filter((r: WebsiteRequest) => heldInView(view, r), s.requests);
+  var goneA := ProofLib.Filter((r: WebsiteRequest) => !(askingInView(view, r)), s.asking);
+  var keptA := ProofLib.Filter((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  assert followView(s, view, by_) == (var left := stopAsking(goneA, keptA, withdraw(gone, kept, s));
+    WebsiteResult(left.state.(shown := view.shown, selected := view.selected, paused := view.paused), left.out));
+  Members((r: WebsiteRequest) => !(heldInView(view, r)), s.requests);
+  Members((r: WebsiteRequest) => heldInView(view, r), s.requests);
+  Members((r: WebsiteRequest) => !(askingInView(view, r)), s.asking);
+  Members((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  Stable((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  Ended(goneA, keptA, gone, kept, s);
+  EndedRules(goneA, keptA, gone, kept, s, followView(s, view, by_).state);
+}
+
+lemma FollowsStateB2(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
+  requires inv(s)
+  ensures alwaysOpeningsAreRecorded(followView(s, view, by_).state)
+  ensures alwaysNoPageIsOpenWhilePurging(followView(s, view, by_).state)
   ensures followView(s, view, by_).state.decisions == s.decisions
   ensures followView(s, view, by_).state.signedIn == s.signedIn
   ensures followView(s, view, by_).state.clearing == s.clearing
@@ -198,6 +238,123 @@ lemma Follows(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
   Stable((r: WebsiteRequest) => askingInView(view, r), s.asking);
   Ended(goneA, keptA, gone, kept, s);
   EndedRules(goneA, keptA, gone, kept, s, followView(s, view, by_).state);
+}
+
+lemma FollowsSteps(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
+  requires inv(s)
+  ensures stepAnsweredRequestsNeverReturn(s, followView(s, view, by_).state)
+  ensures stepOnlyThePersonGrants(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures stepPagesAreToldTheStoredDecision(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures stepOneAndroidCallPerWebsite(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures stepEveryAndroidWaitHasACall(s, followView(s, view, by_).state, followView(s, view, by_).out)
+{
+  var gone := ProofLib.Filter((r: WebsiteRequest) => !(heldInView(view, r)), s.requests);
+  var kept := ProofLib.Filter((r: WebsiteRequest) => heldInView(view, r), s.requests);
+  var goneA := ProofLib.Filter((r: WebsiteRequest) => !(askingInView(view, r)), s.asking);
+  var keptA := ProofLib.Filter((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  assert followView(s, view, by_) == (var left := stopAsking(goneA, keptA, withdraw(gone, kept, s));
+    WebsiteResult(left.state.(shown := view.shown, selected := view.selected, paused := view.paused), left.out));
+  Members((r: WebsiteRequest) => !(heldInView(view, r)), s.requests);
+  Members((r: WebsiteRequest) => heldInView(view, r), s.requests);
+  Members((r: WebsiteRequest) => !(askingInView(view, r)), s.asking);
+  Members((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  Stable((r: WebsiteRequest) => askingInView(view, r), s.asking);
+  Ended(goneA, keptA, gone, kept, s);
+}
+
+lemma Follows(s: WebsiteRequests, view: PageView, by_: WebsiteActor)
+  requires inv(s)
+  ensures inv(followView(s, view, by_).state)
+  ensures stepAnsweredRequestsNeverReturn(s, followView(s, view, by_).state)
+  ensures stepOnlyThePersonGrants(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures stepPagesAreToldTheStoredDecision(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures stepOneAndroidCallPerWebsite(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures stepEveryAndroidWaitHasACall(s, followView(s, view, by_).state, followView(s, view, by_).out)
+  ensures followView(s, view, by_).state.decisions == s.decisions
+  ensures followView(s, view, by_).state.signedIn == s.signedIn
+  ensures followView(s, view, by_).state.clearing == s.clearing
+{
+  FollowsStateA(s, view, by_);
+  FollowsStateB1(s, view, by_);
+  FollowsStateB2(s, view, by_);
+  FollowsSteps(s, view, by_);
+}
+
+lemma PageStartedStateA(s: WebsiteRequests, tab: int, by_: WebsiteActor)
+  requires inv(s) && canPageStarted(s, tab, by_)
+  ensures alwaysRequestsBelongToTheirPage(pageStarted(s, tab, by_).state)
+  ensures alwaysPagesAreValid(pageStarted(s, tab, by_).state)
+  ensures alwaysOnlyTheShownTabHoldsRequests(pageStarted(s, tab, by_).state)
+  ensures alwaysNoMessageWaitsWhilePaused(pageStarted(s, tab, by_).state)
+  ensures alwaysATabHoldsOneOfEach(pageStarted(s, tab, by_).state)
+{
+  var gone := ProofLib.Filter((r: WebsiteRequest) => (r.tab == tab), s.requests);
+  var kept := ProofLib.Filter((r: WebsiteRequest) => (r.tab != tab), s.requests);
+  var goneA := ProofLib.Filter((r: WebsiteRequest) => (r.tab == tab), s.asking);
+  var keptA := ProofLib.Filter((r: WebsiteRequest) => (r.tab != tab), s.asking);
+  var tabs := s.tabs + ProofLib.Filter((set_x: int) => !((set_x in s.tabs)), [tab]);
+  assert pageStarted(s, tab, by_) == (var left := stopAsking(goneA, keptA, withdraw(gone, kept, s)); WebsiteResult(left.state.(tabs := tabs), left.out));
+  Members((r: WebsiteRequest) => (r.tab == tab), s.requests);
+  Members((r: WebsiteRequest) => (r.tab != tab), s.requests);
+  Members((r: WebsiteRequest) => (r.tab == tab), s.asking);
+  Members((r: WebsiteRequest) => (r.tab != tab), s.asking);
+  IntMembers((set_x: int) => !((set_x in s.tabs)), [tab]);
+  assert forall t :: t in tabs <==> t in s.tabs || t == tab;
+  Stable((r: WebsiteRequest) => (r.tab != tab), s.asking);
+  Ended(goneA, keptA, gone, kept, s);
+  EndedRules(goneA, keptA, gone, kept, s, pageStarted(s, tab, by_).state);
+}
+
+lemma PageStartedStateB(s: WebsiteRequests, tab: int, by_: WebsiteActor)
+  requires inv(s) && canPageStarted(s, tab, by_)
+  ensures alwaysDownloadsAreRecorded(pageStarted(s, tab, by_).state)
+  ensures alwaysDecisionsNameAWebsite(pageStarted(s, tab, by_).state)
+  ensures alwaysAWebsiteIsAskedOnce(pageStarted(s, tab, by_).state)
+  ensures alwaysOpeningsAreRecorded(pageStarted(s, tab, by_).state)
+  ensures alwaysNoPageIsOpenWhilePurging(pageStarted(s, tab, by_).state)
+{
+  var gone := ProofLib.Filter((r: WebsiteRequest) => (r.tab == tab), s.requests);
+  var kept := ProofLib.Filter((r: WebsiteRequest) => (r.tab != tab), s.requests);
+  var goneA := ProofLib.Filter((r: WebsiteRequest) => (r.tab == tab), s.asking);
+  var keptA := ProofLib.Filter((r: WebsiteRequest) => (r.tab != tab), s.asking);
+  var tabs := s.tabs + ProofLib.Filter((set_x: int) => !((set_x in s.tabs)), [tab]);
+  assert pageStarted(s, tab, by_) == (var left := stopAsking(goneA, keptA, withdraw(gone, kept, s)); WebsiteResult(left.state.(tabs := tabs), left.out));
+  Members((r: WebsiteRequest) => (r.tab == tab), s.requests);
+  Members((r: WebsiteRequest) => (r.tab != tab), s.requests);
+  Members((r: WebsiteRequest) => (r.tab == tab), s.asking);
+  Members((r: WebsiteRequest) => (r.tab != tab), s.asking);
+  IntMembers((set_x: int) => !((set_x in s.tabs)), [tab]);
+  assert forall t :: t in tabs <==> t in s.tabs || t == tab;
+  Stable((r: WebsiteRequest) => (r.tab != tab), s.asking);
+  Ended(goneA, keptA, gone, kept, s);
+  EndedRules(goneA, keptA, gone, kept, s, pageStarted(s, tab, by_).state);
+}
+
+lemma PageStartedSteps(s: WebsiteRequests, tab: int, by_: WebsiteActor)
+  requires inv(s) && canPageStarted(s, tab, by_)
+  ensures stepAnsweredRequestsNeverReturn(s, pageStarted(s, tab, by_).state)
+  ensures stepOnlyThePersonGrants(s, pageStarted(s, tab, by_).state, pageStarted(s, tab, by_).out)
+  ensures stepPagesAreToldTheStoredDecision(s, pageStarted(s, tab, by_).state, pageStarted(s, tab, by_).out)
+  ensures stepDecisionsStandUntilCleared(s, "pageStarted", pageStarted(s, tab, by_).state)
+  ensures stepOnlyAndroidStoresAnAllow(s, "pageStarted", pageStarted(s, tab, by_).state)
+  ensures stepOneAndroidCallPerWebsite(s, pageStarted(s, tab, by_).state, pageStarted(s, tab, by_).out)
+  ensures stepEveryAndroidWaitHasACall(s, pageStarted(s, tab, by_).state, pageStarted(s, tab, by_).out)
+  ensures stepSignInsLastUntilCleared(s, "pageStarted", pageStarted(s, tab, by_).state)
+{
+  var gone := ProofLib.Filter((r: WebsiteRequest) => (r.tab == tab), s.requests);
+  var kept := ProofLib.Filter((r: WebsiteRequest) => (r.tab != tab), s.requests);
+  var goneA := ProofLib.Filter((r: WebsiteRequest) => (r.tab == tab), s.asking);
+  var keptA := ProofLib.Filter((r: WebsiteRequest) => (r.tab != tab), s.asking);
+  var tabs := s.tabs + ProofLib.Filter((set_x: int) => !((set_x in s.tabs)), [tab]);
+  assert pageStarted(s, tab, by_) == (var left := stopAsking(goneA, keptA, withdraw(gone, kept, s)); WebsiteResult(left.state.(tabs := tabs), left.out));
+  Members((r: WebsiteRequest) => (r.tab == tab), s.requests);
+  Members((r: WebsiteRequest) => (r.tab != tab), s.requests);
+  Members((r: WebsiteRequest) => (r.tab == tab), s.asking);
+  Members((r: WebsiteRequest) => (r.tab != tab), s.asking);
+  IntMembers((set_x: int) => !((set_x in s.tabs)), [tab]);
+  assert forall t :: t in tabs <==> t in s.tabs || t == tab;
+  Stable((r: WebsiteRequest) => (r.tab != tab), s.asking);
+  Ended(goneA, keptA, gone, kept, s);
 }
 
 lemma pageStarted_ensures(s: WebsiteRequests, tab: int, by_: WebsiteActor)
@@ -221,21 +378,9 @@ lemma pageStarted_ensures(s: WebsiteRequests, tab: int, by_: WebsiteActor)
   ensures (inv(s) ==> canPageStarted(s, tab, by_) ==> stepSignInsLastUntilCleared(s, "pageStarted", pageStarted(s, tab, by_).state))
 {
   if inv(s) && canPageStarted(s, tab, by_) {
-    var gone := ProofLib.Filter((r: WebsiteRequest) => (r.tab == tab), s.requests);
-    var kept := ProofLib.Filter((r: WebsiteRequest) => (r.tab != tab), s.requests);
-    var goneA := ProofLib.Filter((r: WebsiteRequest) => (r.tab == tab), s.asking);
-    var keptA := ProofLib.Filter((r: WebsiteRequest) => (r.tab != tab), s.asking);
-    var tabs := s.tabs + ProofLib.Filter((set_x: int) => !((set_x in s.tabs)), [tab]);
-    assert pageStarted(s, tab, by_) == (var left := stopAsking(goneA, keptA, withdraw(gone, kept, s)); WebsiteResult(left.state.(tabs := tabs), left.out));
-    Members((r: WebsiteRequest) => (r.tab == tab), s.requests);
-    Members((r: WebsiteRequest) => (r.tab != tab), s.requests);
-    Members((r: WebsiteRequest) => (r.tab == tab), s.asking);
-    Members((r: WebsiteRequest) => (r.tab != tab), s.asking);
-    IntMembers((set_x: int) => !((set_x in s.tabs)), [tab]);
-    assert forall t :: t in tabs <==> t in s.tabs || t == tab;
-    Stable((r: WebsiteRequest) => (r.tab != tab), s.asking);
-    Ended(goneA, keptA, gone, kept, s);
-    EndedRules(goneA, keptA, gone, kept, s, pageStarted(s, tab, by_).state);
+    PageStartedStateA(s, tab, by_);
+    PageStartedStateB(s, tab, by_);
+    PageStartedSteps(s, tab, by_);
   }
 }
 
