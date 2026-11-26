@@ -21,7 +21,7 @@ import { cacheCredentials, dafnyVersion, entry, recall, remembered, steady, stor
 import { generated, mirrorGen, publishGen, typecheckAll, proofUnits, proofFiles, strayProofFiles } from "./units.ts";
 import { simulation, type Simulation } from "./simulate.ts";
 import { tests, VITEST_CONFIG } from "./testing/check.ts";
-import { sha, digest, indent, packageScripts, pruneSidecars, configured, testInputs, readSrc, codeDirs, codeDirOf, owner, specOwnerPaths, projectRoot, allDone, UNREAD, workspacePackages, writeWhole, tsApi, type Reported, type SrcFile } from "./util.ts";
+import { sha, digest, indent, packageScripts, pruneSidecars, configured, testInputs, readSrc, codeDirs, codeDirOf, owner, areaDirs, specOwnerPaths, specCompanionPaths, projectRoot, allDone, UNREAD, workspacePackages, writeWhole, tsApi, type Reported, type SrcFile } from "./util.ts";
 import { profile, type TestProfile } from "./testing/profile.ts";
 import { setupProjectAgents } from "./skill-links.ts";
 
@@ -894,7 +894,7 @@ async function watch(root: string) {
     let packages: string[];
     let owners: string[];
     try {
-      packages = [...containers, ...areas.flatMap((area) => specOwnerPaths(root, area))];
+      packages = [...containers, ...areas.flatMap((area) => [...specOwnerPaths(root, area), ...specCompanionPaths(root, area)])];
       owners = codeDirs(root);
     } catch { return; }
     const own = (dir: string) => read(dir).filter((e) => e.isDirectory() && !UNREAD.test(e.name) && e.name !== "gen" && !(dir === "" && containers.includes(e.name))
@@ -952,7 +952,7 @@ async function generateOwner(root: string, name: string) {
     const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "vibestack-owner-gen-"));
     try {
       const specs = await generateFiles(root, scratch, name);
-      mirrorGen(root, specs, { scratch, ownerDir: `${ownerDir}/` });
+      mirrorGen(root, specs, { scratch, ownerDirs: areaDirs(root, `spec/${name}/`).map((dir) => `${dir}/`) });
     } finally {
       fs.rmSync(scratch, { recursive: true, force: true });
     }

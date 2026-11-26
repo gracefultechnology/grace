@@ -21,7 +21,7 @@ import { heading } from "./parse.ts";
 import { precomputeSimulations, prepareSimulationReceipts } from "./formal.ts";
 import { exec, run as tool, toolCpuSeconds } from "./run.ts";
 import { pendingSpecs, showPending, writeLedger } from "./review.ts";
-import { filesUnder, packageScripts, testInputs, testReceipt, writeWhole } from "./util.ts";
+import { codeDirs, filesUnder, packageScripts, specCompanionPaths, testInputs, testReceipt, writeWhole } from "./util.ts";
 import { profile } from "./testing/profile.ts";
 import { installChromium } from "./chromium.ts";
 import { hostedCachedFixture, isolatedInstalls } from "./selftests/install.ts";
@@ -282,6 +282,26 @@ pure def selected(which: bool): Set[Field] = {
     const domain = await import(pathToFileURL(path.join(root, "gen", "fields.ts")).href);
     assert.deepEqual([domain.required(true), domain.required(false)], [["First", "Second"], ["First"]]);
     assert.deepEqual([domain.selected(true), domain.selected(false)], [["First", "Second"], ["Second"]]);
+  });
+
+  test("a record literal beside == and a mapped list literal state their types in the prover's code", async () => {
+    const root = oneRule("steps", "Step records", `type Step = { state: int, out: List[int] }
+type Other = { state: int, out: List[int], spare: bool }
+pure def recordOf(n: int): Step = { state: n, out: List(n) }
+pure def other(n: int): Other = { state: n + 1, out: List(), spare: true }
+pure def lawStepIsItsRecord(n: int): bool = recordOf(n) == { state: n, out: List(n) }
+pure def shifted(n: int): List[int] = List(1, 2).listMap(x => x + n)`);
+    const model = await gen(root, parseSpec(root, "spec/steps.md"));
+    const checked = await tool("vibelang", ["--noEmit", "--strict", "--target", "es2023", "gen/steps.ts"], root);
+    assert.ok(checked.ok, checked.out);
+    const proof = model.render("");
+    // LemmaScript reads past \`as\` beside == and takes the first record type with these field names, which may be another module's.
+    assert.match(proof, /recordOf\(n\) === typed\d+_steps\(\{ state: n, out: \(\[n\] as number\[\]\) \}\)/);
+    assert.doesNotMatch(proof, /=== \(\{ state: n, out: \(\[n\] as number\[\]\) \} as Step\)/);
+    assert.match(proof, /typed\d+_steps\(\(\[1, 2\] as number\[\]\)\)\.map\(/);
+    const domain = await import(pathToFileURL(path.join(root, "gen", "steps.ts")).href);
+    assert.equal(domain.lawStepIsItsRecord(3), true);
+    assert.deepEqual(domain.shifted(1), [2, 3]);
   });
 
   test("the explore stage finds a page that breaks a property, keeps the trace, replays it first, and drops it once fixed", { skip: !["linux-x64", "linux-arm64", "darwin-arm64"].includes(`${process.platform}-${process.arch}`) }, async () => {
@@ -3530,16 +3550,31 @@ function eachCheck() {
     assert.deepEqual(outputs(), expected);
 
     const mapped = toolchain(scratch({
-      "package.json": JSON.stringify({ ...JSON.parse(PACKAGE["package.json"]), specOwners: { target: "packages/plugin-target" } }),
+      "package.json": JSON.stringify({ ...JSON.parse(PACKAGE["package.json"]), specOwners: { target: "packages/plugin-target" }, specCompanions: { target: ["packages/target-client"] } }),
       "packages/plugin-target/package.json": JSON.stringify({ name: "@repo/target" }),
+      "packages/target-client/package.json": JSON.stringify({ name: "@repo/target-client" }),
       "packages/target/package.json": JSON.stringify({ name: "@repo/conventional" }),
       "spec/index.md": "# Project",
-      "spec/target/index.md": ruleSpec("pure val targetValue = 1"),
+      "spec/target/index.md": ruleSpec(COUNTER),
     }), "quint", "lsc");
     const mappedGen = await runCli(path.join(mapped, "vibestack/spec.ts"), mapped, "gen", "--owner", "target");
     assert.equal(mappedGen.status, 0, mappedGen.stdout + mappedGen.stderr);
     assert.ok(fs.existsSync(path.join(mapped, "packages/plugin-target/gen/target.ts")));
     assert.ok(!fs.existsSync(path.join(mapped, "packages/target/gen")));
+    // SPEC.md, "One spec tree": a companion gets its owner's gen/, and every stage reads its code.
+    assert.equal(fs.readFileSync(path.join(mapped, "packages/target-client/gen/target.ts"), "utf8"), fs.readFileSync(path.join(mapped, "packages/plugin-target/gen/target.ts"), "utf8"));
+    assert.deepEqual(codeDirs(mapped), ["", "packages/plugin-target/", "packages/target-client/"]);
+    // Each package's Effect adapter names its Machine under its own package, so the owner's and the companion's never share a key.
+    assert.match(fs.readFileSync(path.join(mapped, "packages/plugin-target/gen/target.effect.vibe"), "utf8"), /key = "@repo\/target\/spec\/target\/index\.md#Machine"/);
+    assert.match(fs.readFileSync(path.join(mapped, "packages/target-client/gen/target.effect.vibe"), "utf8"), /key = "@repo\/target-client\/spec\/target\/index\.md#Machine"/);
+    // A companion list that is not a map of areas to workspace directories, or that gives a directory two roles, is refused.
+    const declaring = (specCompanions: unknown, specOwners: Record<string, string> = {}) => scratch({ "package.json": JSON.stringify({ name: "@repo/root", specOwners, specCompanions }) });
+    assert.throws(() => specCompanionPaths(declaring(["packages/target-client"]), "target"), /specCompanions must map spec areas to lists of workspace directories/);
+    assert.throws(() => specCompanionPaths(declaring({ target: [] }), "target"), /specCompanions\.target must list workspace directories under apps\/ or packages\//);
+    assert.throws(() => specCompanionPaths(declaring({ target: ["lib/target-client"] }), "target"), /specCompanions\.target must list workspace directories under apps\/ or packages\//);
+    assert.throws(() => specCompanionPaths(declaring({ target: ["packages/shared"], other: ["packages/shared"] }), "target"), /assigns packages\/shared to more than one spec area/);
+    assert.throws(() => specCompanionPaths(declaring({ target: ["packages/plugin-other"] }, { other: "packages/plugin-other" }), "target"), /assigns packages\/plugin-other to more than one spec area or also owns an area/);
+    assert.deepEqual(specCompanionPaths(declaring({ target: ["packages/target-client"] }), "other"), []);
   });
 
   test("the command line checks, generates and watches a project directory from its parent", async () => {
