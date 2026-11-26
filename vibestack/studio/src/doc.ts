@@ -157,7 +157,7 @@ export function manifestOf(root: string, baseline: Record<string, string>, curre
     for (const s of specs) if (s.imports.includes(spec.name)) visit(s, `imports ${spec.name}`);
   };
   for (const s of specs) if (edited.includes(s.file)) visit(s, "edited");
-  const modules = new Set(regenerate.map((r) => r.gen.slice(4, -3)).concat(Object.keys(baseline).filter((f) => !(f in current)).map(specName)));
+  const modules = new Set(regenerate.map((r) => r.gen.slice(4, -3)).concat(Object.keys(baseline).filter((f) => !(f in current)).map((f) => specName(f))));
   const code = codeDirs(root).flatMap((dir) => [`${dir}src`, `${dir}test`]).flatMap((dir) => filesUnder(root, dir))
     .filter((f) => {
       if (!/\.(?:[cm]?tsx?|vibe)$/.test(f)) return false;

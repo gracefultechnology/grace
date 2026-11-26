@@ -3,7 +3,7 @@
 import { dirname, relative, resolve } from "node:path";
 import { type Options, generator, listener, outOf } from "./emit.ts";
 
-interface Watcher { on(event: string, listener: (file: string) => void): unknown }
+export interface Watcher { on(event: string, listener: (file: string) => void): unknown }
 
 /**
  * Storybook's main config for the project whose `.storybook` directory is `dir`: the generated stories and the

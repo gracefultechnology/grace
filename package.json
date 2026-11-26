@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "turbo run dev //#studio",
     "studio": "node vibestack/spec.ts studio",
+    "cli": "node packages/cli/src/main.ts",
     "check": "node vibestack/spec.ts check",
     "gen": "node vibestack/spec.ts gen",
     "gen:eliza": "pnpm --dir vendor/eliza gen --owner cloud && pnpm --dir vendor/eliza gen --owner os && pnpm --dir vendor/eliza gen --owner core && pnpm --dir vendor/eliza gen --owner agent && pnpm --dir vendor/eliza --filter @elizaos/core --filter @elizaos/agent run build && pnpm --dir vendor/eliza --filter @elizaos/os exec vibelang -p tsconfig.build.json",

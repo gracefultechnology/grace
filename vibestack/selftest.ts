@@ -27,7 +27,7 @@ import { installChromium } from "./chromium.ts";
 import { hostedCachedFixture, isolatedInstalls } from "./selftests/install.ts";
 import { PACKED, toolShards } from "./selftests/tools.ts";
 import { bigNumberInteger } from "./gen/types.ts";
-import { canonical, check as conformanceCheck, ConformanceError, departure, replay as replayTrace } from "./conformance.ts";
+import { canonical, check as conformanceCheck, ConformanceError, departure, planModel, replay as replayTrace } from "./conformance.ts";
 import { BUILTINS, LIST_HELPERS, OPERATORS } from "./gen/print.ts";
 import { mirrorGen } from "./units.ts";
 import { conformance as checkTraces, conformanceFound } from "./conform.ts";
@@ -475,11 +475,11 @@ export const driver = {
         return { result, kept };
       };
       const passed = await checkDriver(driver);
-      assert.ok(passed.result[0] && passed.result[2].includes("1 walks of seed 1"), passed.result.join("\n"));
+      assert.ok(passed.result[0] && passed.result[2].includes("1 walks of seed 1") && passed.result[2].includes("1/1 transitions accepted, 1/1 refused"), passed.result.join("\n"));
       assert.deepEqual(passed.kept, [true]);
       const stopped = await checkDriver(`${driver}\nprocess.on("exit", () => process.kill(process.pid, "SIGKILL"));`);
       assert.equal(stopped.result[0], false, stopped.result.join("\n"));
-      assert.match(stopped.result[3] ?? "", /did not finish: node was killed by SIGKILL[\s\S]*"summary":"1 walks of seed 1"/);
+      assert.match(stopped.result[3] ?? "", /did not finish: node was killed by SIGKILL[\s\S]*"summary":"1 model path, 1 walks of seed 1 \(1\/1 transitions accepted, 1\/1 refused\)"/);
       assert.deepEqual(stopped.kept, [false]);
       const disagreement = await checkDriver(driver.replace("return state;", "return state + 1;"));
       assert.equal(disagreement.result[0], false, disagreement.result.join("\n"));
@@ -1270,10 +1270,11 @@ pure val amountValues = Set(0, 1)`;
     const root = copyOfProject("test/app.test.vibe", (s) => s.replace('from "../src/app.vibe"\n', '$&import { initial } from "../gen/index.effect.vibe"\n')
       + "\n" + citing("spec/index.md", "A new order is an empty draft") + 'it("a new order is a draft", () => { assert.strictEqual(initial.status, "Draft") })\n');
     fs.writeFileSync(path.join(root, "test/draft.test.vibe"), citing("spec/index.md", "A new order is an empty draft") + 'import { assert, it } from "@effect/vitest"\nimport { initial } from "../gen/index.effect.vibe"\nit("a new order is a draft", () => { assert.strictEqual(initial.units, 0) })\n');
+    fs.writeFileSync(path.join(root, "test/mbt-only.test.ts"), citing("spec/index.md", "A new order is an empty draft") + 'import { it } from "vitest";\nimport { planModel } from "vibestack/testing";\nimport * as oracle from "../gen/index.ts";\nit("oracle only", () => { planModel(oracle, []); });\n');
     const { failed, said, text } = await run(root);
     assert.deepEqual(failed, ["tests"], text);
     const line = read("test/app.test.vibe", root).split("\n").length - 1;
-    assert.equal(said("tests", /^2 tests touch only generated code/)?.detail, `      test/app.test.vibe:${line}\n      test/draft.test.vibe: imports nothing but gen/ and test libraries`, text);
+    assert.equal(said("tests", /^3 tests touch only generated code/)?.detail, `      test/app.test.vibe:${line}\n      test/draft.test.vibe: imports nothing but gen/ and test libraries\n      test/mbt-only.test.ts: imports nothing but gen/ and test libraries`, text);
     assert.equal(said("tests", /^note: test\/app\.test\.vibe, test\/draft\.test\.vibe run in one runner, in one language/)?.ok, true, text);
   });
 
@@ -2216,11 +2217,14 @@ function eachCheck() {
     const claude = path.join(root, "CLAUDE.md");
     const expected = `mine\n\n<!-- vibestack:start -->\n${read("AGENTS.md").trim()}\n<!-- vibestack:end -->\n`;
     assert.equal(fs.readFileSync(agents, "utf8"), expected);
-    const typeReference = "vibestack/reference/typereferences.md";
+    const typeReference = ".agents/skills/typescript-best-practices/references/typereferences.md";
     assert.ok(expected.includes(`](${typeReference})`));
     assert.equal(read(typeReference, root), read(typeReference));
-    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).scripts, { check: "mine", dev: "spec studio", gen: "spec gen", accept: "spec accept", build: "vibelang", test: "vitest run", postinstall: "spec init" });
-    assert.deepEqual(read(".gitignore", root).trim().split("\n").sort(), [...scaffoldedIgnores].sort());
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")).scripts, {
+      check: "mine", "spec:check": "spec check", dev: "spec studio", studio: "spec studio", gen: "spec gen", accept: "spec accept", new: "spec new", build: "vibelang", test: "vitest run", postinstall: "vibestack link",
+    });
+    const ignoreLines = (file: string) => read(".gitignore", file).trim().split("\n").filter((line) => line && !line.startsWith("#")).sort();
+    assert.deepEqual(ignoreLines(root), [...scaffoldedIgnores].sort());
     const skills = fs.readdirSync(path.join(project, ".agents/skills"), { withFileTypes: true })
       .filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
     const skillFiles = filesUnder(project, ".agents/skills").filter((file) => path.basename(file) !== ".DS_Store");
@@ -2371,18 +2375,21 @@ function eachCheck() {
     // A workspace's `catalog:` means nothing in the package `init` writes it into.
     assert.match(pins["@types/node"], /^\^\d+\.\d+\.\d+$/);
     const one = { "@effect/platform-node-shared": pins["@effect/platform-node"] };
-    const scripts = { dev: "spec studio", check: "spec check", gen: "spec gen", accept: "spec accept", build: "vibelang", test: "vitest run", postinstall: "spec init" };
+    const scripts = { dev: "spec studio", studio: "spec studio", check: "spec check", gen: "spec gen", accept: "spec accept", new: "spec new", build: "vibelang", test: "vitest run", postinstall: "vibestack link" };
+    const ignoreLines = (file: string) => read(".gitignore", file).trim().split("\n").filter((line) => line && !line.startsWith("#")).sort();
 
     const fresh = scratch({ "package.json": '{"name":"fresh"}' });
-    assert.deepEqual([...new Set(init(fresh).filter((file) => !/^\.[^/]+\/skills(?:\/|$)/.test(file)))].sort(), ["SPEC.md", "vibestack/reference/typereferences.md", ".agents/claude-settings.json", ".claude/settings.json", "AGENTS.md (Vibestack instructions)", "CLAUDE.md (symlink to AGENTS.md)",
-      "tsconfig.json", "vitest.config.ts", "spec/index.md", ".gitignore", "package.json scripts: dev, check, gen, accept, build, test", "package.json postinstall: spec init",
-      `package.json VibeLang toolchain: ${[...runtime, ...tooling].join(", ")} (run your package manager's install)`, "package.json packageManager: pnpm@10.24.0", "package.json engines.node: >=26", 'package.json "type": "module"'].sort());
+    assert.deepEqual([...new Set(init(fresh).filter((file) => !/^\.[^/]+\/skills(?:\/|$)/.test(file)))].sort(), [
+      "SPEC.md", ".agents/.vibestack-manifest.json", ".agents/claude-settings.json", ".claude/settings.json", "AGENTS.md (Vibestack instructions)", "CLAUDE.md",
+      "tsconfig.json", "vitest.config.ts", "spec/index.md", ".gitignore", "package.json scripts: check, gen, accept, new, studio, dev, build, test, postinstall",
+      `package.json VibeLang toolchain: ${[...runtime, ...tooling].join(", ")} (run pnpm install)`, "package.json packageManager: pnpm@10.24.0", "package.json engines.node: >=26", 'package.json "type": "module"',
+    ].sort());
     assert.deepEqual(json(fresh, "tsconfig.json"), {
       compilerOptions: { target: "es2023", module: "nodenext", strict: true, skipLibCheck: true, types: ["node"], rootDir: ".", rootDirs: [".", ".vibe/declarations"], outDir: "dist", noEmitOnError: true, rewriteRelativeImportExtensions: true },
       include: ["src", "test", "gen/*.ts", "gen/*.vibe"], vibe: { sidecarDir: ".vibe/declarations" },
     });
     assert.equal(read("vitest.config.ts", fresh), 'import { project } from "vibestack/testing/vitest";\n\nexport default project({ root: import.meta.dirname });\n');
-    assert.deepEqual(read(".gitignore", fresh).trim().split("\n").sort(), [...scaffoldedIgnores].sort());
+    assert.deepEqual(ignoreLines(fresh), [...scaffoldedIgnores].sort());
     assert.deepEqual(json(fresh, "package.json"), {
       name: "fresh", type: "module", packageManager: "pnpm@10.24.0", scripts, engines: { node: `>=${NODE}` },
       dependencies: pinned(...runtime), devDependencies: pinned(...tooling), pnpm: { overrides: one },
@@ -2394,16 +2401,18 @@ function eachCheck() {
     const own = { name: "own", type: "module", scripts: { build: "mine", test: 'echo "Error: no test specified" && exit 1', postinstall: "my-install" }, engines: { node: ">=26" },
       dependencies: { effect: "mine" }, devDependencies: { vitest: "mine" }, overrides: { "@effect/platform-node-shared": "mine" }, pnpm: { overrides: { other: "mine" } } };
     const kept = scratch({ "package.json": JSON.stringify(own), "tsconfig.json": "{}\n", "vitest.config.ts": "export default {};\n", ".gitignore": "dist/\n" });
-    const added = init(kept);
-    assert.deepEqual([...new Set(added.filter((a) => /^(package\.json|tsconfig|vitest|\.gitignore)/.test(a)))].sort(), [".gitignore", "package.json scripts: dev, check, gen, accept, test", "package.json postinstall: spec init",
-      `package.json VibeLang toolchain: ${[...runtime, ...tooling].filter((n) => n !== "effect" && n !== "vitest").join(", ")} (run your package manager's install)`, "package.json packageManager: pnpm@10.24.0"].sort());
+    const added = init(kept, { mode: "vibelang" });
+    assert.deepEqual([...new Set(added.filter((a) => /^(package\.json|tsconfig|vitest|\.gitignore)/.test(a)))].sort(), [
+      ".gitignore", "package.json scripts: check, gen, accept, new, studio, dev, test, postinstall",
+      `package.json VibeLang toolchain: ${[...runtime, ...tooling].filter((n) => n !== "effect" && n !== "vitest").join(", ")} (run pnpm install)`, "package.json packageManager: pnpm@10.24.0",
+    ].sort());
     assert.deepEqual([read("tsconfig.json", kept), read("vitest.config.ts", kept)], ["{}\n", "export default {};\n"]);
-    assert.deepEqual(read(".gitignore", kept).trim().split("\n").sort(), [...scaffoldedIgnores].sort());
+    assert.deepEqual(new Set(ignoreLines(kept)), new Set(scaffoldedIgnores));
     assert.deepEqual(json(kept, "package.json"), {
-      ...own, packageManager: "pnpm@10.24.0", scripts: { ...scripts, build: "mine", postinstall: "spec init && my-install" }, dependencies: { ...pinned(...runtime), effect: "mine" }, devDependencies: { ...pinned(...tooling), vitest: "mine" },
+      ...own, packageManager: "pnpm@10.24.0", scripts: { ...scripts, build: "mine", postinstall: "my-install && vibestack link" }, dependencies: { ...pinned(...runtime), effect: "mine" }, devDependencies: { ...pinned(...tooling), vitest: "mine" },
       pnpm: { overrides: { ...one, other: "mine" } },
     });
-    assert.deepEqual(init(kept), []);
+    assert.deepEqual(init(kept, { mode: "vibelang" }), []);
     const template = scratch({ "package.json": JSON.stringify({ scripts: { "pnpm:devPreinstall": "node vibestack/skill-links.ts" } }) });
     init(template);
     assert.equal(json(template, "package.json").scripts.postinstall, undefined);
@@ -2411,7 +2420,7 @@ function eachCheck() {
     const customInstall = scratch({ "package.json": JSON.stringify({ scripts: { "pnpm:devPreinstall": "my-preinstall" } }) });
     init(customInstall);
     assert.equal(json(customInstall, "package.json").scripts["pnpm:devPreinstall"], "my-preinstall");
-    assert.equal(json(customInstall, "package.json").scripts.postinstall, "spec init");
+    assert.equal(json(customInstall, "package.json").scripts.postinstall, "vibestack link");
     assert.deepEqual(init(customInstall), []);
   });
 
@@ -2478,7 +2487,7 @@ function eachCheck() {
     assert.ok(["area.ts", "own.ts", "app.ts"].every((f) => fs.existsSync(path.join(root, "gen", f))) && !fs.existsSync(path.join(root, "apps/own/gen")));
     const normal = profile("normal");
     for (const [stage, said] of [["types", /^apps\/app: application typechecks/], ["tests", /^apps\/app: pass/], ["traces", /^apps\/app: script driver:app: simulated states and refused events agree with spec\/app\/index\.md/],
-      ["traces", new RegExp(`^apps/app: test/drivers/app\\.ts: ${normal.runs} walks of seed ${normal.seed} agree with spec/app/index\\.md`)],
+      ["traces", new RegExp(`^apps/app: test/drivers/app\\.ts: 1 model path, ${normal.runs} walks of seed ${normal.seed} \\(1/1 transitions accepted, 1/1 refused\\) agree with spec/app/index\\.md`)],
       ["proof", /^apps-app-src-one\.ts: all 1 obligations proved/], ["review", /^apps\/app\/src\/: recorded as reconciled: apps\/app\/src\/one\.ts/]] as const)
       assert.ok(first.said(stage, said), `${stage}\n${first.text}`);
     assert.deepEqual(Object.keys(JSON.parse(read("spec/lock.json", root)).contracts), ["apps/app/src/one.ts"]);
@@ -2516,7 +2525,7 @@ function eachCheck() {
     assert.match(stripVTControlCharacters(mistyped.text), /src\/wrong\.ts(?:\(1,14\):|:1:14 -) error TS2322: Type 'string' is not assignable to type 'number'/);
     says(failing, ["tests"], "tests", /^apps\/app: fail\n[\s\S]*never holds/);
     // The disagreement is saved, shrunk, in the owner, and replayed first from then on.
-    says(departing, ["traces"], "traces", /^apps\/app: test\/drivers\/app\.ts: the program departs from the spec\n[\s\S]*conformance to spec\/app\/index\.md: (journey|walk)[\s\S]*Saved as test\/counterexamples\/app\/[0-9a-f]{12}\.json, which/);
+    says(departing, ["traces"], "traces", /^apps\/app: test\/drivers\/app\.ts: the program departs from the spec\n[\s\S]*conformance to spec\/app\/index\.md: (journey|model path|walk)[\s\S]*Saved as test\/counterexamples\/app\/[0-9a-f]{12}\.json, which/);
     const [saved, ...more] = fs.readdirSync(path.join(leaking, "apps/app/test/counterexamples/app"));
     assert.deepEqual(more, []);
     assert.match(departing.next, new RegExp(`^traces \\(apps/app\\) is the first ✗: it saved the counterexample test/counterexamples/app/${saved}\\. Decide which side is wrong`));
@@ -3435,7 +3444,7 @@ function eachCheck() {
     const scaffold = scratch({});
     const initialized = await runCli(path.join(installed, "dist/spec.js"), scaffold, "init");
     assert.equal(initialized.status, 0, initialized.stdout + initialized.stderr);
-    for (const file of [".agents/skills/LICENSE.pstack", ".agents/skills/architect/references/runner-prompt.md", ".agents/skills/typescript-best-practices/references/patterns.md", "vibestack/reference/typereferences.md"]) {
+    for (const file of [".agents/skills/LICENSE.pstack", ".agents/skills/bug-review/SKILL.md", ".agents/skills/architect/references/runner-prompt.md", ".agents/skills/typescript-best-practices/references/patterns.md", ".agents/skills/typescript-best-practices/references/typereferences.md"]) {
       assert.equal(read(file, scaffold), read(file));
     }
     for (const alias of harnessSkillPaths) assert.equal(fs.realpathSync(path.join(scaffold, alias)), path.join(scaffold, ".agents/skills"));
@@ -5065,7 +5074,47 @@ test("the lint refuses, in a project's own code, a comment that is neither a cit
   const { default: config } = await import(path.join(project, "eslint.config.js"));
   const [file, left] = Object.entries(config.find((block: { rules?: Record<string, unknown> }) => block.rules?.["code/comments"]).rules["code/comments"][1].left as Record<string, number>).find(([file]) => file.endsWith(".vibe"))!;
   const notes = (n: number) => Array.from({ length: n }, () => "// a note");
-  assert.deepEqual([(await found(file, notes(left))).length, (await found(file, notes(left + 1))).length], [0, left + 1]);
+  assert.deepEqual([
+    (await found(file, notes(left))).length,
+    (await found(file, notes(left + 1))).length,
+    (await found(file, notes(left - 1))).length,
+    (await found(file, notes(0))).length,
+  ], [0, left + 1, 1, 1]);
+
+  const { default: js } = await import("@eslint/js");
+  const { default: tseslint } = await import("typescript-eslint");
+  const { default: vibelang } = await import("vibelang/eslint");
+  const { vibestackConfig } = await import("./eslint.ts");
+  const presetRoot = scratch({ "package.json": JSON.stringify({ name: "preset-ratchet", type: "module" }) });
+  const presetLint = new ESLint({
+    cwd: presetRoot,
+    overrideConfigFile: true,
+    overrideConfig: vibestackConfig({
+      root: presetRoot,
+      plugins: { js, tseslint, vibelang },
+      commented: { "apps/app/src/ratchet.vibe": 2 },
+      scheduled: { "apps/app/src/ratchet.vibe": 2 },
+    }) as never,
+  });
+  const presetHits = async (lines: readonly string[]) => {
+    const [res] = await presetLint.lintText(lines.join("\n"), { filePath: path.join(presetRoot, "apps/app/src/ratchet.vibe") });
+    return res!.messages.filter((m) => m.ruleId?.startsWith("code/")).map((m) => `${m.ruleId}: ${m.message}`);
+  };
+  assert.deepEqual(await presetHits(["// a", "// b", "setTimeout(() => {}, 1);", "setTimeout(() => {}, 2);"]), []);
+  assert.deepEqual(
+    (await presetHits(["// a", "setTimeout(() => {}, 1);"])).sort(),
+    [
+      'code/comments: Stale commented ratchet (2) for "apps/app/src/ratchet.vibe": 1 remain; lower it to 1 so the ratchet tightens.',
+      'code/effects: Stale scheduled ratchet (2) for "apps/app/src/ratchet.vibe": 1 remain; lower it to 1 so the ratchet tightens.',
+    ],
+  );
+  assert.deepEqual(
+    (await presetHits(["export const ok = 1;"])).sort(),
+    [
+      'code/comments: Stale commented ratchet (2) for "apps/app/src/ratchet.vibe": 0 remain; remove it so the ratchet tightens.',
+      'code/effects: Stale scheduled ratchet (2) for "apps/app/src/ratchet.vibe": 0 remain; remove it so the ratchet tightens.',
+    ],
+  );
 });
 
 test("the barrel lint refuses non-barrel workspace exports, subpath imports, inline disables and stale ratchets", async (context) => {

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type * as TS from "typescript";
+import { isExcludedSpecPath, loadConfig } from "./config.ts";
 import { writeWhole } from "./run.ts";
 import { androidToolchainIdentity, evaluatorIdentity } from "./installed.ts";
 import { badSpecName, heading, type Spec } from "./parse.ts";
@@ -77,15 +78,16 @@ export function projectRoot(directory: string, base = process.cwd()): string {
 /** The declarations the VibeLang compiler writes for a `.vibe` module: its output, not the package's code. */
 const SIDECAR = /\.d\.vibex?\.ts$/;
 
-/** The directories a spec area may map to: an entry in `package.json` `specOwners`, or conventional `apps/<name>` and `packages/<name>`. */
+/** The directories a spec area may map to: an entry in `vibestack.json` `spec.owners` or `package.json` `specOwners`, or conventional `apps/<name>` and `packages/<name>`. */
 export function specOwnerPaths(root: string, name: string): string[] {
   const conventional = [`apps/${name}`, `packages/${name}`];
-  const declared: unknown = manifest(root).specOwners;
-  if (declared === undefined) return conventional;
-  if (typeof declared !== "object" || declared === null || Array.isArray(declared)) {
+  const rawPkgOwners: unknown = manifest(root).specOwners;
+  if (rawPkgOwners !== undefined && (typeof rawPkgOwners !== "object" || rawPkgOwners === null || Array.isArray(rawPkgOwners))) {
     throw new Error("package.json: specOwners must map spec areas to workspace directories");
   }
-  const entries: [string, unknown][] = Object.entries(declared);
+  const declared = loadConfig(root).spec.owners;
+  const entries = Object.entries(declared);
+  if (!entries.length) return conventional;
   const claimed = new Set<string>();
   let match: string | undefined;
   for (const [area, dir] of entries) {
@@ -140,19 +142,26 @@ export function companions(root: string, spec: string): string[] {
  * checks its code (SPEC.md, "One spec tree").
  */
 export function owner(root: string, spec: string, observe?: (file: string) => void): string | undefined {
+  const { spec: specConfig } = loadConfig(root);
   const [top, name, below] = spec.split("/");
-  if (top !== "spec" || below === undefined) return undefined;
+  if (top !== specConfig.dir || below === undefined || isExcludedSpecPath(`${specConfig.dir}/${name}`, specConfig)) return undefined;
   observe?.(path.join(root, "package.json"));
   const exists = observe ? (file: string) => { observe(file); return fs.existsSync(file); } : fs.existsSync;
-  return specOwnerPaths(root, name).find((dir) => exists(path.join(root, dir, "package.json")) && !exists(path.join(root, dir, "spec")));
+  return specOwnerPaths(root, name).find((dir) => exists(path.join(root, dir, "package.json")) && !exists(path.join(root, dir, specConfig.dir)));
 }
 /**
  * The directories whose code a check reads, each as the prefix of a path from the root: "" for the root's own
  * `src/` and `test/`, then `apps/app/` for each package that owns a directory of the spec tree, and each companion
  * of an owned area (`specCompanionPaths`).
  */
-export const codeDirs = (root: string): string[] => ["", ...!fs.existsSync(path.join(root, "spec")) ? []
-  : [...new Set(fs.readdirSync(path.join(root, "spec")).flatMap((name) => areaDirs(root, `spec/${name}/`)))].sort().map((dir) => `${dir}/`)];
+export const codeDirs = (root: string): string[] => {
+  const { spec: specConfig } = loadConfig(root);
+  const specRoot = path.join(root, specConfig.dir);
+  return ["", ...!fs.existsSync(specRoot) ? []
+    : [...new Set(fs.readdirSync(specRoot)
+      .filter((name) => !isExcludedSpecPath(`${specConfig.dir}/${name}`, specConfig))
+      .flatMap((name) => areaDirs(root, `${specConfig.dir}/${name}/`)))].sort().map((dir) => `${dir}/`)];
+};
 /** The owner of a spec's area, then its companions: every directory whose code the area's spec governs. */
 export const areaDirs = (root: string, spec: string): string[] => {
   const dir = owner(root, spec);
@@ -340,8 +349,43 @@ export const SIMULATIONS = "gen/traces";
 
 /** A token of a script, and how many brackets it sits in. */
 interface Token { text: string; pos: number; start: number; depth: number; fresh: boolean }
+const JSX_FILE = /\.[cm]?[jt]sx$/i;
+
+function tokenizeJsx(text: string): Token[] | undefined {
+  const ts = tsApi();
+  const K = ts.SyntaxKind;
+  const source = ts.createSourceFile("file.tsx", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const out: Token[] = [];
+  const open: boolean[] = [];
+  let balanced = true;
+  const walk = (node: TS.Node) => {
+    if (!balanced) return;
+    const children = node.getChildren(source);
+    if (children.length) {
+      for (const child of children) walk(child);
+      return;
+    }
+    const kind = node.kind;
+    if (kind === K.EndOfFileToken || kind === K.JsxTextAllWhiteSpaces) return;
+    const tokenText = node.getText(source);
+    if (!tokenText) return;
+    if (kind === K.CloseParenToken || kind === K.CloseBracketToken || kind === K.CloseBraceToken || kind === K.TemplateTail) {
+      if (!open.length) { balanced = false; return; }
+      open.pop();
+    }
+    const pos = node.getFullStart();
+    const start = node.getStart(source);
+    const trivia = text.slice(pos, start);
+    out.push({ text: tokenText, pos, start, depth: open.length, fresh: trivia.includes("\n") || trivia.includes("\r") });
+    if (kind === K.OpenParenToken || kind === K.OpenBracketToken || kind === K.OpenBraceToken || kind === K.TemplateHead) open.push(kind === K.TemplateHead);
+  };
+  walk(source);
+  return balanced && !open.length ? out : undefined;
+}
+
 /** A script's tokens, or nothing if its brackets do not balance; TypeScript's scanner reads VibeLang's too. */
-export function tokenize(text: string): Token[] | undefined {
+export function tokenize(text: string, file?: string): Token[] | undefined {
+  if (file !== undefined && JSX_FILE.test(file)) return tokenizeJsx(text);
   const K = tsApi().SyntaxKind;
   const scanner = tsApi().createScanner(tsApi().ScriptTarget.Latest, true, tsApi().LanguageVariant.Standard, text);
   const out: Token[] = [];

@@ -18,6 +18,7 @@ jobs:
     env:
       TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
       TURBO_CACHE: local:rw,remote:r
+      TURBO_TELEMETRY_DISABLED: "1"
       CHECKED_BRANCH: ${{ github.event_name == 'schedule' && 'develop' || github.ref_type == 'branch' && github.ref_name || github.event.repository.default_branch }}
     steps:
       - uses: actions/checkout@v7
@@ -35,7 +36,7 @@ jobs:
           BRANCH: fuzz/${{ github.run_id }}
         run: |
           traces=':(glob)**/test/counterexamples/**'
-          [[ -n $(git status --porcelain=v1 --untracked-files=all -- "$traces") ]] || exit 0
+          [[ -n "$(git status --porcelain=v1 --untracked-files=all -- "$traces")" ]] || exit 0
           git add -- "$traces"
           git diff --cached --quiet && exit 0
           git config user.name "github-actions[bot]"
