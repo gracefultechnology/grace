@@ -1,56 +1,2845 @@
 {
   "version": 1,
   "specs": {
+    "spec/app/accounts.md": {
+      "@document": [
+        "dc33d9cab45c"
+      ],
+      "## Story: Connect the email I already use": [
+        "8942c7a7972a"
+      ],
+      "Story: Connect the email I already use / Accounts start empty and each address is on the tablet once": [
+        "068191dd6ffd",
+        "b5f9bcde0745"
+      ],
+      "Story: Connect the email I already use / Only the current sign-in attempt can add or renew an account": [
+        "7f3307adda9c",
+        "9525531d7e66",
+        "472934334829"
+      ],
+      "Story: Connect the email I already use / An address at a listed company goes to that company’s own page": [
+        "4b7c42b03d4a",
+        "8e838b4e78ec",
+        "472934334829"
+      ],
+      "Story: Connect the email I already use / Other email connects through its own servers, asking for them when the tablet cannot find them": [
+        "204aebd2a54a",
+        "d6b95c161d56",
+        "69c14bd6268c"
+      ],
+      "Story: Connect the email I already use / Mail settings can be looked up from her address, and fill the form for her to check": [
+        "5938d3b2782f",
+        "6c83db67f918",
+        "69c14bd6268c"
+      ],
+      "Story: Connect the email I already use / Nothing she types to sign in enters the tablet’s state": [
+        "2b5bbfb0dcb3",
+        "897061af8517",
+        "472934334829"
+      ],
+      "Story: Connect the email I already use / The settings pages go back one step at a time": [
+        "c33515b2655c",
+        "13c2d59595ef",
+        "69c14bd6268c"
+      ],
+      "Story: Connect the email I already use / Grace is told what happened to the accounts, never what was typed": [
+        "b3214a5a84b0",
+        "59471f809518",
+        "69c14bd6268c"
+      ],
+      "## Story: Choose what each email brings and take it off the tablet": [
+        "71c33334d870"
+      ],
+      "Story: Choose what each email brings and take it off the tablet / Signing in again renews the same account": [
+        "f7e3c027c1bc",
+        "ab52dac0d49e",
+        "69c14bd6268c"
+      ],
+      "Story: Choose what each email brings and take it off the tablet / Turning a use off hides it and keeps the account": [
+        "e478f305f6c2",
+        "b550b6e48feb",
+        "472934334829"
+      ],
+      "Story: Choose what each email brings and take it off the tablet / Calendar’s connect banner stays away once she says Not now": [
+        "ec94a051f99c",
+        "0b3d15fe3566",
+        "472934334829"
+      ],
+      "Story: Choose what each email brings and take it off the tablet / Removing asks first and waits for unsent email": [
+        "b6c424311c51",
+        "3020be256f39",
+        "472934334829"
+      ],
+      "Story: Choose what each email brings and take it off the tablet / Remove anyway discards the waiting email only after she confirms how much": [
+        "c74e13d68b65",
+        "0fbc0b8be610",
+        "e3e4e0876a6d"
+      ],
+      "Story: Choose what each email brings and take it off the tablet / A new email comes from the account last used with that person, else the most used": [
+        "5d36cfe5832f",
+        "243c430e4020",
+        "472934334829"
+      ],
+      "Story: Choose what each email brings and take it off the tablet / Simulation samples cover sign-in answers": [
+        "e3b0c44298fc",
+        "667664530f27",
+        "0f21bc2053d4"
+      ]
+    },
+    "spec/app/shell.md": {
+      "@document": [
+        "69817f028058"
+      ],
+      "## Story: Reach everyday tasks from Home": [
+        "f794afd59760"
+      ],
+      "Story: Reach everyday tasks from Home / Startup distinguishes a usable shell from a recoverable startup failure": [
+        "e3b0c44298fc",
+        "b3ccd1083848"
+      ],
+      "Story: Reach everyday tasks from Home / Home cards open their named surface without activating a microphone or controller": [
+        "f13fd209b853",
+        "362aad4b70a7",
+        "37923c65c1a2"
+      ],
+      "Story: Reach everyday tasks from Home / Settings and rail popovers preserve the surface underneath": [
+        "4314fd28310d",
+        "654ae5579c06",
+        "bd3c2f03b4d1"
+      ],
+      "## Story: Know why a Home card is empty": [
+        "7df0edb23190"
+      ],
+      "Story: Know why a Home card is empty / Files says No photos yet, and how photos arrive while it holds nothing": [
+        "0c1110dcff2f",
+        "9ce4b0dfb630"
+      ],
+      "Story: Know why a Home card is empty / Passwords offers Grace’s help while none are saved, then shows only how many": [
+        "07d547bdee1c",
+        "2e092d6cf50e"
+      ],
+      "Story: Know why a Home card is empty / Offline, Internet has no status and still opens the browser": [
+        "b327e88f0570",
+        "fcf3f34d5e0b",
+        "37923c65c1a2"
+      ],
+      "## Story: Keep control through interruptions": [
+        "e6f15410f9f7"
+      ],
+      "Story: Keep control through interruptions / Sleep and restart invalidate the prior device context": [
+        "cf570a2c9905",
+        "f242dfebd72c",
+        "37923c65c1a2"
+      ],
+      "Story: Keep control through interruptions / Network and service failures remain distinct from a failed device shell": [
+        "183752dfc6e1",
+        "9c0d90521313",
+        "37923c65c1a2"
+      ],
+      "Story: Keep control through interruptions / Permission availability is separate from active recording or observation": [
+        "6b0743bc731c",
+        "69970bb94024",
+        "37923c65c1a2"
+      ],
+      "Story: Keep control through interruptions / A shell is valid when it meets every rule above": [
+        "668bd22f2547",
+        "317ec5a3c3de",
+        "709588e75a8d"
+      ]
+    },
+    "spec/app/browser.md": {
+      "@document": [
+        "bf66fd954fbd"
+      ],
+      "## Story: Browse and return to the page I left": [
+        "c2bffd780a6f"
+      ],
+      "Story: Browse and return to the page I left / A browser starts with one empty tab and retains each tab's independent page": [
+        "b62bf4ea71b2",
+        "598eb35685ff",
+        "1fc8e724e01d"
+      ],
+      "Story: Browse and return to the page I left / Opening and selecting tabs preserves opening order and retained page state": [
+        "13e2b94cea9b",
+        "86cd45b77f9a",
+        "40780f011229"
+      ],
+      "Story: Browse and return to the page I left / A link I tap to open a new window opens in a new tab": [
+        "877970f64287",
+        "012ac1a80810",
+        "164c53f7c2fa"
+      ],
+      "Story: Browse and return to the page I left / Closing the last tab creates a fresh blank tab and Close browser clears every tab": [
+        "bbf418b4a69d",
+        "20ee722921f9",
+        "2c45e8ebb759"
+      ],
+      "## Story: Sign in privately on a website": [
+        "ca2299966336"
+      ],
+      "Story: Sign in privately on a website / A private sign-in tab keeps its purpose until it closes": [
+        "06665a9dd3e8",
+        "c38cb48dc801",
+        "2051f55facd7"
+      ],
+      "## Story: Keep every tab reachable when the window changes": [
+        "1e4cb940e504"
+      ],
+      "Story: Keep every tab reachable when the window changes / Overflow retains the selected tab and the most recently used other tabs in opening order": [
+        "756cad09ef8a",
+        "aa20d99af48f",
+        "40780f011229"
+      ],
+      "## Story: Enter a website and understand loading or failure": [
+        "9e25ed245a58"
+      ],
+      "Story: Enter a website and understand loading or failure / Address entry preserves a draft and empty Go gives a visible explanation": [
+        "331391d11331",
+        "c272f4719e8e",
+        "2c45e8ebb759"
+      ],
+      "Story: Enter a website and understand loading or failure / Typed text that is not a web address searches with the default provider": [
+        "f33b86d9196e",
+        "719ac97f1855"
+      ],
+      "Story: Enter a website and understand loading or failure / A page that moves by itself keeps the address the person is typing": [
+        "6b9fcc6b3ccc",
+        "b00ad5b28837",
+        "52af27bb37d0"
+      ],
+      "Story: Enter a website and understand loading or failure / A tab whose page moves by itself while I am not looking at it records where it went": [
+        "1b0f86d898bf",
+        "95952b262242",
+        "f010d31be1f1"
+      ],
+      "Story: Enter a website and understand loading or failure / Back and Forward stay within the selected tab's history": [
+        "bea29d80ce8a",
+        "ae49abb99b8d",
+        "40780f011229"
+      ],
+      "Story: Enter a website and understand loading or failure / Load results must match the tab and request that produced them": [
+        "014d1571e099",
+        "c02bac39dd3e",
+        "e05453a789ca"
+      ],
+      "Story: Enter a website and understand loading or failure / A load that ends at another address records where the page really is": [
+        "bebf380a6739",
+        "21ad44709669",
+        "b9b772dfd9ab"
+      ],
+      "Story: Enter a website and understand loading or failure / A load that never starts or never ends becomes the failure view with Reload": [
+        "d5aada5b1ccd",
+        "37bd86f784d7",
+        "d1fe96462003"
+      ],
+      "Story: Enter a website and understand loading or failure / Opened offline, the browser shows the offline page, never a blank page": [
+        "c75e76bcd86d",
+        "bbe476240590",
+        "40780f011229"
+      ],
+      "Story: Enter a website and understand loading or failure / Stay on a leave-page warning keeps the page she was on": [
+        "a67094840e9e",
+        "efa45a4460a8",
+        "40780f011229"
+      ],
+      "Story: Enter a website and understand loading or failure / The padlock shows only on a page that loaded over a secure connection": [
+        "26d5b68585f2",
+        "0b98c672960d",
+        "40780f011229"
+      ],
+      "## Story: Adjust the page without stale assistance": [
+        "5f9c6661dd45"
+      ],
+      "Story: Adjust the page without stale assistance / Manual page changes and zoom invalidate observations without restyling the website": [
+        "49c6b46b6172",
+        "c8a214ddbfc7",
+        "40780f011229"
+      ],
+      "Story: Adjust the page without stale assistance / Recent websites can be removed individually or cleared after one confirmation": [
+        "e7871e6b80d4",
+        "b30e51c93872",
+        "40780f011229"
+      ]
+    },
+    "spec/app/conversation.md": {
+      "@document": [
+        "941e9ff7a13a"
+      ],
+      "## Story: Talk or type without losing the conversation": [
+        "f08a9ecf46f9"
+      ],
+      "Story: Talk or type without losing the conversation / A conversation starts ready with its microphone off": [
+        "5c610f52146b",
+        "4d86f0731a0f"
+      ],
+      "Story: Talk or type without losing the conversation / Talk or an enabled human wake phrase explicitly starts a voice exchange": [
+        "d07361d69c77",
+        "0f5b5bdf194f",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / Type and Stop listening end capture and prevent automatic reopening": [
+        "d8c5363fc42d",
+        "0739e7db140d",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / Send consumes one exact draft once and never submits a website form": [
+        "3ac3d9e5e4cc",
+        "0e1bdceb3bf2",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / Only a complete human utterance can become a spoken request": [
+        "0c1f26986d47",
+        "ea57443d391c",
+        "f47b824821ea"
+      ],
+      "Story: Talk or type without losing the conversation / A tapped answer is one of the offered answers and preserves whether the microphone was active": [
+        "a5a10563aa7e",
+        "52261bc2fc2a",
+        "f47b824821ea"
+      ],
+      "Story: Talk or type without losing the conversation / Responses have a written equivalent and only current callbacks change the turn": [
+        "8428e68a2216",
+        "fd9e4fd20918",
+        "729712fd9abe"
+      ],
+      "Story: Talk or type without losing the conversation / Answer chips come only with a closed question, two or three at a time": [
+        "da04bcffe9b9",
+        "79fa6ae08ac0",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / Repeat reads the latest Grace response without turning on a muted microphone": [
+        "9686a90d7a94",
+        "9be64c3f8cf9",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / Pause stops Grace mid-sentence and Resume carries on from the same place": [
+        "18828ba4a3cf",
+        "7b6d99f45b59",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / Barge-in records how much of Grace's reply was spoken": [
+        "b1937eae0601",
+        "dcce90611f43",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / A current speech or response failure leaves a usable typed fallback": [
+        "79807a95e201",
+        "22a53595d2c6",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / Silence ends listening without creating an answer": [
+        "1729a9e28fef",
+        "00821bd99088",
+        "a9254035f819"
+      ],
+      "Story: Talk or type without losing the conversation / An unanswered wake phrase gets a notice with capture stopped": [
+        "5ea3ce9f17d3",
+        "efe9cecb063a",
+        "04ef41aaff7c"
+      ],
+      "Story: Talk or type without losing the conversation / Unusable speech gets one repeat request and then stops listening": [
+        "8beb9537ee60",
+        "78274cc8366a",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / New messages do not pull the reader away from earlier messages": [
+        "c61429e27b2b",
+        "8cdd63b25d7c",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / Detected private content is removed before the conversation continues": [
+        "ceb17b33b6af",
+        "21cc5af0e483",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / A deliberate new conversation clears the old view but never reuses callback tokens": [
+        "464bb632e154",
+        "54cf581604cf",
+        "25a493f15de0"
+      ],
+      "Story: Talk or type without losing the conversation / Talking, typing, interruption and the fallback are reachable": [
+        "e3b0c44298fc",
+        "28751139833a",
+        "25a493f15de0"
+      ],
+      "## Story: Talk with Grace through her cloud voice": [
+        "07e6057af6c3"
+      ],
+      "Story: Talk with Grace through her cloud voice / She is told once, before her first Talk, where her voice goes": [
+        "b1e0f7608c21",
+        "3aa7a88b4e76"
+      ],
+      "Story: Talk with Grace through her cloud voice / Talk and the wake phrase open cloud capture only for the current exchange": [
+        "4e60f07c2450",
+        "55fbe57d656b",
+        "25a493f15de0"
+      ],
+      "Story: Talk with Grace through her cloud voice / Listening waits eight seconds for her first word": [
+        "eb2dc7c68d69",
+        "0eea70237d7a"
+      ],
+      "Story: Talk with Grace through her cloud voice / Her words show as she says them and are never a request": [
+        "292c37192037",
+        "54e30c9d301e",
+        "25a493f15de0"
+      ],
+      "Story: Talk with Grace through her cloud voice / Each speech failure has its own written explanation": [
+        "b0d7820d1aef",
+        "17f5d2f5b1e8"
+      ],
+      "Story: Talk with Grace through her cloud voice / A speech failure while she talks, Grace speaks, speech is paused or Grace is idle tells her and leaves Type usable": [
+        "c85bae6187b2",
+        "770ade2004eb",
+        "44cdf18392ff"
+      ],
+      "Story: Talk with Grace through her cloud voice / A streamed reply arrives in order and ends the turn once": [
+        "1b877d0c32c7",
+        "c4c7659ed247",
+        "25a493f15de0"
+      ],
+      "Story: Talk with Grace through her cloud voice / A turn may start without her words, marked with where it came from": [
+        "654041b50ed3",
+        "ca510b7e4226",
+        "25a493f15de0"
+      ],
+      "Story: Talk with Grace through her cloud voice / What Grace did is written in the transcript, wherever it was done": [
+        "2bd84c8bc5b4",
+        "2e83f6926367",
+        "25a493f15de0"
+      ],
+      "Story: Talk with Grace through her cloud voice / Each turn sends a bounded window of the transcript": [
+        "a5e61c996e70",
+        "a023faca8b9b",
+        "25a493f15de0"
+      ],
+      "Story: Talk with Grace through her cloud voice / A typed reply can be written and not spoken": [
+        "a42a0e584f98",
+        "1416aa034d07",
+        "25a493f15de0"
+      ],
+      "Story: Talk with Grace through her cloud voice / A conversation is valid when it meets every rule above": [
+        "e4684076fc2a",
+        "5d408bb63f96",
+        "2ad31c7d10b7"
+      ]
+    },
+    "spec/app/assistant.md": {
+      "@document": [
+        "4087fbfa8425"
+      ],
+      "## Story: Keep control of one task across windows and pauses": [
+        "5b5cb4a430ed"
+      ],
+      "Story: Keep control of one task across windows and pauses / One task has one context and one current step": [
+        "89aaa5f1ce91",
+        "d6d2ca160978",
+        "a9254035f819"
+      ],
+      "Story: Keep control of one task across windows and pauses / Above the website keyboard a caption strip shows the live conversation": [
+        "437eda869cc9",
+        "3c23f6d73665",
+        "e79ff57e51ac"
+      ],
+      "Story: Keep control of one task across windows and pauses / Opening and resizing reveal the same conversation without activating it": [
+        "8d6c549889eb",
+        "9ad7d1ca9e86",
+        "e79ff57e51ac"
+      ],
+      "Story: Keep control of one task across windows and pauses / Close hides Grace and fences unfinished work without reporting completion": [
+        "d1da385ab872",
+        "8775b28e322d",
+        "4f547c896b0e"
+      ],
+      "Story: Keep control of one task across windows and pauses / Resume first reconciles current evidence and never replays an old queue": [
+        "c4b28cdc448d",
+        "1443ea8ad70e",
+        "e79ff57e51ac"
+      ],
+      "Story: Keep control of one task across windows and pauses / A new task cannot silently replace unfinished assistance": [
+        "15077709dcc0",
+        "db58d7673e58",
+        "e79ff57e51ac"
+      ],
+      "Story: Keep control of one task across windows and pauses / Only the current task and operation can advance a meaningful step": [
+        "576734a462fa",
+        "909cc4a53cea",
+        "e79ff57e51ac"
+      ],
+      "Story: Keep control of one task across windows and pauses / Grace works on the page only while it is in view": [
+        "b3bbcda07e68",
+        "1eb578a1d8e4",
+        "e79ff57e51ac"
+      ],
+      "Story: Keep control of one task across windows and pauses / Completion is a verified domain endpoint, never Close, silence or a click": [
+        "0cf80cbf78a1",
+        "fc69f29c1f20",
+        "e79ff57e51ac"
+      ],
+      "## Story: Dismiss guidance without stopping the task": [
+        "e30d995d0fcf"
+      ],
+      "Story: Dismiss guidance without stopping the task / Guidance belongs to the current instruction and never grants action authority": [
+        "72122f7e903f",
+        "18c4ef1021be",
+        "baa1885d3a75"
+      ],
+      "Story: Dismiss guidance without stopping the task / Dismiss hides only the label and Show restores only a still-current target": [
+        "096242dde04a",
+        "386f507c25fa",
+        "390b1e2ce22d"
+      ],
+      "Story: Dismiss guidance without stopping the task / Page guidance shows only on the visible page and steps aside while Grace talks or works": [
+        "694a62eb73fa",
+        "897bb3288705",
+        "e79ff57e51ac"
+      ],
+      "## Story: Keep voice and typing available in either Grace window": [
+        "93ff68f7d759"
+      ],
+      "Story: Keep voice and typing available in either Grace window / The container routes deliberate controls into its one conversation": [
+        "d13764c340c1",
+        "5ea5ea6da992",
+        "491e7755b38c"
+      ],
+      "Story: Keep voice and typing available in either Grace window / Hidden assistance is quiet and every task status has its necessary context": [
+        "535daa1e2cd5",
+        "dae2c5860aeb",
+        "b1fe1d6bb053"
+      ],
+      "Story: Keep voice and typing available in either Grace window / An assistant is valid when it meets every rule above": [
+        "a3f03784d0a3",
+        "0afc3e4872cb",
+        "fd5aa97556b1"
+      ],
+      "Story: Keep voice and typing available in either Grace window / Pausing, reconciliation, replacement and verified outcomes are reachable": [
+        "e3b0c44298fc",
+        "4c0f0597ba57",
+        "5d39265b752e"
+      ]
+    },
+    "spec/app/execution.md": {
+      "@document": [
+        "43673d57cdc7"
+      ],
+      "## Story: Get help on the website I chose": [
+        "8a84a89cd3b5"
+      ],
+      "Story: Get help on the website I chose / Every operation belongs to the selected owner, task and origin": [
+        "80220ae9922a",
+        "061fd2cbd12c"
+      ],
+      "Story: Get help on the website I chose / Starting work requires an explicit owner and task with a verified destination": [
+        "d05d224d0df4",
+        "e1985db24952",
+        "5e79fba24792"
+      ],
+      "Story: Get help on the website I chose / Observation is fresh, origin-bound and privacy-filtered": [
+        "a53b2e486eff",
+        "b22ca2985db3",
+        "5e79fba24792"
+      ],
+      "Story: Get help on the website I chose / A task's origin comes from its verified source or the person, and a page on any other origin is refused": [
+        "7afad8b7f7bb",
+        "3d0a7a77449b",
+        "5e79fba24792"
+      ],
+      "Story: Get help on the website I chose / The goal is fulfilled only when the current page shows its fact with a quote": [
+        "f1f9a2ec9141",
+        "c00caff8d094",
+        "5e79fba24792"
+      ],
+      "Story: Get help on the website I chose / Observed, queued and in-flight work always has a verified, redaction-ready page context": [
+        "40d3766c14cd",
+        "d0713c67ed11",
+        "5e79fba24792"
+      ],
+      "Story: Get help on the website I chose / Each step has a consequence class, and Grace takes only the steps that are hers": [
+        "09e5c68e3077",
+        "b11586c170be",
+        "5e79fba24792"
+      ],
+      "Story: Get help on the website I chose / Grace reads the page's main frame, and a step out of her reach is the person's": [
+        "e643cffd98ff",
+        "5cb84f7dd154",
+        "4cf3bd874e1e"
+      ],
+      "Story: Get help on the website I chose / Only classified ordinary operations use the generic dispatch path": [
+        "c78288ee47d6",
+        "a0b9ed29f08e",
+        "4cf3bd874e1e"
+      ],
+      "Story: Get help on the website I chose / The effect boundary checks both generations and dispatches a prepared operation once": [
+        "c4e05f34853e",
+        "f4692eff6a8a",
+        "7ffd8208614c"
+      ],
+      "Story: Get help on the website I chose / Actual readback establishes completion and a mismatch establishes a visible block": [
+        "1d808b4a32b1",
+        "a5ce86370650",
+        "7ffd8208614c"
+      ],
+      "## Story: Interrupt or navigate without stale actions": [
+        "2751399b32e7"
+      ],
+      "Story: Interrupt or navigate without stale actions / Stop revokes queued work and resume requests a new observation": [
+        "f16df4a62fd3",
+        "15f1b54684f7",
+        "5e79fba24792"
+      ],
+      "Story: Interrupt or navigate without stale actions / Finishing or discarding a task retires its operation generation": [
+        "e5023d816ade",
+        "ca59f1fcb194",
+        "5e79fba24792"
+      ],
+      "Story: Interrupt or navigate without stale actions / An execution is valid when it meets every rule above": [
+        "ee74765d2652",
+        "676eb7979582",
+        "3c18ddd566ca"
+      ]
+    },
+    "spec/app/task.md": {
+      "@document": [
+        "833c1e06cd0e"
+      ],
+      "## Story: Name a task and its terms": [
+        "87bb7df02998"
+      ],
+      "Story: Name a task and its terms / A valid subject names a kind of task, its owner, website, account and reference": [
+        "4c3bd06299e3",
+        "8fe06123731b"
+      ],
+      "Story: Name a task and its terms / Terms are none, a payment or a booking, each complete": [
+        "05ee1f905f77",
+        "6b2b39f9a27b",
+        "3944edb61747"
+      ],
+      "Story: Name a task and its terms / Bill terms are exactly the valid payment proposals": [
+        "e3b0c44298fc",
+        "2c80564255d8",
+        "7e135e228af0"
+      ],
+      "Story: Name a task and its terms / Terms of one kind are never valid for another": [
+        "e3b0c44298fc",
+        "e4b9ca028545",
+        "7e135e228af0"
+      ],
+      "Story: Name a task and its terms / An outcome is accepted from the website, or for a booking also from an email": [
+        "749ebb70f951",
+        "392ae29aa101",
+        "3944edb61747"
+      ],
+      "Story: Name a task and its terms / Only a booking is recorded in the calendar": [
+        "e3b0c44298fc",
+        "29b0c5af97a3",
+        "3944edb61747"
+      ],
+      "Story: Name a task and its terms / A bill is never settled from a message": [
+        "40581f2899fd",
+        "b5a97a582585",
+        "f255f7fa0069"
+      ]
+    },
+    "spec/app/commitment.md": {
+      "@document": [
+        "7575c2c0f529"
+      ],
+      "## Story: Review and authorize the exact payment": [
+        "760faf568a09"
+      ],
+      "Story: Review and authorize the exact payment / A commitment starts without an identity, proposal or submission": [
+        "d24a86f0bd43",
+        "84026eacc88f",
+        "af9d9590b11e"
+      ],
+      "Story: Review and authorize the exact payment / The selected subject's identity is bound once and is never replaced by a new task": [
+        "7320618e58eb",
+        "83b96849b91a",
+        "6f8d526bae01"
+      ],
+      "Story: Review and authorize the exact payment / Only a fresh matching review can replace the current proposal": [
+        "44dcda2847ef",
+        "9c90bb04ac15",
+        "6f8d526bae01"
+      ],
+      "Story: Review and authorize the exact payment / The current terms are presented before voice approval": [
+        "2930415a3ac4",
+        "e5ff24bed1a8",
+        "6f8d526bae01"
+      ],
+      "Story: Review and authorize the exact payment / A durable unresolved window exists before either submission route is enabled": [
+        "bc96da63c7aa",
+        "36e362d9eb1e",
+        "6f8d526bae01"
+      ],
+      "Story: Review and authorize the exact payment / Explicit approval binds to the complete current proposal and is consumed once": [
+        "73144806c68b",
+        "8a69d00af6f7",
+        "6f8d526bae01"
+      ],
+      "Story: Review and authorize the exact payment / An observed website tap starts outcome checking without an agent submission": [
+        "a6f420076b57",
+        "f159106dfeb0",
+        "6f8d526bae01"
+      ],
+      "## Story: Stop, resume and investigate without paying twice": [
+        "4e9cc23ba961"
+      ],
+      "Story: Stop, resume and investigate without paying twice / Stop and changed context invalidate authorization without erasing the attempt": [
+        "64c14d17c871",
+        "2aeab991f533",
+        "6f8d526bae01"
+      ],
+      "Story: Stop, resume and investigate without paying twice / Only matching authoritative evidence can resolve an existing attempt": [
+        "dbbbeb3952c9",
+        "17a84ec8ff81",
+        "6f8d526bae01"
+      ],
+      "Story: Stop, resume and investigate without paying twice / An outcome read anywhere its kind does not allow is refused": [
+        "5133824fba27",
+        "3822dfb21dfc",
+        "d663a5cfb479"
+      ],
+      "Story: Stop, resume and investigate without paying twice / A commitment that moves no money can be confirmed as scheduled": [
+        "03dbc9253ddc",
+        "fc53ba1995b0",
+        "6f8d526bae01"
+      ],
+      "Story: Stop, resume and investigate without paying twice / Leaving the review through Edit before any submit tap returns the commitment to a draft": [
+        "c69c41273f06",
+        "8f953dfed22f",
+        "d663a5cfb479"
+      ],
+      "Story: Stop, resume and investigate without paying twice / An attempt made outside Grace is reconciled before new guidance": [
+        "0a5c9a9b59dc",
+        "c107325ea842",
+        "d663a5cfb479"
+      ],
+      "Story: Stop, resume and investigate without paying twice / A new attempt requires a person's retry after verified failure or return and a new review": [
+        "bc22b1abb852",
+        "1a7ef784cc25",
+        "d663a5cfb479"
+      ],
+      "Story: Stop, resume and investigate without paying twice / A failed outcome save does not undo the observed result": [
+        "9437bc4350db",
+        "eecc1d98d36a",
+        "d663a5cfb479"
+      ],
+      "Story: Stop, resume and investigate without paying twice / Restart restores the last durable result and revokes transient permission": [
+        "57ba2daf223d",
+        "c9bc9e9ce7c7",
+        "6f8d526bae01"
+      ],
+      "Story: Stop, resume and investigate without paying twice / An owner that keeps commitments keeps every commitment rule": [
+        "fd108f82057b",
+        "2f643a9daf0f",
+        "e0fb8984cb11"
+      ]
+    },
+    "spec/app/preferences.md": {
+      "@document": [
+        "7cfc37a57a2f"
+      ],
+      "## Story: Adjust Grace without losing my choices": [
+        "debdf7e8d9c5"
+      ],
+      "Story: Adjust Grace without losing my choices / Output voice, pace and text size have one local source of truth": [
+        "f1d99f1d648c",
+        "e67126d6df69",
+        "656921fb019e"
+      ],
+      "Story: Adjust Grace without losing my choices / Preview changes the session immediately without claiming it was saved": [
+        "91f170aeaaf4",
+        "40465cb8d346",
+        "63b41d1cef13"
+      ],
+      "Story: Adjust Grace without losing my choices / Saving or retrying requests the current choice as one versioned snapshot": [
+        "6696d493415a",
+        "bddedc177cb5",
+        "63b41d1cef13"
+      ],
+      "Story: Adjust Grace without losing my choices / Only the current storage acknowledgement confirms persistence": [
+        "9cc86352c059",
+        "d1ff33372355",
+        "63b41d1cef13"
+      ],
+      "Story: Adjust Grace without losing my choices / Restart restores confirmed preferences and invalidates pending acknowledgements": [
+        "0d542c117af2",
+        "097414fd45db",
+        "63b41d1cef13"
+      ],
+      "Story: Adjust Grace without losing my choices / Undo restores the last setting choice without changing the microphone": [
+        "94b8981f7743",
+        "93355e92d166",
+        "67eac692f479"
+      ],
+      "Story: Adjust Grace without losing my choices / Night dimming and sound samples use the current preference without rewriting it": [
+        "25c93e237ab2",
+        "e0d4b7b3b20d",
+        "63b41d1cef13"
+      ],
+      "Story: Adjust Grace without losing my choices / Preview, persistence and a recoverable save failure are reachable": [
+        "da53fb766457",
+        "f0f7f5e3b3b6",
+        "63b41d1cef13"
+      ]
+    },
+    "spec/app/wake.md": {
+      "@document": [
+        "68e488fb7de7"
+      ],
+      "## Story: Call Grace from any app or while the screen sleeps": [
+        "5c1516f7cfb6"
+      ],
+      "Story: Call Grace from any app or while the screen sleeps / Only a current human wake detection can start the interaction": [
+        "6989e367ad6b",
+        "fe82845972d3"
+      ],
+      "Story: Call Grace from any app or while the screen sleeps / Silence uses the current timer and cannot close a later conversation": [
+        "d692a28c07bd",
+        "239a83bf09f7",
+        "26ed2490a683"
+      ],
+      "Story: Call Grace from any app or while the screen sleeps / Settings and the sleep screen say when wake detection is unavailable": [
+        "49a060cf3a6a",
+        "a89aa36c503e",
+        "26ed2490a683"
+      ],
+      "Story: Call Grace from any app or while the screen sleeps / A wake is valid when it meets every rule above": [
+        "74d1fd43d3b8",
+        "d39335983a74",
+        "26ed2490a683"
+      ],
+      "Story: Call Grace from any app or while the screen sleeps / Examples cover enabled, disabled, playback and expired callbacks": [
+        "e3b0c44298fc",
+        "3911056d8d1b",
+        "26ed2490a683"
+      ]
+    },
+    "spec/app/interaction.md": {
+      "@document": [
+        "4b835a4690a0"
+      ],
+      "## Story: Use the same conversation through every input and window control": [
+        "b4cb06ab6b53"
+      ],
+      "Story: Use the same conversation through every input and window control / Each interaction uses the existing guarded assistant operation": [
+        "861445d1c8ab",
+        "9affc2be4e09",
+        "2cf280a91087"
+      ],
+      "Story: Use the same conversation through every input and window control / The workspace can distinguish new requests, changed geometry and local reading": [
+        "3b05a530bd9c",
+        "44538ca99f3d",
+        "bdd8d7f3d2f7"
+      ]
+    },
+    "spec/app/browserControls.md": {
+      "@document": [
+        "c2941dbbe932"
+      ],
+      "## Story: Use every browser control without bypassing Grace's interruption boundary": [
+        "14f1c821c0ab"
+      ],
+      "Story: Use every browser control without bypassing Grace's interruption boundary / Controls reuse the browser's guards and update its one stored state": [
+        "88ed195950a8",
+        "102932483e54",
+        "49e3eb2bec29"
+      ],
+      "## Story: Ask Grace to start a private sign-in for my bill": [
+        "354c94bffe78"
+      ],
+      "Story: Ask Grace to start a private sign-in for my bill / A direct request uses the selected page and revision": [
+        "cf78c77a3e8a",
+        "d04ed41536bb",
+        "23032b330d13"
+      ],
+      "Story: Ask Grace to start a private sign-in for my bill / Only the person can open a verification app from the current private tab": [
+        "7affbe3739c6",
+        "a59830293f87",
+        "23032b330d13"
+      ],
+      "Story: Ask Grace to start a private sign-in for my bill / A new-mail hint belongs to one approved private visit": [
+        "c97d858023d1",
+        "bd7d1002a5d6",
+        "fe5c569ca1c2"
+      ],
+      "Story: Ask Grace to start a private sign-in for my bill / Only the person can fill the current private website field": [
+        "c7dc8d9eef27",
+        "0e07ac915c33",
+        "23032b330d13"
+      ],
+      "Story: Ask Grace to start a private sign-in for my bill / A private sign-in tab keeps its address and page position to itself": [
+        "74e7377dc98d",
+        "cedd4a6c920f",
+        "23032b330d13"
+      ]
+    },
+    "spec/app/files.md": {
+      "@document": [
+        "5fe40be6b3ef"
+      ],
+      "## Story: Find and open something I saved": [
+        "0bf89779f794"
+      ],
+      "Story: Find and open something I saved / A library belongs to one owner and identifies files independently of their names": [
+        "82d1a3cb9468",
+        "455aac1c01c4"
+      ],
+      "Story: Find and open something I saved / Opening and retrying load the authoritative local library": [
+        "dad67f9d8fc9",
+        "f9183096bd48",
+        "c01a8e0534cf"
+      ],
+      "Story: Find and open something I saved / Opening a file verifies that exact content before presenting a preview": [
+        "1f83594bb05b",
+        "90d70652b71e",
+        "c01a8e0534cf"
+      ],
+      "Story: Find and open something I saved / Find help distinguishes one match, multiple matches and no match": [
+        "cec9f3151053",
+        "6478c1e6f470",
+        "65184332a460"
+      ],
+      "Story: Find and open something I saved / Asking Grace to find a file works before Files was ever opened": [
+        "c7557719d984",
+        "bcc9d517b81e",
+        "6627b8497481"
+      ],
+      "## Story: Save, share and remove the chosen file": [
+        "9734158b0aa9"
+      ],
+      "Story: Save, share and remove the chosen file / Saving one attachment or all selected photos is one acknowledged local transaction": [
+        "64f9722f04b6",
+        "e933e1e23c53",
+        "c01a8e0534cf"
+      ],
+      "Story: Save, share and remove the chosen file / A photo taken or a file chosen on the device has its own local source identity": [
+        "15a82a1454a7",
+        "13e60a6f14af",
+        "c01a8e0534cf"
+      ],
+      "Story: Save, share and remove the chosen file / Delete is the explicit local action and does not delete its source email": [
+        "8d5d2170f426",
+        "0dcca99038df",
+        "c01a8e0534cf"
+      ],
+      "Story: Save, share and remove the chosen file / Sharing a photo opens a draft without sending it": [
+        "ea992b552acb",
+        "8237859c575e",
+        "c01a8e0534cf"
+      ],
+      "Story: Save, share and remove the chosen file / Close and restart stop previews without inventing a storage result": [
+        "881fc90cd9e2",
+        "9605ba03d9e8",
+        "c01a8e0534cf"
+      ],
+      "Story: Save, share and remove the chosen file / A surface that hands a library on keeps every library rule": [
+        "c099a5474246",
+        "73dfdb51b3cf",
+        "87d98c4a4512"
+      ],
+      "Story: Save, share and remove the chosen file / Local save, preview, recovery and handoff paths have representative inputs": [
+        "e3b0c44298fc",
+        "86c05f73b8fd",
+        "c01a8e0534cf"
+      ]
+    },
+    "spec/app/emailItem.md": {
+      "@document": [
+        "4570396da56e"
+      ],
+      "## Story: Find and open the email I intend": [
+        "6c27ca5f917b"
+      ],
+      "Story: Find and open the email I intend / Message identity is bound once and empty records cannot be displayed": [
+        "e3b0c44298fc",
+        "5216921c8924"
+      ],
+      "Story: Find and open the email I intend / Folder and search results remain scoped to the current mailbox and query": [
+        "110358228bf6",
+        "c047525fb59c",
+        "272a4102be4e"
+      ],
+      "## Story: Delete a message and recover it safely": [
+        "d058a7c76f17"
+      ],
+      "Story: Delete a message and recover it safely / Only an authorized current selection can begin a provider mutation": [
+        "1063fdd2c083",
+        "4926d4a4a3c5",
+        "272a4102be4e"
+      ],
+      "Story: Delete a message and recover it safely / A message record is valid when it meets every rule above": [
+        "4295b62bb698",
+        "0e92d1f7ff11",
+        "1ba36af75404"
+      ],
+      "Story: Delete a message and recover it safely / Simulation exercises identities, folder changes, stale receipts and uncertainty": [
+        "e3b0c44298fc",
+        "72d9db01cb68",
+        "272a4102be4e"
+      ]
+    },
+    "spec/app/email.md": {
+      "@document": [
+        "fbb7156737cf"
+      ],
+      "## Story: Connect the mailbox I choose": [
+        "e2f22032900e"
+      ],
+      "Story: Connect the mailbox I choose / A mailbox starts disconnected with no selected message or outgoing draft": [
+        "e3b0c44298fc",
+        "2fe90142365b",
+        "1c07e47e10d8"
+      ],
+      "Story: Connect the mailbox I choose / Official authentication binds the chosen identity and the current request": [
+        "a522df3becc5",
+        "df280ffa58b8",
+        "f777d54dbd98"
+      ],
+      "## Story: Read an email and its original attachment": [
+        "dd02d220cf29"
+      ],
+      "Story: Read an email and its original attachment / Each search or content read needs current access and the user's choice": [
+        "6acf3fec4c73",
+        "c13f06d11cd5",
+        "850dddad741b"
+      ],
+      "Story: Read an email and its original attachment / Grace's mail actions run the person's own guards and never approve, send, delete for good or open a link": [
+        "0af4ce43b62a",
+        "cc6b03b943d8",
+        "609ee1d154e0"
+      ],
+      "Story: Read an email and its original attachment / Switching folders clears the old query and starts a scoped listing": [
+        "d3d8a22a0815",
+        "d04406b46712",
+        "35e238ef0244"
+      ],
+      "Story: Read an email and its original attachment / Drafts shows the provider's count of saved drafts, whichever folder is open": [
+        "fdb2ad7c8718",
+        "734a59cd6e00",
+        "b15604cc9fb5"
+      ],
+      "Story: Read an email and its original attachment / Selected-message changes update the same canonical record and invalidate stale actions": [
+        "899eb469156c",
+        "1bdca33b2952",
+        "8118b6d43a93"
+      ],
+      "Story: Read an email and its original attachment / A bill handoff retains verified source identity and never starts a payment": [
+        "16a8d71cd93d",
+        "6ff274d8fa79",
+        "d5fb1594d915"
+      ],
+      "Story: Read an email and its original attachment / A scam warning needs current evidence and holds that message's links": [
+        "2326ba3a470e",
+        "23e8ec808a6b",
+        "d5fb1594d915"
+      ],
+      "## Story: Write or reply and confirm before sending": [
+        "485d3746bd30"
+      ],
+      "Story: Write or reply and confirm before sending / A draft is editable and a reply stays attached to its source message": [
+        "25df6ce4bfe5",
+        "62e39d361cdf",
+        "379c723a1b91"
+      ],
+      "Story: Write or reply and confirm before sending / The composer remembers who she is choosing for, Cc and Bcc, and where she attaches from": [
+        "a63f71d6a996",
+        "79b7f2adb112",
+        "05d3ca36c2a4"
+      ],
+      "Story: Write or reply and confirm before sending / A reply is addressed to the selected message's verified reply-to": [
+        "32846409d6a5",
+        "f617b83e2c34",
+        "d06403308bec"
+      ],
+      "Story: Write or reply and confirm before sending / Grace's reply is a draft that only the person can approve and send": [
+        "2a59b30dfb9c",
+        "932aae4e8aca",
+        "cf30f4a6abcd"
+      ],
+      "Story: Write or reply and confirm before sending / Only the current approved draft may dispatch and an unknown send cannot retry": [
+        "40f8a4088ea9",
+        "347b424ef65b",
+        "0db53615a9cd"
+      ],
+      "Story: Write or reply and confirm before sending / An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online": [
+        "5f986383459a",
+        "331cf19e3f9a",
+        "55a8724c9cb7"
+      ],
+      "Story: Write or reply and confirm before sending / The visible Send button approves exactly the composer the user sees": [
+        "c5c43f1922b2",
+        "4ad0f534d1af",
+        "d06403308bec"
+      ],
+      "Story: Write or reply and confirm before sending / Back preserves the exact draft and storage failure leaves it recoverable": [
+        "60dce170c03f",
+        "d85c87a6f943",
+        "e8f83152c537"
+      ],
+      "Story: Write or reply and confirm before sending / Back and Close keep a composer worth keeping and close an empty one": [
+        "5a22a107abbe",
+        "4193dc86b0db",
+        "d06403308bec"
+      ],
+      "Story: Write or reply and confirm before sending / Sending or discarding retires the completed draft revision without hiding newer work": [
+        "9a7d5caab769",
+        "953e1aa30608",
+        "9ddf90e82b10"
+      ],
+      "Story: Write or reply and confirm before sending / Sending a saved draft takes it out of Drafts": [
+        "23fad0291cc8",
+        "4178b3d2e096",
+        "d5fb1594d915"
+      ],
+      "Story: Write or reply and confirm before sending / Attachment actions preserve exact asset and message identity": [
+        "6394109983bd",
+        "58943c37e781",
+        "b15604cc9fb5"
+      ],
+      "Story: Write or reply and confirm before sending / A mailbox is valid when it meets every rule above": [
+        "9d4f46665bde",
+        "b9adbd4a4113",
+        "b09d59e4cf49"
+      ],
+      "Story: Write or reply and confirm before sending / Simulation samples cover message and attachment lifecycles": [
+        "0e555d888045",
+        "05f6ff80ef47",
+        "4618b545819e"
+      ]
+    },
+    "spec/app/calendar.md": {
+      "@document": [
+        "13626f5dfb60"
+      ],
+      "## Story: Add and correct an appointment or bill reminder": [
+        "6dd26ad5cbb9"
+      ],
+      "Story: Add and correct an appointment or bill reminder / A new occurrence has no saved entry or scheduled reminder": [
+        "8275959c5f93",
+        "c8caa29a89ca"
+      ],
+      "Story: Add and correct an appointment or bill reminder / Creation binds a unique occurrence and editing changes only its draft": [
+        "0f1ed294acd5",
+        "f5a570d7d165",
+        "2e30ad77b9ba"
+      ],
+      "Story: Add and correct an appointment or bill reminder / Changing the start keeps the event's length": [
+        "ef020a169710",
+        "752b751ee68d",
+        "2e30ad77b9ba"
+      ],
+      "Story: Add and correct an appointment or bill reminder / Saving requires the current complete draft and explicit confirmation": [
+        "08901e55ca85",
+        "5b505bfdefad",
+        "2e30ad77b9ba"
+      ],
+      "Story: Add and correct an appointment or bill reminder / A change the company has since changed shows the company's version": [
+        "17b24c4d899a",
+        "3ec3449cef1f",
+        "bc4aae320ecf"
+      ],
+      "Story: Add and correct an appointment or bill reminder / Deleting an occurrence requires confirmation and leaves payment records alone": [
+        "23d81f1d44ce",
+        "71766c189fb4",
+        "2e30ad77b9ba"
+      ],
+      "## Story: See a reminder and choose what to do": [
+        "0e383b673c6b"
+      ],
+      "Story: See a reminder and choose what to do / Time only makes an enabled reminder eligible and never executes the task": [
+        "11a51f0ee26f",
+        "87e8b1f9bf57",
+        "2e30ad77b9ba"
+      ],
+      "Story: See a reminder and choose what to do / A bill handoff names the saved occurrence and carries no approval": [
+        "59d50615a461",
+        "14696332dbf3",
+        "2e30ad77b9ba"
+      ],
+      "## Story: Keep repeating entries distinct": [
+        "52e6c1848cc9"
+      ],
+      "Story: Keep repeating entries distinct / Recurrence creates another occurrence rather than changing an existing identity": [
+        "fbc67df77dbc",
+        "a2079198f492",
+        "2e30ad77b9ba"
+      ],
+      "Story: Keep repeating entries distinct / Simulation includes appointments, bills, incomplete drafts and recurring dates": [
+        "5c6b22194f59",
+        "ab965efcf540",
+        "2e30ad77b9ba"
+      ],
+      "## Story: Browse my calendar and select the right occurrence": [
+        "734696a9c79d"
+      ],
+      "Story: Browse my calendar and select the right occurrence / A calendar view filters by owner, calendar and an explicit time interval": [
+        "c8172888201a",
+        "660a3f7b92d6",
+        "2e30ad77b9ba"
+      ],
+      "Story: Browse my calendar and select the right occurrence / Registering an occurrence replaces its own identity instead of adding a duplicate": [
+        "9284eec7e7e6",
+        "8fcc23236555",
+        "4cccfca24233"
+      ],
+      "Story: Browse my calendar and select the right occurrence / An admitted upsert leaves one current row and refused updates preserve the registry": [
+        "e3b0c44298fc",
+        "78ea9aeaa56c",
+        "fbd6c1749cc5"
+      ]
+    },
+    "spec/app/calendarView.md": {
+      "@document": [
+        "ccd0e514626b"
+      ],
+      "## Story: Browse my calendar and open an exact occurrence": [
+        "7de248edd97a"
+      ],
+      "Story: Browse my calendar and open an exact occurrence / A calendar collection binds one owner and validates published occurrences": [
+        "6bb7f07c5997",
+        "a08aac4b15fb",
+        "362d4557292e"
+      ],
+      "Story: Browse my calendar and open an exact occurrence / An account's calendar is bound by its store before Calendar opens": [
+        "e7fec48a1583",
+        "3f67bf3a5849",
+        "39fb35ca338a"
+      ],
+      "Story: Browse my calendar and open an exact occurrence / A provider calendar remembers when its feed needs sign-in": [
+        "94a6c80c7418",
+        "d0f8b4c478bc",
+        "a4b720aa67f5"
+      ],
+      "Story: Browse my calendar and open an exact occurrence / Navigation clears detail and only accepts a validated calendar interval": [
+        "eab68b05c97e",
+        "2a919e52da20",
+        "045d35ae13cc"
+      ],
+      "Story: Browse my calendar and open an exact occurrence / Coming up lists saved events after the selected day": [
+        "50887ea2c761",
+        "df2dd7d30838",
+        "045d35ae13cc"
+      ],
+      "## Story: Edit the selected occurrence and receive its reminders": [
+        "82b5cf45ceb3"
+      ],
+      "Story: Edit the selected occurrence and receive its reminders / Owned occurrence actions preserve one identity and one reminder lifecycle": [
+        "582902cd0341",
+        "cf7054dcd132",
+        "c82817412067"
+      ],
+      "Story: Edit the selected occurrence and receive its reminders / An email account's calendar is asked to keep only what its company keeps": [
+        "ade185b3cc93",
+        "f281a699bf9b",
+        "1140657d2840"
+      ],
+      "Story: Edit the selected occurrence and receive its reminders / A change at the company names the revision it read and never overwrites a newer one": [
+        "f459c4593e10",
+        "95029e2e0ff8",
+        "39fb35ca338a"
+      ],
+      "Story: Edit the selected occurrence and receive its reminders / The form opens its Day or its Time list, one at a time": [
+        "d3f8d8ea62d6",
+        "e7d77c47639e",
+        "42d4a86fbfc3"
+      ],
+      "Story: Edit the selected occurrence and receive its reminders / A provider's create receipt names the saved occurrence": [
+        "735193141e71",
+        "d5293d937fc9",
+        "39fb35ca338a"
+      ],
+      "Story: Edit the selected occurrence and receive its reminders / An exact confirmed appointment enters the calendar without opening it": [
+        "3409b84a1d02",
+        "73af919bce97",
+        "ef843a032890"
+      ],
+      "Story: Edit the selected occurrence and receive its reminders / Grace's change takes effect only for the exact change the person agreed to": [
+        "8cc4bce7b7ab",
+        "ed88eeb14d9f",
+        "ef843a032890"
+      ],
+      "Story: Edit the selected occurrence and receive its reminders / A bill occurrence enters only from verified bill evidence": [
+        "ac57c3fcd5e5",
+        "ef7c76989955",
+        "fab67ebcf3cd"
+      ],
+      "Story: Edit the selected occurrence and receive its reminders / Saving a repeating event updates its whole series through the same form": [
+        "f5cf477d3860",
+        "107cd47748b1",
+        "a3fafb4e6325"
+      ],
+      "Story: Edit the selected occurrence and receive its reminders / Closing Calendar cancels unsubmitted edits and retains submitted writes": [
+        "6c4db1f84ddc",
+        "ac1120d6cddf",
+        "42d4a86fbfc3"
+      ],
+      "## Story: See a due reminder and open its event": [
+        "79e2057a88d5"
+      ],
+      "Story: See a due reminder and open its event / A shown reminder appears on Home or as a toast and See details opens its event": [
+        "c9013a1254e4",
+        "22561d63acbd",
+        "42d4a86fbfc3"
+      ],
+      "## Story: Open the bill behind a calendar entry": [
+        "fa53720edc49"
+      ],
+      "Story: Open the bill behind a calendar entry / A saved bill's detail offers Open bill with its payment status": [
+        "61d56dd3d92c",
+        "8ec9266a34d5",
+        "072e8e0ec44a"
+      ],
+      "## Story: Delete this occurrence or the whole repeating event": [
+        "fad968000851"
+      ],
+      "Story: Delete this occurrence or the whole repeating event / The deletion question binds its selected occurrence and explicit scope": [
+        "f3cba42edd06",
+        "9b917a53ecc4",
+        "42d4a86fbfc3"
+      ],
+      "Story: Delete this occurrence or the whole repeating event / Grace's deletion takes effect only for the occurrence and scope the person agreed to": [
+        "a75c4f91fad6",
+        "4a8baf8d76dd",
+        "39fb35ca338a"
+      ],
+      "Story: Delete this occurrence or the whole repeating event / Samples exercise ordinary and recurring entries without limiting real dates": [
+        "e3b0c44298fc",
+        "ef09af4c363f",
+        "1f28103132b6"
+      ]
+    },
+    "spec/app/handoffs.md": {
+      "@document": [
+        "0c0c9d013054"
+      ],
+      "## Story: Open the same task from any surface": [
+        "77e1d80e1ee7"
+      ],
+      "Story: Open the same task from any surface / Domain projections retain the same task subject": [
+        "18606bb0c53e",
+        "04686d72c332",
+        "028bb28c23b0"
+      ],
+      "Story: Open the same task from any surface / Owner changes cancel pending handoffs but preserve references to unresolved commitments": [
+        "0297d2b8da3c",
+        "0c38412ddc9a",
+        "f87a7743d8a7"
+      ],
+      "Story: Open the same task from any surface / Selecting a task records its source and waits for the canonical durable mapping": [
+        "3ac26ed4d7af",
+        "2aa0b6b7536f",
+        "f87a7743d8a7"
+      ],
+      "Story: Open the same task from any surface / One task subject resolves to exactly one commitment record across all entry points": [
+        "632700da2de4",
+        "d142c1d24d91",
+        "f87a7743d8a7"
+      ],
+      "Story: Open the same task from any surface / A resolved task is presented only in the still-current source context": [
+        "e0adbd0f9f67",
+        "08ab999890fe",
+        "09ade96108a9"
+      ],
+      "Story: Open the same task from any surface / Canceling a handoff does not delete a commitment record": [
+        "e3b0c44298fc",
+        "0ca2fc56382b",
+        "1202d1a5b567"
+      ],
+      "## Story: Return to the task and see its actual result": [
+        "ab1b8e17b896"
+      ],
+      "Story: Return to the task and see its actual result / Every source displays only the result of its matching commitment": [
+        "62e7560ad6e2",
+        "77203986e1ff",
+        "84b703efb199"
+      ],
+      "Story: Return to the task and see its actual result / Every entry point of one subject reaches the one commitment kept for it, and no other subject shares its record": [
+        "32ec41d7fc53",
+        "af456cf48d6c",
+        "f6a6a426b33e"
+      ],
+      "## Story: Share the photo I am viewing through my chosen mailbox": [
+        "de90c90277dc"
+      ],
+      "Story: Share the photo I am viewing through my chosen mailbox / Files closes the preview only when Email accepts that exact photo into a new draft": [
+        "09a437aa1487",
+        "012b0a18b3de",
+        "7734b50a5630"
+      ],
+      "## Story: Open a link from an email in my browser": [
+        "acab52aea645"
+      ],
+      "Story: Open a link from an email in my browser / A link Email released opens in a new Browser tab, and no other link does": [
+        "a22eb883ed68",
+        "cd5bd23616fc",
+        "f0c714fb2341"
+      ],
+      "## Story: Open an event from Home": [
+        "2b25b360349a"
+      ],
+      "Story: Open an event from Home / A Home event row opens its own occurrence in Calendar, and a stale row opens nothing": [
+        "878053f40ffe",
+        "99d9577a3009",
+        "0cd7c4fb8dd1"
+      ],
+      "## Story: Close an app without losing what I was doing": [
+        "4f125f892cf1"
+      ],
+      "Story: Close an app without losing what I was doing / Close lets the visible app put its own state away before going Home": [
+        "867c5e236d94",
+        "f5fb37a1c545",
+        "8292ade336c8"
+      ]
+    },
+    "spec/app/websiteRequests.md": {
+      "@document": [
+        "546eb505f21d"
+      ],
+      "## Story: Answer what a website asks of me": [
+        "f15e39de1752"
+      ],
+      "Story: Answer what a website asks of me / A website's request is held only for the current page of the tab I am looking at": [
+        "603cf5b8d8e0",
+        "3c287b9f2773",
+        "251c61e71af0"
+      ],
+      "Story: Answer what a website asks of me / Only the first request of the selected tab is presented, while the browser is shown": [
+        "e40ed46df160",
+        "661e4bf0da75",
+        "987c7e856801"
+      ],
+      "Story: Answer what a website asks of me / Looking away from a page ends what it asked, and never accepts it": [
+        "05c6a05b382e",
+        "db98bbc3a518",
+        "27f3890976b3"
+      ],
+      "Story: Answer what a website asks of me / A website message is answered once with OK, Cancel or typed text": [
+        "043ede75888c",
+        "1514824b7c78",
+        "f3802af826d9"
+      ],
+      "Story: Answer what a website asks of me / What a website asks during a task is mine to answer, and the task waits for it": [
+        "1d6b670e85e4",
+        "767b32add6d7",
+        "4f1ffbcb8394"
+      ],
+      "## Story: Save a file a website offers": [
+        "d3437f0aedf3"
+      ],
+      "Story: Save a file a website offers / A download is saved with a visible status or visibly not saved": [
+        "7ec0953e8cfd",
+        "71b1b929562c",
+        "9df5104a0b60"
+      ],
+      "## Story: Choose a file to send to a website": [
+        "82e482b85ebe"
+      ],
+      "Story: Choose a file to send to a website / The file picker opens only after my tap and my choice to choose a file": [
+        "2eaa07aa8d05",
+        "589b14034472",
+        "fc5ea286d0d0"
+      ],
+      "## Story: Decide what a website may use": [
+        "3a515bfc97fc"
+      ],
+      "Story: Decide what a website may use / Only the website I am on can ask, and my answer holds for that website and those devices until Close browser": [
+        "c27471b0b90c",
+        "d137c8bb5e4b",
+        "242fe0b92ba6"
+      ],
+      "Story: Decide what a website may use / Allow asks Android, and a website gets a device only when Android allows it too": [
+        "4f48d0ee784e",
+        "0a769079dfc9",
+        "97c5ce385870"
+      ],
+      "## Story: Call, email or find a place from a website": [
+        "f7a483af22ee"
+      ],
+      "Story: Call, email or find a place from a website / Another app opens only after my tap and my confirmation": [
+        "372830de10c3",
+        "e17772d37b84",
+        "473917df18ab"
+      ],
+      "Story: Call, email or find a place from a website / When the app or browser I confirmed does not open, I am told": [
+        "9b00344f8ac7",
+        "e20eac0db39c",
+        "4f1ffbcb8394"
+      ],
+      "## Story: Sign in with Google or Facebook on a website": [
+        "6dc267f4e594"
+      ],
+      "Story: Sign in with Google or Facebook on a website / A refused sign-in is explained with the option to continue in the tablet's browser": [
+        "6eb3e1f57153",
+        "cd6f5769ca9d",
+        "3171d54d0333"
+      ],
+      "## Story: Stay signed in to my websites": [
+        "efd6b140334f"
+      ],
+      "Story: Stay signed in to my websites / Website sign-ins last across tabs and Close browser until browsing data is cleared after one confirmation": [
+        "c9471f2ca19e",
+        "c365cc6a598c",
+        "4f1ffbcb8394"
+      ]
+    },
+    "spec/app/workspace.md": {
+      "@document": [
+        "c530ebb5503e"
+      ],
+      "## Story: Leave and return without hidden work": [
+        "08f247a65aac"
+      ],
+      "Story: Leave and return without hidden work / The workspace contains the actual device, page, conversation and operation": [
+        "6ddce4e37738",
+        "d7a4956f019e",
+        "d735580e8b83"
+      ],
+      "Story: Leave and return without hidden work / Device changes and permission changes stop work before the new context is used": [
+        "9972c7fb865d",
+        "3d82241dae66",
+        "1afaf0e2b5c3"
+      ],
+      "Story: Leave and return without hidden work / The person can allow Grace to read her browser and revoke that choice": [
+        "a2157b99d874",
+        "d571f85a86ad",
+        "44ddf1e1edc0"
+      ],
+      "Story: Leave and return without hidden work / Home, native controls and Close have explicit interruption semantics": [
+        "6e7c5241ed5b",
+        "2a2e167c9ea8",
+        "1c5862b3223f"
+      ],
+      "Story: Leave and return without hidden work / A released email link opens Browser and its fresh tab together": [
+        "b73548ec2a5e",
+        "182b9dafd61a",
+        "3a1bd3821a4b"
+      ],
+      "Story: Leave and return without hidden work / Conversation input and geometry use the same owned assistant state": [
+        "67da1b9d378c",
+        "7b1329feb14c",
+        "d1cb4046829d"
+      ],
+      "Story: Leave and return without hidden work / Guidance is visible only on its current surface and target": [
+        "58aac33519e0",
+        "b1995830c73c",
+        "30e893a8c94f"
+      ],
+      "Story: Leave and return without hidden work / Home pages and rail overlays invalidate the covered page": [
+        "043047513b70",
+        "a5dc18bfdeaa",
+        "2aeb5daaf027"
+      ],
+      "Story: Leave and return without hidden work / An enabled wake phrase listens without resuming a website task": [
+        "0f8707261d74",
+        "bbbddcc104e0",
+        "057ae1ed61eb"
+      ],
+      "Story: Leave and return without hidden work / Preference changes invalidate wake timers and use the same durable settings": [
+        "5a4b027ee309",
+        "6ec4762a6e1e",
+        "c7464e5827d3"
+      ],
+      "## Story: Resume against the current website": [
+        "e790f633ce5e"
+      ],
+      "Story: Resume against the current website / Starting and changing pages use the browser's real navigation state": [
+        "037db9fa8cd8",
+        "987a58acace7",
+        "6667edcbfcea"
+      ],
+      "Story: Resume against the current website / Correlated website progress is observed without asking the person to resume": [
+        "f1be4aaa8d49",
+        "f5a7a4f86b84",
+        "025e9d02c8c3"
+      ],
+      "Story: Resume against the current website / A page that moves by itself where the person is not looking only records where it went": [
+        "9e4b7487701e",
+        "deb6a786d7a6",
+        "90627b57435e"
+      ],
+      "Story: Resume against the current website / Reconciliation binds the current page and device versions to the one task": [
+        "bbc44ef1a28b",
+        "aab15ddeb85e",
+        "44ddf1e1edc0"
+      ],
+      "Story: Resume against the current website / A page on another origin, or a step that is the person's, blocks the task where she can see it": [
+        "bb1a12ad5d6b",
+        "150a07a23c46",
+        "d8e1c8808979"
+      ],
+      "Story: Resume against the current website / Dispatch checks the context again and readback establishes the result": [
+        "19ed52a7a4a6",
+        "8fe85bd9db47",
+        "5f0c4d830e4e"
+      ],
+      "Story: Resume against the current website / An ordinary website goal finishes only on an observation quoting its fact": [
+        "c1622c29d465",
+        "ab27dbcbd7bc",
+        "353010c7af02"
+      ],
+      "## Story: Follow one reviewed plan across apps": [
+        "b3a0b2ddaac5"
+      ],
+      "Story: Follow one reviewed plan across apps / The person starts a sequence of outcomes without opening a website": [
+        "fb447440ce0d",
+        "830074ab5aaa",
+        "ae0de16e6fd2"
+      ],
+      "Story: Follow one reviewed plan across apps / An authenticated restart restores the reviewed plan paused at its next outcome": [
+        "5e5580997fab",
+        "eb86fbc54cf9",
+        "9ccf268c05c6"
+      ],
+      "Story: Follow one reviewed plan across apps / A read plan offered in chat waits for the person to start it": [
+        "5fff0ebc0e88",
+        "3514a303c0d1",
+        "884878a54b6e"
+      ],
+      "Story: Follow one reviewed plan across apps / Only the person can revise the next public page or category to its observed label": [
+        "18ba9f3b7e42",
+        "8052b44d060c",
+        "6fa7b4304297"
+      ],
+      "Story: Follow one reviewed plan across apps / Only a current observation of the next outcome advances the plan": [
+        "9939f425ee6a",
+        "8f413883c4fc",
+        "f45081817cb9"
+      ],
+      "Story: Follow one reviewed plan across apps / The person searches the reviewed site and Grace checks that exact query": [
+        "b616447fb9e3",
+        "c68f0296c5ef",
+        "219d39801649"
+      ],
+      "Story: Follow one reviewed plan across apps / The latest matching record must be selected on its collection and verified on arrival": [
+        "ad3372434e9a",
+        "e8dc05afa217",
+        "bb0a23e7a9ca"
+      ],
+      "Story: Follow one reviewed plan across apps / A calendar save must come from the selected email and a separately approved write": [
+        "7ea0e12ccfe2",
+        "d98d6e0d2952",
+        "524c2598246b"
+      ],
+      "## Story: Preserve payment authorization and uncertainty across surfaces": [
+        "06c844cd45c1"
+      ],
+      "Story: Preserve payment authorization and uncertainty across surfaces / The active bill is bound to the observed owner and origin once": [
+        "80f204218f9d",
+        "f7e8c97622a2",
+        "44ddf1e1edc0"
+      ],
+      "Story: Preserve payment authorization and uncertainty across surfaces / Review readback and durable journaling precede explicit approval": [
+        "42d6282be6c1",
+        "65da3d810af5",
+        "6c32b457f03e"
+      ],
+      "Story: Preserve payment authorization and uncertainty across surfaces / A fully classified spoken approval is recorded and authorized atomically": [
+        "f172974a3dbb",
+        "1b9ef903c387",
+        "db2e6688006c"
+      ],
+      "Story: Preserve payment authorization and uncertainty across surfaces / Final submission checks the current workspace and consumes one payment authorization": [
+        "4df9c169b1c9",
+        "e2fd3e607e7d",
+        "14e3caae2767"
+      ],
+      "Story: Preserve payment authorization and uncertainty across surfaces / Verified provider outcomes finish the task while storage retains the payment record": [
+        "a197214497d1",
+        "88f16e667c28",
+        "7781e6d7bf7c"
+      ],
+      "## Story: Open an available control from Grace's reply": [
+        "5357d94da22f"
+      ],
+      "Story: Open an available control from Grace's reply / A reply offers controls for its current turn and visible context": [
+        "c8b80c095c51",
+        "bc4d526933b7",
+        "44ddf1e1edc0"
+      ],
+      "## Story: Wait for my answer to a website": [
+        "ca38fb613fc4"
+      ],
+      "Story: Wait for my answer to a website / No task step is taken while a website's question holds the person, and the task goes on after her answer": [
+        "15fa6f80ad86",
+        "68f7a33180e4",
+        "9a6b4b04408a"
+      ]
+    },
+    "spec/app/actuation.md": {
+      "@document": [
+        "a4361d9da8d8"
+      ],
+      "## Story: Stop old website actions before they reach the page": [
+        "b44491ce2d77"
+      ],
+      "Story: Stop old website actions before they reach the page / The actuator must still have the exact current browser command": [
+        "3b22409edae8",
+        "067f85ef848f",
+        "44ddf1e1edc0"
+      ],
+      "Story: Stop old website actions before they reach the page / Finite examples include current commands and requests fenced by Stop": [
+        "dcd9b3daac72",
+        "9df6eefba987",
+        "5f9c7b9f5d73"
+      ]
+    },
+    "spec/app/request.md": {
+      "@document": [
+        "496b843cb69f"
+      ],
+      "## Story: Only her own words ask Grace to act": [
+        "8a1a83a809f1"
+      ],
+      "Story: Only her own words ask Grace to act / A request records its turn, the work it belongs to and where the turn came from": [
+        "4403b68e685d",
+        "43ebbb3f9df3"
+      ],
+      "Story: Only her own words ask Grace to act / Only a current request from the person's own turn may ask for an action on any surface": [
+        "7ea5931ebce3",
+        "fcf182fc73f9",
+        "ef4cdb4acd56"
+      ],
+      "## Story: Each yes counts once, for what she was shown": [
+        "6fc10cd43a9d"
+      ],
+      "Story: Each yes counts once, for what she was shown / A proposal is known by its owner, its item and its revision, not by where it is shown": [
+        "4b1e047c6bf9",
+        "b35b47e1dea6"
+      ],
+      "Story: Each yes counts once, for what she was shown / A consent names one revision of one proposal and the turn that gave it": [
+        "d59c72b536bf",
+        "2eb58ebe486c",
+        "bcb7a1466dbd"
+      ],
+      "Story: Each yes counts once, for what she was shown / A consent is used once, and a newer turn voids it": [
+        "431c745911e9",
+        "9c6b231a5c8b",
+        "5842984f7d7d"
+      ]
+    },
+    "spec/app/mailboxes.md": {
+      "@document": [
+        "4305f3f0023b"
+      ],
+      "## Story: See all my email in one place": [
+        "9724200eb9f6"
+      ],
+      "Story: See all my email in one place / Each account’s state is read from its own mailbox and never stored twice": [
+        "6914a3c15a9e",
+        "49c3a3b0db5f",
+        "101b9ee8320e"
+      ],
+      "Story: See all my email in one place / With no account’s Email on, Email offers only Connect your email and Ask Grace": [
+        "a47bf4c1fa12",
+        "aa88997d7d48",
+        "d38860243435"
+      ],
+      "Story: See all my email in one place / The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new": [
+        "a08be5405083",
+        "8da5137e0ae4",
+        "18269a3752f1"
+      ],
+      "Story: See all my email in one place / All inboxes is the union of the shown accounts’ inboxes": [
+        "c214f2e6a49f",
+        "c93f3ca30b73",
+        "9f5bdd812501"
+      ],
+      "Story: See all my email in one place / Drafts counts the shown accounts’ saved drafts": [
+        "95862220f229",
+        "fd39639a57e1",
+        "40f0dc230cc7"
+      ],
+      "Story: See all my email in one place / Outbox gathers the shown accounts’ waiting email, and an account with unsent email stays": [
+        "fdc1c1870f25",
+        "44f6783da3c0",
+        "40f0dc230cc7"
+      ],
+      "Story: See all my email in one place / Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder": [
+        "48732a398736",
+        "779676f1cc04",
+        "d7a95c9d5673"
+      ],
+      "Story: See all my email in one place / Each account’s banner shows its own state, and offline is not a broken account": [
+        "40a7e6a39d40",
+        "8f9cf048c8d4",
+        "40f0dc230cc7"
+      ],
+      "Story: See all my email in one place / Grace is shown only what Margaret can see": [
+        "d6f709764fb7",
+        "8beb0834c22c",
+        "94ac467bdc19"
+      ],
+      "Story: See all my email in one place / Grace is told what Margaret did with her email, and being told authorizes nothing": [
+        "3f3aacbe007b",
+        "035d3298d772",
+        "d5fb1594d915"
+      ],
+      "Story: See all my email in one place / A switched-off or removed account shows nothing anywhere": [
+        "37dcfae53c0c",
+        "4d481d69c7fa",
+        "785f94d97cea"
+      ],
+      "## Story: Send from the right address": [
+        "351e255b9b7a"
+      ],
+      "Story: Send from the right address / From offers each account that has Email on and can send": [
+        "fca29a246174",
+        "811209caf325",
+        "3fa26737694e"
+      ],
+      "Story: Send from the right address / Writing starts at Who is it to?, and Cc and Bcc show once opened or used": [
+        "8a97e44aedcc",
+        "1054d092d380",
+        "d5fb1594d915"
+      ],
+      "Story: Send from the right address / Changing From moves a draft never saved, whole and unapproved, and a saved draft stays": [
+        "5617ac9e3915",
+        "604e9491f77c",
+        "87fb88562ea4"
+      ],
+      "Story: Send from the right address / Simulation samples are real mailboxes and registries": [
+        "0508ae7d8dd5",
+        "cbcf1d07f0ce",
+        "75fdb95ac73f"
+      ]
+    },
+    "spec/app/proposal.md": {
+      "@document": [
+        "fe2bdcbeef46"
+      ],
+      "## Story: Say yes to exactly what Grace proposes for my calendar": [
+        "9c5513fa7f34"
+      ],
+      "Story: Say yes to exactly what Grace proposes for my calendar / A proposal comes only from her current turn": [
+        "fd54039728d1",
+        "94c2bc55b06f",
+        "babf40184660"
+      ],
+      "Story: Say yes to exactly what Grace proposes for my calendar / Her yes counts once, for the revision she was shown": [
+        "9db674f21a50",
+        "1b5a4446bba2",
+        "3a00cf5b7826"
+      ],
+      "Story: Say yes to exactly what Grace proposes for my calendar / An agreed question stays exactly as agreed until the calendar answers": [
+        "972dfc39e8b6",
+        "103118c78a73",
+        "3a00cf5b7826"
+      ],
+      "Story: Say yes to exactly what Grace proposes for my calendar / A correction, a No or a new conversation drops a question she has not agreed to": [
+        "40575048af38",
+        "e288ab1ae72c",
+        "3a00cf5b7826"
+      ],
+      "Story: Say yes to exactly what Grace proposes for my calendar / Samples ask for each kind of calendar question and answer from each kind of turn": [
+        "e3b0c44298fc",
+        "e4ff8f19e67d",
+        "3a00cf5b7826"
+      ]
+    },
+    "spec/app/calendars.md": {
+      "@document": [
+        "2bd71cee47b1"
+      ],
+      "## Story: See every calendar together and know where each appointment lives": [
+        "810b21c85f9a"
+      ],
+      "Story: See every calendar together and know where each appointment lives / The tablet’s calendar always shows, and an email’s only while its Calendar is on": [
+        "c2c4c5429bd4",
+        "0ebe92ffde21",
+        "20bf1190247a"
+      ],
+      "Story: See every calendar together and know where each appointment lives / Week and Month follow the tablet’s calendar, and every shown calendar fills the chosen days": [
+        "3b4c61c2ff14",
+        "c27566df0569",
+        "06542398e0b3"
+      ],
+      "Story: See every calendar together and know where each appointment lives / Tags show only when an email’s calendar is on": [
+        "a883b125e156",
+        "4d57a8de991d",
+        "472934334829"
+      ],
+      "Story: See every calendar together and know where each appointment lives / The connect banner shows until an email’s calendar is on or she says Not now": [
+        "a82114a6cd68",
+        "e3cce7cc1712",
+        "cc46cc4ca51b"
+      ],
+      "Story: See every calendar together and know where each appointment lives / Home and the sleep screen show the next saved appointments": [
+        "6e91f4ab2931",
+        "806c28624dcb",
+        "2c45dd21f3c4"
+      ],
+      "Story: See every calendar together and know where each appointment lives / Home’s calendar card says Last updated only while it can’t update, and otherwise what is planned": [
+        "be81cf305433",
+        "6f778b296c42",
+        "7c8d5c846a86"
+      ],
+      "Story: See every calendar together and know where each appointment lives / A switched-off account’s appointments and reminders show nowhere, to her or to Grace": [
+        "d6ad73a498f5",
+        "6eeabd4cc92b",
+        "a29ae28c4c22"
+      ],
+      "Story: See every calendar together and know where each appointment lives / Grace is told what changed in a calendar, and being told authorizes nothing": [
+        "97ce5b5e0d13",
+        "93aa68803053",
+        "4082dce01678"
+      ],
+      "## Story: Ask Grace to put an email’s appointment in my calendar": [
+        "342b24fffc67"
+      ],
+      "Story: Ask Grace to put an email’s appointment in my calendar / An appointment from an email goes to that email’s calendar, else to the tablet’s": [
+        "20007c5046f3",
+        "5299854c9061",
+        "e59c50ef8897"
+      ],
+      "Story: Ask Grace to put an email’s appointment in my calendar / An appointment from an email names that email, goes to its account’s calendar, and is asked once": [
+        "108316f782c8",
+        "1209a37b09d9",
+        "69ba6aab4840"
+      ],
+      "Story: Ask Grace to put an email’s appointment in my calendar / While Grace asks, the appointment shows on its day as not added yet": [
+        "89d46e398642",
+        "1f1460cf068c",
+        "8195dee398f2"
+      ],
+      "Story: Ask Grace to put an email’s appointment in my calendar / Calendar turns to the day of Grace’s question and of what was just added, but never past an edit": [
+        "88a841737e87",
+        "c61430ce76ea",
+        "eae291e6ae49"
+      ],
+      "Story: Ask Grace to put an email’s appointment in my calendar / Her yes is applied as the exact question she was asked": [
+        "493823cf414f",
+        "23e5ba5c5822",
+        "3a00cf5b7826"
+      ],
+      "Story: Ask Grace to put an email’s appointment in my calendar / Samples are real calendars, mailboxes and questions": [
+        "b3ae421c8c85",
+        "d75333020437",
+        "34f065a74b7b"
+      ]
+    },
+    "spec/app/agentActions.md": {
+      "@document": [
+        "fcd3b43128f0"
+      ],
+      "## Story: Ask Grace to help with my email": [
+        "8324c8418479"
+      ],
+      "Story: Ask Grace to help with my email / Only Margaret's own current turn makes Grace act, on any screen": [
+        "fd3699ef2f02",
+        "e4b4748b87d1",
+        "9ffd5de933a4"
+      ],
+      "Story: Ask Grace to help with my email / Grace's email actions go to that account's mailbox and pass its own guard": [
+        "b089ca800a48",
+        "e8ab7666dd49",
+        "77e72f5c6946"
+      ],
+      "Story: Ask Grace to help with my email / Grace changes the folder or the inbox only to one Margaret can see": [
+        "84a3e3f50a95",
+        "8d1a285196e7",
+        "a7c51f461d7c"
+      ],
+      "Story: Ask Grace to help with my email / Grace opens a setting, and points only at what is on the screen": [
+        "e194d860e717",
+        "254802b09b11",
+        "e50b6eba4375"
+      ],
+      "## Story: Ask Grace about my calendar": [
+        "8f243fc97a87"
+      ],
+      "Story: Ask Grace about my calendar / Grace only asks about a calendar that shows, with a question that calendar would take": [
+        "d846e9606453",
+        "22e3be32cba8",
+        "cda05c64ab23"
+      ],
+      "Story: Ask Grace about my calendar / An appointment from an email is asked only as the calendar rules allow": [
+        "01f60f87483b",
+        "36958dddf508",
+        "b95750d0c297"
+      ],
+      "Story: Ask Grace about my calendar / Her yes is taken only for a question waiting on her, and her No drops it": [
+        "295119a041c8",
+        "262df57ec953",
+        "5d89b07cfbe1"
+      ],
+      "Story: Ask Grace about my calendar / Samples are the tablet as Margaret reads, asks, agrees and switches a calendar off": [
+        "ad45b0f8a41b",
+        "501d08406611",
+        "8c2324ccd1d6"
+      ]
+    },
+    "spec/app/billKind.md": {
+      "@document": [
+        "4409ce60521c"
+      ],
+      "## Story: Read a bill and judge a payment against it": [
+        "508f66658f41"
+      ],
+      "Story: Read a bill and judge a payment against it / A bill's facts keep unknown amounts apart from zero, and whole facts never hold a negative fee": [
+        "19d3e5143898",
+        "aee7ce551133",
+        "655933897ab1"
+      ],
+      "Story: Read a bill and judge a payment against it / Whole facts that say nothing is due never show a positive minimum due": [
+        "4a681dffaec4",
+        "4af8a45526d4",
+        "f6e27da8bb11"
+      ],
+      "Story: Read a bill and judge a payment against it / A bill is already being paid, has nothing due, can be paid, or cannot be paid online for a stated reason": [
+        "f20493a189f2",
+        "137d6f40533f",
+        "bacf2550f116"
+      ],
+      "Story: Read a bill and judge a payment against it / A payment fits a bill only when nothing is scheduled or settled, payment is allowed, and it is valid, in the bill's currency and from one of its funding methods": [
+        "e3b0c44298fc",
+        "767509526b48",
+        "fb6d78a7e088"
+      ],
+      "Story: Read a bill and judge a payment against it / Grace fills a bill's form with the chosen amount and day only": [
+        "b5677767cc90",
+        "1b4feab0a82b",
+        "7e135e228af0"
+      ],
+      "Story: Read a bill and judge a payment against it / A payment is suggested only when the statement balance and the fee were observed and one funding method is offered": [
+        "718a0f9eee8a",
+        "b789f043246f",
+        "fb6d78a7e088"
+      ]
+    },
+    "spec/app/bookingKind.md": {
+      "@document": [
+        "4f18162aa11c"
+      ],
+      "## Story: Read a visit and judge a booking against it": [
+        "95a61d05026c"
+      ],
+      "Story: Read a visit and judge a booking against it / A visit's facts name the service and its offered times, and whole facts keep a price that is not shown apart from free": [
+        "bd46bba9c25f",
+        "b9a376d0d968",
+        "7e135e228af0"
+      ],
+      "Story: Read a visit and judge a booking against it / A visit is already booked, can be booked, or cannot be booked online for a stated reason": [
+        "0706e5305ae3",
+        "897726f5ee81",
+        "f2a428a34000"
+      ],
+      "Story: Read a visit and judge a booking against it / A booking fits a visit only for one of its offered times, at its price, sharing exactly the details asked, after her calendar was read": [
+        "b8979193b926",
+        "f49ab1e17c6e",
+        "a860cfeb5257"
+      ],
+      "Story: Read a visit and judge a booking against it / A time that clashes with her calendar is booked only with her word that the clash is fine": [
+        "f9f2d4adf40b",
+        "4b3ea38727f4",
+        "46dce617ca10"
+      ],
+      "Story: Read a visit and judge a booking against it / A visit that asks for payment to book is never booked by Grace": [
+        "6cb88d20f736",
+        "aef1dc7cca01",
+        "46dce617ca10"
+      ],
+      "Story: Read a visit and judge a booking against it / Grace fills a booking's form with the chosen time and the kinds of detail asked only": [
+        "e2fb667b6f3a",
+        "9270cbd43931",
+        "7e135e228af0"
+      ],
+      "Story: Read a visit and judge a booking against it / A booking is suggested only when her calendar was read and exactly one offered time is free": [
+        "c0d4f00662f7",
+        "5ae71eeb1e4b",
+        "f2a428a34000"
+      ]
+    },
+    "spec/app/surface.md": {
+      "@document": [
+        "353c588058d9"
+      ],
+      "## Story: Use the website under Grace's controls": [
+        "907e33a48e7e"
+      ],
+      "Story: Use the website under Grace's controls / The page layer holds its rect, the controls drawn over it and the rects the host routes by": [
+        "851e71055117",
+        "29d078003ada"
+      ],
+      "Story: Use the website under Grace's controls / A private page reports which history directions are available": [
+        "3d6326fd9592",
+        "7aabe5e5fbe9",
+        "431450ef9274"
+      ],
+      "Story: Use the website under Grace's controls / A touch reaches the website only on the shown page and outside every routed control": [
+        "ba4ad6ccbcdb",
+        "7cd82c680e2d",
+        "431450ef9274"
+      ],
+      "Story: Use the website under Grace's controls / A Grace control is drawn over the page only after the host routes its rect to Grace": [
+        "507078073176",
+        "f0384730705b",
+        "d5628b23486e"
+      ],
+      "## Story: Keep the page still while Grace covers it": [
+        "51d359cebaf9"
+      ],
+      "Story: Keep the page still while Grace covers it / The page shows only on the ready browser surface while Grace is not expanded": [
+        "98beae3f24f3",
+        "84f93abea3bc",
+        "9e81584a4b7d"
+      ],
+      "Story: Keep the page still while Grace covers it / The sleep screen covers the page, which is hidden and paused while the device sleeps": [
+        "8b45aecc7c33",
+        "38187f2d47b2",
+        "393f796eb760"
+      ],
+      "Story: Keep the page still while Grace covers it / The page is paused while Grace's window is in the background": [
+        "7e77495a3233",
+        "a1791ff899e6",
+        "d5628b23486e"
+      ],
+      "Story: Keep the page still while Grace covers it / The page fills the rect the interface measured for it": [
+        "28d94bb7d439",
+        "a755f7fa6357",
+        "431450ef9274"
+      ],
+      "Story: Keep the page still while Grace covers it / The wallpaper is clear exactly over the page rect the layer holds": [
+        "f5bc258820ff",
+        "1a8bfa085e9e",
+        "36acd034fab7"
+      ],
+      "Story: Keep the page still while Grace covers it / The keyboard's height is the host's report, held by the layer": [
+        "c46776b242a2",
+        "e17328a576d0",
+        "431450ef9274"
+      ],
+      "Story: Keep the page still while Grace covers it / A new page waits for its first routing before it takes any touch": [
+        "632a4561b2bf",
+        "90c1669c7ab3",
+        "431450ef9274"
+      ],
+      "Story: Keep the page still while Grace covers it / A page Android reclaims behind another tab waits until its tab is selected": [
+        "67b55cd2cbd8",
+        "a2a7d2b5df47",
+        "431450ef9274"
+      ],
+      "## Story: Watch a website's video fullscreen": [
+        "09eebc1c12a8"
+      ],
+      "Story: Watch a website's video fullscreen / Only a running page's video fills the screen over Grace": [
+        "daf95cab8393",
+        "5a9aecf92bfe",
+        "0c3c8bc98505"
+      ],
+      "Story: Watch a website's video fullscreen / Leaving fullscreen returns the video to the page and Grace to view": [
+        "7e12d3799eac",
+        "84e91032ea42",
+        "15b4ed64a9de"
+      ]
+    },
+    "spec/app/deviceKeys.md": {
+      "@document": [
+        "8aec2b105134"
+      ],
+      "## Story: Step back inside Grace before leaving": [
+        "1d4635badf47"
+      ],
+      "Story: Step back inside Grace before leaving / Back closes the nearest open thing first and leaves only from a resting Home": [
+        "bf9e461095b7",
+        "3bedf1a56a4b",
+        "7cd053faac74"
+      ],
+      "Story: Step back inside Grace before leaving / Back leaves a fullscreen video before anything else": [
+        "b6a87e15518a",
+        "1b7dbcb7f5f8",
+        "38269cf8b1fa"
+      ],
+      "Story: Step back inside Grace before leaving / Each Back action is one event its guard allows": [
+        "5e36b5c20f5b",
+        "0e2cfd8046b1",
+        "e5ab77d573fa"
+      ],
+      "## Story: Return to Home from the launcher": [
+        "dfd667d21fbb"
+      ],
+      "Story: Return to Home from the launcher / After launcher Home only Grace's own window is left for Back": [
+        "846c01c16acd",
+        "ec35a1001ad7",
+        "a30478fba6cf"
+      ],
+      "## Story: Answer a website before Grace goes on": [
+        "724912abc462"
+      ],
+      "Story: Answer a website before Grace goes on / A task waits while a website's question holds me, and goes on after my answer": [
+        "b0bd0238c761",
+        "0e5d943c527a",
+        "16f48c62be55"
+      ]
+    },
     "spec/app/index.md": {
       "@document": [
-        "9684951eb5b7"
+        "e5cf743250d0"
       ],
-      "## Story: Say hello": [
-        "90301aa54c53"
+      "## Story: Manage my saved passwords privately": [
+        "5e861098e3c0"
       ],
-      "Story: Say hello / A greeter holds the last name it greeted and how many greetings it gave": [
-        "05c5e3d6a29c",
-        "44d1dd973307"
+      "Story: Manage my saved passwords privately / Passwords displays sign-in details only while the vault is available": [
+        "1773300a76f5",
+        "122e97e5eaf8"
       ],
-      "Story: Say hello / Only a name that is not empty can be greeted": [
-        "ee7390717a93",
-        "8cbf4774066e",
-        "372a4a3c5755"
+      "Story: Manage my saved passwords privately / Showing, copying and deleting a sign-in use the revision the person chose": [
+        "25208fbecfe4",
+        "0b4aeae74537",
+        "137b78d582d4"
       ],
-      "Story: Say hello / Once someone has been greeted, the greeter holds a name": [
+      "Story: Manage my saved passwords privately / Grace can describe private sign-in without operating the vault": [
+        "dcb8b6627e16",
+        "7d00d5705cc7",
+        "137b78d582d4"
+      ],
+      "Story: Manage my saved passwords privately / A change of account discards the previous Passwords view": [
+        "43cb3ea68c21",
+        "e617915db23e",
+        "137b78d582d4"
+      ],
+      "Story: Manage my saved passwords privately / A closed Passwords screen offers no backup action": [
+        "caf33d09b00a",
+        "3c91929f132b",
+        "137b78d582d4"
+      ],
+      "Story: Manage my saved passwords privately / Passwords offers cloud recovery only after the native host confirms readiness": [
+        "8210f7283c1a",
+        "10937ff4b90a",
+        "137b78d582d4"
+      ]
+    },
+    "spec/app/memory.md": {
+      "@document": [
+        "3387297e8acd"
+      ],
+      "## Story: Choose what Grace remembers and correct or forget it": [
+        "8f8cc58b33b0"
+      ],
+      "Story: Choose what Grace remembers and correct or forget it / A saved fact has a stable key, a supported type and a durable revision": [
+        "a66d178de3ff",
+        "01834deb0570"
+      ],
+      "Story: Choose what Grace remembers and correct or forget it / A fresh user choice proposes a fact without silently saving it": [
+        "ca3f916f7052",
+        "65b3f6a62394",
+        "1a65c8a76f82"
+      ],
+      "Story: Choose what Grace remembers and correct or forget it / Only explicit approval of the current proposal commits a remembered value": [
+        "7fd8f55ba3da",
+        "b58bc6e0b90a",
+        "1a65c8a76f82"
+      ],
+      "Story: Choose what Grace remembers and correct or forget it / A scoped fact cannot be saved until its exact destination is verified": [
+        "a0183b34b6d2",
+        "29f91ff0aa76",
+        "1a65c8a76f82"
+      ],
+      "Story: Choose what Grace remembers and correct or forget it / Forgetting retains a tombstone and invalidates every older fill and approval": [
+        "044478eff3db",
+        "b1c3fce07c1d",
+        "1a65c8a76f82"
+      ],
+      "## Story: Reuse only a relevant current approved fact": [
+        "fc39ff2b2824"
+      ],
+      "Story: Reuse only a relevant current approved fact / A fill is bound to a current fact, task and verified destination": [
+        "fc2bb80a4a60",
+        "fb1e2e2fdb5c",
+        "1a65c8a76f82"
+      ],
+      "Story: Reuse only a relevant current approved fact / Dispatch rechecks the revision and consumes the queued fill once": [
+        "c34370321a7f",
+        "b7ae5b4609be",
+        "1a65c8a76f82"
+      ],
+      "Story: Reuse only a relevant current approved fact / Memory never retrieves deleted facts or emits an unapproved stale value": [
         "e3b0c44298fc",
-        "0e0cdba29162",
-        "372a4a3c5755"
+        "2a709244d0a9",
+        "1a65c8a76f82"
       ],
-      "Story: Say hello / The number of greetings is never negative": [
-        "2bf06e979a4d",
-        "80d9b39629e3",
-        "372a4a3c5755"
+      "Story: Reuse only a relevant current approved fact / Clearing all saved details also removes proposals and queued fills": [
+        "edf316a6bd09",
+        "1c1c95980b43",
+        "53a31ccd6a3a"
       ],
-      "Story: Say hello / Every step adds exactly one greeting": [
+      "Story: Reuse only a relevant current approved fact / Saving, declining, deleting and scoped reuse are reachable": [
+        "28993a785d8a",
+        "55325550ee34",
+        "7757580f52cf"
+      ]
+    },
+    "spec/app/savedDetails.md": {
+      "@document": [
+        "251228b3c702"
+      ],
+      "## Story: See, change and delete what Grace remembers": [
+        "851c5a46e64d"
+      ],
+      "Story: See, change and delete what Grace remembers / Saved details hold one valid fact per key, and her name only under the name key": [
+        "79d7bd37417d",
+        "a3c684a74de3",
+        "b11da1ab43e3"
+      ],
+      "Story: See, change and delete what Grace remembers / A detail is proposed, saved, declined, scoped and deleted only as its own fact allows": [
+        "1dfd1c090c06",
+        "816cefec87b6",
+        "7e938e19852a"
+      ],
+      "Story: See, change and delete what Grace remembers / Clear all deletes every detail at once and keeps each key": [
+        "3e2df2fdb8d2",
+        "9a9d6d8b682d",
+        "d4df22fe5261"
+      ],
+      "Story: See, change and delete what Grace remembers / Deleting a detail changes only that detail and never cancels a commitment": [
+        "e295bdc5dc90",
+        "325e65e9114f",
+        "daa8b552a503"
+      ],
+      "Story: See, change and delete what Grace remembers / A form is filled only from a current saved detail, once": [
+        "8e9768b85299",
+        "f6766d7dfef7",
+        "b544645d4abd"
+      ],
+      "Story: See, change and delete what Grace remembers / A changed, deleted or cleared detail has no current saved value": [
+        "3042482af98b",
+        "d4e0d1a827ba",
+        "84bb487cb623"
+      ],
+      "Story: See, change and delete what Grace remembers / Home and Grace greet her by her saved name and by nothing else": [
+        "5b2d8ebea5f0",
+        "c15aa59dcf36",
+        "84bb487cb623"
+      ],
+      "Story: See, change and delete what Grace remembers / A detail is saved, changed, deleted, cleared, greeted and filled": [
         "e3b0c44298fc",
-        "6b7e0617d1c4",
-        "372a4a3c5755"
+        "54045e03d704",
+        "6697ba022107"
+      ]
+    },
+    "spec/app/memoryActuation.md": {
+      "@document": [
+        "ecd3d099df21"
       ],
-      "Story: Say hello / A greeting is for the name it was given": [
-        "732ea5de733a",
-        "da5bf23d7775",
-        "8a92a0ec85f3"
+      "## Story: Forget or correct a detail before a queued fill reaches the website": [
+        "25097910c843"
       ],
-      "Story: Say hello / The greeter can give a second greeting": [
-        "661f110ac8d8",
-        "c0b6b2a60a60",
-        "372a4a3c5755"
+      "Story: Forget or correct a detail before a queued fill reaches the website / Saved facts and receipts must still name the current approved revision": [
+        "d0fcc77b3128",
+        "02e223840e42",
+        "b11da1ab43e3"
+      ],
+      "Story: Forget or correct a detail before a queued fill reaches the website / A saved fill also requires the current command's task, origin and field kind": [
+        "2170a6e7c63c",
+        "5b750613dbfb",
+        "cdfa54f467cd"
+      ],
+      "Story: Forget or correct a detail before a queued fill reaches the website / Correction and deletion revoke the old command without changing Workspace": [
+        "fad0ce89b231",
+        "ea246e88bf00",
+        "d75e94394134"
+      ],
+      "Story: Forget or correct a detail before a queued fill reaches the website / A queued fill is checked against the current detail in her saved details": [
+        "32de2621cbc7",
+        "165e22a19ab5",
+        "aab03040fa1d"
+      ],
+      "## Story: Fill a booking or sign-up form for me": [
+        "4caaf984d235"
+      ],
+      "Story: Fill a booking or sign-up form for me / A form field is filled from her own answer or from a current saved detail": [
+        "a775e57839fb",
+        "4a34211aad1b",
+        "5be5c7e92e79"
+      ],
+      "Story: Fill a booking or sign-up form for me / Finite examples retain the original receipt after correction and deletion": [
+        "290d8f510576",
+        "6fe978988562",
+        "ce17e0411231"
+      ]
+    },
+    "spec/app/network.md": {
+      "@document": [
+        "6bd60168117a"
+      ],
+      "## Story: Join the network I choose": [
+        "5d268e49a806"
+      ],
+      "Story: Join the network I choose / A selected network has one current join attempt": [
+        "6ca971fb7383",
+        "c4e95eeaaf0b"
+      ],
+      "Story: Join the network I choose / The password goes from Grace's field to Android only, and Show never shares it with Grace": [
+        "de48af064f68",
+        "f2886f387723",
+        "35dfd284a1be"
+      ],
+      "Story: Join the network I choose / Only the current OS result can complete or challenge the join": [
+        "cbd1e78c3729",
+        "86b7ba51eacd",
+        "35dfd284a1be"
+      ],
+      "Story: Join the network I choose / Wi-Fi sign-in opens in Grace's browser": [
+        "a0773c7ce8d4",
+        "9f3d4aeb15b4",
+        "35dfd284a1be"
+      ],
+      "Story: Join the network I choose / Cancel closes private password entry": [
+        "fa17543065c4",
+        "0088727db9e4",
+        "7ea5f1c1f0ac"
+      ],
+      "## Story: See why no networks are listed": [
+        "27c4d679ff48"
+      ],
+      "Story: See why no networks are listed / An empty list always says why and offers one action": [
+        "9abe0c774ed9",
+        "f3e4c6a50a14",
+        "01a1036cd411"
+      ]
+    },
+    "spec/app/notices.md": {
+      "@document": [
+        "9ce0bba624a3"
+      ],
+      "## Story: See one message at a time, in the order things happened": [
+        "0b8a668d3722"
+      ],
+      "Story: See one message at a time, in the order things happened / One toast shows at a time and the others wait their turn in order": [
+        "0f0ddb1e6166",
+        "14d4d3dca181"
+      ],
+      "Story: See one message at a time, in the order things happened / Each notice has its own number, below the next one to be given": [
+        "3b460b45ea0f",
+        "181ba8512148",
+        "951d3cd81e05"
+      ],
+      "Story: See one message at a time, in the order things happened / A toast stays its whole lifetime unless the person closes it or acts": [
+        "7dc6253236d8",
+        "62594e352148",
+        "951d3cd81e05"
+      ],
+      "Story: See one message at a time, in the order things happened / A source takes back a notice that no longer applies": [
+        "376abe1f83ca",
+        "63b290354f8a",
+        "951d3cd81e05"
+      ],
+      "## Story: Never have a decision covered": [
+        "1b3158e10a07"
+      ],
+      "Story: Never have a decision covered / No notice shows over a commitment review or a website's question": [
+        "ba6ba534d36e",
+        "d02c1f053ced",
+        "b8ae167f7c55"
+      ],
+      "## Story: See what needs me on Home": [
+        "0ac706f7683f"
+      ],
+      "Story: See what needs me on Home / Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder": [
+        "aef244dd7178",
+        "1d5cb166b071",
+        "951d3cd81e05"
+      ],
+      "Story: See what needs me on Home / Coming back online is told once, in a toast": [
+        "0bab3979d090",
+        "823a296b4853",
+        "951d3cd81e05"
+      ],
+      "## Story: Hear about a reminder wherever I am": [
+        "8f29c8602e15"
+      ],
+      "Story: Hear about a reminder wherever I am / A due reminder is a banner on Home, a toast elsewhere and an Android notification in the background": [
+        "961841fd978f",
+        "c2262209032d",
+        "951d3cd81e05"
+      ],
+      "Story: Hear about a reminder wherever I am / Only the calendar dismisses a reminder, and then it is gone everywhere": [
+        "f140381ab9ea",
+        "bdae8acde4bc",
+        "468a845bde84"
+      ],
+      "Story: Hear about a reminder wherever I am / Only reminders reach Android, and a new one only while Grace is in the background": [
+        "14839dd188e8",
+        "83f1d64648af",
+        "951d3cd81e05"
+      ],
+      "## Story: Hear a notice when I ask": [
+        "b43852b1174c"
+      ],
+      "Story: Hear a notice when I ask / Grace reads a notice aloud only when the person asks": [
+        "e499c063b8ce",
+        "ad753512a786",
+        "b8ae167f7c55"
+      ]
+    },
+    "spec/app/taskKinds.md": {
+      "@document": [
+        "c8ba906a0d74"
+      ],
+      "## Story: Ask every kind the same questions": [
+        "b2c8f5095046"
+      ],
+      "Story: Ask every kind the same questions / Facts are nothing read yet or one kind's reading, and fit only a task of that kind when whole": [
+        "e3b0c44298fc",
+        "df543f1ad315",
+        "a0142c65dbb5"
+      ],
+      "Story: Ask every kind the same questions / A reading leaves the task actionable, with nothing to do, already under way, or unavailable for a stated reason": [
+        "b7afcd75a6f1",
+        "9228d8486bda",
+        "60b66bed70dc"
+      ],
+      "Story: Ask every kind the same questions / Terms fit facts only of their own kind, and terms that fit whole facts are valid for the task and leave it actionable": [
+        "2f1440f7dee5",
+        "412d2c585417",
+        "07a93415ffdf"
+      ],
+      "Story: Ask every kind the same questions / Grace types only what a choice says, for a bill its amount and day, for a booking its time and the kinds of detail asked": [
+        "585274fa348b",
+        "de180fb8717e",
+        "ce57eae44574"
+      ],
+      "Story: Ask every kind the same questions / A suggestion fits the whole facts it was made from, or there is none": [
+        "7f704b7c7c5a",
+        "a61d7c5c292b",
+        "7c9d04d32d23"
+      ],
+      "Story: Ask every kind the same questions / Every kind's plan confirms the facts, reviews, asks consent and checks the outcome, and records in the calendar only a kind that does": [
+        "67653c93c4c7",
+        "fc51b056146f",
+        "d84c2213660c"
+      ]
+    },
+    "spec/app/prep.md": {
+      "@document": [
+        "88a2012b944a"
+      ],
+      "## Story: Understand the bill before deciding how to pay": [
+        "351edbf6c1f0"
+      ],
+      "Story: Understand the bill before deciding how to pay / A bill preparation holds evidence and choices separately": [
+        "a83ab8265d82",
+        "be33d73b8670",
+        "30777f860c9b"
+      ],
+      "Story: Understand the bill before deciding how to pay / Opening a selected bill requests private sign-in without assuming account access": [
+        "45da5a5fb225",
+        "97dbf7df83ec",
+        "7a281f9aaad0"
+      ],
+      "Story: Understand the bill before deciding how to pay / Private sign-in never supplies payment consent": [
+        "f3cde1e2e95f",
+        "01a82d1cff0b",
+        "5301147e51ca"
+      ],
+      "Story: Understand the bill before deciding how to pay / Current bill facts distinguish payment choices, no payment due and an existing payment": [
+        "2fa6f31e4cfa",
+        "abce301c87da",
+        "48f48adbbc5d"
+      ],
+      "Story: Understand the bill before deciding how to pay / The person checks the bill facts before any payment question, and saying they look wrong reads them again": [
+        "5c4741d9df8d",
+        "52fe1bb3dbc9",
+        "79c3f0a74f64"
+      ],
+      "Story: Understand the bill before deciding how to pay / Choosing an amount, date and funding method is separate from approving submission": [
+        "905e0c81d0e9",
+        "8e4f78b02aa1",
+        "2497ce6bda19"
+      ],
+      "Story: Understand the bill before deciding how to pay / The person's answer to the fill offer decides whether Grace may fill the task's form": [
+        "e952cacac023",
+        "fefd13de3d21",
+        "e27a48f7287c"
+      ],
+      "## Story: Correct the website form and review consequences": [
+        "3488398a295d"
+      ],
+      "Story: Correct the website form and review consequences / The final form must match every chosen value before consequential review": [
+        "2cbb34defe07",
+        "fa21a428ae99",
+        "5301147e51ca"
+      ],
+      "Story: Correct the website form and review consequences / A choice the person makes on the page itself becomes the choice to check": [
+        "90d1036d070b",
+        "49b320b373a6",
+        "5301147e51ca"
+      ],
+      "Story: Correct the website form and review consequences / Pausing or changed context discards a prepared form but keeps the selected bill": [
+        "75e3075d1ce5",
+        "b0018b574de3",
+        "5301147e51ca"
+      ],
+      "## Story: End a task when it is finished or no longer wanted": [
+        "ff3186c59a7a"
+      ],
+      "Story: End a task when it is finished or no longer wanted / Ending a task discards its preparation, keeps its subject and lets nothing from it come back": [
+        "d510acc530cc",
+        "816e4b530732",
+        "29875e560804"
+      ]
+    },
+    "spec/app/setup.md": {
+      "@document": [
+        "bc9e03775177"
+      ],
+      "## Story: Set up my tablet": [
+        "cf36dcdca9f4"
+      ],
+      "Story: Set up my tablet / Set-up has an ordered list of steps and a current one": [
+        "f5e59f1d6863",
+        "924a72451836",
+        "b848bd830c7d"
+      ],
+      "Story: Set up my tablet / A new tablet starts in set-up": [
+        "f576d9ce3412",
+        "d41f1dff6699",
+        "839a24c37821"
+      ],
+      "Story: Set up my tablet / A step whose outcome is already true is passed": [
+        "d8f5491ec586",
+        "f930b120b01c",
+        "839a24c37821"
+      ],
+      "Story: Set up my tablet / Once started, the current step is never one already true": [
+        "27f0497d8b09",
+        "ed3173e12630",
+        "7e44e45b8d2f"
+      ],
+      "Story: Set up my tablet / The progress count fits the steps of this build": [
+        "970067b0d9b0",
+        "9208bc952fbe",
+        "839a24c37821"
+      ],
+      "Story: Set up my tablet / The host's report starts set-up, and a restart keeps the step": [
+        "95a81a481c3a",
+        "15766baa7c46",
+        "7e44e45b8d2f"
+      ],
+      "Story: Set up my tablet / Connectivity, the accounts, her name and speech are facts reported to set-up": [
+        "dc08775eda7b",
+        "3d5b650ef1ab",
+        "7afdb969bb04"
+      ],
+      "Story: Set up my tablet / Within a run, a step advances only on its own answer, a skip, or its outcome coming true": [
+        "123b8bface2e",
+        "107611bc6ea1",
+        "e6e9254d9e4b"
+      ],
+      "Story: Set up my tablet / Each practice step rings at most one control": [
+        "0e468a2dc3b8",
+        "a51616ea4fd3",
+        "07e433f51e94"
+      ],
+      "Story: Set up my tablet / Every step but the explanation can be put off, at a stated cost, and is offered again in one place": [
+        "7d8fe934822c",
+        "2813cadd4fb8",
+        "bb7c64f67086"
+      ],
+      "Story: Set up my tablet / Set-up never passes the account step without an account": [
+        "51034dccefba",
+        "de2c85c76e05",
+        "274d301df875"
+      ],
+      "Story: Set up my tablet / Set-up ends only while Grace can think": [
+        "098bedb83271",
+        "35ace2cadd58",
+        "839a24c37821"
+      ],
+      "Story: Set up my tablet / Set-up is written, and spoken only while cloud speech is available": [
+        "348d8724df30",
+        "29ba09e3f707",
+        "7f08b0c54f42"
+      ],
+      "Story: Set up my tablet / Every step before the current one is answered, put off or already true": [
+        "9d35adfd0a19",
+        "e9d5df55d45f",
+        "839a24c37821"
+      ],
+      "Story: Set up my tablet / Leaving mid-way resumes at the same step": [
+        "044618069d57",
+        "c0490fe30b4a",
+        "bb7c64f67086"
+      ],
+      "Story: Set up my tablet / Set-up ends while Grace can think and she keeps going": [
+        "739a4a5f6faa",
+        "8c55dbd61103",
+        "839a24c37821"
+      ],
+      "Story: Set up my tablet / Each run of set-up ends exactly once, on the store's current acknowledgement": [
+        "3d9f7a6470cd",
+        "f3121ae9861c",
+        "7e44e45b8d2f"
+      ],
+      "Story: Set up my tablet / Set-up answers for pace and text size are preference previews": [
+        "1bf586a8b44b",
+        "2ba2b05d716e",
+        "04aa1ca5ac68"
+      ],
+      "Story: Set up my tablet / Every way through set-up is reachable": [
+        "4ee2bc17bdca",
+        "3b608179f11f",
+        "274d301df875"
+      ],
+      "## Story: Sign in to Grace and manage my subscription": [
+        "50d6a8c9e095"
+      ],
+      "Story: Sign in to Grace and manage my subscription / Subscription actions belong to the Grace account that is signed in": [
+        "82b414bccfa0",
+        "583e0a41427a",
+        "dd15b1e704ec"
+      ],
+      "Story: Sign in to Grace and manage my subscription / A signed-in web account with an inactive subscription can redeem a membership code": [
+        "ca7bfe0e5ebd",
+        "4a72495e37b7",
+        "839a24c37821"
+      ],
+      "Story: Sign in to Grace and manage my subscription / An enrolled tablet offers one sign-in to update mail and calendar access": [
+        "d47d627ee966",
+        "1ddc1dcc5d78",
+        "839a24c37821"
+      ],
+      "Story: Sign in to Grace and manage my subscription / Google mail and calendar access requires separate consent for the Grace account": [
+        "f72e8475788a",
+        "c20de737f759",
+        "de651684734d"
+      ],
+      "## Story: Read the Google mail and calendar I connected": [
+        "6cadbae68f72"
+      ],
+      "Story: Read the Google mail and calendar I connected / Managed reads show only the matching signed-in account and the capability it granted": [
+        "26bfc62779be",
+        "f69d00460e0b",
+        "839a24c37821"
+      ],
+      "Story: Read the Google mail and calendar I connected / A managed draft can be sent only through the current owner grant": [
+        "d72715747a4b",
+        "a9d3755ea61b",
+        "839a24c37821"
+      ],
+      "Story: Read the Google mail and calendar I connected / Trash and Calendar changes use the exact selected version": [
+        "566790938e6e",
+        "0d7f816cb7aa",
+        "98af565674d1"
+      ],
+      "## Story: Approve a password backup in my browser": [
+        "ff43f9f58a3d"
+      ],
+      "Story: Approve a password backup in my browser / Browser approval needs an explicit choice for the shown account": [
+        "ab033e98f90a",
+        "073395a81463"
+      ],
+      "Story: Approve a password backup in my browser / Google sign-in can resume only a pending browser approval": [
+        "71548a265724",
+        "b4e1e944bb7a"
+      ],
+      "## Story: Keep my passwords private when the tablet account changes": [
+        "8e0406619c2f"
+      ],
+      "Story: Keep my passwords private when the tablet account changes / Only the device-only profile or the current verified owner can open the vault": [
+        "234d8b9a1622",
+        "bc3e7c8bcf11"
+      ],
+      "Story: Keep my passwords private when the tablet account changes / Linking local passwords requires account verification and the person's approval": [
+        "73b6a2b127e6",
+        "da3441b40858",
+        "b9d478735205"
+      ],
+      "## Story: Back up and recover my saved passwords": [
+        "95f07a3498a8"
+      ],
+      "Story: Back up and recover my saved passwords / A backup belongs to the signed-in owner and has its own approval": [
+        "45cbe42bf142",
+        "43c15e6020f1"
+      ],
+      "Story: Back up and recover my saved passwords / Each deployment approves through its own sign-in": [
+        "c9492d58c9fd",
+        "83f0f58e153e",
+        "4dcf6db9d554"
+      ],
+      "Story: Back up and recover my saved passwords / A grant can be used once for the current request": [
+        "6da338880429",
+        "de49464a82f4",
+        "9437a83f1fe4"
+      ],
+      "Story: Back up and recover my saved passwords / Restore fills an empty vault after a fresh unlock": [
+        "c72eaa2106eb",
+        "1649d964e3ac"
+      ],
+      "Story: Back up and recover my saved passwords / Removing the cloud copy keeps the tablet's passwords": [
+        "613db0f0ec23",
+        "88e2934c5933",
+        "1ab1433588e8"
+      ]
+    },
+    "spec/app/taskBridge.md": {
+      "@document": [
+        "29c260622496"
+      ],
+      "## Story: Review the payment I actually chose": [
+        "7541ebd52f95"
+      ],
+      "Story: Review the payment I actually chose / A conversion preserves the live preparation and captured context": [
+        "7f2672cc0140",
+        "d56adfff5b34",
+        "320b83f4b39b"
+      ],
+      "Story: Review the payment I actually chose / Finite examples cover a current handoff and retired source or destination versions": [
+        "5c50d7926f68",
+        "9d84bb0764ba",
+        "2644ecde7078"
+      ],
+      "## Story: Grace types into a task's form only after I said yes": [
+        "02734bae7447"
+      ],
+      "Story: Grace types into a task's form only after I said yes / A fill of a task's form needs the person's yes to the fill offer for the task being prepared": [
+        "a8b6b64d2247",
+        "b8539fd281f1",
+        "91397793ed85"
+      ],
+      "## Story: See where my task stands": [
+        "8ef6fdab17d1"
+      ],
+      "Story: See where my task stands / The step shown is on the task's plan: the preparation's step until the hand-off, then the commitment's": [
+        "aa1bd3b3ed63",
+        "a3dbf1e3ce97",
+        "ec1ebf3d2338"
+      ],
+      "Story: See where my task stands / The task is done only once a positive outcome and its reference are saved": [
+        "2d974e76cf9b",
+        "9734727bbdd6",
+        "0fb01dc41c84"
+      ]
+    },
+    "spec/app/taskCalendar.md": {
+      "@document": [
+        "729fa5fe28d8"
+      ],
+      "## Story: Add my booked visit to my calendar": [
+        "09ec3ae06a4f"
+      ],
+      "Story: Add my booked visit to my calendar / Only a booking confirmed by its provider and saved proposes a calendar entry": [
+        "1b627ce9684d",
+        "78c27a6d15b4",
+        "c6e322b1d580"
+      ],
+      "Story: Add my booked visit to my calendar / The proposed entry is an appointment at exactly the booked time": [
+        "7a565265a573",
+        "37d158b217fc",
+        "266b56f05448"
       ]
     },
     "spec/index.md": {
       "@document": [
-        "b4f1b3b07f62"
+        "4aaa973285cf"
       ]
     }
   },
   "contracts": {
-    "apps/app/src/greeting.ts": "6292c9e16ccf"
+    "apps/app/src/agentTurn.ts": "e3a82480a6d4",
+    "apps/app/src/private.ts": "3cb7f89f0a0d",
+    "apps/app/src/schedule.ts": "d94e1fe49c9c",
+    "apps/app/src/words.ts": "7c23737b0990"
   },
   "unproved": {}
 }
