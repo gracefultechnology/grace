@@ -164,7 +164,7 @@ runs:
         fi
     - name: Install pinned Eliza backend workspaces
       if: github.job != 'vibestack-fixture-selftests'
-      run: pnpm --dir vendor/eliza --filter @elizaos/cloud... --filter @elizaos/agent... --filter @elizaos/os... install --frozen-lockfile --ignore-scripts
+      run: pnpm --dir vendor/eliza --filter @elizaos/cloud-worker... --filter @elizaos/agent-host... --filter @elizaos/os... --filter @elizaos/os-bridges... install --frozen-lockfile --ignore-scripts
       shell: bash
     - id: gen-seed
       if: >-

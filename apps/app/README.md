@@ -149,10 +149,10 @@ pnpm --filter @repo/app test:browser test/mail.browser.test.tsx test/app.browser
 
 From the repository root, run `git submodule update --init vendor/eliza` and then Eliza's own
 install from the [root setup](../../README.md#run-grace-cloud); without it Eliza's Core does not
-compile. Grace uses the Android consumer host, APK checks, WebView surface and Wi-Fi bridge from the pinned Eliza Vibestack OS package.
-The Android build generates Eliza's Core, Cloud and Agent models from the pinned checkout.
-It builds Core and the browser-safe Cloud client before compiling the Android Agent entry.
-The verified device bundle is written to `vendor/eliza/packages/agent/dist/bundle`. The build
+compile. Grace uses the Android consumer host and APK inspection from the pinned Eliza OS package,
+with WebView, Wi-Fi and Passwords bridges from Eliza OS Bridges. The Android build generates
+Eliza’s Core, Cloud and Agent models from the pinned checkout. It builds the device entry from
+Eliza Agent Host and writes the verified bundle to `vendor/eliza/packages/agent-host/dist/bundle`. The build
 downloads each target's pinned Node runtime from Eliza's public Android Node prerelease when the
 executable and build manifest are absent in `vendor/eliza/packages/os/dist/android/<abi>`. The
 runtime lock is Eliza's `packages/os/aosp/runtime/node.lock.json`. The OS stager checks the runtime digest,
@@ -183,8 +183,8 @@ directories and the selected cloud profile's `VITE_GRACE_CLOUD_*` origins, never
 environment, so `CI` and `TURBO_*` do not reach the nested code generation. `artifacts/apk-manifest.json` lists each APK this build
 produced with its processor type, size, SHA-256, requested permissions and the signer verified by `apksigner` from
 Android Build Tools 36.0.0. A debug build removes release APKs left by an earlier `--release` run. Each APK
-passes upstream's distribution check (`apkDistributionProblems` in `@elizaos/os/android/apk-distribution.mjs`)
-with Grace's policy in `scripts/android.ts`. Backups are disabled and only listed components can
+is checked against Grace's distribution policy in `scripts/android.ts`, using the manifest
+and signer parsers from `@elizaos/os`. Backups are disabled and only listed components can
 be exported, with their required permissions. The check also requires a version and rejects source
 maps and test-only names. Grace checks the compiled network security resource that Android uses.
 Standard builds allow cleartext HTTP app-wide so the browser can open HTTP pages, including
@@ -238,14 +238,10 @@ subscriptions and text codes are off there. To bring staging up:
    `CLOUD_IDENTITY_DIGEST` in `wrangler.jsonc`, and staging values of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
    `EMAIL_CODE_SECRET`, `GOOGLE_CONNECT_TOKEN_KEY`, `DEVICE_LEASE_SEAL_KEY` and `CARTESIA_API_KEY`.
    Staging takes no Stripe, Blooio or Twilio secret.
-3. Run `pnpm --filter @grace/cloud bundle`, which dry-runs both environments, each with the web
-   bundle built for its own origins. The Worker serves `apps/app/dist`, whose sign-in return and
-   password backup pages call the API origin the build names, so build it for staging before the
-   deploy: from `apps/cloud`, run `VITE_GRACE_CLOUD_API_ORIGIN=https://api-staging.graceforseniors.com
-   VITE_GRACE_CLOUD_WEB_ORIGIN=https://app-staging.graceforseniors.com pnpm --filter @repo/app build`
-   and then `pnpm exec wrangler deploy --env staging`. The bundle script ends with the production
-   build in `apps/app/dist`, so deploying staging straight after it ships production origins to
-   staging. The next production deploy rebuilds the bundle with the production origins.
+3. Run `pnpm --filter @grace/cloud bundle`, which dry-runs both environments. Each Worker uses
+   its own assets directory under `apps/cloud/.wrangler/assets/`, with Grace built for that
+   environment’s origins and Eliza’s return-page templates at their original filenames. In
+   `apps/cloud`, run `pnpm exec wrangler deploy --env staging` after both dry-runs pass.
 4. In the Google project of the staging web client, register an Android OAuth client for
    `technology.graceful.grace` with the debug SHA-1 above, and add
    `https://api-staging.graceforseniors.com/api/auth/google/callback` and

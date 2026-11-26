@@ -46,6 +46,7 @@ export service Conversation {
 }
 
 const origins: Record<PersonTurn["tag"], "Typed" | "Tapped"> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
+const replyTokenLimit = 2048
 const apology = "Sorry, I didn’t catch that. Could you say it again?"
 const noControls = "This conversation shows no controls under your reply. Never offer {kind:\"privateSignIn\"}. If the person asks to sign in, direct them to the website’s own sign-in form."
 const hostStarted = "(The person has not spoken: the tablet started this turn. Answer what it just told you happened.)"
@@ -69,7 +70,9 @@ function screened(text: string, answers: readonly string[], actions: readonly Gr
 }
 
 effect function ask(link: CloudLink, messages: readonly { role: string; content: string }[]) {
-  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), { model: policy.model, messages, stream: true, response_format: { type: "json_object" } })
+  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), {
+    model: policy.model, messages, max_completion_tokens: replyTokenLimit, stream: true, response_format: { type: "json_object" }
+  })
   const response = try HttpClient.execute(HttpClientRequest.bearerToken(request, link.key))
   if (response.status !== 200) throw new Unanswered({ status: response.status })
   const lines = Stream.filter(Stream.splitLines(Stream.decodeText(response.stream)), (line) => line.startsWith("data: ") && line !== "data: [DONE]")

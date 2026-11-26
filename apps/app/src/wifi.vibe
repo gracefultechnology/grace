@@ -1,6 +1,6 @@
 // spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"; spec/app/network.md, "The password goes from Grace's field to Android only, and Show never shares it with Grace"; spec/app/network.md, "Wi-Fi sign-in opens in Grace's browser"
 import { type Authentication, type JoinResult, type Network, type NetworkJoin, type ScanResult, Machine, canTurnOn, machine } from "../gen/app__network.effect.vibe"
-import type { JoinableWiFiSecurity } from "@elizaos/os/bridges/definitions/wifi"
+import type { JoinableWiFiSecurity } from "@elizaos/os-bridges"
 import type { GraceWifi } from "./preferencesPlugin.ts"
 import { type WiFiPlugin, webView } from "./surfacePlugin.ts"
 

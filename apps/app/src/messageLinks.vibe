@@ -1,5 +1,5 @@
 // spec/app/email.md, "A scam warning needs current evidence and holds that message's links"; spec/app/handoffs.md, "A link Email released opens in a new Browser tab, and no other link does"
-import { parseBrowserAddressInput } from "@elizaos/os/browser/address"
+import { parseBrowserAddressInput } from "@elizaos/os-bridges"
 
 export function linkDestination(text: string) {
   if (!/^https?:\/\//i.test(text)) return undefined

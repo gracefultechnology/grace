@@ -287,6 +287,9 @@ importers:
       '@elizaos/os':
         specifier: link:../../vendor/eliza/packages/os
         version: link:../../vendor/eliza/packages/os
+      '@elizaos/os-bridges':
+        specifier: link:../../vendor/eliza/packages/os-bridges
+        version: link:../../vendor/eliza/packages/os-bridges
       '@repo/design-system':
         specifier: workspace:*
         version: link:../../packages/design-system
@@ -387,9 +390,9 @@ importers:
       '@effect/platform-node':
         specifier: 4.1.1
         version: 4.1.1(effect@4.1.1)(redis@6.3.1(@opentelemetry/api@1.10.0))
-      '@elizaos/cloud':
-        specifier: link:../../vendor/eliza/packages/cloud
-        version: link:../../vendor/eliza/packages/cloud
+      '@elizaos/cloud-worker':
+        specifier: link:../../vendor/eliza/packages/cloud-worker
+        version: link:../../vendor/eliza/packages/cloud-worker
       effect:
         specifier: 4.1.1
         version: 4.1.1

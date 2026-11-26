@@ -75,10 +75,14 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/vendor/eliza/tsconfig.base.json",
-        "$TURBO_ROOT$/vendor/eliza/packages/cloud/tsconfig*.json",
-        "$TURBO_ROOT$/vendor/eliza/packages/cloud/src/**"
+        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/tsconfig*.json",
+        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/src/**"
       ],
-      "outputs": ["dist/**", "$TURBO_ROOT$/vendor/eliza/packages/cloud/dist/{gen,src}/**"]
+      "outputs": [
+        "dist/**",
+        "$TURBO_ROOT$/vendor/eliza/packages/cloud/dist/{gen,src}/**",
+        "$TURBO_ROOT$/vendor/eliza/packages/cloud-worker/dist/{gen,src,pages}/**"
+      ]
     },
     "@grace/cloud#typecheck": {
       "dependsOn": ["@grace/cloud#build"],
@@ -90,10 +94,10 @@
     },
     "@repo/app#gen": {
       "inputs": [
-        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,core,os}/package.json",
-        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,core,os}/src/**",
+        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,core,os,os-bridges}/package.json",
+        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,core,os,os-bridges}/src/**",
         "$TURBO_ROOT$/vendor/eliza/packages/os/browser/src/**",
-        "$TURBO_ROOT$/vendor/eliza/packages/{os,cloud}/{gen,android,aosp}/**/*.{ts,tsx,mjs,js,vibe}"
+        "$TURBO_ROOT$/vendor/eliza/packages/{os,os-bridges,cloud}/{gen,android,aosp}/**/*.{ts,tsx,mjs,js,vibe}"
       ],
       "outputs": []
     },
@@ -146,9 +150,17 @@
       "inputs": [
         "vendor/eliza/{package.json,pnpm-lock.yaml,pnpm-workspace.yaml}",
         "vendor/eliza/{apps,packages}/*/package.json",
-        "vendor/eliza/spec/**/*.md"
+        "vendor/eliza/packages/{agent,core,os}/src/**",
+        "vendor/eliza/packages/{agent,core,os}/tsconfig*.json",
+        "vendor/eliza/spec/**/*.md",
+        "vendor/eliza/tsconfig.base.json",
+        "vendor/eliza/vibestack/**",
+        "!vendor/eliza/vibestack/**/{node_modules,.cache,.spec-cache,dist,gen}/**"
       ],
-      "outputs": ["vendor/eliza/packages/cloud/gen/**", "vendor/eliza/packages/os/gen/**"]
+      "outputs": [
+        "vendor/eliza/packages/{agent,agent-host,cloud,cloud-worker,core,core-node,os,os-bridges}/gen/**",
+        "vendor/eliza/packages/{agent,core,os}/dist/{gen,src}/**"
+      ]
     },
     "//#gen": {
       "dependsOn": ["//#gen:eliza"],
@@ -380,7 +392,7 @@
       ],
       "inputs": [
         "vendor/eliza/tsconfig.base.json",
-        "vendor/eliza/packages/os/tsconfig*.json",
+        "vendor/eliza/packages/os-bridges/tsconfig*.json",
         "apps/**",
         "packages/**",
         "vibestack/**",

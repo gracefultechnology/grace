@@ -60,7 +60,7 @@ async function start(withAccounts = true, tabletCalendar?: CalendarView) {
     const account = browserAccountResponse(url, signedIn ? credentialId : undefined);
     if (account) return Promise.resolve(account);
     if (url.pathname === "/api/product/files/scope") return Promise.resolve(Response.json(signedIn ? scope : {}, { status: signedIn ? 200 : 401 }));
-    if (url.pathname === "/api/v1/billing/subscription" || url.pathname === "/api/v1/eliza/google/status") return Promise.resolve(new Response(null, { status: 404 }));
+    if (url.pathname === "/api/v1/billing/limits" || url.pathname === "/api/v1/eliza/google/status") return Promise.resolve(new Response(null, { status: 404 }));
     return fetchOriginal(input, init);
   });
   localStorage.clear();

@@ -14,7 +14,7 @@ import { defaults, effectiveBrightness } from "../gen/app__preferences.ts";
 import { machineOver, Machine as Workspaces, type GuidedCheckpoint } from "../gen/app__workspace.effect.vibe";
 import type { EmbeddedAgent } from "../src/agentPlugin.ts";
 import { agentTextLimit, personSays, tabletShows } from "../src/agentTurn.ts";
-import { PasswordsClientError } from "@elizaos/os/bridges/passwords";
+import { PasswordsClientError } from "@elizaos/os-bridges";
 import character from "../agent/character.json" with { type: "json" };
 import { App } from "../src/App.tsx";
 import { PasswordBackupConsent } from "../src/PasswordBackupConsent.tsx";
@@ -30,7 +30,7 @@ import type { SurfacePlugin } from "../src/surfacePlugin.ts";
 import { client, modelTurns, otherPassword, outage, photos, reply, script, signIn, turns } from "./cloud.vibe";
 import { pageCommand } from "@elizaos/os/browser/runtime/page-command.mjs";
 import readVisiblePage from "@elizaos/os/android/browser-surface/resources/read-page.js?raw";
-import { actOnScreen, browserAccountResponse, fixtureListener, mount, signInToGrace, tapHomeCalendar, tabletView, wakeBoundary } from "./screen.tsx";
+import { actOnScreen, browserAccountResponse, browserBillingSnapshot, fixtureListener, mount, signInToGrace, tapHomeCalendar, tabletView, wakeBoundary } from "./screen.tsx";
 import "../src/main.css";
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -1316,7 +1316,7 @@ const speechJourneys = ["Talk and hear a reply", "Answer a spoken question", "Ke
 
 async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wakeJourney) {
   const sessionId = "a0fe147c-3ee9-4e45-8104-e31cd1a2b6d7";
-  const token = "8".repeat(64);
+  const token = "8".repeat(42) + "A";
   const speechPath = "/api/v1/voice/speech";
   const firstAccount = crypto.randomUUID();
   const secondAccount = crypto.randomUUID();
@@ -1355,7 +1355,7 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
   const request = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
     const pathname = new URL(input instanceof Request ? input.url : input, location.href).pathname;
     if (pathname === "/api/auth/session") return accountId ? Response.json({ account: { id: accountId, email: null } }) : new Response(null, { status: 401 });
-    if (pathname === "/api/v1/billing/subscription" || pathname === "/api/v1/eliza/google/status") return new Response(null, { status: 404 });
+    if (pathname === "/api/v1/billing/limits" || pathname === "/api/v1/eliza/google/status") return new Response(null, { status: 404 });
     if (!pathname.startsWith(speechPath)) return originalFetch(input, options);
     calls.push(pathname);
     if (pathname.endsWith("/consent")) return Response.json({ consentNonce: sessionId });
@@ -1822,7 +1822,8 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
         expect(options?.body).toBe(JSON.stringify({ email: person.email, code: "123456" }));
         signedIn = true;
         return reply({ account: person });
-      case "/api/v1/billing/subscription": return reply({ status: "inactive", canManage: false, canCheckout: true });
+      case "/api/v1/billing/limits": return reply(browserBillingSnapshot());
+      case "/api/v1/subscriptions/plans": return reply({ plans: [{ key: "plus_monthly" }] });
       case "/api/v1/eliza/google/status":
         return reply({
           accountId: statusOwner, provider: "google", side: "owner", mode: "cloud_managed", configured: connectorConfigured, connected: connectorConfigured,
@@ -2637,7 +2638,7 @@ it('Use private sign-in in the standalone browser (spec/app/browser.md, "Story: 
     if (url.origin !== api) return browserFetch(input, init);
     switch (url.pathname) {
       case "/api/auth/session": return Response.json({ account });
-      case "/api/v1/billing/subscription": return Response.json({ status: "inactive", canManage: false, canCheckout: false });
+      case "/api/v1/billing/limits": return Response.json(browserBillingSnapshot());
       case "/api/v1/eliza/google/status": return Response.json({
         accountId: account.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected: true,
         identity: { email: account.email }, connectionId: grant, grantedCapabilities: ["google.gmail.triage"],
@@ -3169,7 +3170,7 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       case "/api/auth/session": return Promise.resolve(Response.json({ account: guideOwner === null ? null : { id: guideOwner, email: "owner@grace.test" } }));
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
-      case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
+      case "/api/v1/billing/limits": return Promise.resolve(Response.json(browserBillingSnapshot()));
       case "/api/v1/decisions": {
         guideCalls++;
         expect(init?.body).not.toContain("Private sign-in link");
@@ -3983,7 +3984,7 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
           bodyText: body, bodyTextAvailable: true });
       case "/api/auth/refresh": return Promise.resolve(new Response(null, { status: 401 }));
       case "/api/auth/providers": return Promise.resolve(Response.json({ email: true, google: false, sms: false }));
-      case "/api/v1/billing/subscription": return Promise.resolve(Response.json({ status: "inactive", canManage: false, canCheckout: false }));
+      case "/api/v1/billing/limits": return Promise.resolve(Response.json(browserBillingSnapshot()));
       case "/api/v1/decisions":
         expect(new Headers(init?.headers).get("X-Eliza-Account")).toBe(guideOwner.id);
         return browserFetch(new URL(request.pathname, cloud), { ...init, credentials: "omit",
@@ -4181,7 +4182,8 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
           probabilities: { "1": 0.91, none: 0.09 } });
       case "/api/auth/refresh": return respond({}, 401);
       case "/api/auth/providers": return respond({ google: false, email: true, sms: false });
-      case "/api/v1/billing/subscription": return respond({ status: "inactive", canManage: false, canCheckout: true });
+      case "/api/v1/billing/limits": return respond(browserBillingSnapshot());
+      case "/api/v1/subscriptions/plans": return respond({ plans: [{ key: "plus_monthly" }] });
       case "/api/v1/eliza/google/status": return !statusAvailable ? respond({}, 503) : respond({
         accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: connected, connected,
         identity: connected ? { email: person.email } : null, connectionId: connected ? grant : null,

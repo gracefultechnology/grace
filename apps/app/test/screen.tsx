@@ -21,6 +21,16 @@ export function browserAccountResponse(url: URL, accountId?: string) {
   if (url.pathname === "/api/auth/refresh") return new Response(null, { status: 401 });
 }
 
+export function browserBillingSnapshot() {
+  return {
+    data: {
+      schemaVersion: 3, observedAt: Date.now(), account: { status: "active" }, balance: { usdMicros: 0, revision: 0 },
+      plan: { key: "free", source: "free", effectiveUntil: null }, subscription: null, grant: null, allowance: null,
+      funding: { inference: "refused", speech: "refused", maps: "refused" },
+    },
+  };
+}
+
 export function captureSignedOutChat(bodies: string[], observe?: (url: string) => void | Promise<void>) {
   const fetchNetwork = globalThis.fetch;
   bodies.length = 0;

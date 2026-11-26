@@ -9,7 +9,7 @@ import { historyFor, pageShows, type PageLayer } from "../gen/app__surface.ts";
 import { type BrowserInput, type PrivateInboxVisit, canOpenPrivateVerificationApp, canWatchPrivateInbox } from "../gen/app__browserControls.ts";
 import { type Browser as BrowserModel, type Load, type Tab, type TypedAddress, activeTab, addressDestination, overflowTabs, pageView, showsSecureIndicator, tabUrl, visibleTabs } from "../gen/app__browser.ts";
 import type { Workspace } from "../gen/app__workspace.ts";
-import { parseBrowserAddressInput } from "@elizaos/os/browser/address";
+import { parseBrowserAddressInput } from "@elizaos/os-bridges";
 import { OverPage, PageArea, useWatch } from "./PageLayer.tsx";
 import { watchInboxArrival } from "./inboxArrival.vibe";
 import { Part, type VerificationAppHandoff } from "./page.vibe";

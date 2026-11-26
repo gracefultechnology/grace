@@ -30,8 +30,9 @@
         }
       ],
       "assets": {
-        "directory": "../app/dist",
+        "directory": ".wrangler/assets/staging",
         "binding": "ASSETS",
+        "html_handling": "none",
         "not_found_handling": "single-page-application",
         "run_worker_first": true
       },
@@ -56,17 +57,9 @@
         "SPEECH_TTS_MICROS_PER_CHARACTER": "45",
         "SPEECH_DAILY_SESSION_LIMIT": "120"
       },
-      "durable_objects": {
-        "bindings": [
-          {
-            "name": "SPEECH_RELAY_SESSIONS",
-            "class_name": "SpeechRelayCoordinator"
-          }
-        ]
-      },
       "triggers": {
         "crons": [
-          "*/5 * * * *"
+          "* * * * *"
         ]
       },
       "ai": {
@@ -96,8 +89,9 @@
         }
       ],
       "assets": {
-        "directory": "../app/dist",
+        "directory": ".wrangler/assets/production",
         "binding": "ASSETS",
+        "html_handling": "none",
         "not_found_handling": "single-page-application",
         "run_worker_first": true
       },
@@ -127,17 +121,9 @@
         "SMS_ALLOWED_COUNTRY_CODES": "+1",
         "SMS_HOURLY_BUDGET": "300"
       },
-      "durable_objects": {
-        "bindings": [
-          {
-            "name": "SPEECH_RELAY_SESSIONS",
-            "class_name": "SpeechRelayCoordinator"
-          }
-        ]
-      },
       "triggers": {
         "crons": [
-          "*/5 * * * *"
+          "* * * * *"
         ]
       },
       "hyperdrive": [
@@ -159,25 +145,23 @@
       ]
     }
   },
-  "durable_objects": {
-    "bindings": [
-      {
-        "name": "SPEECH_RELAY_SESSIONS",
-        "class_name": "SpeechRelayCoordinator"
-      }
-    ]
-  },
   "migrations": [
     {
       "tag": "speech-v1",
       "new_sqlite_classes": [
         "SpeechRelayCoordinator"
       ]
+    },
+    {
+      "tag": "speech-v2",
+      "deleted_classes": [
+        "SpeechRelayCoordinator"
+      ]
     }
   ],
   "triggers": {
     "crons": [
-      "*/5 * * * *"
+      "* * * * *"
     ]
   }
 }

@@ -10,8 +10,7 @@ import { Passwords } from "./passwords.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 const route = "/api/v1/voice/speech"
-const shared = import.meta.env.VITE_GRACE_CLOUD_PROFILE === "shared-production" || import.meta.env.VITE_GRACE_CLOUD_PROFILE === "shared-staging"
-const leaseToken = shared ? /^[A-Za-z0-9_-]{43}$/ : /^[a-f0-9]{64}$/
+const leaseToken = /^(?:[A-Za-z0-9_-]{43}|[a-f0-9]{64})$/
 
 schema Consent { consentNonce: string }
 schema Lease { version: 1; sessionId: string; token: string; expiresAt: string; wsUrl: string }

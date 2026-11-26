@@ -1,9 +1,34 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "Story: Approve a password backup in my browser"
-export { SpeechRelayCoordinator } from "@elizaos/cloud/worker"
-import { cloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud/worker"
+// spec/app/conversation.md, "Story: Talk with Grace through her cloud voice"
+import { cloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud-worker"
 import { HttpServerResponse } from "effect/http"
+import { forwardedRequest, isReturnTemplate, stripeWebhookRequest } from "./workerRequest.ts"
 
 type GraceCloud = CloudBindings & { ASSETS?: { fetch(request: Request): Promise<Response> } }
+const sessionCookie = "__Host-eliza-session="
+const sessionToken = /^eliza_session_[A-Za-z0-9_-]{43}$/
+const hostedSessionRoutes: ReadonlySet<string> = new Set<`${"GET" | "POST"} /${string}`>([
+  "GET /api/v1/billing/limits",
+  "POST /api/v1/subscriptions/checkout",
+  "POST /api/v1/subscriptions/portal",
+  "POST /api/v1/voice/speech/consent",
+  "POST /api/v1/voice/speech/session",
+])
+const hostedSpeechRevoke = /^POST \/api\/v1\/voice\/speech\/session\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/revoke$/
+
+function browserSessionCookie(request: Request): string | undefined {
+  const cookies = (request.headers.get("cookie") ?? "").split(";").map((part) => part.trim()).filter((part) => part.startsWith(sessionCookie))
+  return cookies.length === 1 ? cookies[0] : undefined
+}
+
+export function hostedSessionRequest(request: Request, url: URL, webOrigin: string): Request {
+  if (request.headers.get("origin") !== webOrigin || request.headers.has("authorization")) return request
+  const route = `${request.method} ${url.pathname}`
+  if (!hostedSessionRoutes.has(route) && !hostedSpeechRevoke.test(route)) return request
+  const session = browserSessionCookie(request)?.slice(sessionCookie.length)
+  return session !== undefined && sessionToken.test(session) ? forwardedRequest(request, "authorization", `Bearer ${session}`) : request
+}
+
 effect function scopeDigest(parts: readonly string[]) {
   const bytes = new TextEncoder().encode(JSON.stringify(parts))
   const digest = try (try Digest.Digest).digest(Digest.sha256, bytes)
@@ -16,15 +41,15 @@ function scopeResponse(status: number, payload: unknown) {
 
 const cloud = cloudWorker<GraceCloud>(async (request, _env, db, account) => {
   if (new URL(request.url).pathname !== "/api/product/files/scope" || request.method !== "GET") return scopeResponse(404, { error: "not_found" })
-  const credentials = (request.headers.get("cookie") ?? "").split(";").map((part) => part.trim()).filter((part) => part.startsWith("__Host-eliza-session="))
-  if (credentials.length !== 1) return scopeResponse(401, { error: "authentication_required" })
+  const credential = browserSessionCookie(request)
+  if (credential === undefined) return scopeResponse(401, { error: "authentication_required" })
   const result = await db.query<{ organization_id: string }>("SELECT organization_id FROM accounts WHERE key = $1 AND status = 'active'", [account])
   const organization = result.rows[0]?.organization_id
   if (!organization) return scopeResponse(401, { error: "authentication_required" })
   return runPromise(effect {
     provide Digest.layerWebCrypto {
       const owner = try scopeDigest(["grace/files/owner", account, organization])
-      const session = try scopeDigest(["grace/files/session", owner, credentials[0]])
+      const session = try scopeDigest(["grace/files/session", owner, credential])
       return scopeResponse(200, { accountId: account, owner, session })
     }
   })
@@ -35,6 +60,11 @@ export default {
   async fetch(request: Request, env: GraceCloud, lifetime?: Parameters<typeof cloud.fetch>[2]) {
     const url = new URL(request.url)
     if (url.origin === env.WEB_ORIGIN && url.pathname === "/.well-known/assetlinks.json" && request.method === "GET") return nativeAssetLinks(env)
+    if ((url.origin === env.WEB_ORIGIN || url.origin === env.PUBLIC_API_ORIGIN) && isReturnTemplate(url.pathname))
+      return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
+    if (url.origin === env.WEB_ORIGIN && url.pathname === "/android/auth/callback" && (request.method === "GET" || request.method === "HEAD")) {
+      return cloud.fetch(forwardedRequest(request, "x-forwarded-host", url.host), env, lifetime)
+    }
     if (url.origin === env.WEB_ORIGIN && env.ASSETS && !url.pathname.startsWith("/api/")) {
       const page = await env.ASSETS.fetch(request)
       if (url.pathname !== "/android/passwords/approve") return page
@@ -50,6 +80,8 @@ export default {
       }))
     }
     if (url.origin !== env.PUBLIC_API_ORIGIN) return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
-    return cloud.fetch(request, env, lifetime)
+    const forwarded = request.headers.has("x-forwarded-host") ? forwardedRequest(request, "x-forwarded-host", url.host) : request
+    const authorized = hostedSessionRequest(forwarded, url, env.WEB_ORIGIN)
+    return cloud.fetch(stripeWebhookRequest(authorized, url), env, lifetime)
   }
 }
