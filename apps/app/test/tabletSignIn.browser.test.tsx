@@ -9,7 +9,7 @@ import "../src/main.css";
 
 actOnScreen();
 
-it('Redeem membership and grant Google access in the originating Grace account (spec/app/setup.md, "A signed-in account with an inactive subscription can redeem a membership code"; spec/app/setup.md, "Google mail and calendar access requires separate consent for the Grace account")', async () => {
+it('Redeem and connect Google in Grace (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
   const original = location.href;
   history.replaceState(null, "", "#account");
   const account = { id: "membership-owner", email: "member@example.test" };
@@ -272,7 +272,7 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   }
 });
 
-it('Clear an unverified tablet sign-in and retry inside Grace (spec/app/setup.md, "Google sign-in stays with the surface that started it"; spec/app/setup.md, "A supported email code can sign in on the tablet")', async () => {
+it('Retry tablet sign-in inside Grace (spec/app/setup.md, "Google sign-in stays with the surface that started it"; spec/app/setup.md, "A supported email code can sign in on the tablet")', async () => {
   let needsCleanup = false;
   let cleanupAttempts = 0;
   let signInAttempts = 0;
