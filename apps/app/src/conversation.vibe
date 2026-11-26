@@ -13,7 +13,7 @@ import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
-import { canConfirmGuidedNameCorrection, guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, privateSurfaceActive, publicResultLoad, resumeAvailable, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedNameCorrection, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
+import { allowsManagedGuidedReading, canConfirmGuidedNameCorrection, guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, privateSurfaceActive, publicResultLoad, resumeAvailable, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedNameCorrection, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
 import { Agent, type GraceAction } from "./agent.vibe"
 import { BrowserGuide } from "./browserGuide.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
@@ -46,6 +46,7 @@ export service Conversation {
 }
 
 const origins: Record<PersonTurn["tag"], "Typed" | "Tapped"> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
+const replyTokenLimit = 2048
 const apology = "Sorry, I didn’t catch that. Could you say it again?"
 const noControls = "This conversation shows no controls under your reply. Never offer {kind:\"privateSignIn\"}. If the person asks to sign in, direct them to the website’s own sign-in form."
 const hostStarted = "(The person has not spoken: the tablet started this turn. Answer what it just told you happened.)"
@@ -69,7 +70,9 @@ function screened(text: string, answers: readonly string[], actions: readonly Gr
 }
 
 effect function ask(link: CloudLink, messages: readonly { role: string; content: string }[]) {
-  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), { model: policy.model, messages, stream: true, response_format: { type: "json_object" } })
+  const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), {
+    model: policy.model, messages, max_completion_tokens: replyTokenLimit, stream: true, response_format: { type: "json_object" }
+  })
   const response = try HttpClient.execute(HttpClientRequest.bearerToken(request, link.key))
   if (response.status !== 200) throw new Unanswered({ status: response.status })
   const lines = Stream.filter(Stream.splitLines(Stream.decodeText(response.stream)), (line) => line.startsWith("data: ") && line !== "data: [DONE]")
@@ -78,7 +81,8 @@ effect function ask(link: CloudLink, messages: readonly { role: string; content:
 }
 
 type GuidedReadSource =
-  | { tag: "ManagedMail" | "ManagedAppointment"; grant: string; version: string }
+  | { tag: "ManagedMail"; owner: string; ref: string; grant: string; version: string }
+  | { tag: "ManagedAppointment"; grant: string; version: string }
   | ({ tag: "CurrentMessage" } & GuidedMail)
   | { tag: "CurrentDocument"; tab: number; loadVersion: number; documentId: string }
   | { tag: "PublicSortDocument"; tabId: number; loadVersion: number; documentId: string; domRevision: number; url: string; origin: string; category: string; direction: "PriceAscending" | "PriceDescending" }
@@ -156,11 +160,11 @@ effect function guidedReceipt(scene: Scene, step: GuidedStep, native: NativePage
   if (read === "ReadMail" || read === "ReadCalendar" || read === "SaveMailAppointment") {
     const selected = try managed.guidedSelection()
     if (selected.kind !== "legacy") {
-      if ((selected.kind !== "mail" && selected.kind !== "calendar") || workspace.plan.steps.some((step) => step.tag === "SaveMailAppointment")) return undefined
+      if ((selected.kind !== "mail" && selected.kind !== "calendar") || !allowsManagedGuidedReading(workspace.plan)) return undefined
       const identity = [selected.accountId, selected.googleEmail, selected.id]
       const { grant, version } = selected
       if (read === "ReadMail" && selected.kind === "mail")
-        return receipt({ tag: "ManagedMail", grant, version }, identity,
+        return receipt({ tag: "ManagedMail", owner: selected.owner, ref: selected.id, grant, version }, identity,
           selected.subjectForGrace === "" ? "The open message has no subject." : "Open message: " + selected.subjectForGrace)
       if (read === "ReadCalendar" && selected.kind === "calendar") {
         const time = try Effect.option(Effect.try(() => new Date(selected.startAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })))
@@ -373,10 +377,15 @@ function distinctReadConfirmation(source: GuidedReadSource, report: GuidedObserv
     const { documentId, loadVersion, url, origin, query } = source
     return { type: "confirmGuidedSearch", searchCheck: { report, documentId, loadVersion, url, origin, query } }
   }
+  if (source.tag === "ManagedMail") {
+    const { owner, ref, version } = source
+    return { type: "confirmGuidedMail", mailConfirmation: { report, selection: { tag: "ManagedGuidedMail", owner, ref, version } } }
+  }
   if (source.tag !== "CurrentMessage") return undefined
   const { account, owner, address, ref, generation, revision, version } = source
-  const mailCheck = { report, mail: { account, owner, address, ref, generation, revision, version } }
-  return rebind ? { type: "rebindGuidedMail", mailCheck } : { type: "confirmGuidedMail", mailCheck }
+  const mail = { account, owner, address, ref, generation, revision, version }
+  return rebind ? { type: "rebindGuidedMail", mailCheck: { report, mail } }
+    : { type: "confirmGuidedMail", mailConfirmation: { report, selection: { tag: "DeviceGuidedMail", mail } } }
 }
 
 effect function observedPublicTab(state: Scene["workspace"], native: NativePage.Shape) {

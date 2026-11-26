@@ -30,7 +30,7 @@
         }
       ],
       "assets": {
-        "directory": "../app/dist",
+        "directory": ".wrangler/assets/staging",
         "binding": "ASSETS",
         "html_handling": "none",
         "not_found_handling": "single-page-application",
@@ -89,7 +89,7 @@
         }
       ],
       "assets": {
-        "directory": "../app/dist",
+        "directory": ".wrangler/assets/production",
         "binding": "ASSETS",
         "html_handling": "none",
         "not_found_handling": "single-page-application",
@@ -149,6 +149,12 @@
     {
       "tag": "speech-v1",
       "new_sqlite_classes": [
+        "SpeechRelayCoordinator"
+      ]
+    },
+    {
+      "tag": "speech-v2",
+      "deleted_classes": [
         "SpeechRelayCoordinator"
       ]
     }

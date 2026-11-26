@@ -945,7 +945,6 @@ export function homeEvents(registry: AccountsState, views: readonly CalendarInst
 export function homeCalendar(
   registry: AccountsState,
   views: readonly CalendarInstance[],
-  boxes: readonly MailInstance[],
   online: boolean,
   now: number,
   updated: UpdatedAt,
@@ -953,7 +952,7 @@ export function homeCalendar(
 ): { events: HomeEvent[]; status: string; hint?: string } {
   const today = dayOf(now);
   const sources = calendarSourcesOf(views);
-  const status = homeCalendarStatus(registry, sources, mailSourcesOf(boxes), online, now, now + horizon, midnight(today), midnight(today + 1));
+  const status = homeCalendarStatus(registry, sources, online, now, now + horizon, midnight(today), midnight(today + 1));
   const accounts = views.filter((v) => v.key !== tabletKey && registry.accounts.some((a) => a.id === v.key && a.use.calendar)).map((v) => v.key);
   return {
     events: homeEvents(registry, views, now, actions),

@@ -1343,6 +1343,27 @@ lemma lawCreatedSeriesReceiptIsSpent_ensures(v: CalendarView, receipt: SeriesRec
   }
 }
 
+lemma reportFeedSignIn_ensures(v: CalendarView, needsSignIn: bool, by_: ViewActor)
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysViewIdentity(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysViewWindow(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysEntriesBelongToCalendar(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysOccurrenceIsUnique(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysEditingIsSelected(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysCancelledIdsAreAbsent(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysSeriesDefinitions(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysEntriesUseSeries(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysSelectionIsCurrent(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysDeletionHasSelection(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysSeriesDeletionIsRecurring(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysDeletedSeriesStayDeleted(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> alwaysDeletedSeriesIdsAreNonempty(reportFeedSignIn(v, needsSignIn, by_)))
+  ensures (inv(v) ==> canReportFeedSignIn(v, needsSignIn, by_) ==> stepOccurrenceIdentityIsFixed(v, reportFeedSignIn(v, needsSignIn, by_)))
+{
+  if inv(v) && canReportFeedSignIn(v, needsSignIn, by_) {
+    CalendarSameEntries(v, reportFeedSignIn(v, needsSignIn, by_));
+  }
+}
+
 lemma showPicker_ensures(v: CalendarView, picker: FormPicker, by_: ViewActor)
   ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysViewIdentity(showPicker(v, picker, by_)))
   ensures (inv(v) ==> canShowPicker(v, picker, by_) ==> alwaysViewWindow(showPicker(v, picker, by_)))

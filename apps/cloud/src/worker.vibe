@@ -1,7 +1,7 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "Story: Approve a password backup in my browser"
 import { cloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud-worker"
 import { HttpServerResponse } from "effect/http"
-import { forwardedRequest } from "./workerRequest.ts"
+import { forwardedRequest, isReturnTemplate } from "./workerRequest.ts"
 
 type GraceCloud = CloudBindings & { ASSETS?: { fetch(request: Request): Promise<Response> } }
 const sessionCookie = "__Host-eliza-session="
@@ -50,18 +50,17 @@ const cloud = cloudWorker<GraceCloud>(async (request, _env, db, account) => {
   })
 })
 
-const cloudTemplates = /^\/(?:return-to-app(?:\.connected)?|checkout-outcome\.(?:paid|canceled))\.html$/
-
 export default {
   scheduled: cloud.scheduled,
   async fetch(request: Request, env: GraceCloud, lifetime?: Parameters<typeof cloud.fetch>[2]) {
     const url = new URL(request.url)
     if (url.origin === env.WEB_ORIGIN && url.pathname === "/.well-known/assetlinks.json" && request.method === "GET") return nativeAssetLinks(env)
-    if (url.origin === env.WEB_ORIGIN && url.pathname === "/android/auth/callback") {
+    if ((url.origin === env.WEB_ORIGIN || url.origin === env.PUBLIC_API_ORIGIN) && isReturnTemplate(url.pathname))
+      return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
+    if (url.origin === env.WEB_ORIGIN && url.pathname === "/android/auth/callback" && (request.method === "GET" || request.method === "HEAD")) {
       return cloud.fetch(forwardedRequest(request, "x-forwarded-host", url.host), env, lifetime)
     }
     if (url.origin === env.WEB_ORIGIN && env.ASSETS && !url.pathname.startsWith("/api/")) {
-      if (cloudTemplates.test(url.pathname)) return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
       const page = await env.ASSETS.fetch(request)
       if (url.pathname !== "/android/passwords/approve") return page
       const response = HttpServerResponse.fromWeb(page)
@@ -76,6 +75,7 @@ export default {
       }))
     }
     if (url.origin !== env.PUBLIC_API_ORIGIN) return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
-    return cloud.fetch(billingRequest(request, url, env.WEB_ORIGIN), env, lifetime)
+    const forwarded = request.headers.has("x-forwarded-host") ? forwardedRequest(request, "x-forwarded-host", url.host) : request
+    return cloud.fetch(billingRequest(forwarded, url, env.WEB_ORIGIN), env, lifetime)
   }
 }

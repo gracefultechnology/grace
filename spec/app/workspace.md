@@ -107,6 +107,8 @@ type GuidedSortCheck = { report: GuidedObservation, documentId: str, loadVersion
 type GuidedNamedPageCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, heading: str }
 type GuidedSearchCheck = { report: GuidedObservation, documentId: str, loadVersion: int, url: str, origin: str, query: str }
 type GuidedMailCheck = { report: GuidedObservation, mail: GuidedMail }
+type GuidedMailSelection = DeviceGuidedMail({ mail: GuidedMail }) | ManagedGuidedMail({ owner: str, ref: str, version: str })
+type GuidedMailConfirmation = { report: GuidedObservation, selection: GuidedMailSelection }
 type GuidedSaveRecoveryCheck = { report: GuidedObservation, saved: GuidedSaveReference }
 type GuidedCalendarReadback = { approval: GuidedCalendarApproval, occurrence: str, evidence: str }
 type GuidedReview = { revision: int, generation: int, workVersion: int, request: GuidedRequest }
@@ -1198,7 +1200,9 @@ A late observation is rejected even if its task name still matches. It must
 match the current device context, current selected document revision, current
 task generation and current controller generation. The trusted host checks
 the actual origin, account and redaction before it supplies this evidence.
-No observation or operation is accepted while a website's question holds the person.
+Ordinary observation, preparation and dispatch are blocked while a website's
+question holds the person. A current wrong-origin report can still stop the
+task and leave it waiting for the person.
 
 ```quint
 pure def observationArrives(w: Workspace, currentObservation: CurrentObservation, by: WorkspaceActor): bool =
@@ -1911,7 +1915,7 @@ pure def guidedObservationCurrent(w: Workspace, report: GuidedObservation, by: W
   (isAppointmentSave(report.step) implies
     (w.plan.savedOccurrence != "" and report.evidence == w.plan.savedEvidence))
 pure def canConfirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
-  not(isNamedDestination(report.step)) and not(isPublicSort(report.step)) and
+  report.step != ReadMail and not(isNamedDestination(report.step)) and not(isPublicSort(report.step)) and
   not(isLatestRecord(report.step)) and not(isPublicSearch(report.step)) and guidedObservationCurrent(w, report, by)
 pure def confirmGuided(w: Workspace, report: GuidedObservation, by: WorkspaceActor): Workspace =
   val plan = { ...w.plan, receipts: w.plan.receipts.append({ sourceKey: report.sourceKey, evidence: report.evidence }),
@@ -2280,9 +2284,12 @@ pure val eval_witness_canConfirmGuidedRecord = (
 
 ### A calendar save must come from the selected email and a separately approved write
 
-Checking a selected open email records its current account, identity and
-version. A later calendar step may recognize a save from that same email
-and account. Starting the plan cannot write. The calendar's separate
+Checking a selected open email requires a current observation of that
+message. A read-only plan can accept the current hosted Gmail selection
+with its owner, message identity and version. A plan that saves an
+appointment needs the device mail binding for its selected email and
+account. A generic observation cannot finish either email step. Starting
+the plan cannot write. The calendar's separate
 approved proposal is still what authorizes saving the exact appointment.
 The provider must return the saved occurrence and a fresh read must find
 those exact approved details under the same account. The host may retain
@@ -2292,18 +2299,37 @@ wrong source, or unsaved appointment cannot count as a save.
 No email is recorded or rebound and no calendar approval, save or reconciliation is taken while a website's question holds the person.
 
 ```quint
-pure def canConfirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): bool =
-  val reportedStep = mailCheck.report.step
-  val opensMail = match reportedStep {
-    | ReadMail => true
-    | _ => false
+pure def allowsManagedGuidedReading(plan: GuidedPlan): bool =
+  not(plan.steps.some(guidedStep => isAppointmentSave(guidedStep)))
+pure def canConfirmGuidedMail(w: Workspace, mailConfirmation: GuidedMailConfirmation, by: WorkspaceActor): bool = {
+  val selection = mailConfirmation.selection
+  mailConfirmation.report.step == ReadMail and guidedObservationCurrent(w, mailConfirmation.report, by) and
+  (match selection {
+    | DeviceGuidedMail(x) => x.mail.account > 0 and x.mail.owner != "" and x.mail.address != "" and x.mail.ref != "" and
+        x.mail.generation >= 0 and x.mail.revision >= 0
+    | ManagedGuidedMail(x) => allowsManagedGuidedReading(w.plan) and
+        x.owner == w.plan.owner and x.ref != "" and x.version != ""
+  })
+}
+pure def lawMailNeedsItsOwnObservation(w: Workspace, report: GuidedObservation, by: WorkspaceActor): bool =
+  report.step == ReadMail implies not(canConfirmGuided(w, report, by))
+pure def confirmGuidedMail(w: Workspace, mailConfirmation: GuidedMailConfirmation, by: WorkspaceActor): Workspace = {
+  val after = confirmGuided(w, mailConfirmation.report, by)
+  val selection = mailConfirmation.selection
+  match selection {
+    | DeviceGuidedMail(x) => { ...after, plan: { ...after.plan, mail: x.mail } }
+    | ManagedGuidedMail(_) => after
   }
-  opensMail and canConfirmGuided(w, mailCheck.report, by) and
-  mailCheck.mail.account > 0 and mailCheck.mail.owner != "" and mailCheck.mail.address != "" and mailCheck.mail.ref != "" and
-  mailCheck.mail.generation >= 0 and mailCheck.mail.revision >= 0 and not(heldByWebsite(w))
-pure def confirmGuidedMail(w: Workspace, mailCheck: GuidedMailCheck, by: WorkspaceActor): Workspace =
-  val after = confirmGuided(w, mailCheck.report, by)
-  { ...after, plan: { ...after.plan, mail: mailCheck.mail } }
+}
+pure def lawManagedMailNeedsItsOwnerAndCannotAuthorizeCalendar(w: Workspace, mailConfirmation: GuidedMailConfirmation, by: WorkspaceActor): bool = {
+  val selection = mailConfirmation.selection
+  val after = confirmGuidedMail(w, mailConfirmation, by)
+  match selection {
+    | ManagedGuidedMail(x) => canConfirmGuidedMail(w, mailConfirmation, by) implies
+        (x.owner == w.plan.owner and x.ref != "" and x.version != "" and allowsManagedGuidedReading(w.plan) and after.plan.mail == w.plan.mail)
+    | DeviceGuidedMail(_) => true
+  }
+}
 pure def guidedSavePending(w: Workspace): bool =
   hasNext(w.plan) and isAppointmentSave(nextOutcome(w.plan)) and
   w.execution.phase == X::Idle and w.commitmentTask == "" and w.plan.saveRecovery == GuidedSaveUntouched
@@ -2374,6 +2400,19 @@ pure val mailCheckValues = Set(
     step: ReadMail, sourceKey: "prior-mail", evidence: "The appointment is Thursday." }, mail: guidedMailSample },
   { report: { owner: "tablet", task: "recovered", version: 6, deviceVersion: 2, browserRevision: 0,
     step: ReadMail, sourceKey: "prior-mail", evidence: "The appointment is Thursday." }, mail: guidedMailSample })
+pure val managedMailConfirmation: GuidedMailConfirmation = {
+  report: { ...sampleReport, deviceVersion: 2, step: ReadMail, sourceKey: "managed-mail", evidence: "Open message: Clinic" },
+  selection: ManagedGuidedMail({ owner: "owner", ref: "clinic-message", version: "current" })
+}
+pure val mailConfirmationValues = mailCheckValues.map(check => { report: check.report, selection: DeviceGuidedMail({ mail: check.mail }) })
+  .union(Set(managedMailConfirmation, { ...managedMailConfirmation, selection: ManagedGuidedMail({ owner: "other", ref: "clinic-message", version: "current" }) }))
+pure val eval_witness_canConfirmGuidedMail = (
+  ("changeLifecycle", StartupSucceeded, Host),
+  ("visit", S::Email, Person),
+  ("openGrace", Person),
+  ("beginGuided", { owner: "owner", task: "task", goal: "Read my email", steps: List(ReadMail) }, Person),
+  ("confirmGuidedMail", managedMailConfirmation, Host)
+)
 pure val weight_restoreGuided = 6
 pure val weight_rebindGuidedMail = 8
 pure val weight_reconcileGuidedSave = 8
@@ -2396,7 +2435,7 @@ pure val eval_witness_canObserveGuidedCalendar = (
   ("openGrace", Person),
   ("beginGuided", { owner: "owner", task: "task", goal: "Read the appointment", steps: List(ReadMail, SaveMailAppointment) }, Person),
   ("confirmGuidedMail", { report: { ...sampleReport, deviceVersion: 2, step: ReadMail, sourceKey: "prior-mail",
-    evidence: "The appointment is Thursday." }, mail: guidedMailSample }, Host),
+    evidence: "The appointment is Thursday." }, selection: DeviceGuidedMail({ mail: guidedMailSample }) }, Host),
   ("expectGuidedCalendar", { ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary", sourceRef: "invite",
     provisional: "draft", proposal: 1, title: "Visit", starts: 1, ends: 2, timezone: "UTC", detailsDigest: "approved-details" }, Host),
   ("observeGuidedCalendar", { approval: { ...noGuidedApproval, task: "task", account: 1, owner: "mail", calendar: "primary",

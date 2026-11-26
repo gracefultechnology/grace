@@ -1,12 +1,13 @@
 import { assert, describe, it } from "@effect/vitest"
 import { NodeFileSystem } from "@effect/platform-node"
-import { HttpClientRequest, HttpClientResponse } from "effect/http"
-import { nativeAssetLinks } from "@elizaos/cloud-worker"
+import { HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
+import worker from "../src/worker.vibe"
 
 schema Vars {
   PUBLIC_API_ORIGIN: string
   WEB_ORIGIN: string
   CLOUD_ENVIRONMENT: "staging" | "production"
+  CLOUD_IDENTITY_DIGEST: string
   NATIVE_CLIENT_REGISTRY: string
 }
 schema Environment { vars: Vars }
@@ -24,16 +25,30 @@ effect function assetLinks(environment: "staging" | "production") {
   const fs = try FileSystem.FileSystem
   const file = try fs.readFileString(`${import.meta.dirname}/../wrangler.jsonc`)
   const vars = (try Schema.decodeUnknownEffect(Schema.fromJsonString(Wrangler))(file)).env[environment].vars
-  const request = HttpClientRequest.get(`${vars.WEB_ORIGIN}/.well-known/assetlinks.json`)
-  const response = HttpClientResponse.fromWeb(request, nativeAssetLinks(vars))
-  return { environment: vars.CLOUD_ENVIRONMENT, status: response.status, statements: try response.json }
+  const env = { ...vars, CLOUD_PROFILE: "", ASSETS: { fetch: async () => HttpServerResponse.toWeb(HttpServerResponse.text("Grace")) } }
+  effect function call(url: string) {
+    const request = HttpClientRequest.get(url)
+    const web = try HttpClientRequest.toWeb(request)
+    const response = try promise(() => worker.fetch(web, env))
+    return HttpClientResponse.fromWeb(request, response)
+  }
+  const links = try call(vars.WEB_ORIGIN + "/.well-known/assetlinks.json")
+  const callback = try call(vars.WEB_ORIGIN + "/android/auth/callback")
+  const app = try call(vars.WEB_ORIGIN + "/")
+  const raw = try call(vars.WEB_ORIGIN + "/return-to-app.html")
+  const alias = try call(vars.WEB_ORIGIN + "/%72eturn-to-app.html")
+  const crossHost = try call(vars.PUBLIC_API_ORIGIN + "/checkout-outcome.paid.html")
+  return {
+    environment: vars.CLOUD_ENVIRONMENT, status: links.status, statements: try links.json,
+    app: [app.status, try app.text], callback: callback.status, templates: [raw.status, alias.status, crossHost.status]
+  }
 }
 
 describe("Sign in to Grace and manage my subscription (spec/app/setup.md, \"Story: Sign in to Grace and manage my subscription\")", () => {
   it.effect("a debug build verifies its sign-in return only on staging, and production verifies only the release build", () => effect {
     provide NodeFileSystem.layer {
-      assert.deepStrictEqual(try assetLinks("staging"), { environment: "staging", status: 200, statements: association(debugCertificate) })
-      assert.deepStrictEqual(try assetLinks("production"), { environment: "production", status: 200, statements: association(releaseCertificate) })
+      assert.deepStrictEqual(try assetLinks("staging"), { environment: "staging", status: 200, statements: association(debugCertificate), app: [200, "Grace"], callback: 503, templates: [404, 404, 404] })
+      assert.deepStrictEqual(try assetLinks("production"), { environment: "production", status: 200, statements: association(releaseCertificate), app: [200, "Grace"], callback: 503, templates: [404, 404, 404] })
     }
   })
 })

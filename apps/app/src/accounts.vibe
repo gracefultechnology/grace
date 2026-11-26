@@ -154,11 +154,15 @@ export const signIns = Layer.effect(SignIns, effect {
 
   effect function renew(id: number) {
     const box = try shelf.mail(id)
-    const { owner, provider, account } = try box.get()
+    const { owner, provider, account, connection } = try box.get()
     const use = accountAt(try registry.get(), id).use
+    if (!use.mail) {
+      if (connection !== "Connected") box.send({ type: "endConnection", resultStatus: "Disconnected" }, "MailConnector") catch () => undefined
+      return
+    }
     try box.send({ type: "connect", owner, provider, account }, "MailUser")
     const { generation } = try box.get()
-    try box.send({ type: "authorize", generation, verified: true, readGranted: use.mail, sendGranted: use.mail }, "MailConnector")
+    try box.send({ type: "authorize", generation, verified: true, readGranted: true, sendGranted: true }, "MailConnector")
     try box.send({ type: "readMail", kind: "Search", ref: "", approved: true }, "MailUser")
   }
 

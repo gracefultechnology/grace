@@ -448,7 +448,7 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
             calendar={{
               weekday,
               day,
-              ...ours && accounts ? homeCalendar(accounts, calendars, boxes, slice.online, nowMs, updated, slice.canCalendar ? calendarActions : undefined) : {
+              ...ours && accounts ? homeCalendar(accounts, calendars, slice.online, nowMs, updated, slice.canCalendar ? calendarActions : undefined) : {
                 events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
                   const { date, time } = hostedAppointmentDisplay(event);
                   return {

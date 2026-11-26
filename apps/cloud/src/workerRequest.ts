@@ -4,3 +4,11 @@ export function forwardedRequest(request: Request, name: string, value: string):
   headers.set(name, value);
   return new Request(request, { headers });
 }
+
+export function isReturnTemplate(pathname: string): boolean {
+  try {
+    return /^\/(?:return-to-app(?:\.connected)?|checkout-outcome\.(?:paid|canceled))\.html$/.test(decodeURI(pathname));
+  } catch {
+    return false;
+  }
+}
