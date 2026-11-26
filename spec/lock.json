@@ -323,8 +323,8 @@
         "25a493f15de0"
       ],
       "Story: Talk or type without losing the conversation / A current speech or response failure leaves a usable typed fallback": [
-        "691fd807ad94",
-        "f2def5e2c1ff",
+        "79807a95e201",
+        "22a53595d2c6",
         "25a493f15de0"
       ],
       "Story: Talk or type without losing the conversation / Silence ends listening without creating an answer": [
@@ -499,7 +499,7 @@
       "Story: Keep voice and typing available in either Grace window / The container routes deliberate controls into its one conversation": [
         "d13764c340c1",
         "5ea5ea6da992",
-        "6c738ed483bf"
+        "491e7755b38c"
       ],
       "Story: Keep voice and typing available in either Grace window / Hidden assistance is quiet and every task status has its necessary context": [
         "535daa1e2cd5",
@@ -823,14 +823,14 @@
         "b4cb06ab6b53"
       ],
       "Story: Use the same conversation through every input and window control / Each interaction uses the existing guarded assistant operation": [
-        "7e434819a008",
+        "861445d1c8ab",
         "9affc2be4e09",
-        "ce35031d637d"
+        "2cf280a91087"
       ],
       "Story: Use the same conversation through every input and window control / The workspace can distinguish new requests, changed geometry and local reading": [
         "3b05a530bd9c",
         "44538ca99f3d",
-        "675871964440"
+        "bdd8d7f3d2f7"
       ]
     },
     "spec/app/browserControls.md": {
@@ -1493,52 +1493,52 @@
       "Story: Leave and return without hidden work / The workspace contains the actual device, page, conversation and operation": [
         "6ddce4e37738",
         "d7a4956f019e",
-        "4032eeaa0fef"
+        "d735580e8b83"
       ],
       "Story: Leave and return without hidden work / Device changes and permission changes stop work before the new context is used": [
         "9972c7fb865d",
         "3d82241dae66",
-        "ff6ee7c7eb7f"
+        "1afaf0e2b5c3"
       ],
       "Story: Leave and return without hidden work / The person can allow Grace to read her browser and revoke that choice": [
         "a2157b99d874",
         "d571f85a86ad",
-        "1c97e5fc2518"
+        "44ddf1e1edc0"
       ],
       "Story: Leave and return without hidden work / Home, native controls and Close have explicit interruption semantics": [
         "6e7c5241ed5b",
         "2a2e167c9ea8",
-        "7723b06da032"
+        "1c5862b3223f"
       ],
       "Story: Leave and return without hidden work / A released email link opens Browser and its fresh tab together": [
         "b73548ec2a5e",
         "182b9dafd61a",
-        "547db1169b78"
+        "3a1bd3821a4b"
       ],
       "Story: Leave and return without hidden work / Conversation input and geometry use the same owned assistant state": [
         "67da1b9d378c",
         "7b1329feb14c",
-        "0e2957f61555"
+        "d1cb4046829d"
       ],
       "Story: Leave and return without hidden work / Guidance is visible only on its current surface and target": [
         "58aac33519e0",
         "b1995830c73c",
-        "d567c16b629e"
+        "30e893a8c94f"
       ],
       "Story: Leave and return without hidden work / Home pages and rail overlays invalidate the covered page": [
         "043047513b70",
         "a5dc18bfdeaa",
-        "d472420685a0"
+        "2aeb5daaf027"
       ],
       "Story: Leave and return without hidden work / An enabled wake phrase listens without resuming a website task": [
-        "a155d3d4a185",
+        "0f8707261d74",
         "bbbddcc104e0",
-        "5f56fc25fb77"
+        "057ae1ed61eb"
       ],
       "Story: Leave and return without hidden work / Preference changes invalidate wake timers and use the same durable settings": [
         "5a4b027ee309",
         "6ec4762a6e1e",
-        "60c246e5ad94"
+        "c7464e5827d3"
       ],
       "## Story: Resume against the current website": [
         "e790f633ce5e"
@@ -1546,37 +1546,37 @@
       "Story: Resume against the current website / Starting and changing pages use the browser's real navigation state": [
         "037db9fa8cd8",
         "987a58acace7",
-        "b64ee083678e"
+        "6667edcbfcea"
       ],
       "Story: Resume against the current website / Correlated website progress is observed without asking the person to resume": [
         "f1be4aaa8d49",
         "f5a7a4f86b84",
-        "e8381faaf1a2"
+        "025e9d02c8c3"
       ],
       "Story: Resume against the current website / A page that moves by itself where the person is not looking only records where it went": [
         "9e4b7487701e",
         "deb6a786d7a6",
-        "defbd5156ed6"
+        "90627b57435e"
       ],
       "Story: Resume against the current website / Reconciliation binds the current page and device versions to the one task": [
         "bbc44ef1a28b",
         "aab15ddeb85e",
-        "1c97e5fc2518"
+        "44ddf1e1edc0"
       ],
       "Story: Resume against the current website / A page on another origin, or a step that is the person's, blocks the task where she can see it": [
         "bb1a12ad5d6b",
         "150a07a23c46",
-        "d9d1e6950390"
+        "d8e1c8808979"
       ],
       "Story: Resume against the current website / Dispatch checks the context again and readback establishes the result": [
         "19ed52a7a4a6",
         "8fe85bd9db47",
-        "fd928e2349f7"
+        "5f0c4d830e4e"
       ],
       "Story: Resume against the current website / An ordinary website goal finishes only on an observation quoting its fact": [
         "c1622c29d465",
         "ab27dbcbd7bc",
-        "05c94002f004"
+        "353010c7af02"
       ],
       "## Story: Follow one reviewed plan across apps": [
         "b3a0b2ddaac5"
@@ -1584,42 +1584,42 @@
       "Story: Follow one reviewed plan across apps / The person starts a sequence of outcomes without opening a website": [
         "fb447440ce0d",
         "830074ab5aaa",
-        "2579ca29ca1a"
+        "ae0de16e6fd2"
       ],
       "Story: Follow one reviewed plan across apps / An authenticated restart restores the reviewed plan paused at its next outcome": [
         "5e5580997fab",
         "eb86fbc54cf9",
-        "57de6e1056bb"
+        "9ccf268c05c6"
       ],
       "Story: Follow one reviewed plan across apps / A read plan offered in chat waits for the person to start it": [
         "5fff0ebc0e88",
         "3514a303c0d1",
-        "7c492c121aa1"
+        "884878a54b6e"
       ],
       "Story: Follow one reviewed plan across apps / Only the person can revise the next public page or category to its observed label": [
         "18ba9f3b7e42",
         "8052b44d060c",
-        "4aafc1d376d3"
+        "6fa7b4304297"
       ],
       "Story: Follow one reviewed plan across apps / Only a current observation of the next outcome advances the plan": [
         "9939f425ee6a",
         "8f413883c4fc",
-        "84891e484037"
+        "f45081817cb9"
       ],
       "Story: Follow one reviewed plan across apps / The person searches the reviewed site and Grace checks that exact query": [
         "b616447fb9e3",
         "c68f0296c5ef",
-        "c303e0bd038d"
+        "219d39801649"
       ],
       "Story: Follow one reviewed plan across apps / The latest matching record must be selected on its collection and verified on arrival": [
         "ad3372434e9a",
         "e8dc05afa217",
-        "6f0203727d13"
+        "bb0a23e7a9ca"
       ],
       "Story: Follow one reviewed plan across apps / A calendar save must come from the selected email and a separately approved write": [
         "7ea0e12ccfe2",
         "d98d6e0d2952",
-        "5563a1bcc6fb"
+        "524c2598246b"
       ],
       "## Story: Preserve payment authorization and uncertainty across surfaces": [
         "06c844cd45c1"
@@ -1627,27 +1627,27 @@
       "Story: Preserve payment authorization and uncertainty across surfaces / The active bill is bound to the observed owner and origin once": [
         "80f204218f9d",
         "f7e8c97622a2",
-        "1c97e5fc2518"
+        "44ddf1e1edc0"
       ],
       "Story: Preserve payment authorization and uncertainty across surfaces / Review readback and durable journaling precede explicit approval": [
         "42d6282be6c1",
         "65da3d810af5",
-        "fd1616394851"
+        "6c32b457f03e"
       ],
       "Story: Preserve payment authorization and uncertainty across surfaces / A fully classified spoken approval is recorded and authorized atomically": [
         "f172974a3dbb",
         "1b9ef903c387",
-        "12f61b00fb56"
+        "db2e6688006c"
       ],
       "Story: Preserve payment authorization and uncertainty across surfaces / Final submission checks the current workspace and consumes one payment authorization": [
         "4df9c169b1c9",
         "e2fd3e607e7d",
-        "fcc2f3d5819c"
+        "14e3caae2767"
       ],
       "Story: Preserve payment authorization and uncertainty across surfaces / Verified provider outcomes finish the task while storage retains the payment record": [
         "a197214497d1",
         "88f16e667c28",
-        "521bd9abf18c"
+        "7781e6d7bf7c"
       ],
       "## Story: Open an available control from Grace's reply": [
         "5357d94da22f"
@@ -1655,7 +1655,7 @@
       "Story: Open an available control from Grace's reply / A reply offers controls for its current turn and visible context": [
         "c8b80c095c51",
         "bc4d526933b7",
-        "1c97e5fc2518"
+        "44ddf1e1edc0"
       ],
       "## Story: Wait for my answer to a website": [
         "ca38fb613fc4"
@@ -1663,7 +1663,7 @@
       "Story: Wait for my answer to a website / No task step is taken while a website's question holds the person, and the task goes on after her answer": [
         "15fa6f80ad86",
         "68f7a33180e4",
-        "e47bd4a84a33"
+        "9a6b4b04408a"
       ]
     },
     "spec/app/actuation.md": {
@@ -1676,12 +1676,12 @@
       "Story: Stop old website actions before they reach the page / The actuator must still have the exact current browser command": [
         "3b22409edae8",
         "067f85ef848f",
-        "1c97e5fc2518"
+        "44ddf1e1edc0"
       ],
       "Story: Stop old website actions before they reach the page / Finite examples include current commands and requests fenced by Stop": [
         "dcd9b3daac72",
         "9df6eefba987",
-        "3f759a05bc3d"
+        "5f9c7b9f5d73"
       ]
     },
     "spec/app/request.md": {
@@ -2143,17 +2143,17 @@
       "Story: Step back inside Grace before leaving / Back closes the nearest open thing first and leaves only from a resting Home": [
         "bf9e461095b7",
         "3bedf1a56a4b",
-        "20e64093a82a"
+        "7cd053faac74"
       ],
       "Story: Step back inside Grace before leaving / Back leaves a fullscreen video before anything else": [
         "b6a87e15518a",
         "1b7dbcb7f5f8",
-        "1b3eb97514fb"
+        "38269cf8b1fa"
       ],
       "Story: Step back inside Grace before leaving / Each Back action is one event its guard allows": [
         "5e36b5c20f5b",
         "0e2cfd8046b1",
-        "53e64ac67c7c"
+        "e5ab77d573fa"
       ],
       "## Story: Return to Home from the launcher": [
         "dfd667d21fbb"
@@ -2161,7 +2161,7 @@
       "Story: Return to Home from the launcher / After launcher Home only Grace's own window is left for Back": [
         "846c01c16acd",
         "ec35a1001ad7",
-        "a7ba89f66169"
+        "a30478fba6cf"
       ],
       "## Story: Answer a website before Grace goes on": [
         "724912abc462"
@@ -2332,17 +2332,17 @@
       "Story: Forget or correct a detail before a queued fill reaches the website / A saved fill also requires the current command's task, origin and field kind": [
         "2170a6e7c63c",
         "5b750613dbfb",
-        "bf22e67992af"
+        "cdfa54f467cd"
       ],
       "Story: Forget or correct a detail before a queued fill reaches the website / Correction and deletion revoke the old command without changing Workspace": [
         "fad0ce89b231",
         "ea246e88bf00",
-        "add37e4ab953"
+        "d75e94394134"
       ],
       "Story: Forget or correct a detail before a queued fill reaches the website / A queued fill is checked against the current detail in her saved details": [
         "32de2621cbc7",
         "165e22a19ab5",
-        "3b0a6d9083e1"
+        "aab03040fa1d"
       ],
       "## Story: Fill a booking or sign-up form for me": [
         "4caaf984d235"
@@ -2350,12 +2350,12 @@
       "Story: Fill a booking or sign-up form for me / A form field is filled from her own answer or from a current saved detail": [
         "a775e57839fb",
         "4a34211aad1b",
-        "474dbe81f259"
+        "5be5c7e92e79"
       ],
       "Story: Fill a booking or sign-up form for me / Finite examples retain the original receipt after correction and deletion": [
         "290d8f510576",
         "6fe978988562",
-        "96a0d8fbe429"
+        "ce17e0411231"
       ]
     },
     "spec/app/network.md": {
@@ -2689,6 +2689,11 @@
         "583e0a41427a",
         "dd15b1e704ec"
       ],
+      "Story: Sign in to Grace and manage my subscription / A signed-in web account with an inactive subscription can redeem a membership code": [
+        "ca7bfe0e5ebd",
+        "4a72495e37b7",
+        "839a24c37821"
+      ],
       "Story: Sign in to Grace and manage my subscription / An enrolled tablet offers one sign-in to update mail and calendar access": [
         "d47d627ee966",
         "1ddc1dcc5d78",
@@ -2777,12 +2782,12 @@
       "Story: Review the payment I actually chose / A conversion preserves the live preparation and captured context": [
         "7f2672cc0140",
         "d56adfff5b34",
-        "cceb5e91dd75"
+        "320b83f4b39b"
       ],
       "Story: Review the payment I actually chose / Finite examples cover a current handoff and retired source or destination versions": [
         "5c50d7926f68",
         "9d84bb0764ba",
-        "0e2235e17730"
+        "2644ecde7078"
       ],
       "## Story: Grace types into a task's form only after I said yes": [
         "02734bae7447"
@@ -2790,7 +2795,7 @@
       "Story: Grace types into a task's form only after I said yes / A fill of a task's form needs the person's yes to the fill offer for the task being prepared": [
         "a8b6b64d2247",
         "b8539fd281f1",
-        "1da5034a9c75"
+        "91397793ed85"
       ],
       "## Story: See where my task stands": [
         "8ef6fdab17d1"
@@ -2798,12 +2803,12 @@
       "Story: See where my task stands / The step shown is on the task's plan: the preparation's step until the hand-off, then the commitment's": [
         "aa1bd3b3ed63",
         "a3dbf1e3ce97",
-        "ece4a1bd347f"
+        "ec1ebf3d2338"
       ],
       "Story: See where my task stands / The task is done only once a positive outcome and its reference are saved": [
         "2d974e76cf9b",
         "9734727bbdd6",
-        "f9b463742f05"
+        "0fb01dc41c84"
       ]
     },
     "spec/app/taskCalendar.md": {

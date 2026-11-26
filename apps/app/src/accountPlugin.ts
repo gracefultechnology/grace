@@ -7,9 +7,30 @@ type AccountStatus =
   | { kind: "signedIn"; voiceDisclosureScope: string; mailLease?: TabletMailAuthority; mailLeaseUpgrade?: "required" | "signInPending" | "acknowledgmentPending" }
   | { kind: "signedOut"; legacySignInNeedsCleanup?: true };
 
+export type TabletAccountRequest =
+  | { action: "profile" }
+  | { action: "billing" | "plans"; accountId: string }
+  | { action: "redeem"; accountId: string; code: string; idempotencyKey: string };
+
+export type TabletGoogleConsent = {
+  accountId: string;
+  mail: boolean;
+  calendar: boolean;
+  sendMail: boolean;
+  trashMail: boolean;
+  writeCalendar: boolean;
+};
+
 interface AccountPlugin {
   status(): Promise<AccountStatus>;
-  beginSignIn(options?: { method: "browser" }): Promise<void>;
+  accountRequest?(request: TabletAccountRequest): Promise<unknown>;
+  connectGoogle?(request: TabletGoogleConsent): Promise<unknown>;
+  disconnectGoogle?(request: { accountId: string }): Promise<void>;
+  beginSignIn(): Promise<void>;
+  signInMethods?(): Promise<unknown>;
+  sendSignInCode?(request: { address: string }): Promise<unknown>;
+  verifySignInCode?(request: { address: string; code: string }): Promise<unknown>;
+  cancelSignInCode?(): Promise<void>;
   beginLeaseUpgrade?(): Promise<void>;
   cancelLeaseUpgrade?(): Promise<void>;
   readGoogle?(input: TabletMailAuthority & { route: TabletGoogleRead; query: Record<string, string> }): Promise<unknown>;
@@ -18,8 +39,6 @@ interface AccountPlugin {
   passwordRecoveryStatus(): Promise<unknown>;
   showPasswordRecovery(): Promise<void>;
   dismissPasswordRecovery(): Promise<void>;
-  manageAccount(): Promise<void>;
-  openHostedView(options: { view: "email" | "calendar" }): Promise<void>;
   browserGuideLease(): Promise<unknown>;
   inboxArrival(input: { lease: string; cursor?: string }): Promise<unknown>;
   chooseBrowserLink(input: { lease: string; goal: string; candidates: readonly { id: string; label: string }[] }): Promise<unknown>;
@@ -28,7 +47,7 @@ interface AccountPlugin {
   addListener(event: "sessionChanged", listener: (status: AccountStatus) => void): Promise<PluginListenerHandle>;
 }
 
-export type AccountBridge = Pick<AccountPlugin, "status" | "beginSignIn" | "beginLeaseUpgrade" | "cancelLeaseUpgrade" | "readGoogle" | "signOut" | "cleanupLegacySignIn" | "manageAccount" | "addListener">;
+export type AccountBridge = Pick<AccountPlugin, "status" | "accountRequest" | "beginSignIn" | "signInMethods" | "sendSignInCode" | "verifySignInCode" | "cancelSignInCode" | "beginLeaseUpgrade" | "cancelLeaseUpgrade" | "connectGoogle" | "disconnectGoogle" | "readGoogle" | "signOut" | "cleanupLegacySignIn" | "addListener">;
 
 export const accountPlugin = Capacitor.isPluginAvailable("GraceAccount") ? registerPlugin<AccountPlugin>("GraceAccount") : undefined;
 

@@ -1321,6 +1321,7 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
   const firstAccount = crypto.randomUUID();
   const secondAccount = crypto.randomUUID();
   let accountId: string | undefined = firstAccount;
+  let speechLeaseUnavailable = false;
   const calls: string[] = [];
   const voiceInput = "What time is it?";
   const voiceOutput = "It is noon.";
@@ -1332,12 +1333,23 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
   let finishes = 0;
   let sendAudio = true;
   const captures: MediaStreamTrack[] = [];
+  let heldWorklet: { requested: Latch.Latch; release: Latch.Latch } | undefined;
   const phrases: string[] = [];
   const microphones: AudioContext[] = [];
   vi.stubGlobal("AudioContext", class extends AudioContext {
     constructor(options?: AudioContextOptions) {
       const silentOutput = { ...options, sinkId: { type: "none" } };
       super(silentOutput);
+      const held = heldWorklet;
+      const worklet = this.audioWorklet;
+      if (held && worklet) {
+        const addModule = worklet.addModule.bind(worklet);
+        vi.spyOn(worklet, "addModule").mockImplementation(async (url, options) => {
+          held.requested.openUnsafe();
+          await Effect.runPromise(held.release.await);
+          return addModule(url, options);
+        });
+      }
     }
   });
   const audio = vi.spyOn(navigator.mediaDevices, "getUserMedia").mockImplementation(async () => {
@@ -1361,6 +1373,7 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
     if (pathname.endsWith("/consent")) return Response.json({ consentNonce: sessionId });
     if (pathname.endsWith("/session")) {
       expect(options?.body).toBe(JSON.stringify({ consentNonce: sessionId }));
+      if (speechLeaseUnavailable) return new Response(null, { status: 503 });
       return Response.json({
         version: 1,
         sessionId,
@@ -1504,6 +1517,43 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
       await expect.element(button("Close Grace")).not.toBeInTheDocument();
       await expect.poll(wake.armed).not.toBeNull();
       expect(requests.map(({ body }) => sentTurn(body).said)).toEqual([voiceInput]);
+      await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
+      speechLeaseUnavailable = true;
+      await hearWake();
+      const unavailableCalls = [...speechSession, ...speechSession, speechPath + "/consent", speechPath + "/session"];
+      await expect.poll(() => calls).toEqual(unavailableCalls);
+      await expect.element(page.getByText(/voice service.*type/i)).toBeVisible();
+      await expect.poll(() => ({
+        wake: workspace().wake.phase,
+        voice: workspace().assistant.conversation.voice,
+        liveTracks: captures.filter((track) => track.readyState === "live").length,
+      })).toEqual({ wake: "Dormant", voice: false, liveTracks: 0 });
+      await press(button("Close Grace"));
+      speechLeaseUnavailable = false;
+      const pendingWorklet = { requested: Latch.makeUnsafe(), release: Latch.makeUnsafe() };
+      heldWorklet = pendingWorklet;
+      await hearWake();
+      await Effect.runPromise(pendingWorklet.requested.await);
+      await act(() => runtime.runPromise(TestClock.adjust("4 seconds")));
+      await expect.poll(() => captures.map((track) => track.readyState)).toEqual(["ended", "ended", "ended", "ended"]);
+      expect(calls).toEqual(unavailableCalls);
+      heldWorklet = undefined;
+      pendingWorklet.release.openUnsafe();
+      await press(button("Close Grace"));
+      nextTranscript = voiceInput;
+      holdComplete = true;
+      await hearWake();
+      await expect.poll(() => requests.map(({ body }) => sentTurn(body).said)).toEqual([voiceInput, voiceInput]);
+      const priorFinishes = finishes;
+      const writtenReply = "It is just past noon.";
+      await answer(1, { text: writtenReply });
+      await expect.poll(() => [workspace().assistant.conversation.turn, finishes, captures.at(-1)?.readyState])
+        .toEqual(["Speaking", priorFinishes + 1, "live"]);
+      await act(() => Promise.resolve(disconnect()));
+      await expect.poll(() => [workspace().assistant.conversation.turn, workspace().assistant.conversation.voice, captures.at(-1)?.readyState])
+        .toEqual(["Ready", false, "ended"]);
+      await expect.element(page.getByText(writtenReply, { exact: true })).toBeVisible();
+      await expect.poll(() => calls).toEqual([...unavailableCalls, ...speechSession]);
       return;
     }
     if (journey === "Talk and hear a reply" || journey === "Answer a spoken question") {
@@ -1703,6 +1753,8 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
     for (const person of [firstAccount, secondAccount]) {
       for (const suffix of ["", "/command"]) localStorage.removeItem("grace/voice-disclosure/web/" + person + suffix);
     }
+    heldWorklet?.release.openUnsafe();
+    for (const track of captures) track.stop();
     await Promise.all(microphones.map((microphone) => microphone.close()));
     host.remove();
     request.mockRestore();
@@ -2378,7 +2430,6 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
       beginSignIn: () => Promise.resolve(),
       signOut: () => Promise.resolve(),
       cleanupLegacySignIn: () => Promise.resolve(),
-      manageAccount: () => Promise.resolve(),
       addListener: () => Promise.resolve({ remove: () => Promise.resolve() }),
     },
     files: {

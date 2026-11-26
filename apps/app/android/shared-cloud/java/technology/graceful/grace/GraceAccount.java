@@ -18,7 +18,6 @@ import ai.eliza.plugins.signin.SignInPolicy.Failure;
 import ai.eliza.plugins.signin.SignInRegistration;
 import ai.eliza.plugins.signin.SignInRegistration.Environment;
 import android.content.Context;
-import android.content.Intent;
 import android.net.Uri;
 import android.os.CancellationSignal;
 import com.getcapacitor.JSObject;
@@ -51,6 +50,9 @@ public final class GraceAccount extends ElizaSignInPlugin {
  private record Enrollment(GracePasswordsOwner.Enrollment owner, MailLeaseUpgrade upgrade) {
   boolean mailUpgrade() { return upgrade != null; }
  }
+ private record EmailSignIn(String address, int number) {}
+ private EmailSignIn emailSignIn;
+ private long emailRequest;
  private volatile Enrollment enrollment;
  private final AtomicReference<BackupAttempt> backupAttempt = new AtomicReference<>();
  private SharedPasswordBackup passwordBackup;
@@ -276,6 +278,18 @@ public final class GraceAccount extends ElizaSignInPlugin {
   });
  }
 
+ @PluginMethod public void accountRequest(PluginCall call) {
+  GraceOwnerRead.accountRequest(getContext(), call, ACCOUNT);
+ }
+
+ @PluginMethod public void connectGoogle(PluginCall call) {
+  GraceGoogleConnection.connect(call, getActivity());
+ }
+
+ @PluginMethod public void disconnectGoogle(PluginCall call) {
+  GraceGoogleConnection.disconnect(call, getActivity());
+ }
+
  @PluginMethod public void readGoogle(PluginCall call) {
   GraceGoogleRead.run(call, input -> {
    var context = getContext();
@@ -295,10 +309,10 @@ public final class GraceAccount extends ElizaSignInPlugin {
  }
 
  @PluginMethod public void beginSignIn(PluginCall call) {
-  String method = call.getString("method");
-  if (call.getData().has("method") && !"browser".equals(method)) { call.reject("Unknown sign-in method"); return; }
+  if (call.getData().has("method")) { unsupportedSignIn(call); return; }
   ACCOUNT.execute(() -> {
    try {
+    cancelEmailSignIn(call);
     Enrollment lease;
     synchronized (CREDENTIAL_CHANGE) {
      var legacy = new SharedGraceCredentials(getContext());
@@ -310,16 +324,17 @@ public final class GraceAccount extends ElizaSignInPlugin {
       finishEnrollment(call);
       return;
      }
+     if (!hasGooglePlayServices()) { call.reject("Google sign-in is unavailable on this tablet"); return; }
      lease = new Enrollment(GracePasswordsOwner.beginEnrollment(getContext()), null);
      enrollment = lease;
     }
     try {
      PluginCall requested = accountCall(call, data -> {
+      if (cancelled(data)) { call.resolve(); return; }
       if (!"signed-in-as".equals(data.optString("verdict"))) { call.reject("Cloud sign-in could not complete"); return; }
       ACCOUNT.execute(() -> finishEnrollment(call));
      }, lease);
-     if ("browser".equals(method) || !hasGooglePlayServices()) super.startGoogleInBrowser(requested);
-     else super.startGoogle(requested);
+     super.startGoogle(requested);
     } catch (RuntimeException refused) {
      closeEnrollment(lease);
      throw refused;
@@ -331,9 +346,92 @@ public final class GraceAccount extends ElizaSignInPlugin {
   });
  }
 
+ @PluginMethod public void signInMethods(PluginCall call) { GraceOwnerRead.signInMethods(call, ACCOUNT); }
+
+ @PluginMethod public void sendSignInCode(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try {
+    String address = GraceOwnerRead.signInAddress(call, 1);
+    if (session(getContext()) != null || enrollment != null) throw new IllegalStateException("A device account is active");
+    var legacy = new SharedGraceCredentials(getContext());
+    legacy.recoverOwner();
+    if (legacy.needsCleanup()) throw new IllegalStateException("Clear the previous device sign-in first");
+    cancelEmailSignIn(call);
+    long request = emailRequest;
+    var input = new JSObject().put("email", address);
+    super.startEmail(accountCall(call, input, receipt -> ACCOUNT.execute(() -> {
+     int number = receipt.optInt("attempt", 0);
+     if (number <= 0 || !"code-on-its-way".equals(receipt.optString("verdict"))) { call.reject("Couldn't send a sign-in code"); return; }
+     if (request != emailRequest) {
+      cancelEmailAttempt(call, number);
+      call.reject("Email sign-in has ended");
+      return;
+     }
+     emailSignIn = new EmailSignIn(address, number);
+     call.resolve(new JSObject().put("kind", "sent"));
+    }), null));
+   } catch (Exception unavailable) { call.reject("Couldn't send a sign-in code"); }
+  });
+ }
+
+ @PluginMethod public void verifySignInCode(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try {
+    String address = GraceOwnerRead.signInAddress(call, 2), code = GraceOwnerRead.signInCode(call);
+    var attempt = emailSignIn;
+    if (attempt == null || !attempt.address().equals(address)) throw new IllegalStateException("Email sign-in has ended");
+    Enrollment lease;
+    synchronized (CREDENTIAL_CHANGE) {
+     if (session(getContext()) != null || enrollment != null) throw new IllegalStateException("A device account is active");
+     lease = new Enrollment(GracePasswordsOwner.beginEnrollment(getContext()), null);
+     enrollment = lease;
+    }
+    try {
+     var input = new JSObject().put("attempt", attempt.number()).put("code", code);
+     super.verify(accountCall(call, input, receipt -> ACCOUNT.execute(() -> {
+      if (emailSignIn != attempt) { call.reject("Email sign-in has ended"); return; }
+      String verdict = receipt.optString("verdict");
+      if ("signed-in-as".equals(verdict)) {
+       emailSignIn = null;
+       finishEnrollment(call, new JSObject().put("kind", "signedIn"));
+      } else if ("factor-asked".equals(verdict)) {
+       cancelEmailSignIn(call);
+       call.resolve(new JSObject().put("kind", "additionalVerification"));
+      } else {
+       if ("ended".equals(verdict)) emailSignIn = null;
+       call.reject("Couldn't verify the sign-in code");
+      }
+     }), lease));
+    } catch (RuntimeException refused) {
+     closeEnrollment(lease);
+     throw refused;
+    }
+   } catch (Exception unavailable) { call.reject("Couldn't verify the sign-in code"); }
+  });
+ }
+
+ @PluginMethod public void cancelSignInCode(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try { cancelEmailSignIn(call); call.resolve(); }
+   catch (RuntimeException unavailable) { call.reject("Couldn't cancel email sign-in"); }
+  });
+ }
+
+ private void cancelEmailSignIn(PluginCall call) {
+  emailRequest++;
+  var attempt = emailSignIn;
+  emailSignIn = null;
+  if (attempt != null) cancelEmailAttempt(call, attempt.number());
+ }
+
+ private void cancelEmailAttempt(PluginCall call, int number) {
+  super.cancel(accountCall(call, new JSObject().put("attempt", number), ignored -> {}, null));
+ }
+
  @PluginMethod public void beginLeaseUpgrade(PluginCall call) {
   ACCOUNT.execute(() -> {
    try {
+    if (!hasGooglePlayServices()) { call.reject("Google sign-in is unavailable on this tablet"); return; }
     Enrollment lease;
     synchronized (CREDENTIAL_CHANGE) {
      var owner = session(getContext());
@@ -348,9 +446,13 @@ public final class GraceAccount extends ElizaSignInPlugin {
     }
     try {
      publishSession();
-     super.upgradeMailLease(accountCall(call, data -> {
-      if ("ended".equals(data.optString("verdict")) && "cancelled".equals(data.optString("problem"))) {
+     upgradeMailLeaseWithPicker(accountCall(call, data -> {
+      if (cancelled(data)) {
        call.resolve();
+       return;
+      }
+      if ("factor-asked".equals(data.optString("verdict"))) {
+       super.cancelMailLeaseUpgrade(accountCall(call, ignored -> call.reject("Mail sign-in requires additional verification"), null));
        return;
       }
       if (!"signed-in-as".equals(data.optString("verdict"))) {
@@ -381,16 +483,21 @@ public final class GraceAccount extends ElizaSignInPlugin {
  }
 
  private void finishEnrollment(PluginCall call) {
+  finishEnrollment(call, null);
+ }
+
+ private void finishEnrollment(PluginCall call, JSObject result) {
   try {
    var owner = session(getContext());
    if (owner == null) { call.reject("Sign-in could not be verified"); return; }
    notifyListeners("sessionChanged", accountProjection(), true);
-   call.resolve();
+   if (result == null) call.resolve(); else call.resolve(result);
   } catch (Exception unavailable) { call.reject("Sign-in could not be verified"); }
  }
 
  @Override @PluginMethod public void startGoogle(PluginCall call) { beginSignIn(call); }
 
+ @Override public void upgradeMailLease(PluginCall call) { beginLeaseUpgrade(call); }
  @Override public void startEmail(PluginCall call) { unsupportedSignIn(call); }
  @Override public void startPhone(PluginCall call) { unsupportedSignIn(call); }
  @Override public void reauthenticate(PluginCall call) { unsupportedSignIn(call); }
@@ -399,6 +506,10 @@ public final class GraceAccount extends ElizaSignInPlugin {
  @Override public void sendFactorCode(PluginCall call) { unsupportedSignIn(call); }
 
  private static void unsupportedSignIn(PluginCall call) { call.reject("This sign-in method is unavailable in Grace"); }
+
+ private static boolean cancelled(JSObject data) {
+  return "ended".equals(data.optString("verdict")) && "cancelled".equals(data.optString("problem"));
+ }
 
  @Override @PluginMethod public void signOut(PluginCall call) {
   recovery.accountChanged();
@@ -442,7 +553,11 @@ public final class GraceAccount extends ElizaSignInPlugin {
  }
 
  private PluginCall accountCall(PluginCall caller, Consumer<JSObject> resolved, Enrollment lease) {
-  var input = new JSObject().put("environment", ENVIRONMENT);
+  return accountCall(caller, new JSObject(), resolved, lease);
+ }
+
+ private PluginCall accountCall(PluginCall caller, JSObject input, Consumer<JSObject> resolved, Enrollment lease) {
+  input.put("environment", ENVIRONMENT);
   return new PluginCall(null, caller.getPluginId(), caller.getCallbackId(), caller.getMethodName(), input) {
    @Override public void resolve(JSObject data) {
     if (lease != null) closeEnrollment(lease);
@@ -454,31 +569,6 @@ public final class GraceAccount extends ElizaSignInPlugin {
     caller.reject("Cloud account operation could not complete", code);
    }
   };
- }
-
- @PluginMethod public void manageAccount(PluginCall call) {
-  ACCOUNT.execute(() -> {
-   try {
-    if (session(getContext()) == null) { call.reject("Sign in to manage your account"); return; }
-    open(Uri.parse(BuildConfig.CLOUD_WEB_ORIGIN), call);
-   } catch (Exception unavailable) { call.reject("Couldn't open your account"); }
-  });
- }
-
- @PluginMethod public void openHostedView(PluginCall call) {
-  ACCOUNT.execute(() -> {
-   try { open(hostedView(getContext(), call.getString("view")), call); }
-   catch (Exception unavailable) { call.reject("Couldn't open the connected account view"); }
-  });
- }
-
- private void open(Uri destination, PluginCall call) {
-  getActivity().runOnUiThread(() -> {
-   try {
-    getActivity().startActivity(new Intent(Intent.ACTION_VIEW, destination));
-    call.resolve();
-   } catch (RuntimeException unavailable) { call.reject("Couldn't open the account page"); }
-  });
  }
 
  @PluginMethod public void inboxArrival(PluginCall call) { guide.inboxArrival(call); }

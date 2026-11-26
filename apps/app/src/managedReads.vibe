@@ -6,7 +6,7 @@ import { dayOf, midnight, navigation } from "./calendarWindow.vibe"
 import type { Recurrence } from "../gen/app__calendar.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import { Library } from "./files.vibe"
-import { accountPlugin, reminderPlugin } from "./accountPlugin.ts"
+import { reminderPlugin } from "./accountPlugin.ts"
 import { AccountActions, apiOrigin, currentManagedMailGrant } from "./graceAccount.vibe"
 import { namesCode, withhold } from "./private.ts"
 import { type GoogleChange, type GoogleRead, isTabletGoogleRead, googleRoute } from "./cloudRequests.vibe"
@@ -14,7 +14,6 @@ import { messageLinkParts } from "./messageLinks.vibe"
 import { webView } from "./surfacePlugin.ts"
 
 export type ReadView = "Email" | "Calendar"
-const fragments = { Email: "email", Calendar: "calendar" } as const
 const retained = "grace-hosted-read"
 const idField = Schema.NonEmptyString
 const dateField = Schema.String.check(Schema.makeFilter((text) => Number.isFinite(Date.parse(text))))
@@ -154,7 +153,7 @@ export type ManagedSnapshot =
 
 type HomeOccurrence = { accountId: string; grant: string; id: string; version: string | null }
 type ReadIntent = Intent & { homeOccurrence?: HomeOccurrence }
-type Command = (({ kind: "mailFolder"; folder: ManagedFolder; search: string } | { kind: "calendarWindow"; move: Navigation; day: number }) & WriteScope) | { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "openHosted" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" | "saveAttachment" | "savePhotos" }
+type Command = (({ kind: "mailFolder"; folder: ManagedFolder; search: string } | { kind: "calendarWindow"; move: Navigation; day: number }) & WriteScope) | { kind: "homeOccurrence"; row: HomeOccurrence } | { kind: "reminder"; id: string; version: string; minutes: 0 | 60 | 1440 } | { kind: "refresh" | "more" | "back" | "account" | "enableReminders" | "dismissProposal" } | { kind: "open"; id: string } | { kind: "openAttachment"; partId: string } | { kind: "closeAttachment" | "saveAttachment" | "savePhotos" }
 
 export type GuidedManagedSelection = { kind: "legacy" } | { kind: "unavailable" } | { kind: "confidentialMail" } | (
   { accountId: string; googleEmail: string; owner: string; grant: string; id: string; version: string } &
@@ -845,12 +844,6 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       const host = reminderPlugin
       if (!native || scope.view !== "Calendar" || host === undefined) return false
       try tryPromise(() => host.enableManagedReminders())
-      return true
-    }
-    if (command.kind === "openHosted") {
-      const host = accountPlugin
-      if (!native || host === undefined) return false
-      try tryPromise(() => host.openHostedView({ view: fragments[scope.view] }))
       return true
     }
     if (command.kind === "account") {

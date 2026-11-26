@@ -1,6 +1,6 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "Story: Approve a password backup in my browser"
 // spec/app/conversation.md, "Story: Talk with Grace through her cloud voice"
-import { cloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud-worker"
+import { graceCloudWorker, nativeAssetLinks, type CloudBindings } from "@elizaos/cloud-worker"
 import { HttpServerResponse } from "effect/http"
 import { forwardedRequest, isReturnTemplate, stripeWebhookRequest } from "./workerRequest.ts"
 
@@ -9,6 +9,7 @@ const sessionCookie = "__Host-eliza-session="
 const sessionToken = /^eliza_session_[A-Za-z0-9_-]{43}$/
 const hostedSessionRoutes: ReadonlySet<string> = new Set<`${"GET" | "POST"} /${string}`>([
   "GET /api/v1/billing/limits",
+  "POST /api/v1/subscription/redeem",
   "POST /api/v1/subscriptions/checkout",
   "POST /api/v1/subscriptions/portal",
   "POST /api/v1/voice/speech/consent",
@@ -39,7 +40,7 @@ function scopeResponse(status: number, payload: unknown) {
   return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(payload, { status, headers: { "cache-control": "private, no-store" } }))
 }
 
-const cloud = cloudWorker<GraceCloud>(async (request, _env, db, account) => {
+const cloud = graceCloudWorker<GraceCloud>(async (request, _env, db, account) => {
   if (new URL(request.url).pathname !== "/api/product/files/scope" || request.method !== "GET") return scopeResponse(404, { error: "not_found" })
   const credential = browserSessionCookie(request)
   if (credential === undefined) return scopeResponse(401, { error: "authentication_required" })
@@ -81,7 +82,6 @@ export default {
     }
     if (url.origin !== env.PUBLIC_API_ORIGIN) return HttpServerResponse.toWeb(HttpServerResponse.empty({ status: 404 }))
     const forwarded = request.headers.has("x-forwarded-host") ? forwardedRequest(request, "x-forwarded-host", url.host) : request
-    const authorized = hostedSessionRequest(forwarded, url, env.WEB_ORIGIN)
-    return cloud.fetch(stripeWebhookRequest(authorized, url), env, lifetime)
+    return cloud.fetch(stripeWebhookRequest(hostedSessionRequest(forwarded, url, env.WEB_ORIGIN), url), env, lifetime)
   }
 }

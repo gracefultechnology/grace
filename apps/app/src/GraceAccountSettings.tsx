@@ -1,9 +1,9 @@
-// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"; spec/app/setup.md, "Google sign-in stays with the surface that started it"
 import { AccountFacts, Button, Checkbox, Input, PageHeading, PageText, RetryNotice } from "@repo/ui";
 import { Effect, Exit } from "effect";
 import { useId, useState, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
-import { managesOnTheWeb, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCheckAccountAgain, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayStartCheckout, showsMailLeaseUpgrade, showsTabletSignIn } from "../gen/app__setup.ts";
+import { accountDetails, hasActiveSubscription, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCheckAccountAgain, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, mayUseTabletEmailCode, showsMailLeaseUpgrade, showsTabletSignIn } from "../gen/app__setup.ts";
 import { AccountActions, type Operation } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
 import { GraceSignInCode } from "./GraceSignInCode.tsx";
@@ -31,6 +31,7 @@ export function GraceAccountSettings() {
   const [calendar, setCalendar] = useState(false);
   const [expectedEmail, setExpectedEmail] = useState("");
   const googleAddressId = useId();
+  const membershipCodeId = useId();
   const run = (operation: Operation, onSuccess?: () => void) => startTransition(async () => {
     setFailed(undefined);
     setReturnFailed("");
@@ -43,16 +44,22 @@ export function GraceAccountSettings() {
   });
   const tabletRequested = setup !== undefined && showsTabletSignIn(setup.tabletSignIn);
   const signedIn = snapshot?.tag === "GraceSignedIn";
+  const member = snapshot === undefined ? undefined : accountDetails(snapshot);
   const needsCleanup = snapshot !== undefined && mayCleanupLegacySignIn(snapshot);
   const accountAction = needsCleanup ? "cleanupLegacySignIn" : signedIn || snapshot?.tag === "GraceDeviceSignedIn" ? "signOut" : undefined;
   const confirmingSignOut = accountAction !== undefined && confirmation === accountAction;
   const canRetry = snapshot !== undefined && mayCheckAccountAgain(snapshot);
-  const active = signedIn && (snapshot.plan === "PlanActive" || snapshot.plan === "PlanActiveManaged");
+  const active = snapshot !== undefined && hasActiveSubscription(snapshot);
+  const failureMessage = failed === "signIn" || failed === "beginLeaseUpgrade" ? "Google sign-in didn’t finish. Try again." :
+    failed === "connectGoogle" ? "Google didn’t connect. Check which account you chose and try again." :
+    failed === "sendCode" ? "Grace couldn’t send a sign-in code. Try again." :
+    failed === "verifyCode" ? "Grace couldn’t verify your sign-in. Check the latest code or go back to sign in with Google." :
+    failed === "redeemMembershipCode" ? "Grace couldn’t redeem that code. Check it and try again." : "Grace couldn’t finish that request. Try again.";
   return (
     <section data-sensitive="true" aria-busy={pending || undefined} className="flex flex-col items-start gap-5">
       <PageHeading>Grace account</PageHeading>
       {returnFailed && <RetryNotice role="alert">{returnFailed}</RetryNotice>}
-      {failed && (failed !== "authorizeDevice" || tabletRequested) && <RetryNotice role="alert">Grace couldn’t finish that request. Try again.</RetryNotice>}
+      {failed && (failed !== "authorizeDevice" || tabletRequested) && <RetryNotice role="alert">{failureMessage}</RetryNotice>}
       {snapshot === undefined || snapshot.tag === "CheckingAccount" ? <PageText role="status">Checking your account…</PageText> : null}
       {snapshot?.tag === "GraceSignedOut" && (provider === undefined ? (
         <div className="flex flex-wrap gap-3">
@@ -65,12 +72,15 @@ export function GraceAccountSettings() {
         <GraceSignInCode provider={provider} pending={pending} run={run} onClose={() => setProvider(undefined)} />
       ))}
       {canRetry && <RetryNotice role="status" retrying={pending} onRetry={() => run({ kind: "refresh" })}>Grace couldn’t check your account.</RetryNotice>}
-      {snapshot !== undefined && mayBeginDeviceSignIn(snapshot) && (
+      {snapshot !== undefined && mayBeginDeviceSignIn(snapshot) && (provider === "email" && mayUseTabletEmailCode(snapshot) ? (
+        <GraceSignInCode provider="email" pending={pending} run={run} onClose={() => setProvider(undefined)}
+          onBack={() => run({ kind: "cancelSignInCode" }, () => setProvider(undefined))} />
+      ) : (
         <div className="flex flex-wrap gap-3">
-          <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "signIn" })}>Sign in to Grace</Button>
-          <Button variant="capsule" size="pill" disabled={pending} onClick={() => run({ kind: "signIn", method: "browser" })}>Other sign-in options</Button>
+          <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "signIn" })}>Sign in with Google</Button>
+          {mayUseTabletEmailCode(snapshot) && <Button variant="capsule" size="pill" disabled={pending} onClick={() => setProvider("email")}>Use email</Button>}
         </div>
-      )}
+      ))}
       {tabletRequested && (
         <>
           <PageText>Sign in on your tablet{signedIn && snapshot.email ? ` as ${snapshot.email}` : ""}?</PageText>
@@ -80,9 +90,9 @@ export function GraceAccountSettings() {
           </div>
         </>
       )}
-      {snapshot !== undefined && managesOnTheWeb(snapshot) && (
+      {snapshot?.tag === "GraceDeviceSignedIn" && (
         <>
-          {snapshot.tag === "GraceDeviceSignedIn" && showsMailLeaseUpgrade(snapshot) ? (
+          {showsMailLeaseUpgrade(snapshot) ? (
             <>
               <PageText role="status">{snapshot.mailLeaseUpgrade.tag === "LeaseUpgradeAcknowledgmentPending" ? "Finishing sign-in…" : "Sign in again to use email and calendar."}</PageText>
               {mayBeginMailLeaseUpgrade(snapshot) && <Button variant="prominent" size="pill" disabled={pending || confirmingSignOut}
@@ -90,15 +100,14 @@ export function GraceAccountSettings() {
               {mayCancelMailLeaseUpgrade(snapshot) && <Button variant="capsule" size="pill"
                 onClick={() => run({ kind: "cancelLeaseUpgrade" })}>Cancel</Button>}
             </>
-          ) : <PageText role="status">This tablet is signed in.</PageText>}
-          <Button variant="prominent" size="pill" disabled={pending || confirmingSignOut} onClick={() => run({ kind: "manageAccount" })}>Manage Grace account</Button>
+          ) : member?.tag === "TabletAccountUnavailable" && <PageText role="status">This tablet is signed in.</PageText>}
         </>
       )}
-      {signedIn && (
+      {snapshot !== undefined && member?.tag === "TabletAccountKnown" && (
         <>
           <AccountFacts facts={[
-            { label: "Signed in", value: snapshot.email || "Grace member" },
-            { label: "Subscription", value: active ? "Active" : snapshot.plan === "PlanUnknown" ? "Unavailable" : "Inactive" },
+            { label: "Signed in", value: member.email || "Grace member" },
+            { label: "Subscription", value: active ? "Active" : member.plan === "PlanUnknown" ? "Unavailable" : "Inactive" },
           ]} />
           {mayStartCheckout(snapshot) && (
             <Button variant="prominent" size="pill" disabled={pending || confirmingSignOut} onClick={() => run({ kind: "checkout" })}>Subscribe</Button>
@@ -106,10 +115,23 @@ export function GraceAccountSettings() {
           {mayOpenBillingPortal(snapshot) && (
             <Button variant="prominent" size="pill" disabled={pending || confirmingSignOut} onClick={() => run({ kind: "portal" })}>Manage subscription</Button>
           )}
+          {mayRedeemMembershipCode(snapshot) && (
+            <form key={member.accountId} className="flex flex-col items-start gap-3" onSubmit={(event) => {
+              event.preventDefault();
+              const form = event.currentTarget;
+              const code = new FormData(form).get("membership-code");
+              if (typeof code === "string") run({ kind: "redeemMembershipCode", code }, () => form.reset());
+            }}>
+              <label htmlFor={membershipCodeId}>Membership code</label>
+              <Input id={membershipCodeId} name="membership-code" autoComplete="off" autoCapitalize="characters" spellCheck={false}
+                disabled={pending || confirmingSignOut} required />
+              <Button type="submit" variant="capsule" size="pill" disabled={pending || confirmingSignOut}>Redeem code</Button>
+            </form>
+          )}
           {link?.tag === "GoogleLinkConnected" && (
             <>
               <AccountFacts facts={[{ label: "Google connected", value: link.email }]} />
-              <Button variant="capsule" size="pill" disabled={pending || confirmingSignOut} onClick={() => run({ kind: "disconnectGoogle" })}>Disconnect Google</Button>
+              {mayOfferGoogleLink(snapshot, link) && <Button variant="capsule" size="pill" disabled={pending || confirmingSignOut} onClick={() => run({ kind: "disconnectGoogle" })}>Disconnect Google</Button>}
             </>
           )}
           {link !== undefined && mayOfferGoogleLink(snapshot, link) && (
@@ -139,7 +161,7 @@ export function GraceAccountSettings() {
                   <Checkbox checked={calendar && writeCalendar} disabled={!calendar} onCheckedChange={(checked) => setWriteCalendar(checked === true)} />
                   Add, edit and remove appointments I approve
                 </label>
-                {snapshot.email === "" && (
+                {signedIn && member.email === "" && (
                   <>
                     <label htmlFor={googleAddressId}>Google email address</label>
                     <Input id={googleAddressId} type="email" autoComplete="email" value={expectedEmail}

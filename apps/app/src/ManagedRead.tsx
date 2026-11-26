@@ -320,8 +320,8 @@ function WaitingView({ view, reason, pending, failed, run }: {
     </EmptyState>;
   }
   if (reason === "native") {
-    return <EmptyState title={view === "Email" ? "Open email on Grace’s website" : "Open your calendar on Grace’s website"}>
-      <Button variant="prominent" size="pill" loading={pending} onClick={() => run({ kind: "openHosted" })}>Open Grace</Button>
+    return <EmptyState title={view === "Email" ? "Google mail isn’t available right now" : "Google Calendar isn’t available right now"}>
+      <Button variant="prominent" size="pill" loading={pending} onClick={() => run({ kind: "refresh" })}>Check again</Button>
       {view === "Calendar" && <Button variant="capsule" size="pill" disabled={pending}
         onClick={() => run({ kind: "enableReminders" })}>Allow tablet reminders</Button>}
       {failed && <RetryNotice role="alert">Grace couldn’t finish that request.</RetryNotice>}

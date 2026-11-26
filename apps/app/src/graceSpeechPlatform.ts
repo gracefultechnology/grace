@@ -63,76 +63,82 @@ async function createWorkletTap(audio: AudioContext): Promise<AudioWorkletNode |
 }
 
 export async function openMicrophone(signal: AbortSignal): Promise<Microphone> {
+  signal.throwIfAborted();
   const audio = new webView.window.AudioContext({ sampleRate: 16_000 });
-  if (audio.sampleRate !== 16_000) {
-    await audio.close();
-    throw new Error("Unsupported microphone sample rate");
-  }
-  let media: MediaStream;
+  let media: MediaStream | undefined;
+  let worklet: AudioWorkletNode | undefined;
+  let closingAudio: Promise<void> | undefined;
+  const release = () => {
+    worklet?.port.close();
+    for (const track of media?.getTracks() ?? []) track.stop();
+    return closingAudio ??= audio.close();
+  };
+  const cancel = () => { void release().catch(() => undefined); };
+  signal.addEventListener("abort", cancel, { once: true });
   try {
+    if (audio.sampleRate !== 16_000) throw new Error("Unsupported microphone sample rate");
     await audio.resume();
+    signal.throwIfAborted();
     media = await webView.window.navigator.mediaDevices.getUserMedia({
       audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
       video: false,
     });
-    if (signal.aborted) {
-      for (const track of media.getTracks()) track.stop();
-      throw new Error("Microphone request canceled");
-    }
+    signal.throwIfAborted();
+    const input = audio.createMediaStreamSource(media);
+    worklet = await createWorkletTap(audio);
+    signal.throwIfAborted();
+    const script = worklet ? undefined : audio.createScriptProcessor(1024, 1, 1);
+    const tap: AudioNode = worklet ?? script ?? audio.createGain();
+    const silence = audio.createGain();
+    silence.gain.value = 0;
+    let attached = false;
+    let closed = false;
+    return {
+      attach(send) {
+        if (closed || attached) return;
+        attached = true;
+        if (worklet) {
+          worklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
+            if (event.data instanceof ArrayBuffer) send(event.data);
+          };
+        } else if (script) {
+          script.onaudioprocess = (event) => {
+            const samples = event.inputBuffer.getChannelData(0);
+            const pcm = new ArrayBuffer(samples.length * 2);
+            const data = new DataView(pcm);
+            for (let index = 0; index < samples.length; index += 1) {
+              const sample = Math.max(-1, Math.min(1, samples[index]));
+              data.setInt16(index * 2, sample < 0 ? Math.round(sample * 32768) : Math.round(sample * 32767), true);
+            }
+            for (let offset = 0; offset < pcm.byteLength; offset += 3200) {
+              send(pcm.slice(offset, Math.min(offset + 3200, pcm.byteLength)));
+            }
+          };
+        }
+        input.connect(tap);
+        tap.connect(silence);
+        silence.connect(audio.destination);
+      },
+      async close() {
+        if (closed) return;
+        closed = true;
+        if (worklet) {
+          worklet.port.onmessage = null;
+        } else if (script) {
+          script.onaudioprocess = null;
+        }
+        input.disconnect();
+        tap.disconnect();
+        silence.disconnect();
+        await release();
+      },
+    };
   } catch (failure) {
-    await audio.close();
+    cancel();
     throw failure;
+  } finally {
+    signal.removeEventListener("abort", cancel);
   }
-  const input = audio.createMediaStreamSource(media);
-  const worklet = await createWorkletTap(audio);
-  const script = worklet ? undefined : audio.createScriptProcessor(1024, 1, 1);
-  const tap: AudioNode = worklet ?? script ?? audio.createGain();
-  const silence = audio.createGain();
-  silence.gain.value = 0;
-  let attached = false;
-  let closed = false;
-  return {
-    attach(send) {
-      if (closed || attached) return;
-      attached = true;
-      if (worklet) {
-        worklet.port.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-          if (event.data instanceof ArrayBuffer) send(event.data);
-        };
-      } else if (script) {
-        script.onaudioprocess = (event) => {
-          const samples = event.inputBuffer.getChannelData(0);
-          const pcm = new ArrayBuffer(samples.length * 2);
-          const data = new DataView(pcm);
-          for (let index = 0; index < samples.length; index += 1) {
-            const sample = Math.max(-1, Math.min(1, samples[index]));
-            data.setInt16(index * 2, sample < 0 ? Math.round(sample * 32768) : Math.round(sample * 32767), true);
-          }
-          for (let offset = 0; offset < pcm.byteLength; offset += 3200) {
-            send(pcm.slice(offset, Math.min(offset + 3200, pcm.byteLength)));
-          }
-        };
-      }
-      input.connect(tap);
-      tap.connect(silence);
-      silence.connect(audio.destination);
-    },
-    async close() {
-      if (closed) return;
-      closed = true;
-      if (worklet) {
-        worklet.port.onmessage = null;
-        worklet.port.close();
-      } else if (script) {
-        script.onaudioprocess = null;
-      }
-      input.disconnect();
-      tap.disconnect();
-      silence.disconnect();
-      for (const track of media.getTracks()) track.stop();
-      await audio.close();
-    },
-  };
 }
 
 export function gracePlayback() {

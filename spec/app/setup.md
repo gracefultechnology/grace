@@ -489,9 +489,9 @@ offers checkout. A previously registered customer may both manage their
 account and subscribe again when the service reports checkout is available.
 The web page shows the sign-in methods that the Grace service's signed-out
 report lists, which only that service reports. The Android app checks its
-own session and opens Grace's web account to manage the subscription. A web
-session authorizes a tablet only after the person confirms the tablet
-sign-in in the browser.
+own session and shows the account in Settings. A web session for an
+already-started browser approval authorizes a tablet only after the person
+confirms the tablet sign-in in the browser.
 
 Each source reports through its own event. The tablet's own Grace session
 reports whether this tablet is signed in, signed out, or needs to clear a
@@ -523,9 +523,9 @@ the browser checks again that the same request still has her confirmation,
 through tabletSignInConfirmed, so a late reply cannot reopen a cancelled
 request.
 
-A tablet signed in with its own session never offers checkout or the payment
-provider: it opens Grace's web account to manage the subscription. That
-Settings opens Account without a network connection is [the device
+A tablet signed in with its own session keeps Account in the app. Checkout
+and the Stripe customer portal are offered on the web account. That Settings
+opens Account without a network connection is [the device
 shell](./shell.md)'s "Settings and rail popovers preserve the surface
 underneath": no connectivity check gates opening Settings. Account details
 stay private by keeping them out of captures: whenever Settings shows the
@@ -542,10 +542,25 @@ is unavailable. Cleanup does not verify an owner.
 
 ```quint
 type GracePlan = PlanUnknown | PlanInactive | PlanInactiveBlocked | PlanActive | PlanInactiveManaged | PlanInactiveManagedCheckout | PlanActiveManaged
+type GraceMember = { accountId: str, email: str, plan: GracePlan }
+type TabletAccountDetails = TabletAccountUnavailable | TabletAccountKnown(GraceMember)
 type TabletMailAuthority = { accountId: str, leaseVersion: str }
 type MailLeaseUpgradePhase = LeaseUpgradeNotRequired | LeaseUpgradeRequired | LeaseUpgradeSignInPending | LeaseUpgradeAcknowledgmentPending | LeaseMailReady(TabletMailAuthority)
-type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignInNeedsCleanup | GraceDeviceSignedIn({ mailLeaseUpgrade: MailLeaseUpgradePhase }) | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn({ accountId: str, email: str, plan: GracePlan })
-pure val signedInTablet: GraceAccount = GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeNotRequired })
+type GraceAccount = CheckingAccount | GraceDeviceSignedOut({ emailCode: bool }) | GraceDeviceSignInNeedsCleanup | GraceDeviceSignedIn({ mailLeaseUpgrade: MailLeaseUpgradePhase, details: TabletAccountDetails }) | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn(GraceMember)
+pure def tabletAccount(lease: MailLeaseUpgradePhase, details: TabletAccountDetails): GraceAccount =
+  GraceDeviceSignedIn({ mailLeaseUpgrade: lease, details: details })
+pure val signedInTablet: GraceAccount = tabletAccount(LeaseUpgradeNotRequired, TabletAccountUnavailable)
+pure def accountDetails(account: GraceAccount): TabletAccountDetails = match account {
+  | GraceSignedIn(info) => TabletAccountKnown({ accountId: info.accountId, email: info.email, plan: info.plan })
+  | GraceDeviceSignedIn(tablet) => tablet.details
+  | _ => TabletAccountUnavailable
+}
+pure def subscriptionPlan(account: GraceAccount): GracePlan =
+  val details = accountDetails(account)
+  match details {
+    | TabletAccountKnown(info) => info.plan
+    | TabletAccountUnavailable => PlanUnknown
+  }
 type AccountSource = TabletSession | GraceService
 type TabletSignIn = NoTabletSignIn | TabletSignInAsked | TabletSignInConfirmed({ accountId: str })
 pure def mayStartCheckout(account: GraceAccount): bool = match account {
@@ -558,14 +573,17 @@ pure def mayOpenBillingPortal(account: GraceAccount): bool = match account {
 }
 pure def reportedBy(source: AccountSource, report: GraceAccount): bool = match report {
   | GraceDeviceSignedIn(_) => source == TabletSession
-  | GraceDeviceSignedOut => source == TabletSession
+  | GraceDeviceSignedOut(_) => source == TabletSession
   | GraceDeviceSignInNeedsCleanup => source == TabletSession
   | GraceSignedIn(_) => source == GraceService
   | GraceSignedOut(_) => source == GraceService
   | AccountUnavailable => source == TabletSession or source == GraceService
   | CheckingAccount => false
 }
-pure def mayBeginDeviceSignIn(account: GraceAccount): bool = account == GraceDeviceSignedOut
+pure def mayBeginDeviceSignIn(account: GraceAccount): bool = match account {
+  | GraceDeviceSignedOut(_) => true
+  | _ => false
+}
 pure def mayCleanupLegacySignIn(account: GraceAccount): bool = account == GraceDeviceSignInNeedsCleanup
 pure def lawASignInNeedingCleanupCannotBeginANewSignIn(account: GraceAccount): bool =
   mayCleanupLegacySignIn(account) implies not(mayBeginDeviceSignIn(account))
@@ -573,16 +591,17 @@ pure def sometimesLegacySignInNeedsCleanup(s: Setup): bool = mayCleanupLegacySig
 pure def mayCheckAccountAgain(account: GraceAccount): bool = match account {
   | AccountUnavailable => true
   | GraceSignedIn(info) => info.plan == PlanUnknown
+  | GraceDeviceSignedIn(_) => subscriptionPlan(account) == PlanUnknown
   | _ => false
 }
 pure def lawAFailedCheckOffersToCheckAgain(accountId: str, email: str): bool =
   mayCheckAccountAgain(AccountUnavailable) and mayCheckAccountAgain(GraceSignedIn({ accountId: accountId, email: email, plan: PlanUnknown }))
-pure def managesOnTheWeb(account: GraceAccount): bool = match account {
+pure def isTabletSignedIn(account: GraceAccount): bool = match account {
   | GraceDeviceSignedIn(_) => true
   | _ => false
 }
-pure def lawATabletManagesItsSubscriptionOnTheWeb(account: GraceAccount): bool =
-  managesOnTheWeb(account) implies (not(mayStartCheckout(account)) and not(mayOpenBillingPortal(account)))
+pure def lawCheckoutAndPortalAreWebActions(account: GraceAccount): bool =
+  isTabletSignedIn(account) implies (not(mayStartCheckout(account)) and not(mayOpenBillingPortal(account)))
 pure def linkUnknown(link: GoogleLink): bool = match link {
   | GoogleLinkUnknown => true
   | _ => false
@@ -647,12 +666,12 @@ pure def stepTheAccountComesOnlyFromItsOwnSource(before: Setup, via: str, after:
 pure def alwaysOnlyAnAuthorizedAccountCarriesAGoogleConnection(s: Setup): bool =
   linkUnknown(s.googleLink) or managedReadAccountId(s.graceAccount) != ""
 pure val reportValues: Set[GraceAccount] = Set(
-  CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignInNeedsCleanup, signedInTablet, AccountUnavailable,
-  GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeRequired }),
-  GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeSignInPending }),
-  GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeAcknowledgmentPending }),
-  GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseMailReady({ accountId: "known", leaseVersion: "first" }) }),
-  GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseMailReady({ accountId: "other", leaseVersion: "second" }) }),
+  CheckingAccount, GraceDeviceSignedOut({ emailCode: false }), GraceDeviceSignedOut({ emailCode: true }), GraceDeviceSignInNeedsCleanup, signedInTablet, AccountUnavailable,
+  tabletAccount(LeaseUpgradeRequired, TabletAccountUnavailable),
+  tabletAccount(LeaseUpgradeSignInPending, TabletAccountUnavailable),
+  tabletAccount(LeaseUpgradeAcknowledgmentPending, TabletAccountUnavailable),
+  tabletAccount(LeaseMailReady({ accountId: "known", leaseVersion: "first" }), TabletAccountKnown({ accountId: "known", email: "person@example.com", plan: PlanInactive })),
+  tabletAccount(LeaseMailReady({ accountId: "other", leaseVersion: "second" }), TabletAccountKnown({ accountId: "other", email: "other@example.com", plan: PlanActive })),
   GraceSignedOut({ google: true, emailCode: true, smsCode: false }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactive }),
   GraceSignedIn({ accountId: "known", email: "person@example.com", plan: PlanInactiveManaged }),
@@ -694,14 +713,76 @@ pure val deviceValues: Set[S::Shell] = Set(
 )
 ```
 
+### A signed-in account with an inactive subscription can redeem a membership code
+
+When the Grace service offers billing, Grace sends the entered code to the
+authenticated service. After the attempt, Grace reads the same account's
+subscription again and shows the reported plan. A valid code grants access
+without opening checkout. The tablet uses its own enrolled account and keeps
+the code entry and result in Account settings. A code cannot redeem against
+the browser's session when the person started on the tablet.
+
+```quint
+pure def mayRedeemMembershipCode(account: GraceAccount): bool =
+  Set(PlanInactive, PlanInactiveManaged, PlanInactiveManagedCheckout).contains(subscriptionPlan(account))
+pure def hasActiveSubscription(account: GraceAccount): bool =
+  Set(PlanActive, PlanActiveManaged).contains(subscriptionPlan(account))
+pure def lawMembershipCodesRequireAnInactiveAccount(account: GraceAccount): bool =
+  mayRedeemMembershipCode(account) implies (not(hasActiveSubscription(account)) and accountDetails(account) != TabletAccountUnavailable)
+```
+
+
+### Google sign-in stays with the surface that started it
+
+Sign in with Google on the tablet opens the Android Google account picker.
+The person can choose the account they want, including one they need to add
+to Android. Grace receives the result in the app and checks its own session.
+Cancelling the picker or finding it unavailable leaves the person in Grace.
+The tablet does not open Grace's public account page to sign in. Sign-in
+started on the public web page uses Google's web flow and returns to Grace
+on the web. A browser approval already started on an older tablet still
+requires the existing explicit confirmation and verified return.
+
+```quint
+type GoogleSignInEntry = TabletGoogleEntry | WebGoogleEntry
+type GoogleSignInSurface = AndroidGooglePicker | BrowserGoogleFlow
+pure def mayStartGoogleSignIn(entry: GoogleSignInEntry, surface: GoogleSignInSurface, account: GraceAccount): bool =
+  match entry {
+    | TabletGoogleEntry => surface == AndroidGooglePicker and mayBeginDeviceSignIn(account)
+    | WebGoogleEntry => surface == BrowserGoogleFlow and (match account {
+        | GraceSignedOut(providers) => providers.google
+        | _ => false
+      })
+  }
+pure def lawGoogleSignInCannotChangeEntry(account: GraceAccount): bool =
+  not(mayStartGoogleSignIn(TabletGoogleEntry, BrowserGoogleFlow, account)) and
+  not(mayStartGoogleSignIn(WebGoogleEntry, AndroidGooglePicker, account))
+```
+
+### A supported email code can sign in on the tablet
+
+The tablet offers email sign-in when its Grace service supports it. The
+person enters their address and code in Grace. The native custodian verifies
+the code and acknowledges its own device key before the tablet shows a
+signed-in account. Back cancels the current attempt. An incomplete account
+verification keeps the account signed out.
+
+```quint
+pure def mayUseTabletEmailCode(account: GraceAccount): bool = match account {
+  | GraceDeviceSignedOut(providers) => providers.emailCode
+  | _ => false
+}
+pure def lawEmailCodeNeedsASignedOutTablet(account: GraceAccount): bool =
+  mayUseTabletEmailCode(account) implies mayBeginDeviceSignIn(account)
+```
 
 ### An enrolled tablet offers one sign-in to update mail and calendar access
 
 A tablet with an older device credential offers sign-in again in Account
 when its Grace service offers the upgrade. Email and Calendar direct the owner
-to Account until that sign-in is done. On a standalone tablet whose service has
-yet to offer the upgrade, Email and Calendar still open on Grace’s website.
-The owner can cancel while the browser sign-in is pending.
+to Account until that sign-in is done. If the service cannot offer the
+upgrade, Email and Calendar remain in Grace and offer to check again.
+The owner can cancel while Google sign-in is pending.
 The tablet retains the same owner and offers no new attempt while it waits
 for a device acknowledgment. When the device confirms the updated sign-in,
 the prompt goes away and the tablet reads Email and Calendar with the
@@ -711,10 +792,14 @@ grant throughout. An account or lease change clears results from the old
 access. This step does not ask for new Google permissions.
 
 ```quint
-pure def mayBeginMailLeaseUpgrade(account: GraceAccount): bool =
-  account == GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeRequired })
-pure def mayCancelMailLeaseUpgrade(account: GraceAccount): bool =
-  account == GraceDeviceSignedIn({ mailLeaseUpgrade: LeaseUpgradeSignInPending })
+pure def mayBeginMailLeaseUpgrade(account: GraceAccount): bool = match account {
+  | GraceDeviceSignedIn(tablet) => tablet.mailLeaseUpgrade == LeaseUpgradeRequired
+  | _ => false
+}
+pure def mayCancelMailLeaseUpgrade(account: GraceAccount): bool = match account {
+  | GraceDeviceSignedIn(tablet) => tablet.mailLeaseUpgrade == LeaseUpgradeSignInPending
+  | _ => false
+}
 pure def showsMailLeaseUpgrade(account: GraceAccount): bool = match account {
   | GraceDeviceSignedIn(tablet) => tablet.mailLeaseUpgrade == LeaseUpgradeRequired or
     tablet.mailLeaseUpgrade == LeaseUpgradeSignInPending or tablet.mailLeaseUpgrade == LeaseUpgradeAcknowledgmentPending
@@ -722,27 +807,33 @@ pure def showsMailLeaseUpgrade(account: GraceAccount): bool = match account {
 }
 pure def lawAMailLeaseUpgradeKeepsTheTabletSignedIn(account: GraceAccount): bool =
   showsMailLeaseUpgrade(account) implies
-    (managesOnTheWeb(account) and not(mayBeginDeviceSignIn(account)))
+    (isTabletSignedIn(account) and not(mayBeginDeviceSignIn(account)))
 ```
 
 ### Google mail and calendar access requires separate consent for the Grace account
 
-Grace shows Google connection controls only in a signed-in Grace web
-account when the cloud reports the connector is available. The person
-chooses mail, calendar or both. On a phone-only Grace account the person
-names the Google address to connect. The cloud checks the confirmed Google
-identity against the Grace account and discloses only the resulting connection.
+Grace shows Google connection controls on the signed-in web account or on
+an enrolled tablet that can read Google status for that account. The person
+chooses mail, calendar or both. On a phone-only web account the person names
+the Google address to connect. The cloud checks the confirmed Google identity
+against the Grace account and discloses only the resulting connection.
+The web flow returns to the web account. The tablet presents Google's consent
+and returns to Account settings. Declining consent leaves the existing link
+as it was.
 
 ```quint
 type GoogleLink = GoogleLinkUnknown | GoogleLinkUnavailable | GoogleLinkReady | GoogleLinkConnected({ email: str, mail: bool, calendar: bool, grant: str, sendMail: bool, trashMail: bool, writeCalendar: bool })
 pure val linkValues: Set[GoogleLink] = Set(GoogleLinkUnknown, GoogleLinkUnavailable, GoogleLinkReady, GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: true, grant: "linked", sendMail: false, trashMail: false, writeCalendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: false, grant: "linked", sendMail: true, trashMail: true, writeCalendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: false, calendar: true, grant: "linked", sendMail: false, trashMail: false, writeCalendar: false }))
 pure def mayOfferGoogleLink(account: GraceAccount, link: GoogleLink): bool =
-  match account {
-    | GraceSignedIn(_) => match link {
-      | GoogleLinkReady => true
-      | GoogleLinkConnected(_) => true
-      | _ => false
-    }
+  val details = accountDetails(account)
+  val identityKnown = match details {
+    | TabletAccountKnown(member) => webAccountId(account) != "" or
+      (member.email != "" and member.accountId == tabletMailAccountId(account))
+    | _ => false
+  }
+  identityKnown and match link {
+    | GoogleLinkReady => true
+    | GoogleLinkConnected(_) => true
     | _ => false
   }
 pure def lawLinkRequiresGraceSignIn(link: GoogleLink): bool =
@@ -774,9 +865,10 @@ link action. The Browser opens the released address in one new tab.
 A preview carries no authority to inspect attachments, reply or forward.
 The application checks the account bound to each provider result. The
 tablet sends only the current authorized reads through its native Eliza
-lease, and returns no response after that owner or lease changes. A
-tablet's hosted handoff retains the selected view through sign-in, and
-uses the browser account matching that tablet when there is a bound owner.
+lease, and returns no response after that owner or lease changes. On the
+tablet, Account settings opens over the selected view for sign-in or consent.
+The web view remembers where sign-in started and checks any expected owner
+before opening Google results.
 If the cloud reports the Google connector is unavailable, the selected
 view shows that status after sign-in and offers no connection action.
 On Home the signed-in web account can see the first two recently loaded Inbox

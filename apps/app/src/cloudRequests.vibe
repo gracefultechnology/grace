@@ -12,6 +12,7 @@ export const accountRequests = {
   "/api/auth/sms/verify": "POST",
   "/api/v1/billing/limits": "GET",
   "/api/v1/subscriptions/plans": "GET",
+  "/api/v1/subscription/redeem": "POST",
   "/api/v1/subscriptions/checkout": "POST",
   "/api/v1/subscriptions/portal": "POST",
   "/api/v1/eliza/google/status": "GET",

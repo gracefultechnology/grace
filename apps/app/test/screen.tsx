@@ -21,12 +21,14 @@ export function browserAccountResponse(url: URL, accountId?: string) {
   if (url.pathname === "/api/auth/refresh") return new Response(null, { status: 401 });
 }
 
-export function browserBillingSnapshot() {
+export function browserBillingSnapshot(grant: { id: string; effectiveFrom: number; effectiveUntil: number } | null = null) {
+  const lane = grant ? "allowanceThenCredits" : "refused";
   return {
     data: {
       schemaVersion: 3, observedAt: Date.now(), account: { status: "active" }, balance: { usdMicros: 0, revision: 0 },
-      plan: { key: "free", source: "free", effectiveUntil: null }, subscription: null, grant: null, allowance: null,
-      funding: { inference: "refused", speech: "refused", maps: "refused" },
+      plan: grant ? { key: "plus_monthly", source: "grant", effectiveUntil: grant.effectiveUntil } : { key: "free", source: "free", effectiveUntil: null },
+      subscription: null, grant: grant && { ...grant, planKey: "plus_monthly", family: "grace-pilot", revoked: false }, allowance: null,
+      funding: { inference: lane, speech: lane, maps: lane },
     },
   };
 }
@@ -147,6 +149,7 @@ export function wakeBoundary() {
     armed: (): number | null => generation,
     permitted: () => permitted,
     chimes: () => chimes,
+    report: () => act(async () => { listeners.get("wakeStatus")?.(await status()); }),
     detect: (value = generation) => {
       if (value === null) throw new Error("Wake needs to be armed before it detects a phrase");
       return act(() => Promise.resolve(listeners.get("wakeDetected")?.({ generation: value })));
