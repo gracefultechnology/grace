@@ -551,14 +551,16 @@ pure def tabletAccount(lease: MailLeaseUpgradePhase, details: TabletAccountDetai
   GraceDeviceSignedIn({ mailLeaseUpgrade: lease, details: details })
 pure val signedInTablet: GraceAccount = tabletAccount(LeaseUpgradeNotRequired, TabletAccountUnavailable)
 pure def accountDetails(account: GraceAccount): TabletAccountDetails = match account {
-  | GraceSignedIn(info) => TabletAccountKnown(info)
+  | GraceSignedIn(info) => TabletAccountKnown({ accountId: info.accountId, email: info.email, plan: info.plan })
   | GraceDeviceSignedIn(tablet) => tablet.details
   | _ => TabletAccountUnavailable
 }
-pure def subscriptionPlan(account: GraceAccount): GracePlan = match accountDetails(account) {
-  | TabletAccountKnown(info) => info.plan
-  | TabletAccountUnavailable => PlanUnknown
-}
+pure def subscriptionPlan(account: GraceAccount): GracePlan =
+  val details = accountDetails(account)
+  match details {
+    | TabletAccountKnown(info) => info.plan
+    | TabletAccountUnavailable => PlanUnknown
+  }
 type AccountSource = TabletSession | GraceService
 type TabletSignIn = NoTabletSignIn | TabletSignInAsked | TabletSignInConfirmed({ accountId: str })
 pure def mayStartCheckout(account: GraceAccount): bool = match account {
@@ -803,7 +805,8 @@ as it was.
 type GoogleLink = GoogleLinkUnknown | GoogleLinkUnavailable | GoogleLinkReady | GoogleLinkConnected({ email: str, mail: bool, calendar: bool, grant: str, sendMail: bool, trashMail: bool, writeCalendar: bool })
 pure val linkValues: Set[GoogleLink] = Set(GoogleLinkUnknown, GoogleLinkUnavailable, GoogleLinkReady, GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: true, grant: "linked", sendMail: false, trashMail: false, writeCalendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: true, calendar: false, grant: "linked", sendMail: true, trashMail: true, writeCalendar: false }), GoogleLinkConnected({ email: "person@example.com", mail: false, calendar: true, grant: "linked", sendMail: false, trashMail: false, writeCalendar: false }))
 pure def mayOfferGoogleLink(account: GraceAccount, link: GoogleLink): bool =
-  val identityKnown = match accountDetails(account) {
+  val details = accountDetails(account)
+  val identityKnown = match details {
     | TabletAccountKnown(member) => webAccountId(account) != "" or
       (member.email != "" and member.accountId == tabletMailAccountId(account))
     | _ => false
