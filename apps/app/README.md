@@ -230,18 +230,21 @@ subscriptions and text codes are off there. To bring staging up:
    connection> pnpm --filter @grace/cloud migrate`. Staging shares the database identity of the local
    configuration, so the same command prepares both, and the Worker's identity check cannot tell a
    local database from the staging one. Never point staging's `DATABASE_URL` at a local database.
-2. From `apps/cloud`, set each secret with `pnpm exec wrangler secret put <NAME> --env staging`:
-   `DATABASE_URL` with the runtime role, `CLOUD_PROFILE` with the JSON deployment profile that
-   `CloudProfile` in `vendor/eliza/packages/cloud/src/profile/profile.schema.ts` describes, whose
-   `environments.staging` gives `api` as `https://api-staging.graceforseniors.com`, `web` as
-   `https://app-staging.graceforseniors.com` and `databaseIdentity` as staging's
-   `CLOUD_IDENTITY_DIGEST` in `wrangler.jsonc`, and staging values of `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-   `EMAIL_CODE_SECRET`, `GOOGLE_CONNECT_TOKEN_KEY`, `DEVICE_LEASE_SEAL_KEY` and `CARTESIA_API_KEY`.
-   Staging takes no Stripe, Blooio or Twilio secret.
+2. Use the staging `HYPERDRIVE` binding in the Wrangler configuration for Worker database access.
+   It uses a dedicated Railway runtime role with CA verification and query caching disabled.
+   Create a staging-only secrets file with `CLOUD_PROFILE`, the digest, sealing and entitlement
+   signing keys it names, `EMAIL_CODE_SECRET` and `DEVICE_LEASE_SEAL_KEY`. The `CloudProfile` schema
+   is in `vendor/eliza/packages/cloud/src/profile/profile.schema.ts`. Its `environments.staging`
+   must use `https://api-staging.graceforseniors.com` for `api`,
+   `https://app-staging.graceforseniors.com` for `web`, and the staging `CLOUD_IDENTITY_DIGEST`
+   from `wrangler.jsonc` for `databaseIdentity`. Add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`
+   for Google sign-in, `GOOGLE_CONNECT_TOKEN_KEY` for managed Google access and `CARTESIA_API_KEY`
+   if the profile enables speech. Staging uses no Stripe, Blooio or Twilio secret.
 3. Run `pnpm --filter @grace/cloud bundle`, which dry-runs both environments. Each Worker uses
    its own assets directory under `apps/cloud/.wrangler/assets/`, with Grace built for that
    environment’s origins and Eliza’s return-page templates at their original filenames. In
-   `apps/cloud`, run `pnpm exec wrangler deploy --env staging` after both dry-runs pass.
+   `apps/cloud`, run `pnpm exec wrangler deploy --env staging --secrets-file <staging-secrets.json>`
+   after both dry-runs pass. Keep the secrets file outside the repository.
 4. In the Google project of the staging web client, register an Android OAuth client for
    `technology.graceful.grace` with the debug SHA-1 above, and add
    `https://api-staging.graceforseniors.com/api/auth/google/callback` and
