@@ -2,12 +2,14 @@ package technology.graceful.grace;
 
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import android.content.Context;
+import android.net.Uri;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.concurrent.Executor;
 import org.json.JSONObject;
 
@@ -15,7 +17,7 @@ final class GraceOwnerRead {
  enum Endpoint {
   REMINDERS("/api/v1/calendar-reminders/device"), INBOX_ARRIVAL("/api/v1/eliza/google/gmail/inbox-v1/arrival"),
   PROFILE("/api/v1/user"), BILLING("/api/v1/billing/limits"), PLANS("/api/v1/subscriptions/plans"),
-  GOOGLE_CONFIG("/api/v1/app-auth/mobile/config"), REDEEM("/api/v1/subscription/redeem", true),
+  MOBILE_CONFIG("/api/v1/app-auth/mobile/config"), REDEEM("/api/v1/subscription/redeem", true),
   CONNECT_GOOGLE("/api/v1/eliza/google/connect/native", true), DISCONNECT_GOOGLE("/api/v1/eliza/google/disconnect", true);
   final String path;
   final boolean post;
@@ -24,6 +26,39 @@ final class GraceOwnerRead {
  }
 
  record Reply(int status, String body) {}
+
+ static void signInMethods(PluginCall call, Executor requests) {
+  requests.execute(() -> {
+   try {
+    var methods = mobileConfiguration().getJSONObject("methods");
+    call.resolve(new JSObject().put("emailCode", Boolean.TRUE.equals(methods.opt("email"))));
+   } catch (Exception unavailable) { call.reject("Couldn't check sign-in options"); }
+  });
+ }
+
+ static JSONObject mobileConfiguration() throws Exception {
+  String redirect = BuildConfig.CLOUD_WEB_ORIGIN + BuildConfig.CLOUD_CALLBACK_PATH;
+  String query = "?" + new Uri.Builder().appendQueryParameter("clientId", BuildConfig.APPLICATION_ID)
+    .appendQueryParameter("environment", BuildConfig.CLOUD_ENVIRONMENT).appendQueryParameter("redirectUri", redirect)
+    .build().getEncodedQuery();
+  var config = read(Endpoint.MOBILE_CONFIG, query, null);
+  if (!BuildConfig.APPLICATION_ID.equals(config.opt("clientId")) || !BuildConfig.CLOUD_ENVIRONMENT.equals(config.opt("environment"))
+      || !redirect.equals(config.opt("redirectUri"))) throw new IllegalStateException("Sign-in configuration changed");
+  return config;
+ }
+
+ static String signInAddress(PluginCall call, int fieldCount) {
+  var input = call.getData();
+  if (input.length() != fieldCount || !(input.opt("address") instanceof String value)) throw new IllegalArgumentException("Invalid sign-in address");
+  String normalized = value.trim().toLowerCase(Locale.ROOT);
+  if (normalized.length() > 254 || !normalized.matches("[^\\s@]+@[^\\s@]+\\.[^\\s@]+")) throw new IllegalArgumentException("Invalid sign-in address");
+  return normalized;
+ }
+
+ static String signInCode(PluginCall call) {
+  if (!(call.getData().opt("code") instanceof String code) || !code.matches("[0-9]{6}")) throw new IllegalArgumentException("Invalid sign-in code");
+  return code;
+ }
 
  static JSONObject read(Endpoint endpoint, String query, CloudDeviceAccount.Session owner) throws Exception {
   if (endpoint.post) throw new IllegalArgumentException("Invalid read endpoint");
@@ -103,7 +138,7 @@ final class GraceOwnerRead {
   connection.setConnectTimeout(3000);
   connection.setReadTimeout(5000);
   connection.setRequestProperty("Accept", "application/json");
-  if (endpoint != Endpoint.GOOGLE_CONFIG) connection.setRequestProperty("Authorization", "Bearer " + owner.token());
+  if (endpoint != Endpoint.MOBILE_CONFIG) connection.setRequestProperty("Authorization", "Bearer " + owner.token());
   return connection;
  }
 

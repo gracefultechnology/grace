@@ -201,6 +201,47 @@ public final class GraceAccount extends Plugin {
   });
  }
 
+ @PluginMethod public void signInMethods(PluginCall call) { GraceOwnerRead.signInMethods(call, ACCOUNT); }
+
+ @PluginMethod public void sendSignInCode(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try {
+    String address = GraceOwnerRead.signInAddress(call, 1);
+    var account = account(getContext());
+    closePicker(account);
+    account.sendEmailSignInCode(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT, address);
+    call.resolve(new JSObject().put("kind", "sent"));
+   } catch (Exception unavailable) { call.reject("Couldn't send a sign-in code"); }
+  });
+ }
+
+ @PluginMethod public void verifySignInCode(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try {
+    String address = GraceOwnerRead.signInAddress(call, 2), code = GraceOwnerRead.signInCode(call);
+    var account = account(getContext());
+    CloudDeviceAccount.EmailSignIn result = changeAccount(() -> {
+     var verified = account.verifyEmailSignInCode(address, code);
+     if (verified == CloudDeviceAccount.EmailSignIn.SIGNED_IN) GracePasswordsOwner.confirmVerifiedAccount(getContext(), account.session());
+     return verified;
+    });
+    switch (result) {
+     case SIGNED_IN -> { publishStatus(account); call.resolve(new JSObject().put("kind", "signedIn")); }
+     case ADDITIONAL_VERIFICATION -> call.resolve(new JSObject().put("kind", "additionalVerification"));
+     case REFUSED -> call.reject("Couldn't verify the sign-in code");
+    }
+   } catch (Exception unavailable) { call.reject("Couldn't verify the sign-in code"); }
+   finally { retryRevocation(); }
+  });
+ }
+
+ @PluginMethod public void cancelSignInCode(PluginCall call) {
+  ACCOUNT.execute(() -> {
+   try { account(getContext()).cancelEmailSignInCode(); call.resolve(); }
+   catch (Exception unavailable) { call.reject("Couldn't cancel email sign-in"); }
+  });
+ }
+
  @PluginMethod public void beginLeaseUpgrade(PluginCall call) {
   ACCOUNT.execute(() -> {
    try {

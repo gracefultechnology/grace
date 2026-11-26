@@ -2,7 +2,6 @@ package technology.graceful.grace;
 
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import android.app.Activity;
-import android.net.Uri;
 import android.os.CancellationSignal;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
@@ -43,7 +42,7 @@ final class GraceGoogleConnection {
     var capabilities = new GraceGoogleConsent.Capabilities(
       choice(input, "mail"), choice(input, "calendar"), choice(input, "sendMail"), choice(input, "trashMail"), choice(input, "writeCalendar"));
     var owner = Owner.capture(activity, accountId(input));
-    var request = new GraceGoogleConsent.Request(email(owner), serverClientId(owner), capabilities);
+    var request = new GraceGoogleConsent.Request(email(owner), serverClientId(), capabilities);
     owner.requireCurrent(activity);
     var consent = new Pending(owner, request, call, activity);
     pending = consent;
@@ -121,15 +120,8 @@ final class GraceGoogleConnection {
   return profile.getString("email");
  }
 
- private static String serverClientId(Owner owner) throws Exception {
-  String redirect = BuildConfig.CLOUD_WEB_ORIGIN + BuildConfig.CLOUD_CALLBACK_PATH;
-  String query = new Uri.Builder().appendQueryParameter("clientId", BuildConfig.APPLICATION_ID)
-    .appendQueryParameter("environment", BuildConfig.CLOUD_ENVIRONMENT).appendQueryParameter("redirectUri", redirect)
-    .build().getEncodedQuery();
-  var config = GraceOwnerRead.read(GraceOwnerRead.Endpoint.GOOGLE_CONFIG, "?" + query, owner.session());
-  if (!BuildConfig.APPLICATION_ID.equals(config.getString("clientId")) || !BuildConfig.CLOUD_ENVIRONMENT.equals(config.getString("environment"))
-      || !redirect.equals(config.getString("redirectUri"))) throw new IllegalStateException("Google consent configuration changed");
-  var google = config.getJSONObject("google");
+ private static String serverClientId() throws Exception {
+  var google = GraceOwnerRead.mobileConfiguration().getJSONObject("google");
   if (!Boolean.TRUE.equals(google.opt("nativeSignIn"))) throw new IllegalStateException("Google consent unavailable");
   return google.getString("serverClientId");
  }
