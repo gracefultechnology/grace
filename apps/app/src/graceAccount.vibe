@@ -277,6 +277,24 @@ effect function redeemMembershipCode(request: (body: { code: string; idempotency
   return result.kind === "redeemed"
 }
 
+effect function tabletAccountRequest(plugin: AccountBridge, request: TabletAccountRequest): Response!unknown {
+  const send = plugin.accountRequest?.bind(plugin)
+  if (send === undefined) throw new AccountRequestFailed()
+  const reply = try timeout(tryPromise(() => send(request)), "10 seconds")
+  const { status, body } = try Schema.decodeUnknownEffect(DeviceResponse)(reply)
+  if (status < 200 || status >= 300) throw new AccountRequestFailed()
+  return try Effect.try(() => accountReadResponse(status, body))
+}
+
+effect function tabletDetails(plugin: AccountBridge, lease: MailLeaseUpgradePhase): TabletAccountDetails!! {
+  return effect {
+    const { data } = try decode(try tabletAccountRequest(plugin, { action: "profile" }), TabletProfile)
+    if (lease.tag === "LeaseMailReady" && lease.accountId !== data.id) throw new AccountRequestFailed()
+    const plan = try readPlan(tabletAccountRequest(plugin, { action: "billing", accountId: data.id }), tabletAccountRequest(plugin, { action: "plans", accountId: data.id }))
+    return { tag: "TabletAccountKnown", accountId: data.id, email: data.email ?? "", plan } as const
+  } catch () => ({ tag: "TabletAccountUnavailable" })
+}
+
 export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin: AccountBridge | undefined = accountPlugin) => Layer.effect(AccountActions, effect {
   const setup = try Setup
   const workspace = try Workspaces
@@ -297,24 +315,6 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     if (read === undefined) throw new AccountRequestFailed()
     const { status, body } = try Schema.decodeUnknownEffect(DeviceResponse)(try tryPromise(() => read({ ...owner, route, query })))
     return try Effect.try(() => accountReadResponse(status, body))
-  }
-
-  effect function tabletAccountRequest(request: TabletAccountRequest): Response!unknown {
-    const send = plugin?.accountRequest?.bind(plugin)
-    if (send === undefined) throw new AccountRequestFailed()
-    const reply = try timeout(tryPromise(() => send(request)), "10 seconds")
-    const { status, body } = try Schema.decodeUnknownEffect(DeviceResponse)(reply)
-    if (status < 200 || status >= 300) throw new AccountRequestFailed()
-    return try Effect.try(() => accountReadResponse(status, body))
-  }
-
-  effect function tabletDetails(lease: MailLeaseUpgradePhase): TabletAccountDetails!! {
-    return effect {
-      const { data } = try decode(try tabletAccountRequest({ action: "profile" }), TabletProfile)
-      if (lease.tag === "LeaseMailReady" && lease.accountId !== data.id) throw new AccountRequestFailed()
-      const plan = try readPlan(tabletAccountRequest({ action: "billing", accountId: data.id }), tabletAccountRequest({ action: "plans", accountId: data.id }))
-      return { tag: "TabletAccountKnown", accountId: data.id, email: data.email ?? "", plan } as const
-    } catch () => ({ tag: "TabletAccountUnavailable" })
   }
 
   effect function refresh() {
@@ -343,12 +343,12 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     if (result.mailLease !== undefined) {
       if (result.kind !== "signedIn" || result.legacySignInNeedsCleanup === true || result.mailLeaseUpgrade !== undefined) throw new AccountRequestFailed()
       const lease = { tag: "LeaseMailReady", ...result.mailLease } as const
-      return tabletAccount(lease, try tabletDetails(lease))
+      return tabletAccount(lease, try tabletDetails(plugin, lease))
     }
     if (result.mailLeaseUpgrade !== undefined) {
       if (result.kind !== "signedIn" || result.legacySignInNeedsCleanup === true) throw new AccountRequestFailed()
       const lease = upgradePhase[result.mailLeaseUpgrade]
-      return tabletAccount(lease, try tabletDetails(lease))
+      return tabletAccount(lease, try tabletDetails(plugin, lease))
     }
     if (result.legacySignInNeedsCleanup === true) {
       if (result.kind !== "signedOut") throw new AccountRequestFailed()
@@ -362,7 +362,7 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
       } catch () => false)
       return { tag: "GraceDeviceSignedOut", emailCode }
     }
-    return tabletAccount({ tag: "LeaseUpgradeNotRequired" }, try tabletDetails({ tag: "LeaseUpgradeNotRequired" }))
+    return tabletAccount({ tag: "LeaseUpgradeNotRequired" }, try tabletDetails(plugin, { tag: "LeaseUpgradeNotRequired" }))
   }
 
   effect function perform(operation: AccountOperation) {
@@ -426,7 +426,7 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
         const member = accountDetails(current)
         if (member.tag !== "TabletAccountKnown") return false
         const { accountId } = member
-        const redeemed = redeemMembershipCode((body) => tabletAccountRequest({ action: "redeem", accountId, ...body }), operation.code) catch () => false
+        const redeemed = redeemMembershipCode((body) => tabletAccountRequest(plugin, { action: "redeem", accountId, ...body }), operation.code) catch () => false
         const refreshed = try refresh()
         const details = accountDetails(refreshed)
         return redeemed && details.tag === "TabletAccountKnown" && details.accountId === accountId && hasActiveSubscription(refreshed)
