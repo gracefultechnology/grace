@@ -16,7 +16,6 @@ type Control =
   | { kind: "workspace"; title: string; event: Event }
   | { kind: "website"; title: string; url: string }
   | { kind: "cancelReview"; title: string; number: number }
-  | { kind: "hosted"; title: string; view: "Email" | "Calendar" }
   | { kind: "managed"; title: string; proposed: ProposedWork }
   | { kind: "read"; title: string; accountId: string; grant: string; id: string }
 export type ReplyOffer = { id: number; context: ReplyControlContext; messageIndex: number; messageText: string; labels: string[]; blocked: boolean }
@@ -172,7 +171,7 @@ function managedView(action: Suggested): "Email" | "Calendar" | undefined {
   }
 }
 
-export const replyControls = (native: boolean) => Layer.effect(ReplyControls, effect {
+export const replyControls = Layer.effect(ReplyControls, effect {
   const desk = try Workspaces
   const managed = try ManagedReads
   const setup = try Setup
@@ -201,9 +200,7 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
     const planned = actions.slice(0, 3).map((action) => {
       const direct = plan(action, w, scene)
       const view = !direct ? managedView(action) : undefined
-      const control: Control | undefined = direct ?? (view && native
-        ? { kind: "hosted", title: "Open " + view + " on Grace’s website", view }
-        : view && w.device.surface !== view ? ownerControl("Open " + view, { type: "visit", destination: view }) : undefined)
+      const control = direct ?? (view && w.device.surface !== view ? ownerControl("Open " + view, { type: "visit", destination: view }) : undefined)
       if (control?.kind === "workspace" && !enabled(w, control.event, "Person")) return undefined
       if (control?.kind !== "managed") return control
       const proposal = control.proposed
@@ -232,10 +229,6 @@ export const replyControls = (native: boolean) => Layer.effect(ReplyControls, ef
         if ((try desk.get()).device.surface !== "Browser") try desk.send({ type: "visit", destination: "Browser" }, "Person")
         try desk.send({ type: "changePage", browserInput: { tag: "Navigate", url: choice.url } }, "Person")
         return true
-      }
-      case "hosted": {
-        if ((try desk.get()).device.surface !== choice.view) try desk.send({ type: "visit", destination: choice.view }, "Person")
-        return try managed.send({ kind: "openHosted" })
       }
       case "cancelReview": {
         const shown = try managed.get()
