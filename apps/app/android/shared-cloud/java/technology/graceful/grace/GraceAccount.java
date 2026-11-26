@@ -295,8 +295,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
  }
 
  @PluginMethod public void beginSignIn(PluginCall call) {
-  String method = call.getString("method");
-  if (call.getData().has("method") && !"browser".equals(method)) { call.reject("Unknown sign-in method"); return; }
+  if (call.getData().has("method")) { unsupportedSignIn(call); return; }
   ACCOUNT.execute(() -> {
    try {
     Enrollment lease;
@@ -310,16 +309,17 @@ public final class GraceAccount extends ElizaSignInPlugin {
       finishEnrollment(call);
       return;
      }
+     if (!hasGooglePlayServices()) { call.reject("Google sign-in is unavailable on this tablet"); return; }
      lease = new Enrollment(GracePasswordsOwner.beginEnrollment(getContext()), null);
      enrollment = lease;
     }
     try {
      PluginCall requested = accountCall(call, data -> {
+      if (cancelled(data)) { call.resolve(); return; }
       if (!"signed-in-as".equals(data.optString("verdict"))) { call.reject("Cloud sign-in could not complete"); return; }
       ACCOUNT.execute(() -> finishEnrollment(call));
      }, lease);
-     if ("browser".equals(method) || !hasGooglePlayServices()) super.startGoogleInBrowser(requested);
-     else super.startGoogle(requested);
+     super.startGoogle(requested);
     } catch (RuntimeException refused) {
      closeEnrollment(lease);
      throw refused;
@@ -349,7 +349,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
     try {
      publishSession();
      super.upgradeMailLease(accountCall(call, data -> {
-      if ("ended".equals(data.optString("verdict")) && "cancelled".equals(data.optString("problem"))) {
+      if (cancelled(data)) {
        call.resolve();
        return;
       }
@@ -399,6 +399,10 @@ public final class GraceAccount extends ElizaSignInPlugin {
  @Override public void sendFactorCode(PluginCall call) { unsupportedSignIn(call); }
 
  private static void unsupportedSignIn(PluginCall call) { call.reject("This sign-in method is unavailable in Grace"); }
+
+ private static boolean cancelled(JSObject data) {
+  return "ended".equals(data.optString("verdict")) && "cancelled".equals(data.optString("problem"));
+ }
 
  @Override @PluginMethod public void signOut(PluginCall call) {
   recovery.accountChanged();

@@ -15,9 +15,7 @@ import androidx.credentials.GetCredentialResponse;
 import androidx.credentials.exceptions.GetCredentialCancellationException;
 import androidx.credentials.exceptions.GetCredentialException;
 import androidx.credentials.exceptions.GetCredentialProviderConfigurationException;
-import androidx.credentials.exceptions.GetCredentialUnsupportedException;
-import androidx.credentials.exceptions.NoCredentialException;
-import com.google.android.libraries.identity.googleid.GetGoogleIdOption;
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -178,20 +176,19 @@ public final class GraceAccount extends Plugin {
  }
 
  @PluginMethod public void beginSignIn(PluginCall call) {
+  if (call.getData().has("method")) { call.reject("This sign-in method is unavailable in Grace"); return; }
   ACCOUNT.execute(() -> {
    try (var enrollment = GracePasswordsOwner.beginEnrollment(getContext())) {
     CloudDeviceAccount account = account(getContext());
     account.retryRevocation();
     if (finishAcknowledgment(account)) { publishStatus(account); call.resolve(); return; }
     closePicker(account);
-    var attempt = "browser".equals(call.getString("method")) || !hasGooglePlayServices() ? null
-        : account.prepareNativeGoogle(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT);
-    if (attempt == null) open(account.begin(), call);
-    else {
-     Picker next = new Picker(attempt, new CancellationSignal(), call);
-     picker = next;
-     getActivity().runOnUiThread(() -> pickGoogle(next));
-    }
+    if (!hasGooglePlayServices()) { call.reject("Google sign-in is unavailable on this tablet"); return; }
+    var attempt = account.prepareNativeGoogle(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT);
+    if (attempt == null) { call.reject("Google sign-in is unavailable on this tablet"); return; }
+    Picker next = new Picker(attempt, new CancellationSignal(), call);
+    picker = next;
+    getActivity().runOnUiThread(() -> pickGoogle(next));
    } catch (Exception unavailable) { call.reject("Couldn't open sign-in"); }
   });
  }
@@ -237,8 +234,8 @@ public final class GraceAccount extends Plugin {
  private void pickGoogle(Picker pending) {
   if (pending.signal().isCanceled()) return;
   try {
-   var option = new GetGoogleIdOption.Builder().setServerClientId(pending.attempt().serverClientId())
-       .setNonce(pending.attempt().nonce()).setFilterByAuthorizedAccounts(false).setAutoSelectEnabled(false).build();
+   var option = new GetSignInWithGoogleOption.Builder(pending.attempt().serverClientId())
+       .setNonce(pending.attempt().nonce()).build();
    var request = new GetCredentialRequest.Builder().addCredentialOption(option).build();
    CredentialManager.create(getActivity()).getCredentialAsync(getActivity(), request, pending.signal(), ACCOUNT,
        new CredentialManagerCallback<GetCredentialResponse, GetCredentialException>() {
@@ -267,9 +264,6 @@ public final class GraceAccount extends Plugin {
     });
     publishStatus(account);
     pending.call().resolve();
-   } else if (error instanceof NoCredentialException || error instanceof GetCredentialProviderConfigurationException
-       || error instanceof GetCredentialUnsupportedException) {
-    open(account.begin(), pending.call());
    } else if (error instanceof GetCredentialCancellationException) {
     pending.call().resolve();
    } else {
