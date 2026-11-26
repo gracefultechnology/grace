@@ -279,6 +279,14 @@ public final class GraceAccount extends ElizaSignInPlugin {
   GraceOwnerRead.accountRequest(getContext(), call, ACCOUNT);
  }
 
+ @PluginMethod public void connectGoogle(PluginCall call) {
+  GraceGoogleConnection.connect(call, getActivity());
+ }
+
+ @PluginMethod public void disconnectGoogle(PluginCall call) {
+  GraceGoogleConnection.disconnect(call, getActivity());
+ }
+
  @PluginMethod public void readGoogle(PluginCall call) {
   GraceGoogleRead.run(call, input -> {
    var context = getContext();

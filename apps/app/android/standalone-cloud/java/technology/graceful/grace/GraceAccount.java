@@ -107,7 +107,7 @@ public final class GraceAccount extends Plugin {
   catch (Exception unavailable) { return false; }
  }
 
- private record Picker(CloudDeviceAccount.NativeGoogleAttempt attempt, CancellationSignal signal, PluginCall call) {}
+ private record Picker(CloudDeviceAccount.NativeGoogleAttempt attempt, CancellationSignal signal, PluginCall call, boolean leaseUpgrade) {}
  private Picker picker;
 
  static CloudDeviceAccount.Session session(Context context) throws Exception {
@@ -162,6 +162,14 @@ public final class GraceAccount extends Plugin {
   GraceOwnerRead.accountRequest(getContext(), call, ACCOUNT);
  }
 
+ @PluginMethod public void connectGoogle(PluginCall call) {
+  GraceGoogleConnection.connect(call, getActivity());
+ }
+
+ @PluginMethod public void disconnectGoogle(PluginCall call) {
+  GraceGoogleConnection.disconnect(call, getActivity());
+ }
+
  @PluginMethod public void readGoogle(PluginCall call) {
   GraceGoogleRead.run(call, input -> {
    var context = getContext();
@@ -188,11 +196,7 @@ public final class GraceAccount extends Plugin {
     if (finishAcknowledgment(account)) { publishStatus(account); call.resolve(); return; }
     closePicker(account);
     if (!hasGooglePlayServices()) { call.reject("Google sign-in is unavailable on this tablet"); return; }
-    var attempt = account.prepareNativeGoogle(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT);
-    if (attempt == null) { call.reject("Google sign-in is unavailable on this tablet"); return; }
-    Picker next = new Picker(attempt, new CancellationSignal(), call);
-    picker = next;
-    getActivity().runOnUiThread(() -> pickGoogle(next));
+    beginPicker(account, account.prepareNativeGoogle(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT), call, false);
    } catch (Exception unavailable) { call.reject("Couldn't open sign-in"); }
   });
  }
@@ -201,10 +205,13 @@ public final class GraceAccount extends Plugin {
   ACCOUNT.execute(() -> {
    try {
     CloudDeviceAccount account = account(getContext());
-    Uri address = account.beginLeaseUpgrade(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT);
-    publishStatus(account);
-    open(address, call);
-   } catch (Exception unavailable) { call.reject("Couldn't open sign-in for email and calendar"); }
+    if (picker != null && picker.leaseUpgrade()) { call.resolve(); return; }
+    account.retryRevocation();
+    if (finishAcknowledgment(account)) { publishStatus(account); call.resolve(); return; }
+    if (!hasGooglePlayServices()) { call.reject("Google sign-in is unavailable on this tablet"); return; }
+    closePicker(account);
+    beginPicker(account, account.prepareNativeGoogleLeaseUpgrade(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT), call, true);
+   } catch (Exception unavailable) { call.reject("Couldn't sign in for email and calendar"); }
   });
  }
 
@@ -212,8 +219,10 @@ public final class GraceAccount extends Plugin {
   ACCOUNT.execute(() -> {
    try {
     CloudDeviceAccount account = account(getContext());
-    if (account.leaseUpgradeStatus() == CloudDeviceAccount.LeaseUpgradeStatus.SIGN_IN_PENDING) {
-     account.cancelLeaseUpgrade(account.beginLeaseUpgrade(BuildConfig.APPLICATION_ID, MOBILE_ENVIRONMENT));
+    boolean picking = picker != null && picker.leaseUpgrade();
+    if (picking || account.leaseUpgradeStatus() == CloudDeviceAccount.LeaseUpgradeStatus.SIGN_IN_PENDING) {
+     if (picking) closePicker(account);
+     account.cancelLeaseUpgrade();
      publishStatus(account);
     }
     call.resolve();
@@ -233,6 +242,21 @@ public final class GraceAccount extends Plugin {
   previous.signal().cancel();
   previous.call().resolve();
   account.cancelNativeGoogle(previous.attempt());
+ }
+
+ private void beginPicker(CloudDeviceAccount account, CloudDeviceAccount.NativeGoogleAttempt attempt,
+   PluginCall call, boolean leaseUpgrade) throws Exception {
+  if (attempt == null) { call.reject("Google sign-in is unavailable on this tablet"); return; }
+  try {
+   if (leaseUpgrade) publishStatus(account);
+   Picker next = new Picker(attempt, new CancellationSignal(), call, leaseUpgrade);
+   picker = next;
+   getActivity().runOnUiThread(() -> pickGoogle(next));
+  } catch (Exception unavailable) {
+   picker = null;
+   account.cancelNativeGoogle(attempt);
+   throw unavailable;
+  }
  }
 
  private void pickGoogle(Picker pending) {
@@ -255,6 +279,7 @@ public final class GraceAccount extends Plugin {
   if (picker != pending) return;
   picker = null;
   CloudDeviceAccount account = account(getContext());
+  boolean published = false;
   try {
    if (response != null) {
     if (!(response.getCredential() instanceof CustomCredential custom)
@@ -267,6 +292,7 @@ public final class GraceAccount extends Plugin {
      return null;
     });
     publishStatus(account);
+    published = true;
     pending.call().resolve();
    } else if (error instanceof GetCredentialCancellationException) {
     pending.call().resolve();
@@ -276,8 +302,12 @@ public final class GraceAccount extends Plugin {
   } catch (Exception unavailable) {
    pending.call().reject("Couldn't sign in with Google");
   } finally {
-   try { account.cancelNativeGoogle(pending.attempt()); }
+   try {
+    account.cancelNativeGoogle(pending.attempt());
+    if (pending.leaseUpgrade() && !published) publishStatus(account);
+   }
    catch (Exception unavailable) { }
+   if (pending.leaseUpgrade()) retryRevocation();
   }
  }
 
@@ -411,15 +441,6 @@ public final class GraceAccount extends Plugin {
 
  static JSObject projection(CloudDeviceAccount.Session session) {
   return GracePasswordsOwner.accountStatus(session);
- }
-
- private void open(Uri address, PluginCall call) {
-  getActivity().runOnUiThread(() -> {
-   try {
-    getActivity().startActivity(new Intent(Intent.ACTION_VIEW, address));
-    call.resolve();
-   } catch (Exception unavailable) { call.reject("Couldn't open Grace in the browser"); }
-  });
  }
 
  private void retryRevocation() {

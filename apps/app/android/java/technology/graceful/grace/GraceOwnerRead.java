@@ -14,17 +14,29 @@ import org.json.JSONObject;
 final class GraceOwnerRead {
  enum Endpoint {
   REMINDERS("/api/v1/calendar-reminders/device"), INBOX_ARRIVAL("/api/v1/eliza/google/gmail/inbox-v1/arrival"),
-  PROFILE("/api/v1/user"), BILLING("/api/v1/billing/limits"), PLANS("/api/v1/subscriptions/plans"), REDEEM("/api/v1/subscription/redeem");
+  PROFILE("/api/v1/user"), BILLING("/api/v1/billing/limits"), PLANS("/api/v1/subscriptions/plans"),
+  GOOGLE_CONFIG("/api/v1/app-auth/mobile/config"), REDEEM("/api/v1/subscription/redeem", true),
+  CONNECT_GOOGLE("/api/v1/eliza/google/connect/native", true), DISCONNECT_GOOGLE("/api/v1/eliza/google/disconnect", true);
   final String path;
-  Endpoint(String path) { this.path = path; }
+  final boolean post;
+  Endpoint(String path) { this(path, false); }
+  Endpoint(String path, boolean post) { this.path = path; this.post = post; }
  }
 
+ record Reply(int status, String body) {}
+
  static JSONObject read(Endpoint endpoint, String query, CloudDeviceAccount.Session owner) throws Exception {
+  if (endpoint.post) throw new IllegalArgumentException("Invalid read endpoint");
   var connection = open(endpoint, query, owner);
   try {
    if (connection.getResponseCode() != 200) throw new IllegalStateException();
    try (var stream = connection.getInputStream()) { return new JSONObject(readBody(stream)); }
   } finally { connection.disconnect(); }
+ }
+
+ static Reply post(Endpoint endpoint, JSONObject payload, CloudDeviceAccount.Session owner) throws Exception {
+  if (!endpoint.post) throw new IllegalArgumentException("Invalid change endpoint");
+  return request(endpoint, payload, owner);
  }
 
  static void accountRequest(Context context, PluginCall call, Executor requests) {
@@ -53,30 +65,35 @@ final class GraceOwnerRead {
       throw new IllegalArgumentException("Invalid membership code request");
      payload = new JSONObject().put("code", code).put("idempotencyKey", key);
     }
-    var connection = open(endpoint, "", owner);
-    try {
-     if (payload != null) {
-      connection.setRequestMethod("POST");
-      connection.setRequestProperty("Content-Type", "application/json");
-      connection.setDoOutput(true);
-      byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
-      connection.setFixedLengthStreamingMode(bytes.length);
-      try (var stream = connection.getOutputStream()) { stream.write(bytes); }
-     }
-     int status = connection.getResponseCode();
-     String body;
-     try (var stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream()) { body = readBody(stream); }
-     if (endpoint == Endpoint.PROFILE && status == 200) {
-      var profile = new JSONObject(body).getJSONObject("data");
-      if (!owner.accountId().equals(profile.opt("id")) || !owner.organizationId().equals(profile.opt("organization_id")))
-       throw new IllegalStateException("The device account changed");
-     }
-     if (!owner.equals(GracePasswordsOwner.stableSession(context)) || generation != GracePasswordsOwner.generation())
+    Reply reply = request(endpoint, payload, owner);
+    if (endpoint == Endpoint.PROFILE && reply.status() == 200) {
+     var profile = new JSONObject(reply.body()).getJSONObject("data");
+     if (!owner.accountId().equals(profile.opt("id")) || !owner.organizationId().equals(profile.opt("organization_id")))
       throw new IllegalStateException("The device account changed");
-     call.resolve(new JSObject().put("status", status).put("body", body));
-    } finally { connection.disconnect(); }
+    }
+    if (!owner.equals(GracePasswordsOwner.stableSession(context)) || generation != GracePasswordsOwner.generation())
+     throw new IllegalStateException("The device account changed");
+    call.resolve(new JSObject().put("status", reply.status()).put("body", reply.body()));
    } catch (Exception unavailable) { call.reject("Couldn't read the device account"); }
   });
+ }
+
+ private static Reply request(Endpoint endpoint, JSONObject payload, CloudDeviceAccount.Session owner) throws Exception {
+  var connection = open(endpoint, "", owner);
+  try {
+   if (endpoint.post) connection.setRequestMethod("POST");
+   if (payload != null) {
+    connection.setRequestProperty("Content-Type", "application/json");
+    connection.setDoOutput(true);
+    byte[] bytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+    connection.setFixedLengthStreamingMode(bytes.length);
+    try (var stream = connection.getOutputStream()) { stream.write(bytes); }
+   }
+   int status = connection.getResponseCode();
+   try (var stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream()) {
+    return new Reply(status, readBody(stream));
+   }
+  } finally { connection.disconnect(); }
  }
 
  private static HttpURLConnection open(Endpoint endpoint, String query, CloudDeviceAccount.Session owner) throws Exception {
@@ -86,7 +103,7 @@ final class GraceOwnerRead {
   connection.setConnectTimeout(3000);
   connection.setReadTimeout(5000);
   connection.setRequestProperty("Accept", "application/json");
-  connection.setRequestProperty("Authorization", "Bearer " + owner.token());
+  if (endpoint != Endpoint.GOOGLE_CONFIG) connection.setRequestProperty("Authorization", "Bearer " + owner.token());
   return connection;
  }
 
