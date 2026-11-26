@@ -140,10 +140,11 @@ pure def lawNextAppointmentsAreSavedAndFuture(registry: A::Accounts, calendars: 
 ### Home’s calendar card says Last updated only while it can’t update, and otherwise what is planned
 
 While the card can’t update, because the tablet is offline while an email’s
-calendar shows, or an email whose calendar shows needs her to sign in
+calendar shows, or the feed for a calendar that shows needs her to sign in
 again, it keeps the appointments it has and says "Last updated" with when
 it last did; Home’s banner says why
-([Notices](./notices.md)). Only then does it say "Last updated". Otherwise it
+([Notices](./notices.md)). Calendar still reports its own feed's sign-in
+state when that account's Email is off. Only then does it say "Last updated". Otherwise it
 says "Today" when a shown upcoming appointment starts today, "Nothing today"
 when the next is on a later day, and "Nothing planned" when none is coming
 (`prototype/Grace Prototype.html:1942–1945`). With nothing planned, faded rows
@@ -156,20 +157,20 @@ only it showing the card never says "Last updated".
 type HomeCalendarStatus = CalendarLastUpdated | CalendarToday | NothingToday | NothingPlanned
 pure def shownProviderCalendars(registry: A::Accounts, calendars: List[CalendarSource]): List[CalendarSource] =
   calendars.select(s => s.key != tabletKey and showsCalendar(registry, s.key))
-pure def cantUpdate(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool): bool =
-  val shown = shownProviderCalendars(registry, calendars)
-  val signedOut = M::signedOut(registry, sources)
-  shown.some(s => not(online) or signedOut.some(mail => mail.account == s.key))
-pure def homeCalendarStatus(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool, fromTime: int, untilTime: int, dayStart: int, dayEnd: int): HomeCalendarStatus =
+pure def homeCalendarSignIn(registry: A::Accounts, calendars: List[CalendarSource]): int =
+  shownProviderCalendars(registry, calendars).select(s => s.view.feedNeedsSignIn).nthOr(0, noCalendar).key
+pure def cantUpdate(registry: A::Accounts, calendars: List[CalendarSource], online: bool): bool =
+  shownProviderCalendars(registry, calendars).some(s => not(online) or s.view.feedNeedsSignIn)
+pure def homeCalendarStatus(registry: A::Accounts, calendars: List[CalendarSource], online: bool, fromTime: int, untilTime: int, dayStart: int, dayEnd: int): HomeCalendarStatus =
   val shown = upcoming(registry, calendars, fromTime, untilTime)
-  if (cantUpdate(registry, calendars, sources, online)) CalendarLastUpdated
+  if (cantUpdate(registry, calendars, online)) CalendarLastUpdated
   else if (shown.length() == 0) NothingPlanned
   else if (shown.some(r => r.details.startAt >= dayStart and r.details.startAt < dayEnd)) CalendarToday
   else NothingToday
 pure def homeCalendarHint(status: HomeCalendarStatus): bool = status == NothingPlanned
-pure def lawLastUpdatedOnlyWhileItCantUpdate(registry: A::Accounts, calendars: List[CalendarSource], sources: List[M::MailSource], online: bool, fromTime: int, untilTime: int, dayStart: int, dayEnd: int): bool =
-  val status = homeCalendarStatus(registry, calendars, sources, online, fromTime, untilTime, dayStart, dayEnd)
-  (status == CalendarLastUpdated iff cantUpdate(registry, calendars, sources, online)) and
+pure def lawLastUpdatedOnlyWhileItCantUpdate(registry: A::Accounts, calendars: List[CalendarSource], online: bool, fromTime: int, untilTime: int, dayStart: int, dayEnd: int): bool =
+  val status = homeCalendarStatus(registry, calendars, online, fromTime, untilTime, dayStart, dayEnd)
+  (status == CalendarLastUpdated iff cantUpdate(registry, calendars, online)) and
   (shownProviderCalendars(registry, calendars).length() == 0 implies status != CalendarLastUpdated) and
   (homeCalendarHint(status) implies upcoming(registry, calendars, fromTime, untilTime).length() == 0)
 ```

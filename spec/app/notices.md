@@ -218,7 +218,7 @@ shows at a time, the first of:
 - the tablet is not connected: "Not connected to the internet" over "Grace
   can help you reconnect.", with Fix Wi-Fi, which opens the written steps on
   the Wi-Fi page;
-- an email that shows its mail needs her to sign in again: "<Name> needs you
+- an account whose shown Email or Calendar needs her to sign in again: "<Name> needs you
   to sign in" over "Until you do, new email and appointments won't come
   in.", with Sign in, which opens that account's sign-in;
 - no email shows its mail, because none was added or each one's Email is
@@ -228,9 +228,11 @@ shows at a time, the first of:
   event's title, day, time and place, See details and Dismiss.
 
 The host tells this owner which account to name and whether any email shows
-its mail, as it tells it whether the tablet is online; [Email across
-accounts](./mailboxes.md) decides both. A banner stays until what it reports
-ends; it has no timer.
+its mail, as it tells it whether the tablet is online. [Email across
+accounts](./mailboxes.md) decides whether any email shows its mail and which
+shown mailbox needs sign-in. [Calendars across accounts](./calendars.md)
+supplies the account for a shown calendar that needs sign-in when no shown
+mailbox needs sign-in. A banner stays until what it reports ends; it has no timer.
 
 ```quint
 type BannerKind = NoBanner | OfflineBanner | SignInBanner | AddEmailBanner | ReminderBanner

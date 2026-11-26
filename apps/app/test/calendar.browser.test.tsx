@@ -3,7 +3,7 @@ import { Effect } from "effect";
 import { TestClock } from "effect/testing";
 import { act } from "react";
 import { expect, inject, it, onTestFinished, vi } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { commands, page, userEvent } from "vitest/browser";
 import type { Machine as AccountsMachine } from "../gen/app__accounts.effect.vibe";
 import { approveSave, create, initial as newEntry, save } from "../gen/app__calendar.ts";
 import { lifetimeMs, type Offer } from "../gen/app__notices.ts";
@@ -13,7 +13,7 @@ import { consent, type Request } from "../gen/app__request.ts";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { day, dayOf, hour, longDate, midnight, timeLabel } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
-import { client, modelTurns, outage, script, signIn } from "./cloud.vibe";
+import { client, expire, modelTurns, outage, script, signIn } from "./cloud.vibe";
 import { actOnScreen, homeCalendarLauncher, mountGmail, tapHomeCalendar } from "./screen.tsx";
 import "../src/main.css";
 
@@ -89,12 +89,13 @@ async function start({ down = false, clockAt }: { down?: boolean; clockAt?: numb
       for (let i = (mondayOf(eyeDay) - mondayOf(dayOf(Date.now()))) / 7; i > 0; i--) await click("Next week");
       await act(() => userEvent.click(page.getByRole("button", { name: tile(eyeDay) })));
     },
-    switchCalendar: async (on: boolean) => {
+    switchAccountUse: async (on: boolean, name: "Calendar" | "Email" = "Calendar") => {
       await click("Settings");
       await act(() => userEvent.click(page.getByRole("navigation", { name: "Settings" }).getByRole("button", { name: "Email & calendar" })));
       await act(() => userEvent.click(page.getByRole("button", { name: new RegExp(gmail) })));
-      await act(() => userEvent.click(page.getByRole("switch", { name: "Calendar" })));
-      await expect.element(page.getByRole("switch", { name: "Calendar" })).toHaveAttribute("aria-checked", String(on));
+      const selection = page.getByRole("switch", { name, exact: true });
+      await act(() => userEvent.click(selection));
+      await expect.element(selection).toHaveAttribute("aria-checked", String(on));
       await click("Close Settings");
     },
   };
@@ -102,7 +103,7 @@ async function start({ down = false, clockAt }: { down?: boolean; clockAt?: numb
 
 it('Browse (spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives")', async () => {
   // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"
-  const { secret, eye, eyeDay, card, run, reachable, agree, say, toEyeWeek, switchCalendar } = await start({ down: true });
+  const { secret, eye, eyeDay, card, run, reachable, agree, say, toEyeWeek, switchAccountUse } = await start({ down: true });
   const eyePreview = card.getByRole("button", { name: /Eye check with Dr\. Patel/ });
   const lifecycle = (lifecycle: "SleepDevice" | "WakeDevice") => run(Effect.flatMap(Effect.service(Workspaces), (w) => w.send({ type: "changeLifecycle", lifecycle }, "Host")));
 
@@ -151,7 +152,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
 
   // spec/app/calendars.md, "A switched-off account’s appointments and reminders show nowhere, to her or to Grace"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"
   await click("Close Calendar");
-  await switchCalendar(false);
+  await switchAccountUse(false);
   await expect.element(eyePreview).not.toBeInTheDocument();
   await toEyeWeek();
   await expect.element(page.getByText("Connect your email to keep your calendar up to date")).toBeVisible();
@@ -165,7 +166,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await expect.element(page.getByText("Connect your email to keep your calendar up to date")).not.toBeInTheDocument();
   await click("Close Calendar");
   await expect.element(eyePreview).not.toBeInTheDocument();
-  await switchCalendar(true);
+  await switchAccountUse(true);
   await expect.element(eyePreview).toBeVisible();
 
   // spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendarView.md, "Coming up lists saved events after the selected day"; spec/app/proposal.md, "An agreed question stays exactly as agreed until the calendar answers"
@@ -251,6 +252,31 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   expect(selected.entries.find((e) => e.identity.occurrenceId === selected.selectedId)?.identity).toMatchObject({
     occurrenceId: replacement.externalId, sourceRef: "", sourceAccount: 0,
   });
+
+  const openedProvider = vi.spyOn(window, "open");
+  onTestFinished(() => { openedProvider.mockRestore(); });
+  await click("Close Calendar");
+  await switchAccountUse(false, "Email");
+  await Effect.runPromise(Effect.provide(expire(cloud, secret, gmail), client));
+  await tapHomeCalendar();
+  await click("Close Calendar");
+  const signInBanner = page.getByRole("status").filter({ hasText: "Gmail needs you to sign in" });
+  await expect.element(signInBanner, atCloud).toBeVisible();
+  await expect.element(homeCalendarLauncher()).toHaveAccessibleName(/^Calendar Last updated/);
+  await expect.element(eyePreview).toBeVisible();
+  await switchAccountUse(false);
+  await expect.element(signInBanner).not.toBeInTheDocument();
+  await switchAccountUse(true);
+  await act(() => userEvent.click(signInBanner.getByRole("button", { name: "Sign in", exact: true })));
+  const pendingSignIn = page.getByRole("dialog", { name: "Gmail sign-in page" });
+  await expect.element(pendingSignIn).toBeVisible();
+  await expect.poll(() => openedProvider.mock.calls.length, atCloud).toBe(1);
+  await act(() => commands.googleConsent(String(openedProvider.mock.calls[0][0]), gmail));
+  await expect.element(pendingSignIn).not.toBeInTheDocument();
+  await expect.element(page.getByRole("switch", { name: "Email", exact: true })).not.toBeChecked();
+  await click("Close Settings");
+  await expect.element(homeCalendarLauncher(), atCloud).toHaveAccessibleName(/^Calendar (Today|Nothing today)$/);
+  await expect.element(signInBanner).not.toBeInTheDocument();
 }, journey);
 
 const edit = async (title: string, repeats: string) => {
