@@ -14,9 +14,10 @@ while coordinating browser observations, payment and wake timers.
 
 User controls and trusted service results have distinct variants and retain
 their original actor checks; a turn the host starts is a trusted service
-variant, and the same variant carries the person's Ask Grace as her own turn. Trusted service results come from Grace's cloud
-agent and her cloud speech service; nothing is recognised or spoken by a model
-on the tablet. Runtime text is never a user choice. A complete
+variant, and the same variant carries the person's Ask Grace as her own turn.
+Grace's cloud agent and speech service produce replies and speech results. The
+trusted tablet runtime also reports local microphone failures. No model on the
+tablet recognises or speaks. Runtime text is never a user choice. A complete
 human utterance keeps its audio provenance and current generation. Open,
 Close, Talk, privacy removal, task replacement and a new conversation have
 their own coordinated workspace routes. Pause and Resume act on Grace's
