@@ -68,16 +68,11 @@ export default {
     },
     "packages/cli": {
       "entry": [
-        "src/main.ts",
-        "src/index.ts",
-        "test/**/*.test.ts"
+        "src/main.ts"
       ],
       "project": [
         "src/**/*.ts",
         "test/**/*.ts"
-      ],
-      "ignoreDependencies": [
-        "vibestack"
       ]
     },
     "vibestack/studio": {

@@ -225,7 +225,7 @@ export async function runCli(options: RunCliOptions): Promise<number> {
   const byName = new Map(options.commands.map((cmd) => [cmd.name, cmd]));
   const [first, ...tail] = rest;
 
-  if (first === undefined || (help && first === "help")) {
+  if (first === undefined || (first === "help" && (help || tail[0] === undefined))) {
     if (json) {
       emitJson(options.io, { ok: true, command: "help", data: { commands: options.commands.map(commandManifest) } });
     } else {
@@ -235,15 +235,7 @@ export async function runCli(options: RunCliOptions): Promise<number> {
   }
 
   if (first === "help") {
-    const targetName = tail[0];
-    if (targetName === undefined) {
-      if (json) {
-        emitJson(options.io, { ok: true, command: "help", data: { commands: options.commands.map(commandManifest) } });
-      } else {
-        options.io.writeOut(formatGlobalHelp(options.commands));
-      }
-      return 0;
-    }
+    const targetName = tail[0] ?? "";
     const target = byName.get(targetName);
     if (!target) {
       emitFailure(options.io, json, "help", `Unknown command "${targetName}". Run "pnpm cli --help" to list commands.`);

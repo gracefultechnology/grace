@@ -176,7 +176,7 @@ describe("properties", () => {
   }));
 });
 
-const root = path.resolve(import.meta.dirname, "../../../../..");
+const root = path.resolve(import.meta.dirname, "../../..");
 /** A fresh copy of the fixture package, with `overlay` over it. */
 function fixture(name: string, overlay?: string) {
   const dir = path.join(import.meta.dirname, ".cache", name);
