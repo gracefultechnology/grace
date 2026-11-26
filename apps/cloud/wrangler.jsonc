@@ -62,6 +62,12 @@
           "* * * * *"
         ]
       },
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "2867cc4a641e427e90d5afd0af8d9e61"
+        }
+      ],
       "ai": {
         "binding": "AI"
       },
