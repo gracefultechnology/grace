@@ -27,7 +27,7 @@ import { installChromium } from "./chromium.ts";
 import { hostedCachedFixture, isolatedInstalls } from "./selftests/install.ts";
 import { PACKED, toolShards } from "./selftests/tools.ts";
 import { bigNumberInteger } from "./gen/types.ts";
-import { canonical, check as conformanceCheck, ConformanceError, departure, planModel, replay as replayTrace } from "./conformance.ts";
+import { canonical, check as conformanceCheck, ConformanceError, departure, replay as replayTrace } from "./conformance.ts";
 import { BUILTINS, LIST_HELPERS, OPERATORS } from "./gen/print.ts";
 import { mirrorGen } from "./units.ts";
 import { conformance as checkTraces, conformanceFound } from "./conform.ts";

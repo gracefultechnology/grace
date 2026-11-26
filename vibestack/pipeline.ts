@@ -24,7 +24,7 @@ import { contracts, citationLookup, pending, pendingKey, pendingContracts, accep
 import { cacheCredentials, dafnyVersion, entry, recall, remembered, steady, store, certifyInstallation, collectGarbage, isActionEntry, toolchainFingerprint, type Memory } from "./cache.ts";
 import { generated, mirrorGen, publishGen, typecheckAll, proofUnits, proofFiles, strayProofFiles } from "./units.ts";
 import { simulation, type Simulation } from "./simulate.ts";
-import { tests, VITEST_CONFIG } from "./testing/check.ts";
+import { tests } from "./testing/check.ts";
 import { sha, digest, indent, packageScripts, pruneSidecars, configured, testInputs, readSrc, codeDirs, codeDirOf, owner, areaDirs, specOwnerPaths, specCompanionPaths, projectRoot, allDone, UNREAD, workspacePackages, writeWhole, tsApi, type Reported, type SrcFile } from "./util.ts";
 import { profile, type TestProfile } from "./testing/profile.ts";
 
