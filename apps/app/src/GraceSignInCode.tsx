@@ -3,11 +3,12 @@ import { Button, Input, PageText } from "@repo/ui";
 import { useId, useState } from "react";
 import type { CodeProvider, CodeSignIn } from "./graceAccount.vibe";
 
-export function GraceSignInCode({ provider, pending, run, onClose }: {
+export function GraceSignInCode({ provider, pending, run, onClose, onBack = onClose }: {
   provider: CodeProvider;
   pending: boolean;
   run: (operation: CodeSignIn, onSuccess: () => void) => void;
   onClose: () => void;
+  onBack?: () => void;
 }) {
   const [destination, setDestination] = useState("");
   const [challenge, setChallenge] = useState("");
@@ -40,7 +41,7 @@ export function GraceSignInCode({ provider, pending, run, onClose }: {
       )}
       <div className="flex flex-wrap gap-3">
         <Button type="submit" variant="prominent" size="pill" disabled={pending}>{challenge === "" ? "Send code" : "Sign in"}</Button>
-        <Button type="button" variant="capsule" size="pill" disabled={pending} onClick={onClose}>Back</Button>
+        <Button type="button" variant="capsule" size="pill" disabled={pending} onClick={onBack}>Back</Button>
       </div>
     </form>
   );

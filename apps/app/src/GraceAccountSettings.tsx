@@ -3,7 +3,7 @@ import { AccountFacts, Button, Checkbox, Input, PageHeading, PageText, RetryNoti
 import { Effect, Exit } from "effect";
 import { useId, useState, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
-import { accountDetails, hasActiveSubscription, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCheckAccountAgain, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, showsMailLeaseUpgrade, showsTabletSignIn } from "../gen/app__setup.ts";
+import { accountDetails, hasActiveSubscription, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCheckAccountAgain, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, mayUseTabletEmailCode, showsMailLeaseUpgrade, showsTabletSignIn } from "../gen/app__setup.ts";
 import { AccountActions, type Operation } from "./graceAccount.vibe";
 import { useRuntime } from "./useApp.ts";
 import { GraceSignInCode } from "./GraceSignInCode.tsx";
@@ -70,9 +70,15 @@ export function GraceAccountSettings() {
         <GraceSignInCode provider={provider} pending={pending} run={run} onClose={() => setProvider(undefined)} />
       ))}
       {canRetry && <RetryNotice role="status" retrying={pending} onRetry={() => run({ kind: "refresh" })}>Grace couldn’t check your account.</RetryNotice>}
-      {snapshot !== undefined && mayBeginDeviceSignIn(snapshot) && (
-        <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "signIn" })}>Sign in with Google</Button>
-      )}
+      {snapshot !== undefined && mayBeginDeviceSignIn(snapshot) && (provider === "email" && mayUseTabletEmailCode(snapshot) ? (
+        <GraceSignInCode provider="email" pending={pending} run={run} onClose={() => setProvider(undefined)}
+          onBack={() => run({ kind: "cancelSignInCode" }, () => setProvider(undefined))} />
+      ) : (
+        <div className="flex flex-wrap gap-3">
+          <Button variant="prominent" size="pill" disabled={pending} onClick={() => run({ kind: "signIn" })}>Sign in with Google</Button>
+          {mayUseTabletEmailCode(snapshot) && <Button variant="capsule" size="pill" disabled={pending} onClick={() => setProvider("email")}>Use email</Button>}
+        </div>
+      ))}
       {tabletRequested && (
         <>
           <PageText>Sign in on your tablet{signedIn && snapshot.email ? ` as ${snapshot.email}` : ""}?</PageText>

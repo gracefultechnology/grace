@@ -272,14 +272,31 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   }
 });
 
-it('Clear an unverified tablet sign-in and retry inside Grace (spec/app/setup.md, "Google sign-in stays with the surface that started it")', async () => {
+it('Clear an unverified tablet sign-in and retry inside Grace (spec/app/setup.md, "Google sign-in stays with the surface that started it"; spec/app/setup.md, "A supported email code can sign in on the tablet")', async () => {
   let needsCleanup = false;
   let cleanupAttempts = 0;
   let signInAttempts = 0;
+  let authenticated = false;
+  let pendingCode: string | undefined;
+  const email = "reader@example.test";
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     account: {
-      status: () => Promise.resolve(needsCleanup ? { kind: "signedOut", legacySignInNeedsCleanup: true } : { kind: "signedOut" }),
+      status: () => Promise.resolve(authenticated ? { kind: "signedIn", voiceDisclosureScope: "reader" } : needsCleanup ? { kind: "signedOut", legacySignInNeedsCleanup: true } : { kind: "signedOut" }),
+      signInMethods: () => Promise.resolve({ emailCode: true }),
+      sendSignInCode: ({ address }) => {
+        pendingCode = address;
+        return Promise.resolve({ kind: "sent" });
+      },
+      cancelSignInCode: () => {
+        pendingCode = undefined;
+        return Promise.resolve();
+      },
+      verifySignInCode: ({ address, code }) => {
+        expect(address).toBe(pendingCode);
+        authenticated = code === "123456";
+        return Promise.resolve({ kind: authenticated ? "signedIn" : "additionalVerification" });
+      },
       cleanupLegacySignIn: () => {
         cleanupAttempts += 1;
         if (cleanupAttempts === 1) return Promise.reject(new Error("Cloud is unreachable"));
@@ -328,6 +345,22 @@ it('Clear an unverified tablet sign-in and retry inside Grace (spec/app/setup.md
   await expect.element(signIn).toBeEnabled();
   expect({ signInAttempts, location: window.location.href }).toEqual({ signInAttempts: 2, location: startingLocation });
   expect(cleanupAttempts).toBe(2);
+  for (const shouldCancel of [true, false]) {
+    await act(() => userEvent.click(button("Use email")));
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Email address" }), email));
+    await act(() => userEvent.click(button("Send code")));
+    await expect.element(page.getByRole("textbox", { name: "Sign-in code" })).toBeEnabled();
+    expect(pendingCode).toBe(email);
+    if (shouldCancel) {
+      await act(() => userEvent.click(button("Back")));
+      await expect.element(button("Use email")).toBeEnabled();
+      expect(pendingCode).toBeUndefined();
+    }
+  }
+  await act(() => userEvent.fill(page.getByRole("textbox", { name: "Sign-in code" }), "123456"));
+  await act(() => userEvent.click(button("Sign in")));
+  await expect.element(button("Sign out")).toBeEnabled();
+  expect(window.location.href).toBe(startingLocation);
 });
 
 it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access")', async () => {

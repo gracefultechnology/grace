@@ -546,7 +546,7 @@ type GraceMember = { accountId: str, email: str, plan: GracePlan }
 type TabletAccountDetails = TabletAccountUnavailable | TabletAccountKnown(GraceMember)
 type TabletMailAuthority = { accountId: str, leaseVersion: str }
 type MailLeaseUpgradePhase = LeaseUpgradeNotRequired | LeaseUpgradeRequired | LeaseUpgradeSignInPending | LeaseUpgradeAcknowledgmentPending | LeaseMailReady(TabletMailAuthority)
-type GraceAccount = CheckingAccount | GraceDeviceSignedOut | GraceDeviceSignInNeedsCleanup | GraceDeviceSignedIn({ mailLeaseUpgrade: MailLeaseUpgradePhase, details: TabletAccountDetails }) | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn(GraceMember)
+type GraceAccount = CheckingAccount | GraceDeviceSignedOut({ emailCode: bool }) | GraceDeviceSignInNeedsCleanup | GraceDeviceSignedIn({ mailLeaseUpgrade: MailLeaseUpgradePhase, details: TabletAccountDetails }) | GraceSignedOut({ google: bool, emailCode: bool, smsCode: bool }) | AccountUnavailable | GraceSignedIn(GraceMember)
 pure def tabletAccount(lease: MailLeaseUpgradePhase, details: TabletAccountDetails): GraceAccount =
   GraceDeviceSignedIn({ mailLeaseUpgrade: lease, details: details })
 pure val signedInTablet: GraceAccount = tabletAccount(LeaseUpgradeNotRequired, TabletAccountUnavailable)
@@ -573,14 +573,17 @@ pure def mayOpenBillingPortal(account: GraceAccount): bool = match account {
 }
 pure def reportedBy(source: AccountSource, report: GraceAccount): bool = match report {
   | GraceDeviceSignedIn(_) => source == TabletSession
-  | GraceDeviceSignedOut => source == TabletSession
+  | GraceDeviceSignedOut(_) => source == TabletSession
   | GraceDeviceSignInNeedsCleanup => source == TabletSession
   | GraceSignedIn(_) => source == GraceService
   | GraceSignedOut(_) => source == GraceService
   | AccountUnavailable => source == TabletSession or source == GraceService
   | CheckingAccount => false
 }
-pure def mayBeginDeviceSignIn(account: GraceAccount): bool = account == GraceDeviceSignedOut
+pure def mayBeginDeviceSignIn(account: GraceAccount): bool = match account {
+  | GraceDeviceSignedOut(_) => true
+  | _ => false
+}
 pure def mayCleanupLegacySignIn(account: GraceAccount): bool = account == GraceDeviceSignInNeedsCleanup
 pure def lawASignInNeedingCleanupCannotBeginANewSignIn(account: GraceAccount): bool =
   mayCleanupLegacySignIn(account) implies not(mayBeginDeviceSignIn(account))
@@ -663,7 +666,7 @@ pure def stepTheAccountComesOnlyFromItsOwnSource(before: Setup, via: str, after:
 pure def alwaysOnlyAnAuthorizedAccountCarriesAGoogleConnection(s: Setup): bool =
   linkUnknown(s.googleLink) or managedReadAccountId(s.graceAccount) != ""
 pure val reportValues: Set[GraceAccount] = Set(
-  CheckingAccount, GraceDeviceSignedOut, GraceDeviceSignInNeedsCleanup, signedInTablet, AccountUnavailable,
+  CheckingAccount, GraceDeviceSignedOut({ emailCode: false }), GraceDeviceSignedOut({ emailCode: true }), GraceDeviceSignInNeedsCleanup, signedInTablet, AccountUnavailable,
   tabletAccount(LeaseUpgradeRequired, TabletAccountUnavailable),
   tabletAccount(LeaseUpgradeSignInPending, TabletAccountUnavailable),
   tabletAccount(LeaseUpgradeAcknowledgmentPending, TabletAccountUnavailable),
@@ -754,6 +757,23 @@ pure def mayStartGoogleSignIn(entry: GoogleSignInEntry, surface: GoogleSignInSur
 pure def lawGoogleSignInCannotChangeEntry(account: GraceAccount): bool =
   not(mayStartGoogleSignIn(TabletGoogleEntry, BrowserGoogleFlow, account)) and
   not(mayStartGoogleSignIn(WebGoogleEntry, AndroidGooglePicker, account))
+```
+
+### A supported email code can sign in on the tablet
+
+The tablet offers email sign-in when its Grace service supports it. The
+person enters their address and code in Grace. The native custodian verifies
+the code and acknowledges its own device key before the tablet shows a
+signed-in account. Back cancels the current attempt. An incomplete account
+verification keeps the account signed out.
+
+```quint
+pure def mayUseTabletEmailCode(account: GraceAccount): bool = match account {
+  | GraceDeviceSignedOut(providers) => providers.emailCode
+  | _ => false
+}
+pure def lawEmailCodeNeedsASignedOutTablet(account: GraceAccount): bool =
+  mayUseTabletEmailCode(account) implies mayBeginDeviceSignIn(account)
 ```
 
 ### An enrolled tablet offers one sign-in to update mail and calendar access

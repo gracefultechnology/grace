@@ -1,6 +1,6 @@
-// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"; spec/app/setup.md, "Google sign-in stays with the surface that started it"
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"; spec/app/setup.md, "Google sign-in stays with the surface that started it"; spec/app/setup.md, "A supported email code can sign in on the tablet"
 import {
-  type GoogleLink, type GraceAccount, accountDetails, accountDetailsShown, type GracePlan, type MailLeaseUpgradePhase, type TabletAccountDetails, type TabletMailAuthority, hasActiveSubscription, isTheRequestsOwnReturn, Machine as Setup, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, mayStartGoogleSignIn, tabletAccount, tabletSignInConfirmed
+  type GoogleLink, type GraceAccount, accountDetails, accountDetailsShown, type GracePlan, type MailLeaseUpgradePhase, type TabletAccountDetails, type TabletMailAuthority, hasActiveSubscription, isTheRequestsOwnReturn, Machine as Setup, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, mayStartGoogleSignIn, mayUseTabletEmailCode, tabletAccount, tabletSignInConfirmed
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { checkoutFromResponse, normalizeSubscriptionCode, redeemResultFromResponse, snapshotFromResponse, type BillingSnapshot } from "@elizaos/cloud"
@@ -27,6 +27,9 @@ const PlanCatalog = Schema.Struct({ plans: Schema.Array(Schema.Struct({ key: Sch
 const TabletProfile = Schema.Struct({ success: Schema.Literal(true), data: Schema.Struct({ id: Schema.NonEmptyString, email: Schema.optional(Schema.String) }) })
 const DeviceResponse = Schema.Struct({ status: Schema.Int.check(Schema.isBetween({ minimum: 200, maximum: 599 })), body: Schema.String })
 const TabletConsent = Schema.Struct({ kind: Schema.Literals(["connected", "cancelled"]) })
+const TabletSignInMethods = Schema.Struct({ emailCode: Schema.Boolean })
+const TabletCodeSent = Schema.Struct({ kind: Schema.Literal("sent") })
+const TabletCodeVerified = Schema.Struct({ kind: Schema.Literals(["signedIn", "additionalVerification"]) })
 schema Destination { url: string }
 schema DeviceApproval { redirectUrl: string }
 schema DeviceAttempt { challenge: string; state: string }
@@ -78,7 +81,7 @@ const clearDevice = () => Effect.try(() => webView.window.sessionStorage.removeI
 export type CodeProvider = "email" | "sms"
 type UpgradeOperation = { kind: "beginLeaseUpgrade" } | { kind: "cancelLeaseUpgrade" }
 type AccountOperation =
-  | { kind: "refresh" | "signIn" | "signOut" | "cleanupLegacySignIn" | "checkout" | "portal" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "refresh" | "signIn" | "signOut" | "cleanupLegacySignIn" | "checkout" | "portal" | "cancelDevice" | "disconnectGoogle" | "cancelSignInCode" }
   | { kind: "authorizeDevice"; expectedAccountId: string }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
   | { kind: "redeemMembershipCode"; code: string }
@@ -351,7 +354,14 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
       if (result.kind !== "signedOut") throw new AccountRequestFailed()
       return { tag: "GraceDeviceSignInNeedsCleanup" }
     }
-    if (result.kind === "signedOut") return { tag: "GraceDeviceSignedOut" }
+    if (result.kind === "signedOut") {
+      const methods = plugin.signInMethods?.bind(plugin)
+      const emailCode = methods === undefined ? false : (effect {
+        const response = try timeout(tryPromise(methods), "5 seconds")
+        return (try Schema.decodeUnknownEffect(TabletSignInMethods)(response)).emailCode
+      } catch () => false)
+      return { tag: "GraceDeviceSignedOut", emailCode }
+    }
     return tabletAccount({ tag: "LeaseUpgradeNotRequired" }, try tabletDetails({ tag: "LeaseUpgradeNotRequired" }))
   }
 
@@ -364,10 +374,30 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     }
     if (native) {
       if (plugin === undefined) return false
+      if (operation.kind === "cancelSignInCode") {
+        const cancel = plugin.cancelSignInCode?.bind(plugin)
+        if (cancel === undefined) return false
+        try tryPromise(cancel)
+        return true
+      }
       const current = try refresh()
       if (operation.kind === "signIn" && mayStartGoogleSignIn("TabletGoogleEntry", "AndroidGooglePicker", current)) return Effect.as(tryPromise(() => plugin.beginSignIn()), true) catch effect () => {
         try refresh()
         return false
+      }
+      if (operation.kind === "sendCode" || operation.kind === "verifyCode") {
+        if (operation.provider !== "email" || !mayUseTabletEmailCode(current)) return false
+        if (operation.kind === "sendCode") {
+          const send = plugin.sendSignInCode?.bind(plugin)
+          if (send === undefined) return false
+          try Schema.decodeUnknownEffect(TabletCodeSent)(try tryPromise(() => send({ address: operation.address })))
+          return true
+        }
+        const verify = plugin.verifySignInCode?.bind(plugin)
+        if (verify === undefined) return false
+        const reply = try tryPromise(() => verify({ address: operation.address, code: operation.code }))
+        const verified = try Schema.decodeUnknownEffect(TabletCodeVerified)(reply)
+        return verified.kind === "signedIn" && (try refresh()).tag === "GraceDeviceSignedIn"
       }
       if (current.tag !== "GraceDeviceSignedIn") return false
       if (operation.kind === "connectGoogle" || operation.kind === "disconnectGoogle") {
@@ -408,6 +438,7 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
       return false
     }
     const transport = webTransport
+    if (operation.kind === "cancelSignInCode") return true
     if (operation.kind === "cancelDevice") {
       try dismissDevice()
       return true

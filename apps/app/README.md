@@ -423,29 +423,26 @@ with the current launch epoch.
 
 On standalone Grace Cloud devices with Google Play services and native Google enabled, Grace opens the
 Android Google account picker. Cloud issues a one-time nonce tied to the device PKCE challenge.
-Android sends the Google result directly to Cloud and exchanges the returned device code. The
-Google ID token and PKCE verifier stay in the Android host.
+Android sends the Google result directly to Cloud, then acknowledges the device key before Grace
+uses it. The Google ID token and PKCE verifier stay in the Android host. When email codes are
+available, the person can request and enter a code in Grace Settings.
 
 Register an Android OAuth client for `technology.graceful.grace` with release certificate SHA-1
 `7D:9D:BF:44:E3:E5:D6:29:16:D3:DE:95:24:97:4A:A1:F6:10:D4:02` in the same Google project as
 Grace’s Web OAuth client. Credential Manager and Cloud token verification both use that Web
 client ID. Enable native Google for this app in the Cloud registry after registration.
 
-Grace uses the hosted account page in the system browser when the native picker is unavailable
-or the person chooses browser sign-in. After explicit device approval, the
-Android App Link returns to `https://app.graceforseniors.com/android/auth/callback`. Android uses
-the stored PKCE verifier to exchange the one-time code with
-`https://api.graceforseniors.com/api/auth/device/exchange`. The device token and account IDs stay in
-Android's encrypted, no-backup store. A Cloud acknowledgement activates the token before
-Grace puts it into use. The app bridge reports only whether the device is signed in.
-Signing out stops the device agent, removes the credential and requests revocation. The hosted app
-must publish Android Digital Asset Links for the release signer to validate the callback. Device
-sessions expire after seven days, when the person signs in again. Standalone
-password recovery uses a fresh approval on Grace Cloud's registered browser page.
+Standalone sign-in and mail-lease renewal stay on the tablet. Gmail and Calendar permission
+changes use Google's Android consent screen and return directly to Grace Settings. The device key
+and refresh secrets stay in Android's encrypted, no-backup store. Signing out stops the device
+agent, removes the credential and requests revocation. Existing browser approvals already started
+by older builds can still finish through the verified Android App Link at
+`https://app.graceforseniors.com/android/auth/callback`. Standalone password recovery has its own
+registered approval page.
 
-Shared profiles use Eliza OS’s Android `sign-in` module. Google sign-in can use
-the Android picker or the selected deployment’s verified `/auth/grace/callback`
-App Link. Existing shared accounts must sign in again with the same account
+Shared profiles use Eliza OS’s Android `sign-in` module and Google account picker. Shared mail-lease
+renewal uses the selected deployment’s verified `/auth/grace/callback` App Link.
+Existing shared accounts must sign in again with the same account
 and organization before Grace uses the new native credential store. The
 upgrade preserves the previous encrypted owner record and the local vault.
 
