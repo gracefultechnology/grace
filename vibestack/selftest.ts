@@ -2244,6 +2244,7 @@ function eachCheck() {
       "package.json": JSON.stringify({ name: "skills", packageManager, scripts: { [hook]: scripts[hook] } }),
       "vibestack/skill-links.ts": read("vibestack/skill-links.ts"),
       "AGENTS.md": "Project instructions\n",
+      ".gitignore": `${scaffoldedIgnores.join("\n")}\n`,
       ".agents/skills/project/SKILL.md": "Project skill\n",
       ".agents/claude-settings.json": read(".agents/claude-settings.json"),
     });
@@ -4160,8 +4161,10 @@ function theCommandLine() {
 
   test("init gives a directory without a manifest one", () => {
     const root = scratch({});
-    assert.ok(init(root).includes("package.json scripts: dev, check, gen, accept, build, test"));
-    assert.deepEqual(Object.keys(JSON.parse(read("package.json", root))).sort(), ["dependencies", "devDependencies", "engines", "packageManager", "pnpm", "scripts", "type"]);
+    init(root);
+    const manifest = JSON.parse(read("package.json", root));
+    assert.deepEqual(Object.keys(manifest).sort(), ["dependencies", "devDependencies", "engines", "packageManager", "pnpm", "scripts", "type"]);
+    assert.deepEqual(Object.keys(manifest.scripts).sort(), ["accept", "build", "check", "dev", "gen", "new", "postinstall", "studio", "test"]);
   });
 
   test("an obligation not proved names its rules and leaves a lemma to start from; its acceptance outlives a change of prose and not one of Quint", async () => {

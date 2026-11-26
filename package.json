@@ -55,6 +55,7 @@
     "ai-agents"
   ],
   "bin": {
+    "vibestack": "dist/spec.js",
     "spec": "dist/spec.js"
   },
   "files": [
