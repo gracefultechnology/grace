@@ -281,7 +281,7 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
     >
       <div className="absolute top-0 left-0" style={{ width: stageWidth, height: full ? STAGE.height : availableHeight / scale, transformOrigin: `${STAGE.rail}px 0`, scale: String(scale), translate: `${x}px 0` }}>
         {!compact && <HomeGreeting greeting={greeting} name={name} line={line} compact={!full} className={cn("absolute left-[182px]", full ? "top-[34px]" : "top-[22px]")} />}
-        {banner ? <div className="absolute top-4 right-5 left-[614px] z-[310]">{banner}</div> : null}
+        {!compact && banner ? <div className="absolute top-4 right-5 left-[614px] z-[310]">{banner}</div> : null}
         {layout !== "greeting" && (
           <div
             key={passwords ? "cards-with-passwords" : "cards"}
