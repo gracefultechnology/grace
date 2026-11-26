@@ -2430,7 +2430,6 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
       beginSignIn: () => Promise.resolve(),
       signOut: () => Promise.resolve(),
       cleanupLegacySignIn: () => Promise.resolve(),
-      manageAccount: () => Promise.resolve(),
       addListener: () => Promise.resolve({ remove: () => Promise.resolve() }),
     },
     files: {

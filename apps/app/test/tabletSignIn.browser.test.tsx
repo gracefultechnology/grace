@@ -9,7 +9,7 @@ import "../src/main.css";
 
 actOnScreen();
 
-it('Redeem a membership code and reopen the Grace account (spec/app/setup.md, "A signed-in web account with an inactive subscription can redeem a membership code")', async () => {
+it('Redeem membership and grant Google access in the originating Grace account (spec/app/setup.md, "A signed-in account with an inactive subscription can redeem a membership code"; spec/app/setup.md, "Google mail and calendar access requires separate consent for the Grace account")', async () => {
   const original = location.href;
   history.replaceState(null, "", "#account");
   const account = { id: "membership-owner", email: "member@example.test" };
@@ -63,10 +63,79 @@ it('Redeem a membership code and reopen the Grace account (spec/app/setup.md, "A
     await first.dispose();
   }
   const reopened = tabletView(ManagedRuntime.make(application(undefined)));
-  onTestFinished(() => reopened.dispose());
-  await reopened.render();
+  try {
+    await reopened.render();
+    await expect.element(page.getByText("Active", { exact: true })).toBeVisible();
+    await expect.element(page.getByRole("button", { name: "Redeem code" })).not.toBeInTheDocument();
+  } finally {
+    await reopened.dispose();
+  }
+
+  const device = { id: "tablet-owner", email: "tablet@example.test" };
+  const leaseVersion = "active-tablet-lease";
+  let deviceGrant: typeof granted | null = null;
+  let connected = false;
+  let consentAttempts = 0;
+  const tabletCodes: string[] = [];
+  const body = (value: unknown) => Promise.resolve({ status: 200, body: JSON.stringify(value) });
+  const tablet = tabletView(ManagedRuntime.make(application(undefined, undefined, {
+    native: true,
+    account: {
+      status: () => Promise.resolve({ kind: "signedIn", voiceDisclosureScope: "verified-owner", mailLease: { accountId: device.id, leaseVersion } }),
+      beginSignIn: () => Promise.reject(new Error("Already signed in on this device")),
+      cleanupLegacySignIn: () => Promise.reject(new Error("Already signed in on this device")),
+      signOut: () => Promise.resolve(),
+      addListener: () => Promise.resolve({ remove: () => Promise.resolve() }),
+      readGoogle: (request) => {
+        expect(request).toMatchObject({ accountId: device.id, leaseVersion, route: "status" });
+        return body({ accountId: device.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true, connected,
+          identity: connected ? { email: device.email } : null, connectionId: connected ? "tablet-mail" : null,
+          grantedCapabilities: connected ? ["google.gmail.triage"] : [] });
+      },
+      connectGoogle: (request) => {
+        expect(request).toEqual({ accountId: device.id, mail: true, calendar: false, sendMail: false, trashMail: false, writeCalendar: false });
+        consentAttempts += 1;
+        if (consentAttempts === 1) return Promise.resolve({ kind: "cancelled" });
+        connected = true;
+        return Promise.resolve({ kind: "connected" });
+      },
+      disconnectGoogle: ({ accountId }) => {
+        expect(accountId).toBe(device.id);
+        connected = false;
+        return Promise.resolve();
+      },
+      accountRequest: (request) => {
+        if (request.action === "profile") return body({ success: true, data: device });
+        expect(request.accountId).toBe(device.id);
+        if (request.action === "plans") return body({ plans: [{ key: "plus_monthly" }] });
+        if (request.action === "billing") return body(browserBillingSnapshot(deviceGrant));
+        tabletCodes.push(readRedemption(request).code);
+        deviceGrant = granted;
+        const { data } = browserBillingSnapshot(deviceGrant);
+        return body({ replayed: false, grant: data.grant, entitlement: { plan: data.plan } });
+      },
+    },
+  })));
+  onTestFinished(() => tablet.dispose());
+  const originalTabletLocation = location.href;
+  await tablet.render();
+  await expect.element(page.getByText(device.email, { exact: true })).toBeVisible();
+  await act(() => userEvent.fill(page.getByRole("textbox", { name: "Membership code" }), "face-face-face-face"));
+  await act(() => userEvent.click(page.getByRole("button", { name: "Redeem code" })));
   await expect.element(page.getByText("Active", { exact: true })).toBeVisible();
-  await expect.element(page.getByRole("button", { name: "Redeem code" })).not.toBeInTheDocument();
+  const googleLink = page.getByRole("button", { name: "Continue to Google" });
+  const disconnect = page.getByRole("button", { name: "Disconnect Google" });
+  await act(() => userEvent.click(page.getByRole("checkbox", { name: "Read Gmail" })));
+  await act(() => userEvent.click(googleLink));
+  await expect.element(googleLink).toBeEnabled();
+  await expect.element(disconnect).not.toBeInTheDocument();
+  await act(() => userEvent.click(googleLink));
+  await expect.element(disconnect).toBeEnabled();
+  await act(() => userEvent.click(disconnect));
+  await expect.element(disconnect).not.toBeInTheDocument();
+  expect({ tabletCodes, webRedemptions: redemption.length, charges, location: location.href }).toEqual({
+    tabletCodes: ["FACEFACEFACEFACE"], webRedemptions: 2, charges: [], location: originalTabletLocation,
+  });
 });
 
 it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
@@ -203,10 +272,10 @@ it('Retry tablet sign-in (spec/app/setup.md, "Story: Sign in to Grace and manage
   }
 });
 
-it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
+it('Clear an unverified tablet sign-in and retry inside Grace (spec/app/setup.md, "Google sign-in stays with the surface that started it")', async () => {
   let needsCleanup = false;
   let cleanupAttempts = 0;
-  const signInAttempts: unknown[] = [];
+  let signInAttempts = 0;
   const runtime = ManagedRuntime.make(application(undefined, undefined, {
     native: true,
     account: {
@@ -217,16 +286,15 @@ it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.m
         needsCleanup = false;
         return Promise.resolve();
       },
-      beginSignIn: (options) => {
-        signInAttempts.push(options);
-        if (signInAttempts.length === 1) {
+      beginSignIn: () => {
+        signInAttempts += 1;
+        if (signInAttempts === 1) {
           needsCleanup = true;
           return Promise.reject(new Error("The previous credential was rejected"));
         }
         return Promise.resolve();
       },
       signOut: () => Promise.reject(new Error("Legacy cleanup must use its dedicated action")),
-      manageAccount: () => Promise.reject(new Error("An unverified owner cannot manage an account")),
       addListener: () => Promise.resolve({ remove: () => Promise.resolve() }),
     },
   }));
@@ -235,13 +303,15 @@ it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.m
   await view.render();
 
   const button = (name: string) => page.getByRole("button", { name, exact: true });
+  const startingLocation = window.location.href;
   await act(() => userEvent.click(button("Settings")));
   await act(() => userEvent.click(button("Account")));
   const clear = button("Clear old sign-in");
   const confirm = button("Confirm clearing old sign-in");
-  await act(() => userEvent.click(button("Sign in to Grace")));
+  const signIn = button("Sign in with Google");
+  await act(() => userEvent.click(signIn));
   await expect.element(clear).toBeEnabled();
-  await expect.element(button("Sign in to Grace")).not.toBeInTheDocument();
+  await expect.element(signIn).not.toBeInTheDocument();
   await expect.element(button("Manage Grace account")).not.toBeInTheDocument();
   await act(() => userEvent.click(clear));
   await act(() => userEvent.click(button("Cancel")));
@@ -254,8 +324,9 @@ it('Clear an unverified tablet sign-in before signing in again (spec/app/setup.m
   expect(cleanupAttempts).toBe(1);
   await act(() => userEvent.click(confirm));
   await expect.element(clear).not.toBeInTheDocument();
-  await act(() => userEvent.click(button("Other sign-in options")));
-  expect(signInAttempts).toEqual([undefined, { method: "browser" }]);
+  await act(() => userEvent.click(signIn));
+  await expect.element(signIn).toBeEnabled();
+  expect({ signInAttempts, location: window.location.href }).toEqual({ signInAttempts: 2, location: startingLocation });
   expect(cleanupAttempts).toBe(2);
 });
 
@@ -319,7 +390,6 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
       },
       cleanupLegacySignIn: () => Promise.reject(new Error("The current account is already verified")),
       signOut: () => Promise.reject(new Error("Upgrade must retain the current account")),
-      manageAccount: () => Promise.resolve(),
       addListener: (_, listener) => {
         notify = listener;
         return Promise.resolve({ remove: () => Promise.resolve() });
@@ -337,9 +407,11 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   const click = (name: string) => act(() => userEvent.click(button(name)));
   const open = (title: "Email" | "Calendar") => act(() => userEvent.click(
     page.getByRole("button", { name: new RegExp(`^${title}(?:$| )`) })));
+  const startingLocation = location.href;
   await open("Email");
-  await expect.element(button("Open Grace")).toBeEnabled();
-  expect(reads).toEqual([]);
+  await expect.element(button("Check again")).toBeEnabled();
+  await click("Check again");
+  expect({ reads, location: location.href }).toEqual({ reads: [], location: startingLocation });
   await act(() => {
     phase = "required";
     notify?.(status());
@@ -356,7 +428,6 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   expect(begin).toHaveBeenCalledTimes(1);
   await click("Cancel");
   await expect.element(button("Sign in again")).toBeEnabled();
-  await expect.element(button("Manage Grace account")).toBeEnabled();
   expect(cancel).toHaveBeenCalledTimes(1);
 
   browserAttempt.closeUnsafe();
@@ -375,7 +446,6 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
     browserAttempt.openUnsafe();
     return Promise.resolve();
   });
-  await expect.element(button("Manage Grace account")).toBeEnabled();
   await expect.element(button("Sign in again")).not.toBeInTheDocument();
   await click("Close Settings");
   await act(() => userEvent.click(page.getByRole("button", { name: /Mail kept after sign-in/ })));

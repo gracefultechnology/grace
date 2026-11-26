@@ -1,10 +1,10 @@
-// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"; spec/app/setup.md, "Google sign-in stays with the surface that started it"
 import {
-  type GoogleLink, type GraceAccount, accountDetailsShown, type GracePlan, type MailLeaseUpgradePhase, type TabletMailAuthority, hasActiveSubscription, isTheRequestsOwnReturn, Machine as Setup, mayBeginDeviceSignIn, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, signedInTablet, tabletSignInConfirmed
+  type GoogleLink, type GraceAccount, accountDetails, accountDetailsShown, type GracePlan, type MailLeaseUpgradePhase, type TabletAccountDetails, type TabletMailAuthority, hasActiveSubscription, isTheRequestsOwnReturn, Machine as Setup, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, mayStartGoogleSignIn, tabletAccount, tabletSignInConfirmed
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { checkoutFromResponse, normalizeSubscriptionCode, redeemResultFromResponse, snapshotFromResponse, type BillingSnapshot } from "@elizaos/cloud"
-import { accountPlugin, accountReadResponse, type AccountBridge } from "./accountPlugin.ts"
+import { accountPlugin, accountReadResponse, type AccountBridge, type TabletAccountRequest } from "./accountPlugin.ts"
 import type { AccountRequest, accountRequests, TabletGoogleRead } from "./cloudRequests.vibe"
 import { privateViewPlugin, webView } from "./surfacePlugin.ts"
 
@@ -24,6 +24,9 @@ const upgradePhase = {
 schema Providers { google: boolean; email: boolean; sms: boolean }
 const gracePlus = "plus_monthly"
 const PlanCatalog = Schema.Struct({ plans: Schema.Array(Schema.Struct({ key: Schema.String })) })
+const TabletProfile = Schema.Struct({ success: Schema.Literal(true), data: Schema.Struct({ id: Schema.NonEmptyString, email: Schema.optional(Schema.String) }) })
+const DeviceResponse = Schema.Struct({ status: Schema.Int.check(Schema.isBetween({ minimum: 200, maximum: 599 })), body: Schema.String })
+const TabletConsent = Schema.Struct({ kind: Schema.Literals(["connected", "cancelled"]) })
 schema Destination { url: string }
 schema DeviceApproval { redirectUrl: string }
 schema DeviceAttempt { challenge: string; state: string }
@@ -75,9 +78,8 @@ const clearDevice = () => Effect.try(() => webView.window.sessionStorage.removeI
 export type CodeProvider = "email" | "sms"
 type UpgradeOperation = { kind: "beginLeaseUpgrade" } | { kind: "cancelLeaseUpgrade" }
 type AccountOperation =
-  | { kind: "refresh" | "signOut" | "cleanupLegacySignIn" | "checkout" | "portal" | "manageAccount" | "cancelDevice" | "disconnectGoogle" }
+  | { kind: "refresh" | "signIn" | "signOut" | "cleanupLegacySignIn" | "checkout" | "portal" | "cancelDevice" | "disconnectGoogle" }
   | { kind: "authorizeDevice"; expectedAccountId: string }
-  | { kind: "signIn"; method?: "browser" }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
   | { kind: "redeemMembershipCode"; code: string }
   | { kind: "connectGoogle"; mail: boolean; calendar: boolean; sendMail: boolean; trashMail: boolean; writeCalendar: boolean; expectedEmail: string }
@@ -188,20 +190,24 @@ effect function readAccount(transport: Transport): GraceAccount!unknown {
     const providers = try decode(try accepted(transport, "/api/auth/providers", "GET"), Providers)
     return { tag: "GraceSignedOut", google: providers.google, emailCode: providers.email, smsCode: providers.sms }
   }
-  const plan = effect {
-    effect function readSnapshot() {
-      const response = try accepted(transport, "/api/v1/billing/limits", "GET")
-      return try snapshotFromResponse(try tryPromise(() => response.json()))
-    }
-    effect function readOffer() {
-      const response = try accepted(transport, "/api/v1/subscriptions/plans", "GET")
-      const catalog = try decode(response, PlanCatalog)
-      return catalog.plans.some(({ key }) => key === gracePlus)
-    }
+  const plan = try readPlan(accepted(transport, "/api/v1/billing/limits", "GET"), accepted(transport, "/api/v1/subscriptions/plans", "GET"))
+  return { tag: "GraceSignedIn", accountId: account.id, email: account.email ?? "", plan }
+}
+
+effect function readPlan(billing: Response!unknown, plans: Response!unknown): GracePlan!! {
+  effect function readSnapshot() {
+    const response = try billing
+    return try snapshotFromResponse(try tryPromise(() => response.json()))
+  }
+  effect function readOffer() {
+    const response = try plans
+    const catalog = try decode(response, PlanCatalog)
+    return catalog.plans.some(({ key }) => key === gracePlus)
+  }
+  return effect {
     const [snapshot, checkoutOffered] = try.all [readSnapshot(), Effect.orElseSucceed(readOffer(), () => false)]
     return planFrom(snapshot, checkoutOffered)
-  } catch () => "PlanUnknown" as const
-  return { tag: "GraceSignedIn", accountId: account.id, email: account.email ?? "", plan }
+  } catch () => "PlanUnknown"
 }
 
 effect function googleLink(response: Response, accountId: string): GoogleLink!unknown {
@@ -258,11 +264,11 @@ effect function checkoutUrl(transport: Transport) {
   return checkout.checkoutUrl
 }
 
-effect function redeemMembershipCode(transport: Transport, typedCode: string) {
+effect function redeemMembershipCode(request: (body: { code: string; idempotencyKey: string }) => Response!unknown, typedCode: string) {
   const code = normalizeSubscriptionCode(typedCode)
   if (code === null) return false
   const idempotencyKey = try Effect.try(() => webView.window.crypto.randomUUID())
-  const response = try accepted(transport, "/api/v1/subscription/redeem", "POST", { code, idempotencyKey })
+  const response = try request({ code, idempotencyKey })
   const now = try Clock.currentTimeMillis
   const result = try redeemResultFromResponse(try tryPromise(() => response.json()), now)
   return result.kind === "redeemed"
@@ -286,9 +292,26 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
   effect function readTabletGoogle(owner: TabletMailAuthority, route: TabletGoogleRead, query: Record<string, string>) {
     const read = native ? plugin?.readGoogle?.bind(plugin) : undefined
     if (read === undefined) throw new AccountRequestFailed()
-    const response = Schema.Struct({ status: Schema.Int.check(Schema.isBetween({ minimum: 200, maximum: 599 })), body: Schema.String })
-    const { status, body } = try Schema.decodeUnknownEffect(response)(try tryPromise(() => read({ ...owner, route, query })))
+    const { status, body } = try Schema.decodeUnknownEffect(DeviceResponse)(try tryPromise(() => read({ ...owner, route, query })))
     return try Effect.try(() => accountReadResponse(status, body))
+  }
+
+  effect function tabletAccountRequest(request: TabletAccountRequest): Response!unknown {
+    const send = plugin?.accountRequest?.bind(plugin)
+    if (send === undefined) throw new AccountRequestFailed()
+    const reply = try timeout(tryPromise(() => send(request)), "10 seconds")
+    const { status, body } = try Schema.decodeUnknownEffect(DeviceResponse)(reply)
+    if (status < 200 || status >= 300) throw new AccountRequestFailed()
+    return try Effect.try(() => accountReadResponse(status, body))
+  }
+
+  effect function tabletDetails(lease: MailLeaseUpgradePhase): TabletAccountDetails!! {
+    return effect {
+      const { data } = try decode(try tabletAccountRequest({ action: "profile" }), TabletProfile)
+      if (lease.tag === "LeaseMailReady" && lease.accountId !== data.id) throw new AccountRequestFailed()
+      const plan = try readPlan(tabletAccountRequest({ action: "billing", accountId: data.id }), tabletAccountRequest({ action: "plans", accountId: data.id }))
+      return { tag: "TabletAccountKnown", accountId: data.id, email: data.email ?? "", plan } as const
+    } catch () => ({ tag: "TabletAccountUnavailable" })
   }
 
   effect function refresh() {
@@ -316,17 +339,20 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     const result = try Schema.decodeUnknownEffect(DeviceAccountStatus)(status)
     if (result.mailLease !== undefined) {
       if (result.kind !== "signedIn" || result.legacySignInNeedsCleanup === true || result.mailLeaseUpgrade !== undefined) throw new AccountRequestFailed()
-      return { tag: "GraceDeviceSignedIn", mailLeaseUpgrade: { tag: "LeaseMailReady", ...result.mailLease } }
+      const lease = { tag: "LeaseMailReady", ...result.mailLease } as const
+      return tabletAccount(lease, try tabletDetails(lease))
     }
     if (result.mailLeaseUpgrade !== undefined) {
       if (result.kind !== "signedIn" || result.legacySignInNeedsCleanup === true) throw new AccountRequestFailed()
-      return { tag: "GraceDeviceSignedIn", mailLeaseUpgrade: upgradePhase[result.mailLeaseUpgrade] }
+      const lease = upgradePhase[result.mailLeaseUpgrade]
+      return tabletAccount(lease, try tabletDetails(lease))
     }
     if (result.legacySignInNeedsCleanup === true) {
       if (result.kind !== "signedOut") throw new AccountRequestFailed()
       return { tag: "GraceDeviceSignInNeedsCleanup" }
     }
-    return result.kind === "signedIn" ? signedInTablet : { tag: "GraceDeviceSignedOut" }
+    if (result.kind === "signedOut") return { tag: "GraceDeviceSignedOut" }
+    return tabletAccount({ tag: "LeaseUpgradeNotRequired" }, try tabletDetails({ tag: "LeaseUpgradeNotRequired" }))
   }
 
   effect function perform(operation: AccountOperation) {
@@ -339,17 +365,47 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     if (native) {
       if (plugin === undefined) return false
       const current = try refresh()
-      if (operation.kind === "signIn" && mayBeginDeviceSignIn(current)) return Effect.as(tryPromise(() =>
-        operation.method === "browser" ? plugin.beginSignIn({ method: "browser" }) : plugin.beginSignIn()), true) catch effect () => {
+      if (operation.kind === "signIn" && mayStartGoogleSignIn("TabletGoogleEntry", "AndroidGooglePicker", current)) return Effect.as(tryPromise(() => plugin.beginSignIn()), true) catch effect () => {
         try refresh()
         return false
       }
-      if (operation.kind === "manageAccount" && current.tag === "GraceDeviceSignedIn") try tryPromise(() => plugin.manageAccount())
-      else if (operation.kind === "signOut" && current.tag === "GraceDeviceSignedIn") {
+      if (current.tag !== "GraceDeviceSignedIn") return false
+      if (operation.kind === "connectGoogle" || operation.kind === "disconnectGoogle") {
+        const member = accountDetails(current)
+        const link = (try setup.get()).googleLink
+        if (member.tag !== "TabletAccountKnown" || !mayOfferGoogleLink(current, link)) return false
+        const { accountId } = member
+        if (operation.kind === "connectGoogle") {
+          const connect = plugin.connectGoogle?.bind(plugin)
+          const { mail, calendar, sendMail, trashMail, writeCalendar } = operation
+          if (connect === undefined || (!mail && !calendar)) return false
+          const reply = try tryPromise(() => connect({ accountId, mail, calendar, sendMail: mail && sendMail, trashMail: mail && trashMail, writeCalendar: calendar && writeCalendar }))
+          const consent = try Schema.decodeUnknownEffect(TabletConsent)(reply)
+          if (consent.kind === "cancelled") return true
+        } else {
+          const disconnect = plugin.disconnectGoogle?.bind(plugin)
+          if (disconnect === undefined || link.tag !== "GoogleLinkConnected") return false
+          try tryPromise(() => disconnect({ accountId }))
+        }
+        const refreshed = accountDetails(try refresh())
+        if (refreshed.tag !== "TabletAccountKnown" || refreshed.accountId !== accountId) return false
+        const observed = (try setup.get()).googleLink
+        return operation.kind === "connectGoogle" ? observed.tag === "GoogleLinkConnected" : observed.tag === "GoogleLinkReady"
+      }
+      if (operation.kind === "redeemMembershipCode" && mayRedeemMembershipCode(current)) {
+        const member = accountDetails(current)
+        if (member.tag !== "TabletAccountKnown") return false
+        const { accountId } = member
+        const redeemed = redeemMembershipCode((body) => tabletAccountRequest({ action: "redeem", accountId, ...body }), operation.code) catch () => false
+        const refreshed = try refresh()
+        const details = accountDetails(refreshed)
+        return redeemed && details.tag === "TabletAccountKnown" && details.accountId === accountId && hasActiveSubscription(refreshed)
+      }
+      if (operation.kind === "signOut") {
         try tryPromise(() => plugin.signOut())
         return (try refresh()).tag === "GraceDeviceSignedOut"
-      } else return false
-      return true
+      }
+      return false
     }
     const transport = webTransport
     if (operation.kind === "cancelDevice") {
@@ -379,10 +435,9 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
         return true
       })
     }
-    if (operation.kind === "manageAccount") return false
     const original = (try setup.get()).graceAccount
     if (operation.kind === "signIn") {
-      if (original.tag !== "GraceSignedOut" || !original.google) return false
+      if (!mayStartGoogleSignIn("WebGoogleEntry", "BrowserGoogleFlow", original)) return false
       try transport.begin()
       return true
     }
@@ -395,7 +450,7 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     if (original.tag !== "GraceSignedIn" || account.tag !== "GraceSignedIn" || account.accountId !== original.accountId) return false
     if (operation.kind === "redeemMembershipCode") {
       if (!mayRedeemMembershipCode(account)) return false
-      const redeemed = redeemMembershipCode(transport, operation.code) catch () => false
+      const redeemed = redeemMembershipCode((body) => accepted(transport, "/api/v1/subscription/redeem", "POST", body), operation.code) catch () => false
       const refreshed = try refresh()
       return redeemed && refreshed.tag === "GraceSignedIn" && refreshed.accountId === account.accountId && hasActiveSubscription(refreshed)
     }
