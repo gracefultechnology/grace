@@ -92,7 +92,7 @@ describe("project CLI", () => {
     expect(parsed.ok).toBe(true);
     expect(parsed.command).toBe("status");
     expect(parsed.data.specs).toContain("spec/index.md");
-    expect(parsed.data.packages.map((pkg) => pkg.name)).toEqual(["@repo/app", "@repo/cli", "@repo/design-system", "@repo/ui"]);
+    expect(parsed.data.packages.map((pkg) => pkg.name)).toEqual(["@repo/app", "@repo/benchmark", "@grace/cloud", "@repo/cli", "@repo/design-system", "@repo/ui"]);
 
     const filtered = createRecorder();
     expect(await runCli({ argv: ["status", "-p", "@repo/app", "--json"], commands, rootDir: templateRoot, cwd: templateRoot, io: filtered.io })).toBe(0);
