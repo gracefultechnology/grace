@@ -431,6 +431,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
  @PluginMethod public void beginLeaseUpgrade(PluginCall call) {
   ACCOUNT.execute(() -> {
    try {
+    if (!hasGooglePlayServices()) { call.reject("Google sign-in is unavailable on this tablet"); return; }
     Enrollment lease;
     synchronized (CREDENTIAL_CHANGE) {
      var owner = session(getContext());
@@ -445,9 +446,13 @@ public final class GraceAccount extends ElizaSignInPlugin {
     }
     try {
      publishSession();
-     super.upgradeMailLease(accountCall(call, data -> {
+     upgradeMailLeaseWithPicker(accountCall(call, data -> {
       if (cancelled(data)) {
        call.resolve();
+       return;
+      }
+      if ("factor-asked".equals(data.optString("verdict"))) {
+       super.cancelMailLeaseUpgrade(accountCall(call, ignored -> call.reject("Mail sign-in requires additional verification"), null));
        return;
       }
       if (!"signed-in-as".equals(data.optString("verdict"))) {
@@ -492,6 +497,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
 
  @Override @PluginMethod public void startGoogle(PluginCall call) { beginSignIn(call); }
 
+ @Override public void upgradeMailLease(PluginCall call) { beginLeaseUpgrade(call); }
  @Override public void startEmail(PluginCall call) { unsupportedSignIn(call); }
  @Override public void startPhone(PluginCall call) { unsupportedSignIn(call); }
  @Override public void reauthenticate(PluginCall call) { unsupportedSignIn(call); }
