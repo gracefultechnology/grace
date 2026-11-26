@@ -439,10 +439,11 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
   const photos = files?.photos ?? [];
 
   return (
-    <OverPage className={cn(lifted, "left-1.5")} style={{ bottom, contain: "layout style" }}>
+    <OverPage className={cn(lifted, "left-1.5")} style={{ bottom: 6, contain: "layout style" }}>
       <WithMailboxes ids={accountIds}>{(boxes) => (
         <WithCalendars keys={calKeys}>{(calendars) => (
           <HomeScreen className="inset-0"
+            bottomInset={Math.max(0, bottom - 6)}
             banner={<NoticeBanner reminders={accounts && ours ? reminderNotice(accounts, calendars, nowMs, calendarActions, slice.canCalendar) : undefined} />}
             layout={docked ? (keyboard > 0 ? "greeting" : "compact") : "full"} {...under(covered)} greeting={greeting} line="Here’s your day"
             calendar={{
@@ -599,7 +600,6 @@ const selectScreenSlice = (workspace: Workspace | undefined) => {
     benchmarkObservable: !privateSurface && !workspace.browser.tabs.some((tab) => tab.manualSignIn),
     covered: !privateSurface && !websiteKeyboard && assistant.presentation === "Expanded",
     docked: !privateSurface && !websiteKeyboard && assistant.presentation === "Compact",
-    graceOpen: assistant.presentation !== "Closed",
   };
 };
 
@@ -648,7 +648,7 @@ function Screen() {
           <ActiveSurface surface={slice.surface} bottom={bottom} docked={slice.docked} keyboard={keyboard} covered={slice.covered} sleeping={slice.sleeping} />
           {!slice.privateSurface && !slice.sleeping && <Notices above={toastAbove} />}
           {slice.showCaption && <CaptionSection keyboard={keyboard} />}
-          {!slice.privateSurface && !slice.websiteKeyboard && !slice.sleeping && slice.graceOpen && <Grace onHeightChange={setGraceHeight} />}
+          {!slice.privateSurface && !slice.websiteKeyboard && !slice.sleeping && <Grace onHeightChange={setGraceHeight} />}
         </div>
         {slice.sleeping && <SleepOverlay />}
         <ScreenDimBridge />

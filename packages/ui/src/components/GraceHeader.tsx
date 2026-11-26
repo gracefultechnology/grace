@@ -20,7 +20,7 @@ export function GraceCapsule({ className, ...props }: GraceCapsuleProps) {
   return (
     <div
       className={cn(
-        "flex h-16 shrink-0 items-center gap-0.5 rounded-full bg-glass/62 p-1 shadow-capsule backdrop-blur-capsule backdrop-saturate-160",
+        "flex h-16 shrink-0 items-center gap-0.5 rounded-full bg-glass/62 p-1 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 group-data-moving/grace:bg-glass/92 group-data-moving/grace:backdrop-blur-none group-data-moving/grace:backdrop-saturate-100",
         className,
       )}
       {...props}

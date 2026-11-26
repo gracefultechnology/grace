@@ -29,7 +29,7 @@ const fading = "transition-opacity duration-slow ease-out-cubic will-change-[opa
 const still = "group-data-dragging/home:[animation-play-state:paused] group-data-turning/home:[animation-play-state:paused] group-data-offpage/card:[animation-play-state:paused]";
 
 const turnsNear = { "data-turn": "near", className: fading } as const;
-export const turnsFar = { "data-turn": "far", className: cn("invisible opacity-0 group-data-dragging/home:visible group-data-turning/home:visible", fading) } as const;
+export const turnsFar = { "data-turn": "far", className: cn("opacity-0", fading) } as const;
 
 export type Turning = { near: HTMLElement[]; far: HTMLElement[]; shown?: string; faded?: string; side?: "left" | "right" };
 

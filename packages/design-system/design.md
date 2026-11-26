@@ -424,8 +424,8 @@ this prose into tokens. To change the design, describe it, and have the change w
 | `animate.glow-ring` | glow-ring 2.4s ease-out infinite |
 | `animate.sheen-pan` | sheen-pan 9s ease-in-out infinite |
 | `animate.sway` | sway 10s ease-in-out infinite |
-| `animate.grace-rise` | grace-rise 280ms cubic-bezier(0.3, 0.7, 0.3, 1) 40ms both |
-| `animate.grace-rise-hold` | grace-rise-hold 280ms cubic-bezier(0.3, 0.7, 0.3, 1) 40ms both |
+| `animate.grace-rise` | grace-rise 280ms cubic-bezier(0.3, 0.7, 0.3, 1) both |
+| `animate.grace-rise-hold` | grace-rise-hold 280ms cubic-bezier(0.3, 0.7, 0.3, 1) both |
 | `animate.grace-fall` | grace-fall 280ms cubic-bezier(0.4, 0, 0.2, 1) both |
 | `animate.grace-fall-hold` | grace-fall-hold 280ms cubic-bezier(0.4, 0, 0.2, 1) both |
 | `animate.spin-slow` | spin 14s linear infinite |

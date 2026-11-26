@@ -38,6 +38,8 @@ export type HomeScreenProps = Omit<ComponentProps<"div">, "children"> & {
   passwords?: PasswordsCardProps;
   /** How Home fills its space; give a `compact` or `greeting` Home a `bottom` that clears Grace's window. */
   layout?: HomeLayout;
+  /** Space reserved at the bottom for Grace's compact window or caption strip while Home stays full-screen so card shadows are never clipped. */
+  bottomInset?: number;
   /** The page in view. */
   page?: HomePage;
   /** Asks for another page: an arrow or a dot was tapped, or Home was swiped sideways. False refuses it, and a swipe settles back. */
@@ -48,7 +50,7 @@ export type HomeScreenProps = Omit<ComponentProps<"div">, "children"> & {
 
 const VIEW = 1042;
 const columnGap = 20;
-const SWIPE = { threshold: 12, overscroll: 60, flick: 0.5, stale: 80 };
+const SWIPE = { threshold: 6, overscroll: 60, flick: 0.5, stale: 80 };
 const filesSlot = { x: 990, top: 0, w: 520, h: 560 };
 const passwordsSlot = { x: filesSlot.x + filesSlot.w + columnGap, top: 0, w: VIEW - filesSlot.w - columnGap, h: 290 };
 const slots = {
@@ -80,12 +82,20 @@ function drum({ x, top, w }: (typeof slots)[Slot], shift: number): Pose {
   const onRight = (left + right) / 2 > VIEW / 2;
   const past = onRight ? left - VIEW : -right;
   const over = Math.min(w, onRight ? Math.max(0, right - VIEW) : Math.max(0, -left));
+  const side = onRight ? 1 : -1;
+  if (past <= 0 && over === 0) {
+    return {
+      away: 0,
+      side,
+      level: 2,
+      transform: `translate3d(${(-shift).toFixed(1)}px, 0, 0)`,
+    };
+  }
   const theta = past > 0 ? (past + w / 2) / RADIUS : over / (2 * RADIUS);
   const phi = Math.max(0, past) / RADIUS;
   const nearFlat = onRight ? left : right;
   const nearTo = past > 0 ? (onRight ? VIEW + RADIUS * Math.sin(phi) : -RADIUS * Math.sin(phi)) : nearFlat;
   const depth = past > 0 ? -RADIUS * (1 - Math.cos(phi)) : 0;
-  const side = onRight ? 1 : -1;
   const angle = side * ((theta * 180) / Math.PI);
   const pivot = VIEW / 2 + shift - x;
   const level = 280 - top;
@@ -98,7 +108,7 @@ function drum({ x, top, w }: (typeof slots)[Slot], shift: number): Pose {
   };
 }
 
-const poseAt = (full: boolean, slot: Slot, shift: number): Pose => (full ? drum(slots[slot], shift) : { transform: `translateX(${(-shift).toFixed(1)}px)`, away: 0, side: 1, level: 2 });
+const poseAt = (full: boolean, slot: Slot, shift: number): Pose => (full ? drum(slots[slot], shift) : { transform: `translate3d(${(-shift).toFixed(1)}px, 0, 0)`, away: 0, side: 1, level: 2 });
 
 function railOf(stage: HTMLElement): Rail {
   const cards = [...stage.querySelectorAll<HTMLElement>("[data-home-card]")].flatMap((face) => {
@@ -148,11 +158,12 @@ function paint({ cards }: Rail, full: boolean, shift: number) {
  * @design packages/design-system/design.md#glass
  * @design packages/design-system/design.md#screens
  */
-export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, passwords, layout = "full", page = "MainCards", onPageChange, pager, className, ...props }: HomeScreenProps) {
+export function HomeScreen({ greeting, name, line, banner, calendar, email, internet, files, passwords, layout = "full", bottomInset = 0, page = "MainCards", onPageChange, pager, className, ...props }: HomeScreenProps) {
   const full = layout === "full";
   const compact = layout === "compact";
   const [measure, measured] = useSize<HTMLDivElement>();
   const box = measured ?? STAGE;
+  const availableHeight = Math.max(0, box.height - bottomInset);
   const across = (box.width - STAGE.rail) / (STAGE.width - STAGE.rail);
   const scale = Math.min(1, across, full ? box.height / STAGE.height : 1);
   const stageWidth = compact ? Math.max(STAGE.width, box.width) : STAGE.width;
@@ -168,21 +179,29 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
   const railRef = useRef<Rail | null>(null);
   const swipeRef = useRef<Swipe | null>(null);
   const swipedRef = useRef(false);
+  const lastLayoutRef = useRef<HomeLayout | undefined>(undefined);
   const settle = useCallback((stage: HTMLDivElement | null) => {
     if (!stage) return;
     const entering = railRef.current?.stage !== stage;
-    const rail = entering || !railRef.current ? railOf(stage) : railRef.current;
+    const layoutChanged = lastLayoutRef.current !== undefined && lastLayoutRef.current !== layout;
+    lastLayoutRef.current = layout;
+    const rail = entering || layoutChanged || !railRef.current ? railOf(stage) : railRef.current;
     railRef.current = rail;
-    if (entering) paint(rail, full, rest);
-    else turnTo(rail, full, rest);
+    if (entering || layoutChanged) {
+      delete rail.stage.dataset.turning;
+      paint(rail, full, rest);
+    } else {
+      turnTo(rail, full, rest);
+    }
     if (entering) play(stage, [{ opacity: 0 }, { opacity: 1 }], { duration: "quick", ease: "out-cubic" });
-  }, [full, rest]);
+  }, [full, layout, rest]);
   const startDrag = (event: PointerEvent<HTMLDivElement>) => {
     if (!event.isPrimary || event.button !== 0) return;
     swipedRef.current = false;
     if (layout === "greeting" || (event.target as Element).closest("[data-home-pager] button")) return;
     const home = event.currentTarget;
-    const k = ((home.getBoundingClientRect().width / home.offsetWidth) || 1) * scale;
+    const ratio = measured && home.offsetWidth ? measured.width / home.offsetWidth : (home.getBoundingClientRect().width / home.offsetWidth) || 1;
+    const k = ratio * scale;
     swipeRef.current = { pointer: event.pointerId, x: event.clientX, k, from: rest, shift: rest, moved: false, at: event.timeStamp, speed: 0 };
   };
   const drag = (event: PointerEvent<HTMLDivElement>) => {
@@ -257,15 +276,15 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
         if (event.target === event.currentTarget) release(event, true);
       }}
       onClickCapture={swallowSwipeClick}
-      className={cn("absolute inset-1.5 z-[1] touch-pan-y touch-pinch-zoom overflow-hidden font-sans", className)}
+      className={cn("absolute inset-1.5 z-[1] touch-none overflow-hidden font-sans", className)}
       {...props}
     >
-      <div className="absolute top-0 left-0" style={{ width: stageWidth, height: full ? STAGE.height : box.height / scale, transformOrigin: `${STAGE.rail}px 0`, scale: String(scale), translate: `${x}px 0` }}>
+      <div className="absolute top-0 left-0" style={{ width: stageWidth, height: full ? STAGE.height : availableHeight / scale, transformOrigin: `${STAGE.rail}px 0`, scale: String(scale), translate: `${x}px 0` }}>
         {!compact && <HomeGreeting greeting={greeting} name={name} line={line} compact={!full} className={cn("absolute left-[182px]", full ? "top-[34px]" : "top-[22px]")} />}
         {banner ? <div className="absolute top-4 right-5 left-[614px] z-[310]">{banner}</div> : null}
         {layout !== "greeting" && (
           <div
-            key={passwords ? layout : `${layout}-short`}
+            key={passwords ? "cards-with-passwords" : "cards"}
             ref={settle}
             onTransitionEnd={(event) => {
               if (event.propertyName === "transform" && event.target instanceof HTMLElement && "homeCard" in event.target.dataset) delete event.currentTarget.dataset.turning;

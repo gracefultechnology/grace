@@ -30,7 +30,7 @@ export function Rail({ battery, batteryLabel, time, period, date, status, footer
   return (
     <nav
       className={cn(
-        "absolute top-1.5 bottom-1.5 left-1.5 z-[4] flex w-[132px] flex-col items-center rounded-window bg-glass/62 pt-3.5 text-foreground shadow-capsule backdrop-blur-capsule backdrop-saturate-160",
+        "absolute top-1.5 bottom-1.5 left-1.5 z-[4] flex w-[132px] flex-col items-center rounded-window bg-glass/80 pt-3.5 text-foreground shadow-capsule",
         className,
       )}
       {...props}

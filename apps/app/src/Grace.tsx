@@ -1,5 +1,5 @@
 // spec/app/assistant.md, "Story: Keep control of one task across windows and pauses"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
-import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceVoiceMenu, type GraceVoiceMenuProps, GraceWindow, PageText, UserBubble } from "@repo/ui";
+import { AnswerChip, AnswerChips, besideRail, cn, GraceBubble, GraceDock, GraceHeader, GraceMessages, GraceVoiceMenu, type GraceVoiceMenuProps, GraceWindow, PageText, useReducedMotion, UserBubble } from "@repo/ui";
 import { Effect, Exit } from "effect";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import type { Pace } from "../gen/app__preferences.ts";
@@ -170,7 +170,7 @@ function GraceComposer({
   );
 }
 
-function GracePanel({ onHeightChange }: { onHeightChange: (height: number) => void }) {
+function GracePanel({ open, onClosed, onHeightChange }: { open: boolean; onClosed: () => void; onHeightChange: (height: number) => void }) {
   const { workspace, can, send, say, current, checkGuidedRead, pointAtReadLink, confirmGuidedName, startReadReview, resumeReadPlan } = useWorkspace();
   const guide = usePasswordGuide();
   const runtime = useRuntime();
@@ -190,7 +190,7 @@ function GracePanel({ onHeightChange }: { onHeightChange: (height: number) => vo
   const keyedReviewSteps = useMemo(() => (reviewSteps ? keyedSteps(reviewSteps) : []), [reviewSteps]);
   const keyedPlanSteps = useMemo(() => (planSteps ? keyedSteps(planSteps) : []), [planSteps]);
 
-  if (!workspace || workspace.assistant.presentation === "Closed") return null;
+  if (!workspace) return null;
   const { assistant, plan, review, device, browser } = workspace;
   const conversation = assistant.conversation;
   const currentOffer = offered && replyOfferIsVisible(workspace, offered) ? offered : undefined;
@@ -312,8 +312,8 @@ function GracePanel({ onHeightChange }: { onHeightChange: (height: number) => vo
 
   // spec/app/surface.md, "A Grace control is drawn over the page only after the host routes its rect to Grace"
   return (
-    <OverPage className={cn(besideRail, "pointer-events-none z-[3]")} style={{ bottom: 6 + keyboard }}>
-      <GraceWindow size={expanded ? "expanded" : "compact"} onHeightChange={onHeightChange}
+    <OverPage aria-hidden={!open || undefined} className={cn(besideRail, "pointer-events-none z-[3]")} style={{ bottom: 6 + keyboard }}>
+      <GraceWindow size={expanded ? "expanded" : "compact"} open={open} onClosed={onClosed} onHeightChange={onHeightChange}
         expandedHeight={`calc(100dvh - ${12 + keyboard}px)`}
         header={
           <GraceHeader pause={paused ? "paused" : pausable ? "live" : conversation.turn === "Paused" ? "paused" : conversation.turn === "Speaking" ? "live" : "idle"}
@@ -409,6 +409,11 @@ function GracePanel({ onHeightChange }: { onHeightChange: (height: number) => vo
 /** @model spec/app/assistant.md */
 export function Grace({ onHeightChange }: { onHeightChange: (height: number) => void }) {
   const open = useWorkspaceSelector(selectGraceOpen);
-  if (!open) return null;
-  return <GracePanel onHeightChange={onHeightChange} />;
+  const still = useReducedMotion();
+  const [shown, setShown] = useState(open);
+  if (open && !shown) setShown(true);
+  if (!open && shown && still) setShown(false);
+  const handleClosed = useCallback(() => setShown(false), []);
+  if (!open && !shown) return null;
+  return <GracePanel open={open} onClosed={handleClosed} onHeightChange={onHeightChange} />;
 }

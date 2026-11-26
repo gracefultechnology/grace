@@ -130,7 +130,7 @@ export function GraceDock({
       <label
         data-multi={multi || undefined}
         className={cn(
-          "flex min-h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 py-4 pr-4 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 data-multi:items-end data-multi:rounded-window",
+          "flex min-h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 py-4 pr-4 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 group-data-moving/grace:bg-glass/92 group-data-moving/grace:backdrop-blur-none group-data-moving/grace:backdrop-saturate-100 data-multi:items-end data-multi:rounded-window",
           quiet && "opacity-70",
         )}
       >

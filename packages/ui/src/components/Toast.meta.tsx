@@ -7,7 +7,7 @@ import type { ToastProps } from "./Toast.tsx";
 const undo = fn();
 const dismiss = fn();
 
-export const compactGrace = { height: 260, standIn: <div aria-hidden className={cn(besideRail, "bottom-1.5 z-[3] hidden h-[260px] rounded-device bg-background shadow-window group-has-[.above-grace]/tablet:block")} /> };
+export const compactGrace = { height: 260, standIn: <div aria-hidden className={cn(besideRail, "bottom-1.5 z-[3] hidden h-[260px] rounded-window bg-background shadow-window group-has-[.above-grace]/tablet:block")} /> };
 
 export const meta: ComponentMeta<ToastProps> = {
   args: { children: "Saved to your calendar", onUndo: undefined },
