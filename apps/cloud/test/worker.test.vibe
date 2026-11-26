@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { NodeFileSystem } from "@effect/platform-node"
 import { HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
 import worker from "../src/worker.vibe"
+import { stripeWebhookRequest } from "../src/workerRequest.ts"
 
 schema Vars {
   PUBLIC_API_ORIGIN: string
@@ -50,5 +51,20 @@ describe("Sign in to Grace and manage my subscription (spec/app/setup.md, \"Stor
       assert.deepStrictEqual(try assetLinks("staging"), { environment: "staging", status: 200, statements: association(debugCertificate), app: [200, "Grace"], callback: 503, templates: [404, 404, 404] })
       assert.deepStrictEqual(try assetLinks("production"), { environment: "production", status: 200, statements: association(releaseCertificate), app: [200, "Grace"], callback: 503, templates: [404, 404, 404] })
     }
+  })
+  it.effect("hands the registered Stripe webhook's original payload and signature to Cloud", () => effect {
+    const origin = "https://api.graceforseniors.com"
+    const legacy = "/api/v1/billing/webhook"
+    const signature = "t=1795640000,v1=fixture"
+    const payload = "{ \n  \"id\": \"evt_fixture\", \"type\": \"invoice.paid\" \n}\n"
+    const signed = try HttpClientRequest.toWeb(HttpClientRequest.post(origin + legacy, { headers: { "stripe-signature": signature } }).pipe(HttpClientRequest.bodyText(payload, "application/json")))
+    const original = new URL(signed.url)
+    const forwarded = try Effect.try(() => stripeWebhookRequest(signed, original))
+    const other = try HttpClientRequest.toWeb(HttpClientRequest.get(origin + legacy))
+    const unchanged = try Effect.try(() => stripeWebhookRequest(other, new URL(other.url)) === other)
+    const readback = try promise(() => forwarded.text())
+    assert.deepStrictEqual({ url: forwarded.url, original: original.pathname, method: forwarded.method, signature: forwarded.headers.get("stripe-signature"), contentType: forwarded.headers.get("content-type"), payload: readback, unchanged }, {
+      url: origin + "/api/stripe/webhook", original: legacy, method: "POST", signature, contentType: "application/json", payload, unchanged: true
+    })
   })
 })
