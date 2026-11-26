@@ -865,9 +865,10 @@ link action. The Browser opens the released address in one new tab.
 A preview carries no authority to inspect attachments, reply or forward.
 The application checks the account bound to each provider result. The
 tablet sends only the current authorized reads through its native Eliza
-lease, and returns no response after that owner or lease changes. A
-tablet's hosted handoff retains the selected view through sign-in, and
-uses the browser account matching that tablet when there is a bound owner.
+lease, and returns no response after that owner or lease changes. On the
+tablet, Account settings opens over the selected view for sign-in or consent.
+The web view remembers where sign-in started and checks any expected owner
+before opening Google results.
 If the cloud reports the Google connector is unavailable, the selected
 view shows that status after sign-in and offers no connection action.
 On Home the signed-in web account can see the first two recently loaded Inbox
