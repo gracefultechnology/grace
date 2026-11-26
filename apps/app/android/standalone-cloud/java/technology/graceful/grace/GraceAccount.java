@@ -158,6 +158,10 @@ public final class GraceAccount extends Plugin {
   });
  }
 
+ @PluginMethod public void accountRequest(PluginCall call) {
+  GraceOwnerRead.accountRequest(getContext(), call, ACCOUNT);
+ }
+
  @PluginMethod public void readGoogle(PluginCall call) {
   GraceGoogleRead.run(call, input -> {
    var context = getContext();
@@ -275,17 +279,6 @@ public final class GraceAccount extends Plugin {
    try { account.cancelNativeGoogle(pending.attempt()); }
    catch (Exception unavailable) { }
   }
- }
-
- @PluginMethod public void manageAccount(PluginCall call) {
-  open(account(getContext()).manageAccount(), call);
- }
-
- @PluginMethod public void openHostedView(PluginCall call) {
-  ACCOUNT.execute(() -> {
-   try { open(account(getContext()).hostedView(call.getString("view")), call); }
-   catch (Exception unavailable) { call.reject("Couldn't open the connected account view"); }
-  });
  }
 
  @PluginMethod public void inboxArrival(PluginCall call) { guide.inboxArrival(call); }

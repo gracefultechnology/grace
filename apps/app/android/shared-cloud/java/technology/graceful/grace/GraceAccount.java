@@ -18,7 +18,6 @@ import ai.eliza.plugins.signin.SignInPolicy.Failure;
 import ai.eliza.plugins.signin.SignInRegistration;
 import ai.eliza.plugins.signin.SignInRegistration.Environment;
 import android.content.Context;
-import android.content.Intent;
 import android.net.Uri;
 import android.os.CancellationSignal;
 import com.getcapacitor.JSObject;
@@ -276,6 +275,10 @@ public final class GraceAccount extends ElizaSignInPlugin {
   });
  }
 
+ @PluginMethod public void accountRequest(PluginCall call) {
+  GraceOwnerRead.accountRequest(getContext(), call, ACCOUNT);
+ }
+
  @PluginMethod public void readGoogle(PluginCall call) {
   GraceGoogleRead.run(call, input -> {
    var context = getContext();
@@ -458,31 +461,6 @@ public final class GraceAccount extends ElizaSignInPlugin {
     caller.reject("Cloud account operation could not complete", code);
    }
   };
- }
-
- @PluginMethod public void manageAccount(PluginCall call) {
-  ACCOUNT.execute(() -> {
-   try {
-    if (session(getContext()) == null) { call.reject("Sign in to manage your account"); return; }
-    open(Uri.parse(BuildConfig.CLOUD_WEB_ORIGIN), call);
-   } catch (Exception unavailable) { call.reject("Couldn't open your account"); }
-  });
- }
-
- @PluginMethod public void openHostedView(PluginCall call) {
-  ACCOUNT.execute(() -> {
-   try { open(hostedView(getContext(), call.getString("view")), call); }
-   catch (Exception unavailable) { call.reject("Couldn't open the connected account view"); }
-  });
- }
-
- private void open(Uri destination, PluginCall call) {
-  getActivity().runOnUiThread(() -> {
-   try {
-    getActivity().startActivity(new Intent(Intent.ACTION_VIEW, destination));
-    call.resolve();
-   } catch (RuntimeException unavailable) { call.reject("Couldn't open the account page"); }
-  });
  }
 
  @PluginMethod public void inboxArrival(PluginCall call) { guide.inboxArrival(call); }
