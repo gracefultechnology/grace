@@ -52,6 +52,8 @@ export function GraceAccountSettings() {
   const active = snapshot !== undefined && hasActiveSubscription(snapshot);
   const failureMessage = failed === "signIn" || failed === "beginLeaseUpgrade" ? "Google sign-in didn’t finish. Try again." :
     failed === "connectGoogle" ? "Google didn’t connect. Check which account you chose and try again." :
+    failed === "sendCode" ? "Grace couldn’t send a sign-in code. Try again." :
+    failed === "verifyCode" ? "Grace couldn’t verify your sign-in. Check the latest code or go back to sign in with Google." :
     failed === "redeemMembershipCode" ? "Grace couldn’t redeem that code. Check it and try again." : "Grace couldn’t finish that request. Try again.";
   return (
     <section data-sensitive="true" aria-busy={pending || undefined} className="flex flex-col items-start gap-5">
