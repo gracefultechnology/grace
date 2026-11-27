@@ -1,4 +1,4 @@
-// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"; spec/app/setup.md, "Google sign-in stays with the surface that started it"; spec/app/setup.md, "A supported email code can sign in on the tablet"
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"; spec/app/setup.md, "Google sign-in stays with the surface that started it"; spec/app/setup.md, "A supported email code can sign in on the tablet"; spec/app/setup.md, "Google mail and calendar access requires separate consent for the Grace account"
 import {
   type GoogleLink, type GraceAccount, accountDetails, accountDetailsShown, type GracePlan, type MailLeaseUpgradePhase, type TabletAccountDetails, type TabletMailAuthority, hasActiveSubscription, isTheRequestsOwnReturn, Machine as Setup, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, mayStartGoogleSignIn, mayUseTabletEmailCode, tabletAccount, tabletSignInConfirmed, webAccountId
 } from "../gen/app__setup.effect.vibe"
@@ -85,7 +85,7 @@ type AccountOperation =
   | { kind: "authorizeDevice"; expectedAccountId: string }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
   | { kind: "redeemMembershipCode"; code: string; expectedAccountId: string }
-  | { kind: "connectGoogle"; mail: boolean; calendar: boolean; sendMail: boolean; trashMail: boolean; writeCalendar: boolean; expectedEmail: string }
+  | { kind: "connectGoogle"; expectedEmail: string }
   | { kind: "verifyCode"; provider: CodeProvider; address: string; code: string }
 export type Operation = AccountOperation | UpgradeOperation
 type Transport = {
@@ -239,9 +239,11 @@ export effect function currentManagedMailGrant(scope: { accountId: string; grant
   return link.tag === "GoogleLinkConnected" && link.mail && link.grant === grant
 }
 
-effect function connectGoogle(transport: Transport, operation: Extract<Operation, { kind: "connectGoogle" }>) {
+const googlePermissions = { mail: true, calendar: true, sendMail: true, trashMail: true, writeCalendar: true }
+
+effect function connectGoogle(transport: Transport, expectedEmail: string) {
   const response = try accepted(transport, "/api/v1/eliza/google/connect/initiate", "POST", {
-    mail: operation.mail, calendar: operation.calendar, sendMail: operation.sendMail, trashMail: operation.trashMail, writeCalendar: operation.writeCalendar, expectedEmail: operation.expectedEmail,
+    ...googlePermissions, expectedEmail,
   })
   const { authorizeUrl } = try decode(response, GoogleAuthorization)
   const url = try Effect.try(() => new URL(authorizeUrl))
@@ -404,9 +406,8 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
         const { accountId } = member
         if (operation.kind === "connectGoogle") {
           const connect = plugin.connectGoogle?.bind(plugin)
-          const { mail, calendar, sendMail, trashMail, writeCalendar } = operation
-          if (connect === undefined || (!mail && !calendar)) return false
-          const reply = try tryPromise(() => connect({ accountId, mail, calendar, sendMail: mail && sendMail, trashMail: mail && trashMail, writeCalendar: calendar && writeCalendar }))
+          if (connect === undefined) return false
+          const reply = try tryPromise(() => connect({ accountId, ...googlePermissions }))
           const consent = try Schema.decodeUnknownEffect(TabletConsent)(reply)
           if (consent.kind === "cancelled") return true
         } else {
@@ -485,9 +486,11 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
       return webAccountId(refreshed) === expectedAccountId && hasActiveSubscription(refreshed)
     }
     if (operation.kind === "connectGoogle") {
-      if (!mayOfferGoogleLink(account, (try setup.get()).googleLink) || (!operation.mail && !operation.calendar)) return false
-      if (account.email === "" && operation.expectedEmail === "") return false
-      try connectGoogle(transport, operation)
+      const link = (try setup.get()).googleLink
+      if (!mayOfferGoogleLink(account, link)) return false
+      const expectedEmail = link.tag === "GoogleLinkConnected" ? link.email : operation.expectedEmail
+      if (account.email === "" && expectedEmail === "") return false
+      try connectGoogle(transport, expectedEmail)
       return true
     }
     if (operation.kind === "disconnectGoogle") {

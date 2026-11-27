@@ -814,14 +814,19 @@ pure def lawAMailLeaseUpgradeKeepsTheTabletSignedIn(account: GraceAccount): bool
 
 ### Google mail and calendar access requires separate consent for the Grace account
 
-Grace shows Google connection controls on the signed-in web account or on
-an enrolled tablet that can read Google status for that account. The person
-chooses mail, calendar or both. On a phone-only web account the person names
-the Google address to connect. The cloud checks the confirmed Google identity
-against the Grace account and discloses only the resulting connection.
-The web flow returns to the web account. The tablet presents Google's consent
-and returns to Account settings. Declining consent leaves the existing link
-as it was.
+Grace offers a connection on the signed-in web account or on an enrolled
+tablet that can read Google status for that account. Connecting or
+reconnecting asks Google for the Gmail and Calendar permissions Grace uses.
+The person chooses what to allow on Google's consent screen. Grace enables
+only the features covered by those permissions. An existing link can be
+reconnected to ask again or disconnected to end access.
+
+On a phone-only web account, the person names the Google address the first
+time and Grace reuses the connected address on reconnect. Cloud verifies
+the Google identity against the Grace account and discloses only the
+resulting connection. Consent returns to the web account or to the tablet's
+Account settings that started it. Cancelling leaves the existing link as it
+was.
 
 ```quint
 type GoogleLink = GoogleLinkUnknown | GoogleLinkUnavailable | GoogleLinkReady | GoogleLinkConnected({ email: str, mail: bool, calendar: bool, grant: str, sendMail: bool, trashMail: bool, writeCalendar: bool })

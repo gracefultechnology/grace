@@ -9,7 +9,7 @@ import "../src/main.css";
 
 actOnScreen();
 
-it.each(["confirmed", "interrupted"] as const)('Redeem lifetime Pro and connect Google in Grace (%s) (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async (response) => {
+it.each(["confirmed", "interrupted"] as const)('Redeem lifetime Pro and connect Google in Grace (%s) (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "Google mail and calendar access requires separate consent for the Grace account")', async (response) => {
   const original = location.href;
   history.replaceState(null, "", "#account");
   const account = { id: "membership-owner", email: "member@example.test" };
@@ -23,6 +23,22 @@ it.each(["confirmed", "interrupted"] as const)('Redeem lifetime Pro and connect 
   const readRedemption = Schema.decodeUnknownSync(Redemption);
   const redemption: Array<typeof Redemption.Type> = [];
   const charges: string[] = [];
+  const googlePermissions = { mail: true, calendar: true, sendMail: true, trashMail: true, writeCalendar: true };
+  const authorizeUrl = "https://accounts.google.com/o/oauth2/v2/auth?state=grace-test";
+  const webPermissions: unknown[] = [];
+  const googleReturns: string[] = [];
+  let hasWebGoogleAccess = false;
+  const browser = cdp();
+  const consentPage = async ({ request, requestId }: { request: { url: string }; requestId: string }) => {
+    await browser.send("Fetch.fulfillRequest", { requestId, responseCode: 204 });
+    googleReturns.push(request.url);
+  };
+  browser.on("Fetch.requestPaused", consentPage);
+  await browser.send("Fetch.enable", { patterns: [{ urlPattern: authorizeUrl }] });
+  onTestFinished(async () => {
+    browser.off("Fetch.requestPaused", consentPage);
+    await browser.send("Fetch.disable");
+  });
   const network = window.fetch.bind(window);
   const service = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, location.href);
@@ -34,7 +50,14 @@ it.each(["confirmed", "interrupted"] as const)('Redeem lifetime Pro and connect 
       case "/api/auth/email/verify":
         signedIn = true;
         return Response.json({ account });
-      case "/api/v1/eliza/google/status": return Response.json({ accountId: account.id, provider: "google", side: "owner", mode: "cloud_managed", configured: false, connected: false, grantedCapabilities: [], identity: null });
+      case "/api/v1/eliza/google/status": return Response.json({
+        accountId: account.id, provider: "google", side: "owner", mode: "cloud_managed", configured: true,
+        connected: hasWebGoogleAccess, grantedCapabilities: hasWebGoogleAccess ? ["google.gmail.triage"] : [],
+        identity: hasWebGoogleAccess ? { email: account.email } : null, connectionId: hasWebGoogleAccess ? "web-google" : null,
+      });
+      case "/api/v1/eliza/google/connect/initiate":
+        webPermissions.push(await new Response(init?.body).json());
+        return Response.json({ authorizeUrl });
       case "/api/v1/billing/limits": return Response.json(browserBillingSnapshot(grant));
       case "/api/v1/subscriptions/plans": return Response.json({ plans: [{ key: "plus_monthly" }] });
       case "/api/v1/subscriptions/checkout":
@@ -82,11 +105,22 @@ it.each(["confirmed", "interrupted"] as const)('Redeem lifetime Pro and connect 
   } finally {
     await first.dispose();
   }
-  const reopened = tabletView(ManagedRuntime.make(application(undefined)));
+  const webRuntime = ManagedRuntime.make(application(undefined));
+  const reopened = tabletView(webRuntime);
   try {
     await reopened.render();
     await expect.element(page.getByText("Active", { exact: true })).toBeVisible();
     await expect.element(page.getByRole("button", { name: "Redeem code" })).not.toBeInTheDocument();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Connect Gmail and Calendar" })));
+    await expect.poll(() => googleReturns.length).toBe(1);
+    hasWebGoogleAccess = true;
+    await act(() => webRuntime.runPromise(Effect.flatMap(AccountActions, (actions) => actions.run({ kind: "refresh" }))));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Reconnect Google" })));
+    await expect.poll(() => googleReturns.length).toBe(2);
+    expect(webPermissions).toEqual([
+      { ...googlePermissions, expectedEmail: "" }, { ...googlePermissions, expectedEmail: account.email },
+    ]);
+    expect(googleReturns).toEqual([authorizeUrl, authorizeUrl]);
   } finally {
     await reopened.dispose();
   }
@@ -113,9 +147,9 @@ it.each(["confirmed", "interrupted"] as const)('Redeem lifetime Pro and connect 
           grantedCapabilities: connected ? ["google.gmail.triage"] : [] });
       },
       connectGoogle: (request) => {
-        expect(request).toEqual({ accountId: device.id, mail: true, calendar: false, sendMail: false, trashMail: false, writeCalendar: false });
+        expect(request).toEqual({ accountId: device.id, ...googlePermissions });
         consentAttempts += 1;
-        if (consentAttempts === 1) return Promise.resolve({ kind: "cancelled" });
+        if (consentAttempts !== 2) return Promise.resolve({ kind: "cancelled" });
         connected = true;
         return Promise.resolve({ kind: "connected" });
       },
@@ -146,14 +180,17 @@ it.each(["confirmed", "interrupted"] as const)('Redeem lifetime Pro and connect 
   await act(() => userEvent.click(page.getByRole("button", { name: "Redeem code" })));
   await expect.element(page.getByText("Active", { exact: true })).toBeVisible();
   await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
-  const googleLink = page.getByRole("button", { name: "Continue to Google" });
+  const googleLink = page.getByRole("button", { name: "Connect Gmail and Calendar" });
+  const reconnect = page.getByRole("button", { name: "Reconnect Google" });
   const disconnect = page.getByRole("button", { name: "Disconnect Google" });
-  await act(() => userEvent.click(page.getByRole("checkbox", { name: "Read Gmail" })));
   await act(() => userEvent.click(googleLink));
   await expect.element(googleLink).toBeEnabled();
   await expect.element(disconnect).not.toBeInTheDocument();
   await act(() => userEvent.click(googleLink));
   await expect.element(disconnect).toBeEnabled();
+  await act(() => userEvent.click(reconnect));
+  await expect.element(disconnect).toBeEnabled();
+  expect(consentAttempts).toBe(3);
   await act(() => userEvent.click(disconnect));
   await expect.element(disconnect).not.toBeInTheDocument();
   expect({ tabletCodes, webRedemptions: redemption.length, charges, location: location.href }).toEqual({

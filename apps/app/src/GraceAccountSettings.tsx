@@ -1,5 +1,5 @@
-// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"; spec/app/setup.md, "Google sign-in stays with the surface that started it"
-import { AccountFacts, Button, Checkbox, Input, PageHeading, PageText, RetryNotice } from "@repo/ui";
+// spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"; spec/app/setup.md, "Google sign-in stays with the surface that started it"; spec/app/setup.md, "Google mail and calendar access requires separate consent for the Grace account"
+import { AccountFacts, Button, Input, PageHeading, PageText, RetryNotice } from "@repo/ui";
 import { Effect, Exit } from "effect";
 import { useId, useState, useTransition } from "react";
 import { useMachine } from "../gen/app__setup.react.ts";
@@ -24,12 +24,6 @@ export function GraceAccountSettings() {
   });
   const [confirmation, setConfirmation] = useState<"signOut" | "cleanupLegacySignIn">();
   const [provider, setProvider] = useState<"email" | "sms">();
-  const [mail, setMail] = useState(false);
-  const [trashMail, setTrashMail] = useState(false);
-  const [writeCalendar, setWriteCalendar] = useState(false);
-  const [sendMail, setSendMail] = useState(false);
-  const [calendar, setCalendar] = useState(false);
-  const [expectedEmail, setExpectedEmail] = useState("");
   const googleAddressId = useId();
   const membershipCodeId = useId();
   const run = (operation: Operation, onSuccess?: () => void) => startTransition(async () => {
@@ -128,48 +122,27 @@ export function GraceAccountSettings() {
               <Button type="submit" variant="capsule" size="pill" disabled={pending || confirmingSignOut}>Redeem code</Button>
             </form>
           )}
-          {link?.tag === "GoogleLinkConnected" && (
-            <>
-              <AccountFacts facts={[{ label: "Google connected", value: link.email }]} />
-              {mayOfferGoogleLink(snapshot, link) && <Button variant="capsule" size="pill" disabled={pending || confirmingSignOut} onClick={() => run({ kind: "disconnectGoogle" })}>Disconnect Google</Button>}
-            </>
-          )}
+          {link?.tag === "GoogleLinkConnected" && <AccountFacts facts={[{ label: "Google connected", value: link.email }]} />}
           {link !== undefined && mayOfferGoogleLink(snapshot, link) && (
-            <form className="flex flex-col items-start gap-3" onSubmit={(event) => {
+            <form key={`google-${member.accountId}`} className="flex flex-col items-start gap-3" onSubmit={(event) => {
               event.preventDefault();
-              run({ kind: "connectGoogle", mail, calendar, sendMail: mail && sendMail, trashMail: mail && trashMail, writeCalendar: calendar && writeCalendar, expectedEmail: expectedEmail.trim() });
+              const address = new FormData(event.currentTarget).get("google-email");
+              run({ kind: "connectGoogle", expectedEmail: typeof address === "string" ? address.trim() : "" });
             }}>
-              <fieldset disabled={pending || confirmingSignOut} className="flex flex-col gap-3">
-                <legend>{link.tag === "GoogleLinkConnected" ? "Change Google permissions" : "Connect Google"}</legend>
-                <label className="flex min-h-11 items-center gap-3">
-                  <Checkbox checked={mail} onCheckedChange={(checked) => setMail(checked === true)} />
-                  Read Gmail
-                </label>
-                <label className="flex min-h-11 items-center gap-3">
-                  <Checkbox checked={calendar} onCheckedChange={(checked) => setCalendar(checked === true)} />
-                  Read Google Calendar
-                </label>
-                <label className="flex min-h-11 items-center gap-3">
-                  <Checkbox checked={mail && sendMail} disabled={!mail} onCheckedChange={(checked) => setSendMail(checked === true)} />
-                  Send Gmail messages I approve
-                </label>
-                <label className="flex min-h-11 items-center gap-3">
-                  <Checkbox checked={mail && trashMail} disabled={!mail} onCheckedChange={(checked) => setTrashMail(checked === true)} />
-                  Move Gmail messages to Trash and undo
-                </label>
-                <label className="flex min-h-11 items-center gap-3">
-                  <Checkbox checked={calendar && writeCalendar} disabled={!calendar} onCheckedChange={(checked) => setWriteCalendar(checked === true)} />
-                  Add, edit and remove appointments I approve
-                </label>
-                {signedIn && member.email === "" && (
-                  <>
-                    <label htmlFor={googleAddressId}>Google email address</label>
-                    <Input id={googleAddressId} type="email" autoComplete="email" value={expectedEmail}
-                      onChange={(event) => setExpectedEmail(event.target.value)} required />
-                  </>
+              {signedIn && member.email === "" && link.tag === "GoogleLinkReady" && (
+                <>
+                  <label htmlFor={googleAddressId}>Google email address</label>
+                  <Input id={googleAddressId} name="google-email" type="email" autoComplete="email" disabled={pending || confirmingSignOut} required />
+                </>
+              )}
+              <div className="flex flex-wrap gap-3">
+                <Button type="submit" variant="capsule" size="pill" disabled={pending || confirmingSignOut}>
+                  {link.tag === "GoogleLinkConnected" ? "Reconnect Google" : "Connect Gmail and Calendar"}
+                </Button>
+                {link.tag === "GoogleLinkConnected" && (
+                  <Button type="button" variant="capsule" size="pill" disabled={pending || confirmingSignOut} onClick={() => run({ kind: "disconnectGoogle" })}>Disconnect Google</Button>
                 )}
-              </fieldset>
-              <Button type="submit" variant="capsule" size="pill" disabled={pending || confirmingSignOut || (!mail && !calendar)}>Continue to Google</Button>
+              </div>
             </form>
           )}
         </>

@@ -143,7 +143,7 @@ final class GraceGoogleConsent {
   private void issued(AuthorizationResult result) {
    var granted = result.getGrantedScopes();
    String code = result.getServerAuthCode();
-   if (granted == null || !granted.containsAll(selectedScopes)) finish(new Canceled());
+   if (granted == null || selectedScopes.stream().noneMatch(granted::contains)) finish(new Canceled());
    else finish(code != null && SERVER_CODE.matcher(code).matches() ? new Code(code) : new Unavailable());
   }
 
