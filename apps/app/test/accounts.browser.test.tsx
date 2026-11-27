@@ -32,8 +32,7 @@ const settingsSources = (domain: string) => [
 ];
 const unanswered: (() => void)[] = [];
 const grace = { signedIn: true };
-const settingsWeb = (url: string) => {
-  const { hostname, pathname } = new URL(url);
+const settingsWeb = ({ hostname, pathname }: URL) => {
   if (hostname === "autoconfig.thunderbird.net") return pathname === "/v1.1/riverview.net" ? new Response(riverviewSettings, { headers: { "content-type": "text/xml" } }) : new Response(null, { status: 404 });
   return hostname === "dns.google" || hostname.endsWith("riverview.net") ? new Response(null, { status: 404 }) : undefined;
 };
@@ -77,15 +76,17 @@ beforeEach(async () => {
   firstListing = undefined;
   globalThis.fetch = async (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
-    const account = browserAccountResponse(new URL(url, location.href), grace.signedIn ? "margaret" : undefined);
+    const parsed = new URL(url, location.href);
+    const account = browserAccountResponse(parsed, grace.signedIn ? "margaret" : undefined);
     if (account) return account;
+    if (!grace.signedIn && parsed.pathname === "/api/auth/session") return new Response(null, { status: 401 });
     if (url.includes("/chat/completions")) {
       const body = init?.body ?? (input instanceof Request ? input.clone().body : null);
       chatBodies.push(await new Response(body).text());
     }
     if (url.includes("/connections/other")) otherChecks.push(url);
     if (url.includes("/mail/outlook/search")) await firstListing;
-    const answer = settingsWeb(url);
+    const answer = settingsWeb(parsed);
     if (answer === undefined) return fetched(input, init);
     lookups.push(url);
     return new Promise((resolve) => {
@@ -149,7 +150,8 @@ async function askGrace(said: string) {
   const composer = page.getByRole("textbox", { name: "Message to Grace" });
   await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
   await expect.element(composer).toBeVisible();
-  await act(() => userEvent.type(composer, `${said}{Enter}`));
+  await act(() => composer.fill(said));
+  await tap(page.getByRole("region", { name: "Grace" }).getByRole("button", { name: "Send" }));
   await expect.element(page.getByText(reply(said))).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Grace" }));
 }
@@ -290,7 +292,8 @@ it("Connect the email I already use", async () => {
   const composer = page.getByRole("textbox", { name: "Message to Grace" });
   await expect.element(composer).toBeVisible();
   const asked = "What are mail servers?";
-  await act(() => userEvent.type(composer, `${asked}{Enter}`));
+  await act(() => composer.fill(asked));
+  await tap(page.getByRole("region", { name: "Grace" }).getByRole("button", { name: "Send" }));
   await expect.element(page.getByText(reply(asked))).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await act(() => servers.getByLabelText("Incoming mail server").fill("mail.wrong.net"));
