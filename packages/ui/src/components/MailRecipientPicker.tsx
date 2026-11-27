@@ -1,4 +1,4 @@
-import { cn, focusRing } from "../lib/cn.ts";
+import { cn, focusRing, withKeys } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { MailContactAvatar, type MailContact } from "./MailMessageRow.tsx";
 import { PageHeading } from "./PageHeading.tsx";
@@ -44,8 +44,8 @@ export function MailRecipientPicker({
         <PageHeading level="title">{question}</PageHeading>
         <SearchField label={searchLabel} value={query} onChange={(event) => onQueryChange?.(event.target.value)} className="mt-4 mb-5" />
         <ul className="m-0 grid list-none grid-cols-4 gap-4 p-0">
-          {people.map((person) => (
-            <li key={person.name}>
+          {withKeys(people, (person) => person.name).map(({ item: person, key }) => (
+            <li key={key}>
               <button
                 type="button"
                 onClick={() => onPick?.(person)}

@@ -385,14 +385,14 @@ export const mailing = Layer.effect(Mail, effect {
     if (m.draftStorage === "DraftSaving") {
       const stored = mail.saveDraft(currentDraft(m), try library.contents(currentDraft(m).attachments)) catch () => undefined
       refused(account.id, stored?.unsendable ?? [])
+      try answer(stored?.persisted ?? false)
       if (stored === undefined) return try expired(box)
-      try answer(stored.persisted)
     }
     if (m.draftStorage === "DraftDeleting") {
       const deleted = mail.deleteDraft(m.draftId) catch () => undefined
+      undeleted(account.id, deleted !== true)
+      try answer(deleted ?? false)
       if (deleted === undefined) return try expired(box)
-      undeleted(account.id, !deleted)
-      try answer(deleted)
     }
   }
 
@@ -403,14 +403,14 @@ export const mailing = Layer.effect(Mail, effect {
       m.sentDrafts.length > 0 || (m.sendStatus === "SendUnknown" && m.operationId !== "") ||
       m.outbox.some((q) => q.status === "Waiting" || q.status === "DispatchUnknown")
     )
-    const needsStore = m.draftStorage === "DraftSaving" || m.draftStorage === "DraftDeleting"
+    const needsStore = m.connection === "Connected" && (m.draftStorage === "DraftSaving" || m.draftStorage === "DraftDeleting")
     if (!needsOnlineWork && !needsStore) return
     const online = needsOnlineWork ? try reachable() : false
     if (m.connection === "Connected" && m.sendStatus === "Reviewing" && m.approvedRevision === m.revision && !draftStoreBusy(m)) {
       try dispatch(account, mail, library, box, m, online)
       m = try box.get()
     }
-    if (m.draftStorage === "DraftSaving" || m.draftStorage === "DraftDeleting") {
+    if (m.connection === "Connected" && (m.draftStorage === "DraftSaving" || m.draftStorage === "DraftDeleting")) {
       try store(account, mail, box, m)
       m = try box.get()
     }

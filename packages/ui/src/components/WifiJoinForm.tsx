@@ -119,6 +119,7 @@ export function WifiJoinForm({
             onChange={(event) => onPasswordChange?.(event.target.value)}
             placeholder={passwordPlaceholder}
             autoComplete="off"
+            data-sensitive="true"
             invalid={!!error}
             className="h-16 flex-1 aria-invalid:shadow-capsule aria-invalid:focus:shadow-field-focus"
           />

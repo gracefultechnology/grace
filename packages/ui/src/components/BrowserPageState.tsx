@@ -61,9 +61,9 @@ export function BrowserPageState({ kind, site = "", message, onRetry, onBack, on
     checking: <Spinner size="lg" label={labels.checking} className="size-[34px]" />,
   };
   const action = {
-    failed: <Button variant="prominent" size="pill" onClick={onRetry}><RotateCw {...glyph} />{labels.retry}</Button>,
-    offline: <Button variant="prominent" size="pill" onClick={onFixWifi}><Wifi {...glyph} />{labels.fixWifi}</Button>,
-    blocked: <Button variant="capsule" size="pill" onClick={onBack}><ArrowLeft {...glyph} />{labels.back}</Button>,
+    failed: onRetry && <Button variant="prominent" size="pill" onClick={onRetry}><RotateCw {...glyph} />{labels.retry}</Button>,
+    offline: onFixWifi && <Button variant="prominent" size="pill" onClick={onFixWifi}><Wifi {...glyph} />{labels.fixWifi}</Button>,
+    blocked: onBack && <Button variant="capsule" size="pill" onClick={onBack}><ArrowLeft {...glyph} />{labels.back}</Button>,
     checking: null,
   }[kind];
   return (

@@ -1,4 +1,4 @@
-import { useId, type ComponentProps, type ReactNode } from "react";
+import { useId, useRef, type ComponentProps, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "../lib/cn.ts";
 import { usePortalContainer } from "../lib/portal.tsx";
@@ -43,6 +43,7 @@ export type CalendarPickerFieldProps = {
 export function CalendarPickerField({ label, value, icon, choices, selected, open, onOpenChange, onPick, changeLabel = "Change", disabled = false }: CalendarPickerFieldProps) {
   const id = useId();
   const portalContainer = usePortalContainer();
+  const returnFocusRef = useRef(false);
   return (
     <div role="group" aria-labelledby={id} aria-disabled={disabled || undefined} className="flex flex-col gap-2">
       <Label id={id} className="pl-[26px]">
@@ -65,10 +66,17 @@ export function CalendarPickerField({ label, value, icon, choices, selected, ope
             sideOffset={-20}
             aria-label={label}
             onOpenAutoFocus={(event) => {
+              returnFocusRef.current = false;
               event.preventDefault();
               (event.currentTarget as HTMLElement).focus();
             }}
-            onCloseAutoFocus={(event) => event.preventDefault()}
+            onEscapeKeyDown={() => {
+              returnFocusRef.current = true;
+            }}
+            onCloseAutoFocus={(event) => {
+              if (!returnFocusRef.current) event.preventDefault();
+              returnFocusRef.current = false;
+            }}
             className={cn(menuPanel({ surface: "page" }), "max-h-[376px] overflow-auto font-sans [scrollbar-width:none]")}
           >
             {choices.map((choice) => (

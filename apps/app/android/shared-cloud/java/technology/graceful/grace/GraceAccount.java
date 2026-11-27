@@ -17,6 +17,7 @@ import ai.eliza.plugins.signin.SignInCustody;
 import ai.eliza.plugins.signin.SignInPolicy.Failure;
 import ai.eliza.plugins.signin.SignInRegistration;
 import ai.eliza.plugins.signin.SignInRegistration.Environment;
+import android.app.Activity;
 import android.content.Context;
 import android.net.Uri;
 import android.os.CancellationSignal;
@@ -36,6 +37,7 @@ import java.util.function.Consumer;
 @CapacitorPlugin(name = "GraceAccount")
 public final class GraceAccount extends ElizaSignInPlugin {
  private static final ExecutorService ACCOUNT = Executors.newSingleThreadExecutor();
+ private static final ExecutorService RECOVERY = Executors.newSingleThreadExecutor();
  private static final Object CREDENTIAL_CHANGE = new Object();
  private static final String ENVIRONMENT = switch (BuildConfig.CLOUD_PROFILE) {
   case "shared-production" -> "production";
@@ -583,7 +585,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
  @PluginMethod public void stopSpeech(PluginCall call) { speech.stop(call); }
 
  @PluginMethod public void passwordRecoveryStatus(PluginCall call) {
-  ACCOUNT.execute(() -> call.resolve(new JSObject().put("ready", passwordRecoveryReady())));
+  RECOVERY.execute(() -> call.resolve(new JSObject().put("ready", passwordRecoveryReady())));
  }
 
  private boolean passwordRecoveryReady() {
@@ -597,12 +599,22 @@ public final class GraceAccount extends ElizaSignInPlugin {
 
  @PluginMethod public void showPasswordRecovery(PluginCall call) {
   ACCOUNT.execute(() -> {
-   if (!passwordRecoveryReady()) { call.reject("Password recovery is unavailable"); return; }
-   getActivity().runOnUiThread(() -> {
-    if (GracePasswordsOwner.accountChanging() || !recovery.deviceReady() || getActivity().isFinishing()
-     || getActivity().isDestroyed() || !recovery.open()) call.reject("Password recovery is unavailable");
-    else call.resolve();
-   });
+   try {
+    if (!passwordRecoveryReady()) { call.reject("Password recovery is unavailable"); return; }
+    Activity activity = getActivity();
+    if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+     call.reject("Password recovery is unavailable");
+     return;
+    }
+    activity.runOnUiThread(() -> {
+     Activity current = getActivity();
+     if (GracePasswordsOwner.accountChanging() || !recovery.deviceReady() || current == null
+      || current.isFinishing() || current.isDestroyed() || !recovery.open()) call.reject("Password recovery is unavailable");
+     else call.resolve();
+    });
+   } catch (Exception unavailable) {
+    call.reject("Password recovery is unavailable");
+   }
   });
  }
 
@@ -617,7 +629,7 @@ public final class GraceAccount extends ElizaSignInPlugin {
  }
 
  void authorizePasswordBackup(GracePasswordRecovery controller, GracePasswordRecovery.Operation operation) {
-  ACCOUNT.execute(() -> {
+  RECOVERY.execute(() -> {
    if (!controller.isCurrent(operation)) return;
    try {
     var owner = GracePasswordsOwner.stableSession(getContext());
@@ -645,13 +657,20 @@ public final class GraceAccount extends ElizaSignInPlugin {
   try {
    var owner = new PasswordBackupApproval.Owner(attempt.owner().accountId(), attempt.owner().organizationId());
    var approval = passwordBackup.begin(attempt.operation().purpose, owner, attempt.owner().token(), () -> backupCurrent(attempt));
-   getActivity().runOnUiThread(() -> {
-    if (attempt.picker().isCanceled() || !recovery.isCurrent(attempt.operation()) || !recovery.deviceReady()) {
+   Activity activity = getActivity();
+   if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+    finishBackup(attempt, null);
+    return;
+   }
+   activity.runOnUiThread(() -> {
+    Activity current = getActivity();
+    if (current == null || current.isFinishing() || current.isDestroyed()
+     || attempt.picker().isCanceled() || !recovery.isCurrent(attempt.operation()) || !recovery.deviceReady()) {
      finishBackup(attempt, null);
      return;
     }
-    GoogleSignIn.pick(getActivity(), approval.challenge(), attempt.picker(),
-     result -> ACCOUNT.execute(() -> completeBackup(attempt, approval, result)));
+    GoogleSignIn.pick(current, approval.challenge(), attempt.picker(),
+     result -> RECOVERY.execute(() -> completeBackup(attempt, approval, result)));
    });
   } catch (Exception unavailable) {
    finishBackup(attempt, "Grace could not start password backup.");

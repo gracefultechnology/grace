@@ -1,6 +1,6 @@
 // spec/app/accounts.md, "Story: Connect the email I already use"; spec/app/accounts.md, "Only the current sign-in attempt can add or renew an account"; spec/app/accounts.md, "Other email connects through its own servers, asking for them when the tablet cannot find them"; spec/app/accounts.md, "Nothing she types to sign in enters the tablet’s state"; spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"; spec/app/accounts.md, "Signing in again renews the same account"; spec/app/accounts.md, "The settings pages go back one step at a time"; spec/app/accounts.md, "Mail settings can be looked up from her address, and fill the form for her to check"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"
 import { accountAt, accountWith, freshName, initial as initialAccounts, lookupFinds, Machine as Accounts, parseState as parseAccounts, stored as storedAccounts, told, type Accounts as Registry, type Event, type FoundServer, type OtherReport, type Provider, type Security, type ServerKind, type SheetReport } from "../gen/app__accounts.effect.vibe"
-import { stored as storedProposal } from "../gen/app__proposal.effect.vibe"
+import { parseState as parseProposal, stored as storedProposal } from "../gen/app__proposal.effect.vibe"
 import { type GraceAccount, Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type OtherForm, type SecretPassword, type ShownPage } from "./connector.vibe"
@@ -35,11 +35,22 @@ function upgradedAccounts(text: string) {
   return upgraded === undefined ? undefined : JSON.stringify(upgraded)
 }
 
+const proposalKey = "proposal"
+
+function validProposal(text: string) {
+  const raw = Option.getOrUndefined(readRecord(text))
+  return raw !== undefined && parseProposal(raw) !== undefined ? text : undefined
+}
+
 const accountStorage = Layer.unwrap(effect {
   return Layer.provide(storedAccounts(stateKey), compatibleStore(try KeyValueStore.KeyValueStore, stateKey, (text) => Effect.succeed(upgradedAccounts(text))))
 })
 
-export const accounts = Layer.mergeAll(Layer.provideMerge(restarted, accountStorage), storedProposal("proposal"))
+const proposalStorage = Layer.unwrap(effect {
+  return Layer.provide(storedProposal(proposalKey), compatibleStore(try KeyValueStore.KeyValueStore, proposalKey, (text) => Effect.succeed(validProposal(text))))
+})
+
+export const accounts = Layer.mergeAll(Layer.provideMerge(restarted, accountStorage), proposalStorage)
 
 export type OtherDetails = { readonly name: string; readonly address: string; readonly password: SecretPassword }
 export type MailServers = { readonly incoming: string; readonly outgoing: string }

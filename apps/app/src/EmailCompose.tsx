@@ -36,7 +36,10 @@ function statusOf(m: Mailbox): MailSendStatus {
 }
 
 function sendTo(content: DraftContent, field: MailRecipientField, address: string): DraftContent {
-  if (field === "to") return { ...content, to: address };
+  if (field === "to") {
+    const existing = recipientsOf(content.to);
+    return existing.some((a) => same(a, address)) ? content : { ...content, to: [...existing, address].join(", ") };
+  }
   return content[field].some((a) => same(a, address)) ? content : { ...content, [field]: [...content[field], address] };
 }
 
@@ -215,7 +218,7 @@ export function EmailCompose({ registry, boxes, box, mail, sender, frame }: Emai
       to={toList} cc={ccList} bcc={bccList}
       ccOpen={showsCopies(m)} onOpenCc={offered(box, { type: "showCopies" })}
       onAddRecipient={box.can({ type: "openChooser", choice: "PickTo" }) ? (field) => chooser(pickers[field])?.() : undefined}
-      onRemoveRecipient={editable ? (field, index) => void edit(without(m.draft, field, index)) : undefined}
+      onRemoveRecipient={editable ? (field, index) => void edit(without({ ...m.draft, subject: text("subject"), body: text("body") }, field, index)) : undefined}
       subject={text("subject")} onSubjectChange={editable ? (value) => write("subject", value) : undefined}
       body={text("body")} onBodyChange={editable ? (value) => write("body", value) : undefined}
       attachments={attachments}

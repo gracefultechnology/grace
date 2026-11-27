@@ -3,6 +3,7 @@ package technology.graceful.grace;
 import ai.eliza.plugins.passwords.PasswordSurfaces;
 import ai.eliza.plugins.securestore.nativeonly.CloudDeviceAccount;
 import ai.eliza.plugins.securestore.nativeonly.CloudPasswordBackup;
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
@@ -72,8 +73,14 @@ public final class GraceAccount extends Plugin {
  }
 
  @PluginMethod public void showPasswordRecovery(PluginCall call) {
-  getActivity().runOnUiThread(() -> {
-   if (GracePasswordsOwner.accountChanging() || getActivity().isFinishing() || getActivity().isDestroyed() || !recovery.open()) {
+  Activity activity = getActivity();
+  if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+   call.reject("Password recovery is unavailable");
+   return;
+  }
+  activity.runOnUiThread(() -> {
+   Activity current = getActivity();
+   if (GracePasswordsOwner.accountChanging() || current == null || current.isFinishing() || current.isDestroyed() || !recovery.open()) {
     call.reject("Password recovery is unavailable");
    } else call.resolve();
   });
@@ -90,9 +97,16 @@ public final class GraceAccount extends Plugin {
    try {
     if (!recoveryAccountReady()) throw new IllegalStateException("Account verification required");
     Uri address = passwordBackup.begin(request.purpose);
-    getActivity().runOnUiThread(() -> {
-     if (!controller.isCurrent(request) || GracePasswordsOwner.accountChanging()) return;
-     try { getActivity().startActivity(new Intent(Intent.ACTION_VIEW, address)); }
+    Activity activity = getActivity();
+    if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+     controller.failed(request, null);
+     return;
+    }
+    activity.runOnUiThread(() -> {
+     Activity current = getActivity();
+     if (!controller.isCurrent(request) || GracePasswordsOwner.accountChanging()
+      || current == null || current.isFinishing() || current.isDestroyed()) return;
+     try { current.startActivity(new Intent(Intent.ACTION_VIEW, address)); }
      catch (Exception unavailable) { controller.failed(request, "Couldn't open secure password backup approval."); }
     });
    } catch (Exception unavailable) {

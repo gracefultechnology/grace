@@ -336,7 +336,8 @@ do nothing.
 type MailNews = NoMailNews | OpenedEmail | SentEmail | QueuedEmail | OutboxSent | TrashedEmail
 type MailTold = { news: MailNews, account: int, ref: str }
 pure def undoable(mailbox: E::Mailbox): List[I::MessageRecord] =
-  mailbox.messages.select(r => r.folder == I::TrashFolder and r.undoRevision != -1)
+  mailbox.messages.select(r =>
+    r.folder == I::TrashFolder and r.status == I::ChangeIdle and r.undoRevision != -1 and r.undoRevision == r.revision)
 pure def told(account: int, before: E::Mailbox, after: E::Mailbox): MailTold =
   val quiet = { news: NoMailNews, account: account, ref: "" }
   val trashed = undoable(after).select(r => not(undoable(before).some(o => o.identity == r.identity)))

@@ -114,11 +114,11 @@ async function drainBenchmarkRoutes(run: Run) {
 async function cleanupBenchmarkRun(page: Page, run: Run) {
   activeRuns.delete(page);
   try {
-    await drainBenchmarkRoutes(run);
     await Promise.allSettled([
       run.decisionRoute ? page.unroute(run.decisionRoute) : Promise.resolve(),
       run.chatRoute ? page.unroute(run.chatRoute) : Promise.resolve(),
     ]);
+    await drainBenchmarkRoutes(run);
   } finally {
     await run.site?.browser.close();
   }

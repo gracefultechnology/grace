@@ -79,7 +79,7 @@ export function PdfViewer({
     >
       <div className="-mx-6 -mt-6 box-border min-h-full bg-panel p-7">
         {status === "failed" ? (
-          <MailNotice actionLabel={retryLabel} onAction={onRetry} className="mx-auto w-[620px]">
+          <MailNotice actionLabel={onRetry ? retryLabel : undefined} onAction={onRetry} className="mx-auto w-[620px]">
             {errorLabel}
           </MailNotice>
         ) : status === "loading" ? (

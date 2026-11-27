@@ -66,22 +66,26 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  }
 
  boolean open() {
-  if (destroyed || active != null || !deviceReady()) return false;
+  if (destroyed || active != null || !deviceReady() || activity.isFinishing() || activity.isDestroyed()) return false;
   if (operation != null) {
    if (!operation.awaitingApproval) return false;
    accountChanged();
   }
-  show(new AlertDialog.Builder(activity)
-   .setTitle("Backup and recovery")
-   .setItems(new String[]{"Back up passwords", "Restore passwords", "Remove cloud backup", "Verify this tablet"},
-    (dialog, choice) -> begin(switch (choice) {
-     case 0 -> PasswordBackupApproval.Purpose.SAVE;
-     case 1 -> PasswordBackupApproval.Purpose.READ;
-     case 2 -> PasswordBackupApproval.Purpose.DELETE;
-     default -> PasswordBackupApproval.Purpose.VERIFY;
-    }))
-   .setNegativeButton("Close", null), null);
-  return true;
+  try {
+   show(new AlertDialog.Builder(activity)
+    .setTitle("Backup and recovery")
+    .setItems(new String[]{"Back up passwords", "Restore passwords", "Remove cloud backup", "Verify this tablet"},
+     (dialog, choice) -> begin(switch (choice) {
+      case 0 -> PasswordBackupApproval.Purpose.SAVE;
+      case 1 -> PasswordBackupApproval.Purpose.READ;
+      case 2 -> PasswordBackupApproval.Purpose.DELETE;
+      default -> PasswordBackupApproval.Purpose.VERIFY;
+     }))
+    .setNegativeButton("Close", null), null);
+   return true;
+  } catch (RuntimeException unavailable) {
+   return false;
+  }
  }
 
  private void begin(PasswordBackupApproval.Purpose purpose) {
@@ -197,7 +201,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
   try {
    CompletableFuture<Boolean> answer = new CompletableFuture<>();
    activity.runOnUiThread(() -> {
-    if (!isCurrent(expected)) { answer.complete(false); return; }
+    if (!isCurrent(expected) || activity.isFinishing() || activity.isDestroyed()) { answer.complete(false); return; }
     TextView recovery = new TextView(activity);
     recovery.setSaveEnabled(false);
     recovery.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);
@@ -209,10 +213,15 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
     String message = replacesBackup
      ? "This will replace your previous cloud backup. Write down the new key first. You will need it to restore your passwords."
      : "Write down this key. You will need it to restore your passwords on another tablet.";
-    show(new AlertDialog.Builder(activity).setTitle("Your recovery key").setMessage(message).setView(recovery)
-      .setPositiveButton("I wrote it down", (dialog, which) -> answer.complete(true))
-      .setNegativeButton("Cancel", null),
-     () -> { recovery.setText(""); answer.complete(false); });
+    try {
+     show(new AlertDialog.Builder(activity).setTitle("Your recovery key").setMessage(message).setView(recovery)
+       .setPositiveButton("I wrote it down", (dialog, which) -> answer.complete(true))
+       .setNegativeButton("Cancel", null),
+      () -> { recovery.setText(""); answer.complete(false); });
+    } catch (RuntimeException unavailable) {
+     recovery.setText("");
+     answer.complete(false);
+    }
    });
    confirmed = await(expected, answer);
    return confirmed ? key : null;
@@ -224,7 +233,7 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  private byte[] askForRecoveryKey(Operation expected) throws Exception {
   CompletableFuture<byte[]> answer = new CompletableFuture<>();
   activity.runOnUiThread(() -> {
-   if (!isCurrent(expected)) { answer.complete(null); return; }
+   if (!isCurrent(expected) || activity.isFinishing() || activity.isDestroyed()) { answer.complete(null); return; }
    EditText recovery = new EditText(activity);
    recovery.setSaveEnabled(false);
    recovery.setLongClickable(false);
@@ -234,15 +243,20 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
    recovery.setTextSize(22);
    recovery.setFilters(new InputFilter[]{new InputFilter.LengthFilter(100)});
    recovery.setHint("Recovery key");
-   AlertDialog prompt = show(new AlertDialog.Builder(activity).setTitle("Enter your recovery key").setView(recovery)
-    .setPositiveButton("Continue", null).setNegativeButton("Cancel", null),
-    () -> { recovery.setText(""); answer.complete(null); });
-   prompt.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
-    byte[] key = parseRecoveryKey(recovery.getText().toString());
-    if (key == null) { recovery.setError("Enter the full key as written down."); return; }
-    if (!answer.complete(key)) Arrays.fill(key, (byte) 0);
-    prompt.dismiss();
-   });
+   try {
+    AlertDialog prompt = show(new AlertDialog.Builder(activity).setTitle("Enter your recovery key").setView(recovery)
+     .setPositiveButton("Continue", null).setNegativeButton("Cancel", null),
+     () -> { recovery.setText(""); answer.complete(null); });
+    prompt.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+     byte[] key = parseRecoveryKey(recovery.getText().toString());
+     if (key == null) { recovery.setError("Enter the full key as written down."); return; }
+     if (!answer.complete(key)) Arrays.fill(key, (byte) 0);
+     prompt.dismiss();
+    });
+   } catch (RuntimeException unavailable) {
+    recovery.setText("");
+    answer.complete(null);
+   }
   });
   return await(expected, answer);
  }
@@ -287,11 +301,15 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
  private boolean confirmLinkExisting(Operation expected) throws Exception {
   CompletableFuture<Boolean> answer = new CompletableFuture<>();
   activity.runOnUiThread(() -> {
-   if (!isCurrent(expected)) { answer.complete(false); return; }
-   show(new AlertDialog.Builder(activity).setTitle("Link saved passwords to your account?")
-    .setMessage("This tablet already has saved passwords. Link them to the Grace account you just confirmed.")
-    .setPositiveButton("Link saved passwords", (dialog, which) -> answer.complete(true))
-    .setNegativeButton("Cancel", null), () -> answer.complete(false));
+   if (!isCurrent(expected) || activity.isFinishing() || activity.isDestroyed()) { answer.complete(false); return; }
+   try {
+    show(new AlertDialog.Builder(activity).setTitle("Link saved passwords to your account?")
+     .setMessage("This tablet already has saved passwords. Link them to the Grace account you just confirmed.")
+     .setPositiveButton("Link saved passwords", (dialog, which) -> answer.complete(true))
+     .setNegativeButton("Cancel", null), () -> answer.complete(false));
+   } catch (RuntimeException unavailable) {
+    answer.complete(false);
+   }
   });
   return await(expected, answer);
  }
@@ -368,10 +386,12 @@ final class GracePasswordRecovery implements Application.ActivityLifecycleCallba
   activity.runOnUiThread(() -> {
    if (!isCurrent(expected)) return;
    operation = null;
-   if (activity.isFinishing() || message == null) return;
+   if (activity.isFinishing() || activity.isDestroyed() || message == null) return;
    dismiss();
-   show(new AlertDialog.Builder(activity).setTitle("Backup and recovery")
-    .setMessage(message).setPositiveButton("Done", null), null);
+   try {
+    show(new AlertDialog.Builder(activity).setTitle("Backup and recovery")
+     .setMessage(message).setPositiveButton("Done", null), null);
+   } catch (RuntimeException unavailable) { }
   });
  }
 

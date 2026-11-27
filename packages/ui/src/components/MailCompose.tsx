@@ -261,8 +261,8 @@ export function MailCompose({
   const recipients = (field: MailRecipientField, people: MailContact[]) => (
     <Line label={l[field]}>
       <span className="flex flex-1 flex-wrap items-center gap-2.5 py-1.5">
-        {people.map((person, i) => (
-          <MailRecipientChip key={person.name} contact={person} onRemove={onRemoveRecipient && (() => onRemoveRecipient(field, i))} />
+        {withKeys(people, (person) => person.name).map(({ item: person, key }, i) => (
+          <MailRecipientChip key={key} contact={person} onRemove={onRemoveRecipient && (() => onRemoveRecipient(field, i))} />
         ))}
         {onAddRecipient && (
           <Button variant="capsule" size="compact-icon" className={addButton} aria-label={l.addTo(l[field])} onClick={() => onAddRecipient(field)}>

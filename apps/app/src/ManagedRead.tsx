@@ -550,12 +550,14 @@ export function ManagedRead({ view, today }: { view: ReadView; today: number }) 
       const series = suggestion.kind === "removeAppointment" && suggestion.series ? suggestion.id : undefined;
       const target = series ? snapshot.series : suggestion.id ? snapshot.selected : undefined;
       return <section data-sensitive="true">
+        {showNotice}
         <AppointmentEditor key={staged.number} selectedDay={snapshot.window.selectedDay} event={target} seriesFor={series} reviewing={snapshot.reviewing} review={review}
           proposal={suggestion.kind === "appointment" ? suggestion : undefined} write={write} pending={pending} close={() => run({ kind: "dismissProposal" })} />
       </section>;
     }
   }
   if (canSchedule && exact) return <section data-sensitive="true">
+    {showNotice}
     <AppointmentEditor selectedDay={snapshot.window.selectedDay} event={exact.event} seriesFor={exact.seriesFor} reviewing={snapshot.reviewing} review={review} write={write} pending={pending} close={() => setEditor(undefined)} />
   </section>;
   const event = snapshot.selected;

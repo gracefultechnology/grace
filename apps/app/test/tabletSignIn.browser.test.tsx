@@ -384,16 +384,17 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   });
   const reads: string[] = [];
   const result = (body: unknown) => Promise.resolve({ status: 200, body: JSON.stringify(body) });
-  let notify: ((value: ReturnType<typeof status>) => void) | undefined;
+  const listeners = new Set<(value: ReturnType<typeof status>) => void>();
+  const notify = (value: ReturnType<typeof status>) => { for (const listener of listeners) listener(value); };
   const browserAttempt = Latch.makeUnsafe();
   const begin = vi.fn(() => {
     phase = "signInPending";
-    notify?.(status());
+    notify(status());
     return Effect.runPromise(browserAttempt.await);
   });
   const cancel = vi.fn(() => {
     phase = "required";
-    notify?.(status());
+    notify(status());
     browserAttempt.openUnsafe();
     return Promise.resolve();
   });
@@ -423,9 +424,9 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
       },
       cleanupLegacySignIn: () => Promise.reject(new Error("The current account is already verified")),
       signOut: () => Promise.reject(new Error("Upgrade must retain the current account")),
-      addListener: (_, listener) => {
-        notify = listener;
-        return Promise.resolve({ remove: () => Promise.resolve() });
+      addListener: (event, listener) => {
+        if (event === "sessionChanged") listeners.add(listener);
+        return Promise.resolve({ remove: () => { listeners.delete(listener); return Promise.resolve(); } });
       },
     },
   }));
@@ -447,7 +448,7 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   expect({ reads, location: location.href }).toEqual({ reads: [], location: startingLocation });
   await act(() => {
     phase = "required";
-    notify?.(status());
+    notify(status());
     return Promise.resolve();
   });
   await expect.element(button("Go to Account")).toBeEnabled();
@@ -468,14 +469,14 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   await expect.element(button("Cancel")).toBeEnabled();
   await act(() => {
     phase = "acknowledgmentPending";
-    notify?.(status());
+    notify(status());
     return Promise.resolve();
   });
   await expect.element(button("Cancel")).not.toBeInTheDocument();
   await expect.element(button("Sign in again")).not.toBeInTheDocument();
   await act(() => {
     phase = undefined;
-    notify?.(status());
+    notify(status());
     browserAttempt.openUnsafe();
     return Promise.resolve();
   });
@@ -529,7 +530,7 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   await act(() => {
     labels = [];
     leaseVersion = "renewed-acknowledgment";
-    notify?.(status());
+    notify(status());
     return Promise.resolve();
   });
   await expect.element(warning).not.toBeInTheDocument();

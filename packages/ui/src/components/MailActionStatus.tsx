@@ -50,7 +50,7 @@ export function MailActionStatus({ status, onRetry, labels, className, ...props 
     >
       {failed ? <TriangleAlert size={22} strokeWidth={2.2} aria-hidden /> : done ? <Check size={22} strokeWidth={2.6} aria-hidden /> : <Spinner size="md" aria-hidden />}
       {l[status]}
-      {failed && (
+      {failed && onRetry && (
         <Button variant="capsule" size="compact" className={cn(appButton, "ml-1.5 h-12 px-5 text-grace-ink")} onClick={onRetry}>
           {l.retry}
         </Button>

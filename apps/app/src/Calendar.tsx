@@ -286,7 +286,7 @@ function reconcileField(local: LocalField | undefined, remote: string): { value:
   if (!local) return { value: remote, next: undefined };
   if (local.inflight > 0) return { value: local.value, next: local };
   if (remote === local.value.trim()) {
-    return { value: local.value, next: local.value === remote ? undefined : { value: local.value, source: remote, inflight: 0 } };
+    return { value: local.value, next: local.value === remote ? undefined : local.source === remote ? local : { value: local.value, source: remote, inflight: 0 } };
   }
   if (remote === local.source) return { value: local.value, next: local };
   return { value: remote, next: undefined };

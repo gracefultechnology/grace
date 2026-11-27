@@ -281,7 +281,10 @@ export function Browser(props: Pick<ComponentProps<"section">, "style" | "inert"
           reloadable={activeUrl !== ""} onReload={() => edit({ tag: "Reload" })}
           onBack={() => edit({ tag: "Back" })} onForward={() => edit({ tag: "Forward" })} goLabel={goWord} onGo={go}>
           <AddressBar ref={fieldRef} value={address} secureAddress={secureAddress} enterKeyHint="go" aria-invalid={browser.emptyAddressNotice || undefined} notice={browser.emptyAddressNotice ? emptyAddress : fillNotice}
-            onValueChange={(text) => { setAddress(text); edit({ tag: "EditAddress", text }); }}
+            onValueChange={(text) => {
+              const input: BrowserInput = { tag: "EditAddress", text };
+              if (offered(input)) { setAddress(text); void send({ type: "changePage", browserInput: input }); }
+            }}
             onSubmit={go} onBlur={(event) => { if (event.relatedTarget?.textContent !== goWord) edit({ tag: "DismissAddress" }); }} />
         </BrowserToolbar>
       )}>

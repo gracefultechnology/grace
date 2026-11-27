@@ -909,12 +909,17 @@ export function WithCalendars({ keys, children }: { keys: readonly number[]; chi
   return createElement(Nested<CalendarInstance>, { ids: keys, use: useCalendar, children });
 }
 
-export function useDraft(value: string, typing: boolean): [string, (text: string) => void] {
+export function useDraft(value: string, typing: boolean, resetKey?: string | number): [string, (text: string) => void] {
   const [typed, setTyped] = useState<string | null>(null);
   const [wasTyping, setWasTyping] = useState(typing);
+  const [lastReset, setLastReset] = useState(resetKey);
   if (typing !== wasTyping) {
     setWasTyping(typing);
     if (!typing && typed !== null) setTyped(null);
+  }
+  if (resetKey !== lastReset) {
+    setLastReset(resetKey);
+    if (typed !== null) setTyped(null);
   }
   return [typed ?? value, setTyped];
 }

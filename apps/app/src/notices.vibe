@@ -137,42 +137,65 @@ const host = (wifi: WiFiPlugin | undefined, reminderPort?: ReminderPlugin) => La
       notices.send({ type: "dismissReminder", subject }, "App") catch () => undefined
       known.delete(subject)
     }
-    const refresh = Effect.ignore(serial(effect {
-      const owner = (try setup.get()).graceAccount.tag
-      if (owner !== "GraceDeviceSignedIn") {
-        for (const subject of known.keys()) try remove(subject)
-        return
-      }
-      try follow()
-      if ((try notices.get()).place === "Background") return
-      const received = Schema.decodeUnknownEffect(DueReminders)(try tryPromise(() => port.managedDue())) catch () => undefined
-      if (!received || (try setup.get()).graceAccount.tag !== "GraceDeviceSignedIn") return
-      const current = new Set(received.reminders.map((reminder) => reminder.id))
-      for (const [subject, id] of known) if (!current.has(id)) try remove(subject)
-      for (const reminder of received.reminders) {
-        if ([...known.values()].includes(reminder.id)) continue
-        const label = reminderLabel(reminder)
-        let subject = label
-        for (let i = 2; known.has(subject); i++) subject = label + " (" + i + ")"
-        const admitted = notices.send({ type: "remind", subject }, "App") catch () => undefined
-        if (admitted !== undefined) known.set(subject, reminder.id)
-      }
-    }))
+    const reminderTimeout = "5 seconds"
+    const refresh = Effect.ignore(effect {
+      const active = try serial(effect {
+        const owner = (try setup.get()).graceAccount.tag
+        if (owner !== "GraceDeviceSignedIn") {
+          for (const subject of known.keys()) try remove(subject)
+          return false
+        }
+        try follow()
+        return (try notices.get()).place !== "Background"
+      })
+      if (!active) return
+      const received = timeout(effect {
+        return try Schema.decodeUnknownEffect(DueReminders)(try tryPromise(() => port.managedDue()))
+      }, reminderTimeout) catch () => undefined
+      if (!received) return
+      try serial(effect {
+        if ((try setup.get()).graceAccount.tag !== "GraceDeviceSignedIn") {
+          for (const subject of known.keys()) try remove(subject)
+          return
+        }
+        try follow()
+        if ((try notices.get()).place === "Background") return
+        const current = new Set(received.reminders.map((reminder) => reminder.id))
+        for (const [subject, id] of known) if (!current.has(id)) try remove(subject)
+        for (const reminder of received.reminders) {
+          if ([...known.values()].includes(reminder.id)) continue
+          const label = reminderLabel(reminder)
+          let subject = label
+          for (let i = 2; known.has(subject); i++) subject = label + " (" + i + ")"
+          const admitted = notices.send({ type: "remind", subject }, "App") catch () => undefined
+          if (admitted !== undefined) known.set(subject, reminder.id)
+        }
+      })
+    })
     const accountChanges = Stream.changes(Stream.map(setup.changes, ({ graceAccount }) => graceAccount.tag))
     const returnedToForeground = Stream.filter(Stream.changes(Stream.map(notices.changes, (n) => n.place === "Background")), (background) => !background)
     try fork.scoped Stream.runForEach(Stream.mergeAll(
       [listen, accountChanges, returnedToForeground, Stream.fromEventListener(webView.document, "visibilitychange")], { concurrency: "unbounded" }), () => refresh)
-    try fork.scoped Stream.runForEach(Stream.fromPubSub(replies), (reply) => Effect.ignore(serial(effect {
+    try fork.scoped Stream.runForEach(Stream.fromPubSub(replies), (reply) => Effect.ignore(effect {
       if (reply._tag !== "Dismiss" && reply._tag !== "SeeDetails") return
-      const id = known.get(reply.reminder)
-      if (id === undefined || (try setup.get()).graceAccount.tag !== "GraceDeviceSignedIn") return
+      const id = try serial(effect {
+        const found = known.get(reply.reminder)
+        return found !== undefined && (try setup.get()).graceAccount.tag === "GraceDeviceSignedIn" ? found : undefined
+      })
+      if (id === undefined) return
       if (reply._tag === "SeeDetails") {
-        try tryPromise(() => port.openManagedDue({ id }))
+        try timeout(tryPromise(() => port.openManagedDue({ id })), reminderTimeout)
       } else {
-        const receipt = try Schema.decodeUnknownEffect(DismissedReminder)(try tryPromise(() => port.dismissManagedDue({ id })))
-        if (receipt.id === id) try remove(reply.reminder)
+        const receipt = try timeout(effect {
+          return try Schema.decodeUnknownEffect(DismissedReminder)(try tryPromise(() => port.dismissManagedDue({ id })))
+        }, reminderTimeout)
+        if (receipt.id === id) {
+          try serial(effect {
+            if (known.get(reply.reminder) === id) try remove(reply.reminder)
+          })
+        }
       }
-    })))
+    }))
   }
 
   return {

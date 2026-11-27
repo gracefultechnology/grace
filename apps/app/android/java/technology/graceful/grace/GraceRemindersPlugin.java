@@ -1,6 +1,7 @@
 package technology.graceful.grace;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Context;
 import android.util.Base64;
 import android.util.Log;
@@ -36,8 +37,14 @@ public class GraceRemindersPlugin extends ReminderPlugin {
 
  static void managedDueChanged() {
   var active = foreground;
-  if (active != null && active.getActivity() != null) active.getActivity().runOnUiThread(() -> {
-   if (foreground == active) active.notifyListeners("managedDueChanged", new JSObject());
+  if (active == null) return;
+  Activity activity = active.getActivity();
+  if (activity == null || activity.isFinishing() || activity.isDestroyed()) return;
+  activity.runOnUiThread(() -> {
+   Activity current = active.getActivity();
+   if (foreground == active && current != null && !current.isFinishing() && !current.isDestroyed()) {
+    active.notifyListeners("managedDueChanged", new JSObject());
+   }
   });
  }
 
@@ -89,12 +96,14 @@ public class GraceRemindersPlugin extends ReminderPlugin {
     long generation = GracePasswordsOwner.generation();
     var details = ManagedCalendarReminders.detail(getContext(), id);
     if (GracePasswordsOwner.generation() != generation) throw new IllegalStateException();
-    var activity = getActivity();
-    if (activity == null) throw new IllegalStateException();
+    Activity activity = getActivity();
+    if (activity == null || activity.isFinishing() || activity.isDestroyed()) throw new IllegalStateException();
     activity.runOnUiThread(() -> {
      try {
-      if (foreground != this || activity.isFinishing() || GracePasswordsOwner.generation() != generation || GracePasswordsOwner.accountChanging()) throw new IllegalStateException();
-      activity.startActivity(new Intent(Intent.ACTION_VIEW, details));
+      Activity current = getActivity();
+      if (foreground != this || current == null || current.isFinishing() || current.isDestroyed()
+       || GracePasswordsOwner.generation() != generation || GracePasswordsOwner.accountChanging()) throw new IllegalStateException();
+      current.startActivity(new Intent(Intent.ACTION_VIEW, details));
       call.resolve();
      } catch (Exception unavailable) { call.reject("Calendar reminder couldn’t open"); }
     });

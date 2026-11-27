@@ -1,5 +1,6 @@
 package technology.graceful.grace;
 
+import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.view.WindowManager;
@@ -20,14 +21,24 @@ public final class PrivateViewPlugin extends Plugin {
    call.reject("Invalid private view");
    return;
   }
-  getActivity().runOnUiThread(() -> {
+  Activity activity = getActivity();
+  if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+   call.reject("Private view is unavailable");
+   return;
+  }
+  activity.runOnUiThread(() -> {
+   Activity current = getActivity();
+   if (current == null || current.isFinishing() || current.isDestroyed()) {
+    call.reject("Private view is unavailable");
+    return;
+   }
    switch (view) {
     case "vault" -> vault = active;
     case "browser" -> browser = active;
     default -> account = active;
    }
-   if (vault || browser || account) getActivity().getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
-   else getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+   if (vault || browser || account) current.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
+   else current.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
    call.resolve();
   });
  }
@@ -38,8 +49,18 @@ public final class PrivateViewPlugin extends Plugin {
    call.reject("Invalid host surface");
    return;
   }
-  getActivity().runOnUiThread(() -> {
-   if (getActivity() instanceof MainActivity host) host.setHostTransparent(transparent);
+  Activity activity = getActivity();
+  if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+   call.reject("Host surface is unavailable");
+   return;
+  }
+  activity.runOnUiThread(() -> {
+   Activity current = getActivity();
+   if (current == null || current.isFinishing() || current.isDestroyed()) {
+    call.reject("Host surface is unavailable");
+    return;
+   }
+   if (current instanceof MainActivity host) host.setHostTransparent(transparent);
    call.resolve();
   });
  }
@@ -55,13 +76,19 @@ public final class PrivateViewPlugin extends Plugin {
    call.reject("Unknown verification app");
    return;
   }
-  getActivity().runOnUiThread(() -> {
-   if (!browser || vault || !getActivity().hasWindowFocus()) {
+  Activity activity = getActivity();
+  if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+   call.reject("Private sign-in is unavailable");
+   return;
+  }
+  activity.runOnUiThread(() -> {
+   Activity current = getActivity();
+   if (!browser || vault || current == null || current.isFinishing() || current.isDestroyed() || !current.hasWindowFocus()) {
     call.reject("Private sign-in is unavailable");
     return;
    }
    try {
-    getActivity().startActivity(Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, category)
+    current.startActivity(Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, category)
      .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
     call.resolve();
    } catch (ActivityNotFoundException | SecurityException unavailable) {

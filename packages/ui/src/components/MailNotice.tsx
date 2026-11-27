@@ -20,10 +20,11 @@ export type MailNoticeProps = Omit<ComponentProps<"div">, "children"> & {
  * @design packages/design-system/design.md#windows
  */
 export function MailNotice({ children, actionLabel, onAction, className, ...props }: MailNoticeProps) {
+  const hasAction = Boolean(actionLabel && onAction);
   return (
-    <Alert variant="caution" className={cn(actionLabel && "py-3", className)} {...props}>
+    <Alert variant="caution" className={cn(hasAction && "py-3", className)} {...props}>
       <span className="min-w-0">{children}</span>
-      {actionLabel && (
+      {hasAction && (
         <Button variant="capsule" size="compact" className={cn("ml-auto", appButton, "text-grace-ink")} onClick={onAction}>
           {actionLabel}
         </Button>

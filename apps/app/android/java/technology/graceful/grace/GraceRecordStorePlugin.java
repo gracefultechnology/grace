@@ -17,7 +17,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.json.JSONException;
@@ -27,10 +26,13 @@ import org.json.JSONObject;
 public class GraceRecordStorePlugin extends Plugin {
  static final Set<String> RECORDS = new HashSet<>(Arrays.asList("commitments", "preferences", "setup", "memory", "calendar"));
  private static final ExecutorService IO = Executors.newSingleThreadExecutor();
- private static final ConcurrentHashMap<String, Object> LOCKS = new ConcurrentHashMap<>();
+ private static final Object[] LOCKS = new Object[64];
+ static {
+  for (int i = 0; i < LOCKS.length; i++) LOCKS[i] = new Object();
+ }
 
  private static Object fileLock(File file) throws IOException {
-  return LOCKS.computeIfAbsent(file.getCanonicalPath(), ignored -> new Object());
+  return LOCKS[(file.getCanonicalPath().hashCode() & 0x7fffffff) % LOCKS.length];
  }
 
  static final class Stale extends Exception {}

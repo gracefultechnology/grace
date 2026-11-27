@@ -78,7 +78,7 @@
         "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/package.json",
         "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/tsconfig*.json",
         "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/src/**",
-        "$TURBO_ROOT$/vendor/eliza/packages/design-system/**"
+        "$TURBO_ROOT$/vendor/eliza/packages/design-system/{package.json,tokens.json}"
       ],
       "outputs": [
         "dist/**",

@@ -1615,8 +1615,8 @@ async function billworldPasswords(serial: typeof EmulatorSerial.Type, checkout: 
       signal.throwIfAborted();
       const after = await readGrade();
       if (after.paymentCount !== 0) throw new GradeFailure("agent_error", "The sign-in run encountered a payment");
-      if (Date.now() >= until) throw new GradeFailure("timeout", "BillWorld did not confirm the account view in time");
       if (after.grade.success) break;
+      if (Date.now() >= until) throw new GradeFailure("timeout", "BillWorld did not confirm the account view in time");
       await delay(1000);
     }
   } catch (error) {

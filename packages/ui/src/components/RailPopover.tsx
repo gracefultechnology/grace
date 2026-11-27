@@ -30,13 +30,20 @@ export type RailPopoverProps = Omit<ComponentProps<"div">, "title"> & {
  * @model spec/app/preferences.md
  * @design packages/design-system/design.md#glass
  */
-export function RailPopover({ icon, title, value, onClose, closeLabel = "Close", note, actions, top, arrowTop = 58, className, style, children, ...props }: RailPopoverProps) {
+export function RailPopover({ icon, title, value, onClose, closeLabel = "Close", note, actions, top, arrowTop = 58, className, style, onKeyDown, children, ...props }: RailPopoverProps) {
   return (
     <div
       role="dialog"
       aria-label={title}
       className={cn("absolute left-[156px] z-[15] box-border w-[560px] rounded-menu bg-glass/95 p-6 font-sans text-foreground shadow-menu", className)}
       style={{ top, "--arrow": `${arrowTop}px`, ...style } as CSSProperties}
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        if (!event.defaultPrevented && event.key === "Escape" && onClose) {
+          event.preventDefault();
+          onClose();
+        }
+      }}
       {...props}
     >
       <span aria-hidden className="absolute top-(--arrow) -left-2.5 size-5 -translate-y-1/2 rotate-45 bg-glass/86 shadow-arrow" />

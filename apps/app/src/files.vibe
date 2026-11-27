@@ -1,7 +1,7 @@
 // spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/files.md, "Opening and retrying load the authoritative local library"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"
 import { canLoadForSave, canSaveFiles, captureFile, type FileFeedback, type Files as FileState, initial, Machine as Files, machine, type SavedFile } from "../gen/app__files.effect.vibe"
 import { Machine as Setup, type GraceAccount } from "../gen/app__setup.effect.vibe"
-import { accountPlugin } from "./accountPlugin.ts"
+import { accountPlugin, type AccountBridge } from "./accountPlugin.ts"
 import { webView } from "./surfacePlugin.ts"
 import type { Attached } from "./connector.vibe"
 import { HeldFile } from "./instances.vibe"
@@ -34,10 +34,9 @@ export function savedFile(entry: FileEntry, owner: string, session: string): Sav
 export function filesAccount(account: GraceAccount | undefined) {
   return account?.tag === "GraceSignedIn" ? "web/" + account.accountId : account?.tag === "GraceDeviceSignedIn" ? "device" : undefined
 }
-const nativeAccount = accountPlugin
-export const accountRefreshes = () => nativeAccount
+export const accountRefreshes = (account: AccountBridge | undefined) => account
   ? Stream.callback<void>((queue) => acquireRelease(
-    Effect.option(tryPromise(() => nativeAccount.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) }))),
+    Effect.option(tryPromise(() => account.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) }))),
     (handle) => Option.isSome(handle) ? Effect.ignore(tryPromise(() => handle.value.remove())) : Effect.void,
   ))
   : Stream.filter(Stream.fromEventListener(webView.document, "visibilitychange"), () => !webView.hidden())
@@ -68,7 +67,7 @@ export const library = Layer.effect(Library, effect {
   const setup = try Setup
   const status = try SubscriptionRef.make(initial)
   const owners = Stream.changes(Stream.map(setup.changes, (state) => filesAccount(state.graceAccount)))
-  try fork.scoped Stream.runForEach(Stream.merge(Stream.map(owners, () => undefined), Stream.map(accountRefreshes(), () => undefined)), () => SubscriptionRef.set(status, initial))
+  try fork.scoped Stream.runForEach(Stream.merge(Stream.map(owners, () => undefined), Stream.map(accountRefreshes(accountPlugin), () => undefined)), () => SubscriptionRef.set(status, initial))
   const serial = try Semaphore.make(1)
 
   effect function leased() {

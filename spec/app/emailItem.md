@@ -135,7 +135,7 @@ pure def canChangeMessage(m: MessageRecord, change: MessageChange, by: MessageAc
     (change == TrashMessage and m.folder != TrashFolder) or
     ((change == RestoreMessage or change == PurgeMessage) and m.folder == TrashFolder))
 pure def changeMessage(m: MessageRecord, change: MessageChange, by: MessageActor): MessageRecord =
-  { ...m, pending: change, status: ChangePending, revision: m.revision + 1 }
+  { ...m, pending: change, status: ChangePending, revision: m.revision + 1, undoRevision: -1 }
 pure def canUndoTrash(m: MessageRecord, revision: int, by: MessageActor): bool =
   by == MessageUser and m.folder == TrashFolder and m.status == ChangeIdle and
   m.undoRevision == revision and revision == m.revision
@@ -169,7 +169,8 @@ pure def alwaysPendingChangeMatchesFolder(m: MessageRecord): bool =
 pure def alwaysPreviousFolderIsRecoverable(m: MessageRecord): bool =
   m.previousFolder != TrashFolder and m.previousFolder != PurgedFolder
 pure def alwaysUndoNamesCurrentTrash(m: MessageRecord): bool =
-  m.undoRevision != -1 implies (m.folder == TrashFolder and m.loaded and m.undoRevision <= m.revision)
+  m.undoRevision != -1 implies
+    (m.folder == TrashFolder and m.loaded and m.status == ChangeIdle and m.undoRevision == m.revision)
 pure def stepPurgedNeverReappears(before: MessageRecord, after: MessageRecord): bool =
   before.folder == PurgedFolder implies after.folder == PurgedFolder
 pure def sometimesTrash(m: MessageRecord): bool = m.loaded and m.folder == TrashFolder

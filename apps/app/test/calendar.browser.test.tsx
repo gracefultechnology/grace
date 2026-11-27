@@ -233,6 +233,7 @@ it('Browse (spec/app/calendars.md, "Story: See every calendar together and know 
   await say("Why not?", "Only appointments on this tablet can repeat.", []);
   expect(await toldGrace(secret)).toContain("proposeChange was not done: only appointments kept On this tablet can repeat or stop repeating");
   expect(await toldGrace(secret)).toContain("Only appointments On this tablet can repeat");
+  await click("Close Grace");
 
   const original = (await run(selectedGmailCalendar)).entries.find((e) => e.identity.sourceRef === entry.identity.sourceRef && e.phase === "Saved");
   if (!original) throw new Error("The added appointment has no saved source");

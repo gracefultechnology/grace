@@ -128,6 +128,7 @@ const Transcript = memo(function Transcript({ messages }: { messages: Workspace[
 
 type ComposerProps = {
   conversationDraft: string;
+  generation: number;
   typing: boolean;
   expanded: boolean;
   localCommands: boolean;
@@ -138,17 +139,19 @@ type ComposerProps = {
   needsMicPermission: boolean;
   talk: (acknowledged?: VoiceNotice) => void;
   interact: (input: Interaction) => void;
+  editDraft: (text: string) => Promise<unknown>;
   current: () => Workspace;
   requestGuide: (revision: number) => Promise<boolean>;
   say: ReturnType<typeof useWorkspace>["say"];
 };
 
 function GraceComposer({
-  conversationDraft, typing, expanded, localCommands, reasoningAvailable, turn, voice,
-  canTalk, needsMicPermission, talk, interact, current, requestGuide, say,
+  conversationDraft, generation, typing, expanded, localCommands, reasoningAvailable, turn, voice,
+  canTalk, needsMicPermission, talk, interact, editDraft, current, requestGuide, say,
 }: ComposerProps) {
   const fieldRef = useRef<HTMLTextAreaElement>(null);
-  const [draft, setDraft] = useDraft(conversationDraft, typing);
+  const pendingEditRef = useRef<Promise<unknown>>(Promise.resolve());
+  const [draft, setDraft] = useDraft(conversationDraft, typing, generation);
   return (
     <GraceDock value={draft} placeholder={localCommands ? "Type a Passwords command" : undefined} maxLines={expanded ? 6 : 4} mic={voice}
       quiet={((localCommands || !reasoningAvailable) && passwordDirection(draft) === "NoPasswordGuide") || turn === "Thinking"}
@@ -156,11 +159,16 @@ function GraceComposer({
       onFixMic={needsMicPermission ? () => talk() : undefined} fixMicLabel={needsMicPermission ? "Allow mic" : undefined}
       onMicChange={(on) => { if (on && canTalk) talk(); else if (!on) interact({ tag: "StopVoice" }); }}
       onFieldFocus={(event) => { fieldRef.current = event.currentTarget; interact({ tag: "TypeIntoChat" }); }}
-      onValueChange={(text) => { setDraft(text); interact({ tag: "EditDraft", text }); }}
+      onValueChange={(text) => {
+        setDraft(text);
+        const edit = editDraft(text).catch(() => undefined);
+        pendingEditRef.current = pendingEditRef.current.then(() => edit);
+      }}
       onSend={() => {
-        const state = current();
-        const revision = state.assistant.conversation.draftRevision;
-        void requestGuide(revision).then(async (guided) => {
+        void pendingEditRef.current.then(async () => {
+          const state = current();
+          const revision = state.assistant.conversation.draftRevision;
+          const guided = await requestGuide(revision);
           if (guided) { setDraft(""); return; }
           if (localPasswordCommands(state.device)) return;
           const sent = await say({ tag: "SendDraft", revision });
@@ -206,6 +214,10 @@ function GracePanel({ open, onClosed, onHeightChange }: { open: boolean; onClose
   const answerEvent = (text: string): Interaction => ({ tag: "ChooseAnswer", token: conversation.generation, text });
   const answers = conversation.answers.filter((text) => can({ type: "interact", input: answerEvent(text) }));
   const interact = (input: Interaction) => { if (can({ type: "interact", input })) void send({ type: "interact", input }); };
+  const editDraft = (text: string): Promise<unknown> => {
+    const event: WorkspaceEvent = { type: "interact", input: { tag: "EditDraft", text } };
+    return can(event) ? send(event) : Promise.resolve();
+  };
   const start = { type: "startReadReview", reviewRevision: review.revision } as const;
   const showReview = can(start) && review.request.owner === guidedOwner(authority, review.request.steps);
   const next = plan.receipts.length;
@@ -329,9 +341,9 @@ function GracePanel({ open, onClosed, onHeightChange }: { open: boolean; onClose
             onClose={() => { if (can({ type: "closeGrace" })) void send({ type: "closeGrace" }); }} />
         }
         dock={
-          <GraceComposer conversationDraft={conversation.draft} typing={assistant.keyboard === "ChatKeyboard"} expanded={expanded}
+          <GraceComposer conversationDraft={conversation.draft} generation={conversation.generation} typing={assistant.keyboard === "ChatKeyboard"} expanded={expanded}
             localCommands={localCommands} reasoningAvailable={device.reasoningAvailable} turn={conversation.turn} voice={conversation.voice}
-            canTalk={canTalk} needsMicPermission={needsMicPermission} talk={talk} interact={interact}
+            canTalk={canTalk} needsMicPermission={needsMicPermission} talk={talk} interact={interact} editDraft={editDraft}
             current={current} requestGuide={guide.request} say={say} />
         }>
         <GraceMessages compact={!expanded}>

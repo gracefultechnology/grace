@@ -540,8 +540,24 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
     try addFinalizer(() => Effect.ignore(tryPromise(() => wake.configure({ generation: null }))))
   }
   try fork.scoped watchWakeTimers(workspace, readyWake, heardIn)
-  const changed = Stream.changes(Stream.map(workspace.changes, speechWanted))
-  try fork.scoped Stream.runDrain(Stream.switchMap(changed, (wanted) => wanted ? Stream.fromEffect(effect {
+  let speechActive = false
+  let wasWanted = false
+  let speechEpoch = 0
+  const changed = Stream.changes(Stream.map(workspace.changes, (state) => {
+    const wanted = speechWanted(state)
+    if (!wanted) {
+      wasWanted = false
+      speechActive = false
+      return 0
+    }
+    if (!wasWanted || (!speechActive && state.assistant.conversation.turn === "Speaking")) {
+      speechEpoch += 1
+      speechActive = true
+    }
+    wasWanted = true
+    return speechEpoch
+  }))
+  try fork.scoped Stream.runDrain(Stream.switchMap(changed, (session) => session > 0 ? Stream.fromEffect(ensuring(effect {
     const captureReady = opening.withPermits(1)(Effect.void)
     try captureReady
     const current = try workspace.get()
@@ -556,7 +572,9 @@ export const graceSpeech = (native: boolean, wake?: WakePort) => Layer.effect(Sp
       workspace.send({ type: "interact", input: { tag: "FinishSpeech", token, played: false } }, "Host") catch () => undefined
       if (latest.assistant.conversation.voice) try reportMic(false)
     }
-  }) : Stream.empty))
+  }, sync(() => {
+    if (speechEpoch === session) speechActive = false
+  }))) : Stream.empty))
   const listening = Stream.changes(Stream.map(workspace.changes, ({ assistant: { conversation }, wake }) =>
     wake.phase === "Dormant" && conversation.voice && conversation.turn === "Listening" ? conversation.generation : null))
   try fork.scoped Stream.runDrain(Stream.switchMap(listening, (token) => token === null ? Stream.empty : Stream.fromEffect(effect {

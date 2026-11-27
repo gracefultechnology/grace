@@ -4,7 +4,7 @@
 import { AppWindow, AskGraceButton, besideRail, Button, CaptionStrip, type CaptionStripProps, HomeScreen, type HomeScreenProps, ListRow, PortalContainerProvider, Rail, RailButton, RailPopover, ScreenDim, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
 import { Effect, ManagedRuntime } from "effect";
 import { CalendarDays, Check, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
-import { type ReactNode, Suspense, useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import { type ReactNode, Suspense, useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { type Assistance, keyboardCaptionVisible } from "../gen/app__assistant.ts";
 import { activeTab, tabUrl } from "../gen/app__browser.ts";
 import type { Turn } from "../gen/app__conversation.ts";
@@ -246,25 +246,28 @@ function popoverLayout(anchor: number) {
 
 function VolumePopover({ anchor }: { anchor: number }) {
   const volume = useWorkspaceSelector(selectPreferencesSession);
-  const canDismiss = useWorkspaceSelector((w) => w !== undefined && enabled(w, dismissPopoverEvent, "Person"));
   const canMuteToggle = useWorkspaceSelector((w) => w !== undefined && enabled(w, { type: "changePreferences", settings: muteChoice(w.preferences.session, !w.preferences.session.muted) }, "Person"));
   const { current, send } = useWorkspaceActions();
   if (!volume) return null;
   const { top, arrowTop } = popoverLayout(anchor);
-  const muteEvent: WorkspaceEvent = { type: "changePreferences", settings: muteChoice(volume, !volume.muted) };
   return (
     <RailPopover className="left-3" top={top} arrowTop={arrowTop} icon={volume.muted ? <VolumeX size={30} strokeWidth={2} /> : <Volume2 size={30} strokeWidth={2} />} title="Volume"
-      value={volume.muted ? "Muted" : `${volume.volume}%`} onClose={() => { if (canDismiss) void send(dismissPopoverEvent); }}
+      value={volume.muted ? "Muted" : `${volume.volume}%`} onClose={() => { if (enabled(current(), dismissPopoverEvent, "Person")) void send(dismissPopoverEvent); }}
       note={volume.muted ? "Grace will show her words on screen while you’re muted." : "Grace’s voice, videos and sounds all use this volume."}
-      actions={<Button variant={volume.muted ? "prominent" : "capsule"} size="pill" disabled={!canMuteToggle} onClick={() => void send(muteEvent)}>{volume.muted ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}{volume.muted ? "Unmute" : "Mute"}</Button>}>
+      actions={<Button variant={volume.muted ? "prominent" : "capsule"} size="pill" disabled={!canMuteToggle} onClick={() => {
+        const now = current();
+        const event: WorkspaceEvent = { type: "changePreferences", settings: muteChoice(now.preferences.session, !now.preferences.session.muted) };
+        if (enabled(now, event, "Person")) void send(event);
+      }}>{volume.muted ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}{volume.muted ? "Unmute" : "Mute"}</Button>}>
       <Slider className="mt-5 gap-4" label="Volume" decreaseLabel="Quieter" increaseLabel="Louder" step={10} value={volume.volume}
         onStep={(amount) => {
           const event: WorkspaceEvent = { type: "adjustPreferenceLevel", levelStep: { tag: "VolumeBy", amount } };
           if (enabled(current(), event, "Person")) void send(event);
         }}
         onValueChange={(level) => {
-          const event: WorkspaceEvent = { type: "changePreferences", settings: volumeChoice(volume, level) };
-          if (enabled(current(), event, "Person")) void send(event);
+          const now = current();
+          const event: WorkspaceEvent = { type: "changePreferences", settings: volumeChoice(now.preferences.session, level) };
+          if (enabled(now, event, "Person")) void send(event);
         }} />
     </RailPopover>
   );
@@ -303,6 +306,18 @@ function RailSection() {
   const { current, send } = useWorkspaceActions();
   const [anchor, setAnchor] = useState(0);
   const [wifiSsid, setWifiSsid] = useState<string | null>(null);
+  const bindPopoverEscape = useCallback((element: HTMLDivElement | null) => {
+    if (!element) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (enabled(current(), dismissPopoverEvent, "Person")) {
+        event.preventDefault();
+        void send(dismissPopoverEvent);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => { window.removeEventListener("keydown", onKeyDown); };
+  }, [current, send]);
   if (!slice) return null;
   const { time, period } = clockParts(now);
   const popoverOpen = slice.railPopover !== "NoPopover";
@@ -332,6 +347,7 @@ function RailSection() {
         <OverPage className={cn(besideRail, "inset-y-0 right-0 z-[5]")} onPointerDown={(event) => {
           if (event.target === event.currentTarget && enabled(current(), dismissPopoverEvent, "Person")) void send(dismissPopoverEvent);
         }}>
+          <div ref={bindPopoverEscape} hidden />
           {slice.railPopover === "VolumePopover" ? <VolumePopover anchor={anchor} /> : <WifiPopover anchor={anchor} wifiSsid={wifiSsid} />}
         </OverPage>
       )}
@@ -640,11 +656,30 @@ function Screen() {
   const keyboard = useKeyboardHeight();
   const [graceHeight, setGraceHeight] = useState(260);
   const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
+  const [portalActive, setPortalActive] = useState(false);
+  const portalContainerRef = useRef<HTMLDivElement | null>(null);
+  const bindPortal = useCallback((element: HTMLDivElement | null) => {
+    portalContainerRef.current = element;
+    setPortalContainer(element);
+    if (!element) { setPortalActive(false); return; }
+    const sync = () => setPortalActive(element.childElementCount > 0);
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(element, { childList: true });
+    return () => { observer.disconnect(); };
+  }, []);
   const bindKeys = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
     const actions = workspaceActionsFor(runtime);
     const website = websiteRequestActionsFor(runtime);
     const back = (event: Event) => {
+      const modals = portalContainerRef.current?.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"], [role="menu"]');
+      const modal = modals?.item(modals.length - 1);
+      if (modal) {
+        event.preventDefault();
+        modal.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+        return;
+      }
       const now = actions.current();
       const requests = website.current();
       const action = backAction(now.device, now.assistant, now.browser, requests, actions.privateHistory(now.browser.selected));
@@ -682,7 +717,8 @@ function Screen() {
             {slice.showCaption && <CaptionSection keyboard={keyboard} />}
             {!slice.privateSurface && !slice.websiteKeyboard && !slice.sleeping && <Grace onHeightChange={setGraceHeight} />}
           </PortalContainerProvider>
-          <div ref={setPortalContainer} className="relative z-30 isolate" />
+          {portalActive && <OverPage aria-hidden className="fixed inset-0 z-[29] pointer-events-none" />}
+          <div ref={bindPortal} className="relative z-30 isolate" />
         </div>
         {slice.sleeping && <SleepOverlay />}
         <ScreenDimBridge />

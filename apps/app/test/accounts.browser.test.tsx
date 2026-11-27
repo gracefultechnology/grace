@@ -79,6 +79,7 @@ beforeEach(async () => {
     const url = input instanceof Request ? input.url : String(input);
     const account = browserAccountResponse(new URL(url, location.href), grace.signedIn ? "margaret" : undefined);
     if (account) return account;
+    if (!grace.signedIn && new URL(url, location.href).pathname === "/api/auth/session") return new Response(null, { status: 401 });
     if (url.includes("/chat/completions")) {
       const body = init?.body ?? (input instanceof Request ? input.clone().body : null);
       chatBodies.push(await new Response(body).text());
