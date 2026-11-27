@@ -32,8 +32,7 @@ const settingsSources = (domain: string) => [
 ];
 const unanswered: (() => void)[] = [];
 const grace = { signedIn: true };
-const settingsWeb = (url: string) => {
-  const { hostname, pathname } = new URL(url);
+const settingsWeb = ({ hostname, pathname }: URL) => {
   if (hostname === "autoconfig.thunderbird.net") return pathname === "/v1.1/riverview.net" ? new Response(riverviewSettings, { headers: { "content-type": "text/xml" } }) : new Response(null, { status: 404 });
   return hostname === "dns.google" || hostname.endsWith("riverview.net") ? new Response(null, { status: 404 }) : undefined;
 };
@@ -77,15 +76,17 @@ beforeEach(async () => {
   firstListing = undefined;
   globalThis.fetch = async (input, init) => {
     const url = input instanceof Request ? input.url : String(input);
-    const account = browserAccountResponse(new URL(url, location.href), grace.signedIn ? "margaret" : undefined);
+    const parsed = new URL(url, location.href);
+    const account = browserAccountResponse(parsed, grace.signedIn ? "margaret" : undefined);
     if (account) return account;
+    if (!grace.signedIn && parsed.pathname === "/api/auth/session") return new Response(null, { status: 401 });
     if (url.includes("/chat/completions")) {
       const body = init?.body ?? (input instanceof Request ? input.clone().body : null);
       chatBodies.push(await new Response(body).text());
     }
     if (url.includes("/connections/other")) otherChecks.push(url);
     if (url.includes("/mail/outlook/search")) await firstListing;
-    const answer = settingsWeb(url);
+    const answer = settingsWeb(parsed);
     if (answer === undefined) return fetched(input, init);
     lookups.push(url);
     return new Promise((resolve) => {
