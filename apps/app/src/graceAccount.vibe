@@ -1,9 +1,9 @@
 // spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "An enrolled tablet offers one sign-in to update mail and calendar access"; spec/app/setup.md, "Google sign-in stays with the surface that started it"; spec/app/setup.md, "A supported email code can sign in on the tablet"
 import {
-  type GoogleLink, type GraceAccount, accountDetails, accountDetailsShown, type GracePlan, type MailLeaseUpgradePhase, type TabletAccountDetails, type TabletMailAuthority, hasActiveSubscription, isTheRequestsOwnReturn, Machine as Setup, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, mayStartGoogleSignIn, mayUseTabletEmailCode, tabletAccount, tabletSignInConfirmed
+  type GoogleLink, type GraceAccount, accountDetails, accountDetailsShown, type GracePlan, type MailLeaseUpgradePhase, type TabletAccountDetails, type TabletMailAuthority, hasActiveSubscription, isTheRequestsOwnReturn, Machine as Setup, mayBeginMailLeaseUpgrade, mayCancelMailLeaseUpgrade, mayCleanupLegacySignIn, mayOfferGoogleLink, mayOpenBillingPortal, mayRedeemMembershipCode, mayStartCheckout, mayStartGoogleSignIn, mayUseTabletEmailCode, tabletAccount, tabletSignInConfirmed, webAccountId
 } from "../gen/app__setup.effect.vibe"
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
-import { checkoutFromResponse, normalizeSubscriptionCode, redeemResultFromResponse, snapshotFromResponse, type BillingSnapshot } from "@elizaos/cloud"
+import { checkoutFromResponse, normalizeSubscriptionCode, snapshotFromResponse, type BillingSnapshot } from "@elizaos/cloud"
 import { accountPlugin, accountReadResponse, type AccountBridge, type TabletAccountRequest } from "./accountPlugin.ts"
 import type { AccountRequest, accountRequests, TabletGoogleRead } from "./cloudRequests.vibe"
 import { privateViewPlugin, webView } from "./surfacePlugin.ts"
@@ -84,7 +84,7 @@ type AccountOperation =
   | { kind: "refresh" | "signIn" | "signOut" | "cleanupLegacySignIn" | "checkout" | "portal" | "cancelDevice" | "disconnectGoogle" | "cancelSignInCode" }
   | { kind: "authorizeDevice"; expectedAccountId: string }
   | { kind: "sendCode"; provider: CodeProvider; address: string }
-  | { kind: "redeemMembershipCode"; code: string }
+  | { kind: "redeemMembershipCode"; code: string; expectedAccountId: string }
   | { kind: "connectGoogle"; mail: boolean; calendar: boolean; sendMail: boolean; trashMail: boolean; writeCalendar: boolean; expectedEmail: string }
   | { kind: "verifyCode"; provider: CodeProvider; address: string; code: string }
 export type Operation = AccountOperation | UpgradeOperation
@@ -269,12 +269,9 @@ effect function checkoutUrl(transport: Transport) {
 
 effect function redeemMembershipCode(request: (body: { code: string; idempotencyKey: string }) => Response!unknown, typedCode: string) {
   const code = normalizeSubscriptionCode(typedCode)
-  if (code === null) return false
+  if (code === null) return
   const idempotencyKey = try Effect.try(() => webView.window.crypto.randomUUID())
-  const response = try request({ code, idempotencyKey })
-  const now = try Clock.currentTimeMillis
-  const result = try redeemResultFromResponse(try tryPromise(() => response.json()), now)
-  return result.kind === "redeemed"
+  try request({ code, idempotencyKey })
 }
 
 effect function tabletAccountRequest(plugin: AccountBridge, request: TabletAccountRequest): Response!unknown {
@@ -423,13 +420,13 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
         return operation.kind === "connectGoogle" ? observed.tag === "GoogleLinkConnected" : observed.tag === "GoogleLinkReady"
       }
       if (operation.kind === "redeemMembershipCode" && mayRedeemMembershipCode(current)) {
+        const { code, expectedAccountId: accountId } = operation
         const member = accountDetails(current)
-        if (member.tag !== "TabletAccountKnown") return false
-        const { accountId } = member
-        const redeemed = redeemMembershipCode((body) => tabletAccountRequest(plugin, { action: "redeem", accountId, ...body }), operation.code) catch () => false
+        if (member.tag !== "TabletAccountKnown" || member.accountId !== accountId) return false
+        redeemMembershipCode((body) => tabletAccountRequest(plugin, { action: "redeem", accountId, ...body }), code) catch () => undefined
         const refreshed = try refresh()
         const details = accountDetails(refreshed)
-        return redeemed && details.tag === "TabletAccountKnown" && details.accountId === accountId && hasActiveSubscription(refreshed)
+        return details.tag === "TabletAccountKnown" && details.accountId === accountId && hasActiveSubscription(refreshed)
       }
       if (operation.kind === "signOut") {
         try tryPromise(() => plugin.signOut())
@@ -477,13 +474,15 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
       try browserCodeSignIn(operation)
       return operation.kind === "sendCode" || (try refresh()).tag === "GraceSignedIn"
     }
+    if (operation.kind === "redeemMembershipCode" && webAccountId(original) !== operation.expectedAccountId) return false
     const account = try refresh()
     if (original.tag !== "GraceSignedIn" || account.tag !== "GraceSignedIn" || account.accountId !== original.accountId) return false
     if (operation.kind === "redeemMembershipCode") {
       if (!mayRedeemMembershipCode(account)) return false
-      const redeemed = redeemMembershipCode((body) => accepted(transport, "/api/v1/subscription/redeem", "POST", body), operation.code) catch () => false
+      const { code, expectedAccountId } = operation
+      redeemMembershipCode((body) => accepted(transport, "/api/v1/subscription/redeem", "POST", { ...body, expectedAccountId }), code) catch () => undefined
       const refreshed = try refresh()
-      return redeemed && refreshed.tag === "GraceSignedIn" && refreshed.accountId === account.accountId && hasActiveSubscription(refreshed)
+      return webAccountId(refreshed) === expectedAccountId && hasActiveSubscription(refreshed)
     }
     if (operation.kind === "connectGoogle") {
       if (!mayOfferGoogleLink(account, (try setup.get()).googleLink) || (!operation.mail && !operation.calendar)) return false

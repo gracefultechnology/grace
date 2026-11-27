@@ -715,12 +715,14 @@ pure val deviceValues: Set[S::Shell] = Set(
 
 ### A signed-in account with an inactive subscription can redeem a membership code
 
-When the Grace service offers billing, Grace sends the entered code to the
-authenticated service. After the attempt, Grace reads the same account's
-subscription again and shows the reported plan. A valid code grants access
-without opening checkout. The tablet uses its own enrolled account and keeps
-the code entry and result in Account settings. A code cannot redeem against
-the browser's session when the person started on the tablet.
+When the Grace service offers billing, Grace sends the entered code and the
+account shown at submission to the authenticated service. The service refuses
+a request if the signed-in account has changed. After the attempt, Grace reads
+the same account's subscription again and shows the reported plan even if the
+redemption response was interrupted. A valid code grants access without opening
+checkout. The tablet uses its own enrolled account and keeps the code entry and
+result in Account settings. A code cannot redeem against the browser's session
+when the person started on the tablet.
 
 ```quint
 pure def mayRedeemMembershipCode(account: GraceAccount): bool =

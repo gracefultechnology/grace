@@ -98,7 +98,7 @@ final class GraceOwnerRead {
      if (!(input.opt("code") instanceof String code) || code.length() > 64 || code.trim().isEmpty()
          || !(input.opt("idempotencyKey") instanceof String key) || !key.matches("[A-Za-z0-9._:-]{8,128}"))
       throw new IllegalArgumentException("Invalid membership code request");
-     payload = new JSONObject().put("code", code).put("idempotencyKey", key);
+     payload = new JSONObject().put("code", code).put("idempotencyKey", key).put("expectedAccountId", owner.accountId());
     }
     Reply reply = request(endpoint, payload, owner);
     if (endpoint == Endpoint.PROFILE && reply.status() == 200) {

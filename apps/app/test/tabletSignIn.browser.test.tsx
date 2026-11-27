@@ -9,14 +9,17 @@ import "../src/main.css";
 
 actOnScreen();
 
-it('Redeem and connect Google in Grace (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async () => {
+it.each(["confirmed", "interrupted"] as const)('Redeem lifetime Pro and connect Google in Grace (%s) (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription")', async (response) => {
   const original = location.href;
   history.replaceState(null, "", "#account");
   const account = { id: "membership-owner", email: "member@example.test" };
   const now = Date.now();
-  const granted = { id: "grace-grant", effectiveFrom: now, effectiveUntil: now + 183 * 86400000 };
+  const granted = { id: "grace-grant", planKey: "pro_monthly", effectiveFrom: now, effectiveUntil: null } as const;
+  let signedIn = false;
   let grant: typeof granted | null = null;
-  const Redemption = Schema.Struct({ code: Schema.String, idempotencyKey: Schema.NonEmptyString });
+  const Redemption = Schema.Struct({
+    code: Schema.String, idempotencyKey: Schema.NonEmptyString, expectedAccountId: Schema.NonEmptyString,
+  });
   const readRedemption = Schema.decodeUnknownSync(Redemption);
   const redemption: Array<typeof Redemption.Type> = [];
   const charges: string[] = [];
@@ -24,7 +27,13 @@ it('Redeem and connect Google in Grace (spec/app/setup.md, "Story: Sign in to Gr
   const service = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : input, location.href);
     switch (url.pathname) {
-      case "/api/auth/session": return Response.json({ account });
+      case "/api/auth/session": return Response.json({ account: signedIn ? account : null });
+      case "/api/auth/refresh": return new Response(null, { status: 401 });
+      case "/api/auth/providers": return Response.json({ google: true, email: true, sms: false });
+      case "/api/auth/email/send": return Response.json({ sent: true });
+      case "/api/auth/email/verify":
+        signedIn = true;
+        return Response.json({ account });
       case "/api/v1/eliza/google/status": return Response.json({ accountId: account.id, provider: "google", side: "owner", mode: "cloud_managed", configured: false, connected: false, grantedCapabilities: [], identity: null });
       case "/api/v1/billing/limits": return Response.json(browserBillingSnapshot(grant));
       case "/api/v1/subscriptions/plans": return Response.json({ plans: [{ key: "plus_monthly" }] });
@@ -36,6 +45,7 @@ it('Redeem and connect Google in Grace (spec/app/setup.md, "Story: Sign in to Gr
         redemption.push(readRedemption(submitted));
         if (redemption.length === 1) return Response.json({ error: "grant_code_invalid" }, { status: 400 });
         grant = granted;
+        if (response === "interrupted") return Response.error();
         const { data } = browserBillingSnapshot(grant);
         return Response.json({ replayed: false, grant: data.grant, entitlement: { plan: data.plan } });
       }
@@ -47,6 +57,13 @@ it('Redeem and connect Google in Grace (spec/app/setup.md, "Story: Sign in to Gr
   try {
     await first.render();
     const code = page.getByRole("textbox", { name: "Membership code" });
+    await expect.element(code).not.toBeInTheDocument();
+    await act(() => userEvent.click(page.getByRole("button", { name: "Use email" })));
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Email address" }), account.email));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Send code" })));
+    await act(() => userEvent.fill(page.getByRole("textbox", { name: "Sign-in code" }), "123456"));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Sign in", exact: true })));
+    await expect.element(page.getByText(account.email, { exact: true })).toBeVisible();
     const redeem = page.getByRole("button", { name: "Redeem code" });
     await act(() => userEvent.fill(code, "FFFF-FFFF-FFFF-FFFF"));
     await act(() => userEvent.click(redeem));
@@ -55,8 +72,11 @@ it('Redeem and connect Google in Grace (spec/app/setup.md, "Story: Sign in to Gr
     await act(() => userEvent.fill(code, "1234-5678-90ab-cdef"));
     await act(() => userEvent.click(redeem));
     await expect.element(page.getByText("Active", { exact: true })).toBeVisible();
+    await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
     await expect.element(page.getByRole("button", { name: "Subscribe", exact: true })).not.toBeInTheDocument();
-    expect(redemption.map(({ code }) => code)).toEqual(["FFFFFFFFFFFFFFFF", "1234567890ABCDEF"]);
+    expect(redemption.map(({ code, expectedAccountId }) => [code, expectedAccountId])).toEqual([
+      ["FFFFFFFFFFFFFFFF", account.id], ["1234567890ABCDEF", account.id],
+    ]);
     expect(new Set(redemption.map(({ idempotencyKey }) => idempotencyKey)).size).toBe(2);
     expect(charges).toEqual([]);
   } finally {
@@ -109,8 +129,9 @@ it('Redeem and connect Google in Grace (spec/app/setup.md, "Story: Sign in to Gr
         expect(request.accountId).toBe(device.id);
         if (request.action === "plans") return body({ plans: [{ key: "plus_monthly" }] });
         if (request.action === "billing") return body(browserBillingSnapshot(deviceGrant));
-        tabletCodes.push(readRedemption(request).code);
+        tabletCodes.push(request.code);
         deviceGrant = granted;
+        if (response === "interrupted") return Promise.reject(new Error("Redemption response was interrupted"));
         const { data } = browserBillingSnapshot(deviceGrant);
         return body({ replayed: false, grant: data.grant, entitlement: { plan: data.plan } });
       },
@@ -123,6 +144,7 @@ it('Redeem and connect Google in Grace (spec/app/setup.md, "Story: Sign in to Gr
   await act(() => userEvent.fill(page.getByRole("textbox", { name: "Membership code" }), "face-face-face-face"));
   await act(() => userEvent.click(page.getByRole("button", { name: "Redeem code" })));
   await expect.element(page.getByText("Active", { exact: true })).toBeVisible();
+  await expect.element(page.getByRole("alert")).not.toBeInTheDocument();
   const googleLink = page.getByRole("button", { name: "Continue to Google" });
   const disconnect = page.getByRole("button", { name: "Disconnect Google" });
   await act(() => userEvent.click(page.getByRole("checkbox", { name: "Read Gmail" })));

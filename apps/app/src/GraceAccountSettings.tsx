@@ -120,7 +120,7 @@ export function GraceAccountSettings() {
               event.preventDefault();
               const form = event.currentTarget;
               const code = new FormData(form).get("membership-code");
-              if (typeof code === "string") run({ kind: "redeemMembershipCode", code }, () => form.reset());
+              if (typeof code === "string") run({ kind: "redeemMembershipCode", code, expectedAccountId: member.accountId }, () => form.reset());
             }}>
               <label htmlFor={membershipCodeId}>Membership code</label>
               <Input id={membershipCodeId} name="membership-code" autoComplete="off" autoCapitalize="characters" spellCheck={false}
