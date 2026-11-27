@@ -127,13 +127,14 @@ it.each(["confirmed", "interrupted"] as const)('Redeem lifetime Pro and connect 
       accountRequest: (request) => {
         if (request.action === "profile") return body({ success: true, data: device });
         expect(request.accountId).toBe(device.id);
-        if (request.action === "plans") return body({ plans: [{ key: "plus_monthly" }] });
-        if (request.action === "billing") return body(browserBillingSnapshot(deviceGrant));
-        tabletCodes.push(request.code);
-        deviceGrant = granted;
-        if (response === "interrupted") return Promise.reject(new Error("Redemption response was interrupted"));
-        const { data } = browserBillingSnapshot(deviceGrant);
-        return body({ replayed: false, grant: data.grant, entitlement: { plan: data.plan } });
+        if (request.action === "redeem") {
+          tabletCodes.push(request.code);
+          deviceGrant = granted;
+          if (response === "interrupted") return Promise.reject(new Error("Redemption response was interrupted"));
+          const { data } = browserBillingSnapshot(deviceGrant);
+          return body({ replayed: false, grant: data.grant, entitlement: { plan: data.plan } });
+        }
+        return body(request.action === "plans" ? { plans: [{ key: "plus_monthly" }] } : browserBillingSnapshot(deviceGrant));
       },
     },
   })));
