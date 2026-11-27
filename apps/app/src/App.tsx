@@ -1,7 +1,7 @@
 // spec/app/index.md, "Story: Manage my saved passwords privately"
 // spec/app/wake.md, "Settings and the sleep screen say when wake detection is unavailable"
 // spec/app/shell.md, "Story: Reach everyday tasks from Home"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/workspace.md, "Home, native controls and Close have explicit interruption semantics"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"
-import { AppWindow, AskGraceButton, besideRail, Button, CaptionStrip, type CaptionStripProps, HomeScreen, type HomeScreenProps, ListRow, Rail, RailButton, RailPopover, ScreenDim, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
+import { AppWindow, AskGraceButton, besideRail, Button, CaptionStrip, type CaptionStripProps, HomeScreen, type HomeScreenProps, ListRow, PortalContainerProvider, Rail, RailButton, RailPopover, ScreenDim, SleepScreen, Slider, Spinner, TextScale, WifiSlash, cn } from "@repo/ui";
 import { Effect, ManagedRuntime } from "effect";
 import { CalendarDays, Check, House, KeyRound, Mail, Settings as Gear, Volume2, VolumeX, Wifi } from "lucide-react";
 import { type ReactNode, Suspense, useCallback, useMemo, useState, useSyncExternalStore } from "react";
@@ -40,6 +40,7 @@ import {
   nextAppointment,
   primeRuntime,
   reminderNotice,
+  sameArray,
   shallowEqual,
   useAccountIds,
   useAccounts,
@@ -118,15 +119,18 @@ type BatteryNavigator = Navigator & { readonly getBattery?: () => Promise<Batter
 
 let batteryLevel: number | undefined;
 const batteryListeners = new Set<() => void>();
-let batteryObserved = false;
+let batterySession: object | undefined;
+let detachBattery: (() => void) | undefined;
 
 function subscribeBattery(listener: () => void) {
   batteryListeners.add(listener);
-  if (!batteryObserved) {
-    batteryObserved = true;
+  if (!batterySession) {
+    const session = {};
+    batterySession = session;
     const getBattery = (navigator as BatteryNavigator).getBattery;
     if (typeof getBattery === "function") {
       void getBattery.call(navigator).then((manager) => {
+        if (batterySession !== session) return;
         const update = () => {
           const next = Math.round(manager.level * 100);
           if (next === batteryLevel) return;
@@ -135,10 +139,19 @@ function subscribeBattery(listener: () => void) {
         };
         update();
         manager.addEventListener("levelchange", update);
+        detachBattery = () => manager.removeEventListener("levelchange", update);
       }, () => undefined);
     }
   }
-  return () => { batteryListeners.delete(listener); };
+  return () => {
+    batteryListeners.delete(listener);
+    if (batteryListeners.size === 0) {
+      batterySession = undefined;
+      detachBattery?.();
+      detachBattery = undefined;
+      batteryLevel = undefined;
+    }
+  };
 }
 
 function useBattery() {
@@ -245,7 +258,10 @@ function VolumePopover({ anchor }: { anchor: number }) {
       note={volume.muted ? "Grace will show her words on screen while you’re muted." : "Grace’s voice, videos and sounds all use this volume."}
       actions={<Button variant={volume.muted ? "prominent" : "capsule"} size="pill" disabled={!canMuteToggle} onClick={() => void send(muteEvent)}>{volume.muted ? <Volume2 aria-hidden /> : <VolumeX aria-hidden />}{volume.muted ? "Unmute" : "Mute"}</Button>}>
       <Slider className="mt-5 gap-4" label="Volume" decreaseLabel="Quieter" increaseLabel="Louder" step={10} value={volume.volume}
-        onStep={(amount) => void send({ type: "adjustPreferenceLevel", levelStep: { tag: "VolumeBy", amount } })}
+        onStep={(amount) => {
+          const event: WorkspaceEvent = { type: "adjustPreferenceLevel", levelStep: { tag: "VolumeBy", amount } };
+          if (enabled(current(), event, "Person")) void send(event);
+        }}
         onValueChange={(level) => {
           const event: WorkspaceEvent = { type: "changePreferences", settings: volumeChoice(volume, level) };
           if (enabled(current(), event, "Person")) void send(event);
@@ -261,13 +277,13 @@ const selectWifiPopoverSlice = (workspace: Workspace | undefined) => workspace &
 
 function WifiPopover({ anchor, wifiSsid }: { anchor: number; wifiSsid: string | null }) {
   const slice = useWorkspaceSelector(selectWifiPopoverSlice, sameOptionalSlice);
-  const { send } = useWorkspaceActions();
+  const { current, send } = useWorkspaceActions();
   if (!slice) return null;
   const online = slice.connectivity === "Online";
   const { top, arrowTop } = popoverLayout(anchor);
   return (
     <RailPopover className="left-3" top={top} arrowTop={arrowTop} icon={online ? <Wifi size={30} strokeWidth={2} /> : <WifiSlash size={30} />} title="Wi-Fi"
-      value={wifiWords[slice.connectivity]} onClose={() => void send(dismissPopoverEvent)}
+      value={wifiWords[slice.connectivity]} onClose={() => { if (enabled(current(), dismissPopoverEvent, "Person")) void send(dismissPopoverEvent); }}
       note={online ? undefined : "Email and the internet need it. Grace can help you reconnect."}
       actions={online ? (
         <Button variant="capsule" size="pill" disabled={!slice.canNetworkSettings} onClick={() => void send(networkSettingsEvent)}>Choose another network</Button>
@@ -284,7 +300,7 @@ function RailSection() {
   const slice = useWorkspaceSelector(selectRailSlice, sameOptionalSlice);
   const now = useMinute();
   const battery = useBattery();
-  const { send } = useWorkspaceActions();
+  const { current, send } = useWorkspaceActions();
   const [anchor, setAnchor] = useState(0);
   const [wifiSsid, setWifiSsid] = useState<string | null>(null);
   if (!slice) return null;
@@ -314,7 +330,7 @@ function RailSection() {
       </Rail>
       {popoverOpen && (
         <OverPage className={cn(besideRail, "inset-y-0 right-0 z-[5]")} onPointerDown={(event) => {
-          if (event.target === event.currentTarget) void send(dismissPopoverEvent);
+          if (event.target === event.currentTarget && enabled(current(), dismissPopoverEvent, "Person")) void send(dismissPopoverEvent);
         }}>
           {slice.railPopover === "VolumePopover" ? <VolumePopover anchor={anchor} /> : <WifiPopover anchor={anchor} wifiSsid={wifiSsid} />}
         </OverPage>
@@ -328,6 +344,8 @@ const selectCaptionSlice = (workspace: Workspace | undefined) => {
   const { assistant } = workspace;
   const last = assistant.conversation.messages.at(-1);
   const guideEvent: WorkspaceEvent = { type: "interact", input: { tag: "ShowGuidance", revision: assistant.guidance.revision } };
+  const answers = assistant.conversation.answers.filter((text) =>
+    enabled(workspace, { type: "interact", input: { tag: "ChooseAnswer", token: assistant.conversation.generation, text } }, "Person"));
   return {
     turn: assistant.conversation.turn,
     activity: assistant.activity,
@@ -335,19 +353,31 @@ const selectCaptionSlice = (workspace: Workspace | undefined) => {
     guidanceRevision: assistant.guidance.revision,
     lastAuthor: last?.author,
     lastText: last?.text ?? "",
-    answers: assistant.conversation.answers,
+    answers,
     canShowChat: enabled(workspace, showChatEvent, "Person"),
     canShowGuide: enabled(workspace, guideEvent, "Person"),
   };
 };
 
+type CaptionSlice = NonNullable<ReturnType<typeof selectCaptionSlice>>;
+const sameCaptionSlice = (a: CaptionSlice | undefined, b: CaptionSlice | undefined) =>
+  a === b || (
+    a !== undefined && b !== undefined &&
+    a.turn === b.turn &&
+    a.activity === b.activity &&
+    a.generation === b.generation &&
+    a.guidanceRevision === b.guidanceRevision &&
+    a.lastAuthor === b.lastAuthor &&
+    a.lastText === b.lastText &&
+    a.canShowChat === b.canShowChat &&
+    a.canShowGuide === b.canShowGuide &&
+    sameArray(a.answers, b.answers)
+  );
+
 function CaptionSection({ keyboard }: { keyboard: number }) {
-  const slice = useWorkspaceSelector(selectCaptionSlice, sameOptionalSlice);
-  const { current, send, say } = useWorkspaceActions();
+  const slice = useWorkspaceSelector(selectCaptionSlice, sameCaptionSlice);
+  const { send, say } = useWorkspaceActions();
   if (!slice) return null;
-  const nowState = current();
-  const captionAnswers = slice.answers.filter((text) =>
-    enabled(nowState, { type: "interact", input: { tag: "ChooseAnswer", token: slice.generation, text } }, "Person"));
   const showGuideEvent: WorkspaceEvent = { type: "interact", input: { tag: "ShowGuidance", revision: slice.guidanceRevision } };
   return (
     <OverPage className={cn(besideRail, "z-[4]")} style={{ bottom: 6 + keyboard }}>
@@ -355,7 +385,7 @@ function CaptionSection({ keyboard }: { keyboard: number }) {
         who={slice.turn === "Listening" || slice.lastAuthor === "HumanMessage" ? "you" : "grace"}
         text={slice.lastText}
         activity={captionActivity(slice.turn, slice.activity)}
-        answers={captionAnswers.length > 0 ? captionAnswers : undefined}
+        answers={slice.answers.length > 0 ? slice.answers : undefined}
         onAnswer={(text) => void say({ tag: "ChooseAnswer", token: slice.generation, text })}
         onShowChat={() => { if (slice.canShowChat) void send(showChatEvent); }}
         showGuide={slice.canShowGuide}
@@ -609,6 +639,7 @@ function Screen() {
   const slice = useWorkspaceSelector(selectScreenSlice, sameOptionalSlice);
   const keyboard = useKeyboardHeight();
   const [graceHeight, setGraceHeight] = useState(260);
+  const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
   const bindKeys = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
     const actions = workspaceActionsFor(runtime);
@@ -643,12 +674,15 @@ function Screen() {
     <TextScaleBridge>
       <div ref={bindKeys} data-benchmark-observable={slice.benchmarkObservable} className="fixed inset-0 overflow-clip font-sans text-foreground select-none">
         <div className="contents" {...under(slice.sleeping)}>
-          <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
-          <RailSection />
-          <ActiveSurface surface={slice.surface} bottom={bottom} docked={slice.docked} keyboard={keyboard} covered={slice.covered} sleeping={slice.sleeping} />
-          {!slice.privateSurface && !slice.sleeping && <Notices above={toastAbove} />}
-          {slice.showCaption && <CaptionSection keyboard={keyboard} />}
-          {!slice.privateSurface && !slice.websiteKeyboard && !slice.sleeping && <Grace onHeightChange={setGraceHeight} />}
+          <PortalContainerProvider container={portalContainer}>
+            <PageBackdrop className="absolute inset-0 bg-gradient-frame-soft" />
+            <RailSection />
+            <ActiveSurface surface={slice.surface} bottom={bottom} docked={slice.docked} keyboard={keyboard} covered={slice.covered} sleeping={slice.sleeping} />
+            {!slice.privateSurface && !slice.sleeping && <Notices above={toastAbove} />}
+            {slice.showCaption && <CaptionSection keyboard={keyboard} />}
+            {!slice.privateSurface && !slice.websiteKeyboard && !slice.sleeping && <Grace onHeightChange={setGraceHeight} />}
+          </PortalContainerProvider>
+          <div ref={setPortalContainer} className="relative z-30 isolate" />
         </div>
         {slice.sleeping && <SleepOverlay />}
         <ScreenDimBridge />
@@ -661,12 +695,18 @@ export function createAppRuntime(native: boolean): Runtime {
   return ManagedRuntime.make(application(devicePlugin, wifiPlugin, { native, agent: agentPlugin, vault: passwordClient }));
 }
 
+const loadingScreen = (
+  <div role="status" className="fixed inset-0 flex items-center justify-center bg-background font-sans text-foreground">
+    <Spinner size="lg" label="Starting Grace" />
+  </div>
+);
+
 export function App({ runtime }: { runtime: Runtime }) {
   const ready = isRuntimePrimed(runtime);
   const screen = useMemo(() => (ready ? <Screen /> : primeRuntime(runtime).then(() => <Screen />)), [runtime, ready]);
   return (
     <RuntimeContext value={runtime}>
-      <PageMeasurer runtime={runtime}>{ready ? screen : <Suspense>{screen}</Suspense>}</PageMeasurer>
+      <PageMeasurer runtime={runtime}>{ready ? screen : <Suspense fallback={loadingScreen}>{screen}</Suspense>}</PageMeasurer>
     </RuntimeContext>
   );
 }

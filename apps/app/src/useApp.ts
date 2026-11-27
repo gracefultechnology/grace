@@ -195,20 +195,21 @@ function createValueStreamStore<S>(
 }
 
 function createReadStreamStore<S>(
-  cache: WeakMap<Runtime, SubscriptionStore<S>>,
+  cache: WeakMap<Runtime, ValueStore<S>>,
   runtime: Runtime,
   read: () => S,
   changes: Stream.Stream<unknown, never, RuntimeEnv>,
-): SubscriptionStore<S> {
+): ValueStore<S> {
   const known = cache.get(runtime);
   if (known) return known;
   let initialized = false;
+  let seeded = false;
   let seen: S;
-  const store = createStreamStore(
+  const base = createStreamStore(
     runtime,
     changes,
     (isActive) => {
-      if (!initialized || !isActive) {
+      if (!initialized || (!isActive && !seeded)) {
         seen = read();
         initialized = true;
       }
@@ -217,6 +218,7 @@ function createReadStreamStore<S>(
     () => {
       seen = read();
       initialized = true;
+      seeded = false;
     },
     (_, emit) => {
       const next = read();
@@ -226,6 +228,15 @@ function createReadStreamStore<S>(
       emit();
     },
   );
+  const store: ValueStore<S> = {
+    ...base,
+    seed: (value) => {
+      if (initialized) return;
+      seen = value;
+      initialized = true;
+      seeded = true;
+    },
+  };
   cache.set(runtime, store);
   return store;
 }
@@ -250,14 +261,52 @@ const passwordViewStores = new WeakMap<Runtime, ValueStore<PasswordViewState | u
 const pageLayerStores = new WeakMap<Runtime, ValueStore<PageLayer | undefined>>();
 const accountsStores = new WeakMap<Runtime, ValueStore<AccountsState | undefined>>();
 const keyboardStores = new WeakMap<Runtime, ValueStore<number>>();
-const filesStores = new WeakMap<Runtime, SubscriptionStore<LibraryFiles>>();
-const fileLibraryStores = new WeakMap<Runtime, SubscriptionStore<FileSnapshot>>();
-const fileLibraryHomeStores = new WeakMap<Runtime, SubscriptionStore<FileHome | undefined>>();
-const managedReadsStores = new WeakMap<Runtime, SubscriptionStore<ManagedSnapshot>>();
-const managedHomeStores = new WeakMap<Runtime, SubscriptionStore<HomeCards | undefined>>();
-const replyOfferStores = new WeakMap<Runtime, SubscriptionStore<ReplyOffer | undefined>>();
-const wakeStatusStores = new WeakMap<Runtime, SubscriptionStore<WakeStatus>>();
+const filesStores = new WeakMap<Runtime, ValueStore<LibraryFiles>>();
+const fileLibraryStores = new WeakMap<Runtime, ValueStore<FileSnapshot>>();
+const fileLibraryHomeStores = new WeakMap<Runtime, ValueStore<FileHome | undefined>>();
+const managedReadsStores = new WeakMap<Runtime, ValueStore<ManagedSnapshot>>();
+const managedHomeStores = new WeakMap<Runtime, ValueStore<HomeCards | undefined>>();
+const replyOfferStores = new WeakMap<Runtime, ValueStore<ReplyOffer | undefined>>();
+const wakeStatusStores = new WeakMap<Runtime, ValueStore<WakeStatus>>();
 const minuteStores = new WeakMap<Runtime, SubscriptionStore<Date>>();
+const pageHostCache = new WeakMap<Runtime, PageHost["Service"]>();
+const instancesCache = new WeakMap<Runtime, Instances["Service"]>();
+
+function pageHostFor(runtime: Runtime): PageHost["Service"] {
+  const known = pageHostCache.get(runtime);
+  if (known) return known;
+  const host = runtime.runSync(Effect.service(PageHost));
+  pageHostCache.set(runtime, host);
+  return host;
+}
+
+function filesStoreFor(runtime: Runtime) {
+  return createReadStreamStore(filesStores, runtime, () => runtime.runSync(Effect.flatMap(Library, (library) => library.get())), libraryChanges);
+}
+
+function wakeStatusStoreFor(runtime: Runtime) {
+  return createReadStreamStore(wakeStatusStores, runtime, () => runtime.runSync(Effect.flatMap(SpeechActions, (speech) => SubscriptionRef.get(speech.wakeStatus))), wakeStatusChanges);
+}
+
+function fileLibraryStoreFor(runtime: Runtime) {
+  return createReadStreamStore(fileLibraryStores, runtime, () => runtime.runSync(Effect.flatMap(FileLibrary, (files) => files.get())), fileLibraryChanges);
+}
+
+function fileLibraryHomeStoreFor(runtime: Runtime) {
+  return createReadStreamStore(fileLibraryHomeStores, runtime, () => runtime.runSync(Effect.flatMap(FileLibrary, (files) => files.getHome())), fileLibraryHomeChanges);
+}
+
+function managedReadsStoreFor(runtime: Runtime) {
+  return createReadStreamStore(managedReadsStores, runtime, () => runtime.runSync(Effect.flatMap(ManagedReads, (reads) => reads.get())), managedReadsChanges);
+}
+
+function managedHomeStoreFor(runtime: Runtime) {
+  return createReadStreamStore(managedHomeStores, runtime, () => runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards())), managedHomeChanges);
+}
+
+function replyOfferStoreFor(runtime: Runtime) {
+  return createReadStreamStore(replyOfferStores, runtime, () => runtime.runSync(Effect.flatMap(ReplyControls, (controls) => controls.get())), replyOfferChanges);
+}
 
 function workspaceStoreFor(runtime: Runtime) {
   return createValueStreamStore<Workspace | undefined>(workspaceStores, runtime, undefined, workspaceChanges);
@@ -286,20 +335,63 @@ export function isRuntimePrimed(runtime: Runtime): boolean {
 }
 
 export async function primeRuntime(runtime: Runtime): Promise<void> {
-  const [workspace, setup, passwordView, pageLayer, accounts] = await runtime.runPromise(
+  const [
+    workspace,
+    setup,
+    passwordView,
+    pageLayer,
+    accounts,
+    pageHost,
+    signIns,
+    mail,
+    calendarNews,
+    instances,
+    libraryFiles,
+    wakeStatus,
+    fileSnapshot,
+    fileHome,
+    managedSnapshot,
+    managedHome,
+    replyOffer,
+  ] = await runtime.runPromise(
     Effect.all([
       Effect.flatMap(Effect.service(Workspaces), (m) => m.get()),
       Effect.flatMap(Effect.service(Setup), (m) => m.get()),
       Effect.flatMap(Effect.service(PasswordView), (m) => m.get()),
       Effect.flatMap(Effect.service(PageLayers), (m) => m.get()),
       Effect.flatMap(Effect.service(Accounts), (m) => m.get()),
+      Effect.service(PageHost),
+      Effect.service(SignIns),
+      Effect.serviceOption(Mail),
+      Effect.serviceOption(CalendarNews),
+      Effect.service(Instances),
+      Effect.flatMap(Library, (library) => library.get()),
+      Effect.flatMap(SpeechActions, (speech) => SubscriptionRef.get(speech.wakeStatus)),
+      Effect.flatMap(FileLibrary, (files) => files.get()),
+      Effect.flatMap(FileLibrary, (files) => files.getHome()),
+      Effect.flatMap(ManagedReads, (reads) => reads.get()),
+      Effect.flatMap(ManagedReads, (reads) => reads.homeCards()),
+      Effect.flatMap(ReplyControls, (controls) => controls.get()),
     ]),
   );
+  pageHostCache.set(runtime, pageHost);
+  signInsCache.set(runtime, signIns);
+  if (Option.isSome(mail)) mailActionsFor(runtime, mail.value);
+  else mailServiceCache.set(runtime, null);
+  calendarNewsCache.set(runtime, Option.getOrUndefined(calendarNews) ?? null);
+  instancesCache.set(runtime, instances);
   workspaceStoreFor(runtime).seed(workspace);
   setupStoreFor(runtime).seed(setup);
   passwordViewStoreFor(runtime).seed(passwordView);
   pageLayerStoreFor(runtime).seed(pageLayer);
   accountsStoreFor(runtime).seed(accounts);
+  filesStoreFor(runtime).seed(libraryFiles);
+  wakeStatusStoreFor(runtime).seed(wakeStatus);
+  fileLibraryStoreFor(runtime).seed(fileSnapshot);
+  fileLibraryHomeStoreFor(runtime).seed(fileHome);
+  managedReadsStoreFor(runtime).seed(managedSnapshot);
+  managedHomeStoreFor(runtime).seed(managedHome);
+  replyOfferStoreFor(runtime).seed(replyOffer);
   primedRuntimes.add(runtime);
 }
 
@@ -484,7 +576,7 @@ export function workspaceActionsFor(runtime: Runtime): WorkspaceActions {
     stepPrivate: (tab: number, direction: HistoryDirection) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.stepPrivate(tab, direction))),
     navigatePrivate: (tab: number, address: string) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.navigatePrivate(tab, address))),
     openPrivateVerificationApp: (tab: number, revision: number, app: PrivateVerificationApp) => runtime.runPromise(Effect.flatMap(Effect.service(PageHost), (host) => host.openPrivateVerificationApp(tab, revision, app))),
-    opensWebsites: runtime.runSync(Effect.map(Effect.service(PageHost), (host) => host.opensWebsites)),
+    opensWebsites: pageHostFor(runtime).opensWebsites,
     closeBrowser: () => runtime.runPromiseExit(Effect.flatMap(Effect.service(PageHost), (host) => host.closeBrowser())),
   };
   workspaceActionCache.set(runtime, actions);
@@ -538,7 +630,7 @@ const websiteActionCache = new WeakMap<Runtime, WebsiteRequestActions>();
 export function websiteRequestActionsFor(runtime: Runtime): WebsiteRequestActions {
   const known = websiteActionCache.get(runtime);
   if (known) return known;
-  const host = runtime.runSync(Effect.service(PageHost));
+  const host = pageHostFor(runtime);
   const actions: WebsiteRequestActions = {
     send: (event: WebsiteEvent) => runtime.runPromise(host.website(event)),
     current: () => runtime.runSync(Effect.flatMap(Effect.service(WebsiteRequests), (m) => m.get())),
@@ -605,9 +697,14 @@ const shelves = new WeakMap<Runtime, Promise<Instances["Service"]>>();
 
 function useInstances() {
   const runtime = useRuntime();
+  const ready = instancesCache.get(runtime);
+  if (ready) return ready;
   const known = shelves.get(runtime);
   if (known) return use(known);
-  const found = runtime.runPromise(Effect.service(Instances));
+  const found = runtime.runPromise(Effect.service(Instances)).then((value) => {
+    instancesCache.set(runtime, value);
+    return value;
+  });
   shelves.set(runtime, found);
   return use(found);
 }
@@ -647,79 +744,37 @@ export function useMailHeld() {
 }
 
 export function useFiles(): LibraryFiles {
-  const runtime = useRuntime();
-  const store = createReadStreamStore(
-    filesStores,
-    runtime,
-    () => runtime.runSync(Effect.flatMap(Library, (library) => library.get())),
-    libraryChanges,
-  );
+  const store = filesStoreFor(useRuntime());
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
 export function useWakeStatus(): WakeStatus {
-  const runtime = useRuntime();
-  const store = createReadStreamStore(
-    wakeStatusStores,
-    runtime,
-    () => runtime.runSync(Effect.flatMap(SpeechActions, (speech) => SubscriptionRef.get(speech.wakeStatus))),
-    wakeStatusChanges,
-  );
+  const store = wakeStatusStoreFor(useRuntime());
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
 export function useFileLibrarySnapshot(): FileSnapshot {
-  const runtime = useRuntime();
-  const store = createReadStreamStore(
-    fileLibraryStores,
-    runtime,
-    () => runtime.runSync(Effect.flatMap(FileLibrary, (files) => files.get())),
-    fileLibraryChanges,
-  );
+  const store = fileLibraryStoreFor(useRuntime());
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
 export function useFileLibraryHomeSnapshot(): FileHome | undefined {
-  const runtime = useRuntime();
-  const store = createReadStreamStore(
-    fileLibraryHomeStores,
-    runtime,
-    () => runtime.runSync(Effect.flatMap(FileLibrary, (files) => files.getHome())),
-    fileLibraryHomeChanges,
-  );
+  const store = fileLibraryHomeStoreFor(useRuntime());
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
 export function useManagedReadsSnapshot(): ManagedSnapshot {
-  const runtime = useRuntime();
-  const store = createReadStreamStore(
-    managedReadsStores,
-    runtime,
-    () => runtime.runSync(Effect.flatMap(ManagedReads, (reads) => reads.get())),
-    managedReadsChanges,
-  );
+  const store = managedReadsStoreFor(useRuntime());
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
 export function useManagedHomeCardsSnapshot(): HomeCards | undefined {
-  const runtime = useRuntime();
-  const store = createReadStreamStore(
-    managedHomeStores,
-    runtime,
-    () => runtime.runSync(Effect.flatMap(ManagedReads, (managed) => managed.homeCards())),
-    managedHomeChanges,
-  );
+  const store = managedHomeStoreFor(useRuntime());
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
 export function useReplyControlsSnapshot(): ReplyOffer | undefined {
-  const runtime = useRuntime();
-  const store = createReadStreamStore(
-    replyOfferStores,
-    runtime,
-    () => runtime.runSync(Effect.flatMap(ReplyControls, (controls) => controls.get())),
-    replyOfferChanges,
-  );
+  const store = replyOfferStoreFor(useRuntime());
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
@@ -779,10 +834,10 @@ type MailActions = {
 
 const mailServiceCache = new WeakMap<Runtime, MailActions | null>();
 
-function mailActionsFor(runtime: Runtime): MailActions | undefined {
+function mailActionsFor(runtime: Runtime, resolved?: Mail["Service"]): MailActions | undefined {
   const known = mailServiceCache.get(runtime);
   if (known !== undefined) return known ?? undefined;
-  const mail = Option.getOrUndefined(runtime.runSync(Effect.serviceOption(Mail)));
+  const mail = resolved ?? Option.getOrUndefined(runtime.runSync(Effect.serviceOption(Mail)));
   if (!mail) {
     mailServiceCache.set(runtime, null);
     return undefined;

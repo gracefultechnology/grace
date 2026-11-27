@@ -1,6 +1,6 @@
 import { Download, ImageIcon } from "lucide-react";
 import { FileIcon } from "../icons.tsx";
-import { cn } from "../lib/cn.ts";
+import { cn, withKeys } from "../lib/cn.ts";
 import { HomeWaiting } from "./HomeWaiting.tsx";
 import { LauncherCard, type LauncherCardProps } from "./LauncherCard.tsx";
 import { Panel } from "./Panel.tsx";
@@ -34,9 +34,9 @@ export type FilesCardProps = Omit<LauncherCardProps, "title" | "children" | "art
  * @design packages/design-system/design.md#empty-states
  */
 export function FilesCard({ title = "Files", photos, document, hint, compact = false, size = "large", ...props }: FilesCardProps) {
-  const shown = photos.slice(0, 3);
-  const photo = ({ src, alt }: FilesCardPhoto, i: number) => (
-    <span key={src} className={cn("block min-h-0 overflow-hidden shadow-picture", i === 0 || shown.length === 2 ? "col-span-2 rounded-photo" : "rounded-xl", i === 0 && compact && "h-[150px]")}>
+  const shown = withKeys(photos.slice(0, 3), (p) => p.src);
+  const photo = ({ item: { src, alt }, key }: { item: FilesCardPhoto; key: string }, i: number) => (
+    <span key={key} className={cn("block min-h-0 overflow-hidden shadow-picture", i === 0 || shown.length === 2 ? "col-span-2 rounded-photo" : "rounded-xl", i === 0 && compact && "h-[150px]")}>
       <img src={src} alt={alt ?? ""} decoding="async" loading="lazy" className="block size-full object-cover" />
     </span>
   );

@@ -1,6 +1,7 @@
 package technology.graceful.grace;
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -61,11 +62,18 @@ public class GraceDevicePlugin extends Plugin {
  }
 
  @PluginMethod public void getDevice(PluginCall call) {
-  call.resolve(new JSObject()
-   .put("volume", volume())
-   .put("brightness", brightness())
-   .put("battery", battery())
-   .put("screenOn", getContext().getSystemService(PowerManager.class).isInteractive()));
+  getBridge().executeOnMainThread(() -> {
+   Activity activity = getActivity();
+   if (activity == null) {
+    call.reject("Device unavailable", "device_unavailable");
+    return;
+   }
+   call.resolve(new JSObject()
+    .put("volume", volume())
+    .put("brightness", brightness(activity))
+    .put("battery", battery())
+    .put("screenOn", getContext().getSystemService(PowerManager.class).isInteractive()));
+  });
  }
 
  @SuppressWarnings("deprecation")
@@ -143,11 +151,16 @@ public class GraceDevicePlugin extends Plugin {
    return;
   }
   getBridge().executeOnMainThread(() -> {
-   Window window = getActivity().getWindow();
+   Activity activity = getActivity();
+   if (activity == null) {
+    call.reject("Device unavailable", "device_unavailable");
+    return;
+   }
+   Window window = activity.getWindow();
    WindowManager.LayoutParams attributes = window.getAttributes();
    attributes.screenBrightness = percent / 100f;
    window.setAttributes(attributes);
-   call.resolve(brightness());
+   call.resolve(brightness(activity));
   });
  }
 
@@ -155,8 +168,8 @@ public class GraceDevicePlugin extends Plugin {
   return new JSObject().put("step", audio.getStreamVolume(MEDIA)).put("min", audio.getStreamMinVolume(MEDIA)).put("max", audio.getStreamMaxVolume(MEDIA)).put("muted", audio.isStreamMute(MEDIA));
  }
 
- private JSObject brightness() {
-  float level = getActivity().getWindow().getAttributes().screenBrightness;
+ private JSObject brightness(Activity activity) {
+  float level = activity.getWindow().getAttributes().screenBrightness;
   return level < 0 ? new JSObject() : new JSObject().put("percent", Math.round(level * 100));
  }
 

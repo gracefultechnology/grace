@@ -1,6 +1,6 @@
 // spec/app/workspace.md, "Preference changes invalidate wake timers and use the same durable settings"; spec/app/preferences.md, "Only the current storage acknowledgement confirms persistence"; spec/app/preferences.md, "Restart restores confirmed preferences and invalidates pending acknowledgements"; spec/app/preferences.md, "Night dimming and sound samples use the current preference without rewriting it"; spec/app/preferences.md, "Story: Adjust Grace without losing my choices"
 import { initial, machine, Machine as Workspaces, canSavePreferences, type Workspace } from "../gen/app__workspace.effect.vibe"
-import { type DisplayPreferences, effectiveBrightness, muteChoice, restart, validSettings, volumeChoice } from "../gen/app__preferences.effect.vibe"
+import { type DisplayPreferences, effectiveBrightness, muteChoice, restart, speechRatePercent, validSettings, volumeChoice } from "../gen/app__preferences.effect.vibe"
 import type { PreferenceDevice, PreferenceRecords } from "./preferencesPlugin.ts"
 import { NoticeHost } from "./notices.vibe"
 import { webView } from "./surfacePlugin.ts"
@@ -31,27 +31,31 @@ export const preferenceWorkspace = (port: PreferenceRecords | undefined) => port
   return machine(start)
 })
 
-const sampleRates: Record<DisplayPreferences["pace"], number> = { Slower: 0.85, Normal: 1, Faster: 1.15 }
-
-function speakSample(pace: DisplayPreferences["pace"], volume: number, name?: string) {
+function speakSample(rate: number, volume: number, name?: string) {
   const host = webView.window
-  if (typeof host.speechSynthesis === "undefined" || typeof host.SpeechSynthesisUtterance === "undefined") return
+  if (typeof host.speechSynthesis === "undefined" || typeof host.SpeechSynthesisUtterance === "undefined") return false
   host.speechSynthesis.cancel()
   const utterance = new host.SpeechSynthesisUtterance(name ? `Hi ${name}, this is how I sound.` : "Hi, this is how I sound.")
-  utterance.rate = sampleRates[pace]
+  utterance.rate = rate
   utterance.volume = Math.max(0, Math.min(1, volume / 100))
   host.speechSynthesis.speak(utterance)
+  return true
 }
 
 export effect function sampleVoice(name?: string) {
   const workspace = try Workspaces
+  const notices = try NoticeHost
   const result = workspace.send({ type: "samplePreferences" }, "Person") catch () => undefined
   if (result === undefined) return
   const current = try workspace.get()
   for (const item of result.out) {
     if (item.tag !== "PreferenceFeedback" || item.revision !== current.preferences.revision) continue
     if (item.effect.tag === "PlaySample" && !item.effect.muted && !current.preferences.session.muted && item.effect.volume > 0) {
-      Effect.try(() => speakSample(item.effect.pace, item.effect.volume, name)) catch () => undefined
+      const rate = speechRatePercent({ ...current.preferences.session, pace: item.effect.pace }) / 100
+      const spoke = Effect.try(() => speakSample(rate, item.effect.volume, name)) catch () => false
+      if (!spoke) {
+        notices.raise({ source: "Settings", offer: "NoOffer", subject: "The tablet couldn’t play a voice sample." }) catch () => undefined
+      }
     }
   }
 }

@@ -14,7 +14,7 @@ import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
 import { day, dayOf, hour, longDate, midnight, timeLabel } from "../src/calendar.vibe";
 import { Instances } from "../src/instances.vibe";
 import { client, expire, modelTurns, offsetAt, outage, script, signIn } from "./cloud.vibe";
-import { actOnScreen, homeCalendarLauncher, mountGmail, tapHomeCalendar } from "./screen.tsx";
+import { actOnScreen, homeCalendarLauncher, mockNetworkReach, mountGmail, tapHomeCalendar } from "./screen.tsx";
 import "../src/main.css";
 
 actOnScreen();
@@ -628,13 +628,7 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   vi.setSystemTime(now);
   onTestFinished(() => { vi.useRealTimers(); });
   const { card, run } = await start({ clockAt: now });
-  const network = { online: true };
-  Object.defineProperty(navigator, "onLine", { configurable: true, get: () => network.online });
-  onTestFinished(() => { Reflect.deleteProperty(navigator, "onLine"); });
-  const reach = (online: boolean) => act(() => {
-    network.online = online;
-    window.dispatchEvent(new Event(online ? "online" : "offline"));
-  });
+  const reach = mockNetworkReach();
   // spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"
   const addToday = async (title: string, time: string) => {
     await click("Add");
@@ -670,11 +664,11 @@ it('See a due reminder (spec/app/calendarView.md, "Story: See a due reminder and
   await expect.element(reminded("Pill pickup", "7 am")).not.toBeInTheDocument();
   await click("Home");
   // spec/app/notices.md, "Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder"
-  reach(false);
+  await reach(false);
   await expect.element(page.getByText("Not connected to the internet")).toBeVisible();
   await expireToast("SeeDetails");
   await expect.element(page.getByRole("button", { name: "See details" })).not.toBeInTheDocument();
-  reach(true);
+  await reach(true);
   await expect.element(page.getByText("Not connected to the internet")).not.toBeInTheDocument();
   await click("See details");
   await expect.element(page.getByText(/8 am to 9 am/)).toBeVisible();

@@ -2,11 +2,16 @@ package technology.graceful.grace;
 
 import android.Manifest;
 import android.app.KeyguardManager;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.util.Log;
+import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -39,10 +44,20 @@ public final class GraceWakePlugin extends Plugin {
  private boolean captureFailed;
  private boolean resumed;
  private boolean destroyed;
+ private boolean screenReceiverRegistered;
+ private final BroadcastReceiver screenReceiver = new BroadcastReceiver() {
+  @Override public void onReceive(Context context, Intent intent) {
+   onMain(GraceWakePlugin.this::reconcile);
+  }
+ };
 
  @Override public void load() {
   audio = getContext().getSystemService(AudioManager.class);
   keyguard = getContext().getSystemService(KeyguardManager.class);
+  IntentFilter filter = new IntentFilter(Intent.ACTION_USER_PRESENT);
+  filter.addAction(Intent.ACTION_SCREEN_OFF);
+  ContextCompat.registerReceiver(getContext(), screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED);
+  screenReceiverRegistered = true;
   if (!getContext().getPackageManager().hasSystemFeature(PackageManager.FEATURE_MICROPHONE)) return;
   worker.execute(() -> {
    try {
@@ -138,6 +153,10 @@ public final class GraceWakePlugin extends Plugin {
 
  @Override protected void handleOnDestroy() {
   destroyed = true;
+  if (screenReceiverRegistered) {
+   screenReceiverRegistered = false;
+   try { getContext().unregisterReceiver(screenReceiver); } catch (IllegalArgumentException ignored) { }
+  }
   reconcile();
   finishChime();
   worker.execute(() -> { if (detector != null) detector.close(); });
@@ -145,7 +164,8 @@ public final class GraceWakePlugin extends Plugin {
  }
 
  private void onMain(Runnable action) {
-  getBridge().executeOnMainThread(action);
+  var bridge = getBridge();
+  if (bridge != null) bridge.executeOnMainThread(action);
  }
 
  private boolean permitted() {

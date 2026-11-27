@@ -74,32 +74,11 @@ pure def bindingFor(r: Registry, key: T::Subject): Binding =
   r.bindings.foldl(noBinding, (found, row) => if (row.key == key) row else found)
 pure def accessibleRecord(r: Registry, key: T::Subject): str =
   if (r.owner != "" and key.owner == r.owner) bindingFor(r, key).recordRef else ""
-pure def emailOpening(mail: E::Mailbox, device: S::Shell): TaskOpening = {
-  source: emailSource(mail),
-  context: if (device.readiness == S::Ready and device.surface == S::Email and E::billReady(mail))
-    { deviceVersion: device.contextVersion, location: MailLocation({ selection: E::billSelection(mail) }) } else noContext
-}
-pure def calendarOpening(calendar: V::CalendarView, device: S::Shell): TaskOpening = {
-  source: currentCalendarSource(calendar),
-  context: if (device.readiness == S::Ready and device.surface == S::Calendar and usableSource(currentCalendarSource(calendar)))
-    { deviceVersion: device.contextVersion, location: CalendarLocation({ owner: calendar.owner, calendarId: calendar.calendarId,
-      occurrenceId: calendar.selectedId, generation: calendar.generation, revision: V::selectedOccurrence(calendar).revision }) } else noContext
-}
-pure def browserOpening(source: TaskSource, browser: B::Browser, device: S::Shell): TaskOpening = {
-  source: source,
-  context: if (device.readiness == S::Ready and device.surface == S::Browser and source.kind == BrowserSource and usableSource(source))
-    { deviceVersion: device.contextVersion, location: BrowserLocation({ owner: source.key.owner, tab: browser.selected, revision: browser.revision }) } else noContext
-}
 pure def filesOpening(source: TaskSource, files: F::Files, device: S::Shell): TaskOpening = {
   source: source,
   context: if (device.readiness == S::Ready and device.surface == S::Files and source.kind == FilesSource and usableSource(source) and
       files.opened and files.owner == source.key.owner and files.selected == source.reference)
     { deviceVersion: device.contextVersion, location: FilesLocation({ owner: files.owner, fileId: files.selected, generation: files.generation }) } else noContext
-}
-pure def conversationOpening(source: TaskSource, device: S::Shell): TaskOpening = {
-  source: source,
-  context: if (device.readiness == S::Ready and source.kind == ConversationSource and usableSource(source))
-    { deviceVersion: device.contextVersion, location: ConversationLocation({ owner: source.key.owner, turn: source.reference }) } else noContext
 }
 pure def validOpening(opening: TaskOpening): bool =
   val location = opening.context.location

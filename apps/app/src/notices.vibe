@@ -30,7 +30,8 @@ export service NoticeHost {
 export type NoticeServices = Notices | NoticeHost
 
 const ReminderId = Schema.String.check(Schema.isPattern(/^owned-calendar-[a-f0-9]{24}-[a-f0-9]{48}$/))
-schema DueReminder { id: ReminderId; title: Schema.NonEmptyString; eventAt: Schema.Int }
+const ReminderTime = Schema.Int.check(Schema.isBetween({ minimum: -8_640_000_000_000_000, maximum: 8_640_000_000_000_000 }))
+schema DueReminder { id: ReminderId; title: Schema.NonEmptyString; eventAt: ReminderTime }
 schema DueReminders { reminders: DueReminder[] }
 schema DismissedReminder { id: ReminderId }
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" })
@@ -158,8 +159,9 @@ const host = (wifi: WiFiPlugin | undefined, reminderPort?: ReminderPlugin) => La
       }
     }))
     const accountChanges = Stream.changes(Stream.map(setup.changes, ({ graceAccount }) => graceAccount.tag))
+    const returnedToForeground = Stream.filter(Stream.changes(Stream.map(notices.changes, (n) => n.place === "Background")), (background) => !background)
     try fork.scoped Stream.runForEach(Stream.mergeAll(
-      [listen, accountChanges, Stream.fromEventListener(webView.document, "visibilitychange")], { concurrency: "unbounded" }), () => refresh)
+      [listen, accountChanges, returnedToForeground, Stream.fromEventListener(webView.document, "visibilitychange")], { concurrency: "unbounded" }), () => refresh)
     try fork.scoped Stream.runForEach(Stream.fromPubSub(replies), (reply) => Effect.ignore(serial(effect {
       if (reply._tag !== "Dismiss" && reply._tag !== "SeeDetails") return
       const id = known.get(reply.reminder)
@@ -196,7 +198,7 @@ const host = (wifi: WiFiPlugin | undefined, reminderPort?: ReminderPlugin) => La
 effect function connected(wifi: WiFiPlugin | undefined): boolean!! {
   if (wifi === undefined) return try webView.online
   const c = tryPromise(() => wifi.getConnectivity()) catch () => undefined
-  return c === undefined ? try webView.online : c.online && !c.captivePortal
+  return c === undefined ? try webView.online : c.validated && !c.captivePortal
 }
 
 export const notices = (wifi: WiFiPlugin | undefined, reminders?: ReminderPlugin) => Layer.provideMerge(host(wifi, reminders), machine(initial))

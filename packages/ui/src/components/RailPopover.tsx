@@ -35,7 +35,7 @@ export function RailPopover({ icon, title, value, onClose, closeLabel = "Close",
     <div
       role="dialog"
       aria-label={title}
-      className={cn("absolute left-[156px] z-[200] box-border w-[560px] rounded-menu bg-glass/95 p-6 font-sans text-foreground shadow-menu", className)}
+      className={cn("absolute left-[156px] z-[15] box-border w-[560px] rounded-menu bg-glass/95 p-6 font-sans text-foreground shadow-menu", className)}
       style={{ top, "--arrow": `${arrowTop}px`, ...style } as CSSProperties}
       {...props}
     >

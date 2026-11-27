@@ -2,7 +2,7 @@ import { Effect, Layer, ManagedRuntime, Schema } from "effect";
 import { TestClock } from "effect/testing";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterAll, beforeAll, expect, onTestFinished } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { type Accounts, allowedUse, chooseProvider, initial, type Provider, sheetResult } from "../gen/app__accounts.ts";
 import { Machine as Setup, signedInTablet } from "../gen/app__setup.effect.vibe";
@@ -89,8 +89,20 @@ export async function tapHomeCalendar() {
   await act(() => userEvent.click(title));
 }
 
+export function mockNetworkReach() {
+  const network = { online: true };
+  Object.defineProperty(navigator, "onLine", { configurable: true, get: () => network.online });
+  onTestFinished(() => { Reflect.deleteProperty(navigator, "onLine"); });
+  return (online: boolean) => act(() => {
+    network.online = online;
+    window.dispatchEvent(new Event(online ? "online" : "offline"));
+    return Promise.resolve();
+  });
+}
+
 export function actOnScreen() {
   beforeAll(async () => { environment.IS_REACT_ACT_ENVIRONMENT = true; await page.viewport(1280, 800); });
+  beforeEach(() => page.viewport(1280, 800));
   afterAll(() => { environment.IS_REACT_ACT_ENVIRONMENT = false; });
 }
 

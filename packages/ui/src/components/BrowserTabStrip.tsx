@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { ChevronDown, Plus, X } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
+import { usePortalContainer } from "../lib/portal.tsx";
 import { BrowserTab, type BrowserTabProps, TabFavicon } from "./BrowserTab.tsx";
 
 export type BrowserTabStripLabels = {
@@ -66,6 +67,7 @@ export function BrowserTabStrip({
   ...props
 }: BrowserTabStripProps) {
   const labels = { ...defaultLabels, ...words };
+  const portalContainer = usePortalContainer();
   return (
     <div className={cn("relative z-[1] flex h-16 items-end gap-1 pt-2 pr-3 pl-4", className)} {...props}>
       {tabs.map((tab) => (
@@ -92,7 +94,7 @@ export function BrowserTabStrip({
             {labels.more(overflow.length)}
             <ChevronDown size={20} strokeWidth={2.4} aria-hidden />
           </Popover.Trigger>
-          <Popover.Portal>
+          <Popover.Portal container={portalContainer ?? undefined}>
             <BrowserPopoverContent aria-label={labels.moreTabs} align="start" className="w-[380px]">
               <p className="mt-1.5 ml-4 text-label leading-5 font-bold tracking-[.04em] text-label-ink uppercase">{labels.moreTabs}</p>
               <ul className="flex flex-col gap-2">

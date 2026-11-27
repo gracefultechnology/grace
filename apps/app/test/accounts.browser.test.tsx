@@ -6,7 +6,7 @@ import { page, userEvent } from "vitest/browser";
 import { application } from "../src/app.vibe";
 import type { WiFiPlugin } from "../src/surfacePlugin.ts";
 import { client, expire, otherPassword, outage, ownerName, reply, sentMail, signIn } from "./cloud.vibe";
-import { actOnScreen, browserAccountResponse, captureSignedOutChat, tabletView } from "./screen.tsx";
+import { actOnScreen, browserAccountResponse, tabletView } from "./screen.tsx";
 import { parseState as parseAccounts } from "../gen/app__accounts.ts";
 import "../src/main.css";
 
@@ -56,23 +56,8 @@ const connectTablet = () => tabletView(ManagedRuntime.make(application(undefined
 let mounted: ReturnType<typeof connectTablet>;
 let firstListing: Promise<void> | undefined;
 const chatBodies: string[] = [];
-beforeEach(() => captureSignedOutChat(chatBodies, (url) => {
-  if (url.includes("/connections/other")) otherChecks.push(url);
-  return url.includes("/mail/outlook/search") ? firstListing : undefined;
-}));
 
 beforeAll(() => {
-  globalThis.fetch = (input, init) => {
-    const url = input instanceof Request ? input.url : String(input);
-    if (!grace.signedIn && new URL(url, location.href).pathname === "/api/auth/session") return Promise.resolve(new Response(null, { status: 401 }));
-    const answer = settingsWeb(url);
-    if (answer === undefined) return fetched(input, init);
-    lookups.push(url);
-    return new Promise((resolve) => {
-      unanswered.push(() => resolve(answer));
-      if (unanswered.length === settingsSources("").length) for (const reply of unanswered.splice(0)) reply();
-    });
-  };
   window.open = (url, ...rest) => {
     providerPages.push(String(url));
     return opened(url, ...rest);
@@ -81,14 +66,34 @@ beforeAll(() => {
 });
 beforeEach(async () => {
   localStorage.clear();
+  chatBodies.length = 0;
   toasts.length = 0;
   otherChecks.length = 0;
   lookups.length = 0;
   unanswered.length = 0;
-  grace.signedIn = true;
+  grace.signedIn = false;
   providerPages.length = 0;
   network.online = true;
   firstListing = undefined;
+  globalThis.fetch = async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    const account = browserAccountResponse(new URL(url, location.href), grace.signedIn ? "margaret" : undefined);
+    if (account) return account;
+    if (url.includes("/chat/completions")) {
+      const body = init?.body ?? (input instanceof Request ? input.clone().body : null);
+      chatBodies.push(await new Response(body).text());
+    }
+    if (url.includes("/connections/other")) otherChecks.push(url);
+    if (url.includes("/mail/outlook/search")) await firstListing;
+    const answer = settingsWeb(url);
+    if (answer === undefined) return fetched(input, init);
+    lookups.push(url);
+    return new Promise((resolve) => {
+      unanswered.push(() => resolve(answer));
+      if (unanswered.length === settingsSources("").length) for (const reply of unanswered.splice(0)) reply();
+    });
+  };
+  onTestFinished(() => { globalThis.fetch = fetched; });
   secret = (await Effect.runPromise(Effect.provide(signIn(cloud), client))).secret;
   mounted = connectTablet();
   await mounted.render();
@@ -98,7 +103,6 @@ beforeEach(async () => {
   });
 });
 afterAll(() => {
-  globalThis.fetch = fetched;
   watcher.disconnect();
   window.open = opened;
 });
@@ -170,25 +174,12 @@ async function readOutlookFromHome() {
   await expect.element(page.getByRole("button", { name: /St\. Mark’s Church Office/ })).toBeVisible();
 }
 
-async function signedOutOfGrace() {
-  await mounted.dispose();
-  const network = globalThis.fetch;
-  grace.signedIn = false;
-  globalThis.fetch = (input, init) => {
-    const account = grace.signedIn ? browserAccountResponse(new URL(input instanceof Request ? input.url : String(input), location.href), "margaret") : undefined;
-    return account ? Promise.resolve(account) : network(input, init);
-  };
-  onTestFinished(() => { globalThis.fetch = network; });
-  mounted = connectTablet();
-  await mounted.render();
-  return async () => {
-    grace.signedIn = true;
-    await act(() => Promise.resolve(document.dispatchEvent(new Event("visibilitychange"))));
-  };
+async function signInToGrace() {
+  grace.signedIn = true;
+  await act(() => Promise.resolve(document.dispatchEvent(new Event("visibilitychange"))));
 }
 
 it("Connect the email I already use", async () => {
-  const signInToGrace = await signedOutOfGrace();
   // spec/app/accounts.md, "Accounts start empty and each address is on the tablet once"; spec/app/mailboxes.md, "The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new"; spec/app/notices.md, "Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder"
   await expect.element(emailCard()).toHaveAccessibleName("Email No email added yet");
   await expect.element(page.getByText("Add your email")).toBeVisible();

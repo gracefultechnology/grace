@@ -2,10 +2,10 @@
 import {
   MailAttachChooser, type MailAttachChooserProps, type MailComposeTarget, type MailContact, MailCompose, type MailRecipientField, MailRecipientPicker, type MailSendStatus,
 } from "@repo/ui";
-import { Effect } from "effect";
+import { Effect, Exit } from "effect";
 import { Suspense, use, useMemo, useState } from "react";
 import type { Accounts } from "../gen/app__accounts.ts";
-import type { ComposeChoice, DraftContent, Event as MailEvent, Mailbox, SendStatus } from "../gen/app__email.ts";
+import { type ComposeChoice, type DraftContent, enabled, type Event as MailEvent, type Mailbox, type SendStatus } from "../gen/app__email.ts";
 import { draftMovable, fromChoices, type MailSource, pickerBack, showsCopies, sourceOf, startFrom } from "../gen/app__mailboxes.ts";
 import { sendableAttachments, type Contact } from "./connector.vibe";
 import { Library, type SavedPreview } from "./files.vibe";
@@ -47,8 +47,10 @@ function without(content: DraftContent, field: MailRecipientField, index: number
 
 async function closing(box: MailInstance, event: MailEvent) {
   if (!box.can(event)) return;
-  await box.send(event);
-  if (box.state.replyTo === "") await box.send({ type: "showInbox" });
+  const exit = await box.send(event);
+  if (Exit.isSuccess(exit) && box.state.replyTo === "" && enabled(exit.value, { type: "showInbox" }, "MailUser")) {
+    await box.send({ type: "showInbox" });
+  }
 }
 
 const keeping = (box: MailInstance, draftId = box.state.draftId || "draft"): MailEvent => ({ type: "preserveDraft", draftId });

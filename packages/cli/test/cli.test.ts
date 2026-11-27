@@ -115,6 +115,13 @@ describe("project CLI", () => {
     expect(missingParsed.ok).toBe(false);
     expect(missingParsed.command).toBe("status");
     expect(missingParsed.error).toContain("@repo/missing");
+
+    const empty = createRecorder();
+    expect(await runCli({ argv: ["status", "--package", "", "--json"], commands, rootDir: templateRoot, cwd: templateRoot, io: empty.io })).toBe(1);
+    const emptyParsed = parseJson(empty.out()) as { readonly ok: boolean; readonly command: string; readonly error: string };
+    expect(emptyParsed.ok).toBe(false);
+    expect(emptyParsed.command).toBe("status");
+    expect(emptyParsed.error).toContain('Unknown workspace package ""');
   });
 
   test("returns exit code 2 on unknown commands and unknown flags", async () => {

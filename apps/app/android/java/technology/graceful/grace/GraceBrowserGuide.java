@@ -36,12 +36,14 @@ final class GraceBrowserGuide {
  }
 
  private synchronized GuideLease currentGuideLease() {
+  long before = GracePasswordsOwner.generation();
   CloudDeviceAccount.Session owner;
   try { owner = GracePasswordsOwner.stableSession(context); }
   catch (Exception unavailable) { owner = null; }
-  if (owner == null) guideLease = null;
-  else if (guideLease == null || !owner.equals(guideLease.owner()) || guideLease.generation() != GracePasswordsOwner.generation()) {
-   guideLease = new GuideLease(UUID.randomUUID().toString(), owner, GracePasswordsOwner.generation());
+  long after = GracePasswordsOwner.generation();
+  if (owner == null || before != after || GracePasswordsOwner.accountChanging()) guideLease = null;
+  else if (guideLease == null || !owner.equals(guideLease.owner()) || guideLease.generation() != after) {
+   guideLease = new GuideLease(UUID.randomUUID().toString(), owner, after);
   }
   return guideLease;
  }

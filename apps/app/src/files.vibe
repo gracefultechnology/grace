@@ -36,7 +36,10 @@ export function filesAccount(account: GraceAccount | undefined) {
 }
 const nativeAccount = accountPlugin
 export const accountRefreshes = () => nativeAccount
-  ? Stream.callback<void>((queue) => acquireRelease(promise(() => nativeAccount.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })), (handle) => promise(() => handle.remove())))
+  ? Stream.callback<void>((queue) => acquireRelease(
+    Effect.option(tryPromise(() => nativeAccount.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) }))),
+    (handle) => Option.isSome(handle) ? Effect.ignore(tryPromise(() => handle.value.remove())) : Effect.void,
+  ))
   : Stream.filter(Stream.fromEventListener(webView.document, "visibilitychange"), () => !webView.hidden())
 
 error FilesUnavailable

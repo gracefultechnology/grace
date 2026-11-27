@@ -60,7 +60,7 @@ export function Slider({ value, defaultValue = 50, onValueChange, onStep, min = 
         }}
         min={min}
         max={max}
-        step={1}
+        step={step}
         disabled={disabled}
         className="relative mx-[22px] flex h-10 flex-1 cursor-pointer touch-none items-center select-none data-disabled:cursor-not-allowed">
         <SliderPrimitive.Track className="relative h-3.5 grow rounded-full bg-primary/12">

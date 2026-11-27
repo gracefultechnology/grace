@@ -278,7 +278,9 @@ pure def lawAskIsOneTheCalendarTakes(w: World, request: R::Request, command: Age
         V::canConfirmChange(viewAt(w, x.key), { id: x.id, details: x.details, review: changeReview(w, x.key, x.id, x.details) }, V::ViewConsent)
     | ProposeDeletion(x) =>
         V::canConfirmDeletion(viewAt(w, x.key), { id: x.id, scope: x.scope, review: deletionReview(w, x.key, x.id, x.scope) }, V::ViewConsent)
-    | ProposeFromMessage(x) => true
+    | ProposeFromMessage(x) =>
+        V::canConfirmAppointment(viewAt(w, K::targetCalendar(w.accounts, x.account)),
+          { entry: x.seed, review: appointmentReview(w, K::targetCalendar(w.accounts, x.account), x.seed) }, V::ViewConsent)
     | _ => false
   })
 ```
@@ -300,8 +302,10 @@ pure def routeFromMessage(w: World, request: R::Request, account: int, seed: V::
   if (not(M::showsMail(w.accounts, account))) Refused({ why: NotShown })
   else if (K::alreadyFrom(w.calendars, source.account, source.mailbox.messageRef) or K::pendingFrom(w.pending, source.account, source.mailbox.messageRef))
     Refused({ why: AlreadyInCalendar })
+  else if (not(V::repetitionAllowed(viewAt(w, key), C::initial, seed.details))) Refused({ why: RepeatsOnlyOnTablet })
   else routeAsk(w, request, P::AddAsk({ target: key, review: review }),
-    K::fromMessageAllowed(w.accounts, w.calendars, w.mail, w.pending, review))
+    account == M::openSource(w.accounts, w.mail) and
+      K::fromMessageAllowed(w.accounts, w.calendars, w.mail, w.pending, review))
 
 pure def lawEmailAppointmentFollowsTheCalendarRules(w: World, request: R::Request, command: AgentAction): bool =
   val routed = route(w, request, command)

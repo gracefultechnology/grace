@@ -111,6 +111,19 @@ async function drainBenchmarkRoutes(run: Run) {
   while (run.pendingRoutes.size) await Promise.allSettled(run.pendingRoutes);
 }
 
+async function cleanupBenchmarkRun(page: Page, run: Run) {
+  activeRuns.delete(page);
+  try {
+    await drainBenchmarkRoutes(run);
+    await Promise.allSettled([
+      run.decisionRoute ? page.unroute(run.decisionRoute) : Promise.resolve(),
+      run.chatRoute ? page.unroute(run.chatRoute) : Promise.resolve(),
+    ]);
+  } finally {
+    await run.site?.browser.close();
+  }
+}
+
 const Choices = Schema.Struct({ kind: Schema.Literal("choice"), goal: Schema.NonEmptyString, candidates: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, label: Schema.NonEmptyString })) });
 const SiteState = Schema.Struct({
   cookies: Schema.Array(Schema.Struct({
@@ -339,26 +352,31 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         "access-control-allow-headers": "Authorization, Content-Type",
       };
       if (request.method() === "OPTIONS") return route.fulfill({ status: 204, headers });
-      const choice = Schema.decodeUnknownSync(Choices)(request.postDataJSON());
-      run.decisions++;
-      if (definition.fixtureChoice !== undefined) {
-        const selected = choice.candidates.find(({ label }) => label === definition.fixtureChoice);
-        const id = selected?.id ?? "none";
-        return route.fulfill({ headers, json: { status: "ok", kind: "choice", choice: selected?.id ?? null,
-          model: "fixture", confidence: 1, probabilities: Object.fromEntries([...choice.candidates.map(({ id }) => id), "none"].map((option) => [option, option === id ? 1 : 0])) } });
+      try {
+        const choice = Schema.decodeUnknownSync(Choices)(request.postDataJSON());
+        run.decisions++;
+        if (definition.fixtureChoice !== undefined) {
+          const selected = choice.candidates.find(({ label }) => label === definition.fixtureChoice);
+          const id = selected?.id ?? "none";
+          return await route.fulfill({ headers, json: { status: "ok", kind: "choice", choice: selected?.id ?? null,
+            model: "fixture", confidence: 1, probabilities: Object.fromEntries([...choice.candidates.map(({ id }) => id), "none"].map((option) => [option, option === id ? 1 : 0])) } });
+        }
+        const origin = process.env.GRACE_BENCHMARK_CLEF_ORIGIN;
+        const key = process.env.GRACE_BENCHMARK_CLEF_KEY;
+        if (!origin || !key || new URL(origin).protocol !== "https:") throw new Error("The hosted decision service is not configured");
+        const response = await readFixtureUpstream(new URL("/api/v1/decisions", origin), {
+          method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(choice),
+        }, AbortSignal.timeout(action.deadlineMs));
+        const body = response.tag === "Response" ? response.body : '{"status":"unavailable","reason":"provider_error"}';
+        const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(DecisionResult))(body);
+        run.decisionResults.push({ http: response.status, candidates: choice.candidates.length,
+          result: decoded._tag === "Some" ? decoded.value : undefined,
+          ...(response.tag === "Unavailable" && { transportFailure: response.failure }) });
+        return await route.fulfill({ headers, status: response.status, contentType: "application/json", body });
+      } catch (error) {
+        await route.fulfill({ headers, status: 500, contentType: "application/json", body: '{"status":"unavailable","reason":"provider_error"}' }).catch(() => {});
+        throw error;
       }
-      const origin = process.env.GRACE_BENCHMARK_CLEF_ORIGIN;
-      const key = process.env.GRACE_BENCHMARK_CLEF_KEY;
-      if (!origin || !key || new URL(origin).protocol !== "https:") throw new Error("The hosted decision service is not configured");
-      const response = await readFixtureUpstream(new URL("/api/v1/decisions", origin), {
-        method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify(choice),
-      }, AbortSignal.timeout(action.deadlineMs));
-      const body = response.tag === "Response" ? response.body : '{"status":"unavailable","reason":"provider_error"}';
-      const decoded = Schema.decodeUnknownOption(Schema.fromJsonString(DecisionResult))(body);
-      run.decisionResults.push({ http: response.status, candidates: choice.candidates.length,
-        result: decoded._tag === "Some" ? decoded.value : undefined,
-        ...(response.tag === "Unavailable" && { transportFailure: response.failure }) });
-      return route.fulfill({ headers, status: response.status, contentType: "application/json", body });
     }));
     return {};
   }
@@ -417,11 +435,7 @@ async function benchmarkSurface(context: BrowserCommandContext, action: SiteActi
         }
       }
     } finally {
-      await drainBenchmarkRoutes(run);
-      activeRuns.delete(context.page);
-      if (run.decisionRoute) await context.page.unroute(run.decisionRoute);
-      if (run.chatRoute) await context.page.unroute(run.chatRoute);
-      await run.site?.browser.close();
+      await cleanupBenchmarkRun(context.page, run);
     }
     return {};
   }

@@ -148,3 +148,4 @@ export * from "./components/WorkingLabel.tsx";
 export * from "./icons.tsx";
 export * from "./lib/cn.ts";
 export * from "./lib/motion.ts";
+export * from "./lib/portal.tsx";

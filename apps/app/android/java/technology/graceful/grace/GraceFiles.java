@@ -63,7 +63,8 @@ public final class GraceFiles extends Plugin {
  private static final Pattern ID = Pattern.compile("[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}");
  private static final ExecutorService disk = Executors.newSingleThreadExecutor();
  private static final ExecutorService previews = Executors.newFixedThreadPool(3);
- private volatile Lease active;
+ private final Map<String, Lease> leases = new HashMap<>();
+ private CloudDeviceAccount.Session leaseSession;
  private final ConcurrentHashMap<String, File> folderIndex = new ConcurrentHashMap<>();
  private static final String SOURCE_FILE = ".attachment-source";
  private static final long IMPORT_TTL = 5 * 60_000L;
@@ -102,17 +103,55 @@ public final class GraceFiles extends Plugin {
   } catch (IllegalStateException changing) { throw new SecurityException(changing); }
  }
 
- private static String owner(CloudDeviceAccount.Session account) throws Exception {
-  byte[] digest = MessageDigest.getInstance("SHA-256").digest(("grace-files\u0000" + GracePasswordsOwner.storageOwner(account)).getBytes(StandardCharsets.UTF_8));
-  StringBuilder name = new StringBuilder();
-  for (byte value : digest) name.append(String.format(Locale.ROOT, "%02x", value & 0xff));
+ private static String sha256Hex(String value) throws Exception {
+  byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+  StringBuilder name = new StringBuilder(64);
+  for (byte b : digest) name.append(String.format(Locale.ROOT, "%02x", b & 0xff));
   return name.toString();
  }
 
+ private static String jsonString(String value) {
+  StringBuilder out = new StringBuilder(value.length() + 2).append('"');
+  for (int i = 0; i < value.length(); i++) {
+   char c = value.charAt(i);
+   if (c == '"' || c == '\\') out.append('\\').append(c);
+   else if (c < 0x20) out.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
+   else out.append(c);
+  }
+  return out.append('"').toString();
+ }
+
+ private static String owner(CloudDeviceAccount.Session account) throws Exception {
+  return sha256Hex("grace-files\u0000" + GracePasswordsOwner.storageOwner(account));
+ }
+
+ private static String expectedOwner(CloudDeviceAccount.Session account) throws Exception {
+  return sha256Hex("[\"grace/files/owner\"," + jsonString(account.accountId()) + "," + jsonString(account.organizationId()) + "]");
+ }
+
  private Lease current(PluginCall call) throws Exception {
-  Lease lease = active;
-  if (lease == null || !lease.token().equals(call.getString("lease")) || !lease.session().equals(session())) throw new SecurityException();
-  return lease;
+  String token = call.getString("lease");
+  CloudDeviceAccount.Session currentSession = session();
+  synchronized (GracePasswordsOwner.class) {
+   if (leaseSession != null && !leaseSession.equals(currentSession)) {
+    leases.clear();
+    folderIndex.clear();
+    leaseSession = null;
+   }
+   Lease lease = token == null ? null : leases.get(token);
+   if (lease == null || !lease.session().equals(currentSession)) throw new SecurityException();
+   return lease;
+  }
+ }
+
+ private boolean isLeaseActive(Lease lease) {
+  synchronized (GracePasswordsOwner.class) {
+   return lease.equals(leases.get(lease.token()));
+  }
+ }
+
+ private static String folderKey(Lease lease, String id) {
+  return lease.owner() + "/" + id;
  }
 
  private File library(Lease lease) throws IOException {
@@ -148,18 +187,23 @@ public final class GraceFiles extends Plugin {
   return new File(cacheDir(lease.owner()), id + "-" + file.lastModified() + "-" + file.length() + ".thumb");
  }
 
- private File pagesCacheFile(File file) {
-  File ownerDir = file.getParentFile() != null ? file.getParentFile().getParentFile() : null;
-  String ownerKey = ownerDir != null ? ownerDir.getName() : "default";
-  return new File(cacheDir(ownerKey), file.getParentFile().getName() + "-" + file.lastModified() + "-" + file.length() + ".pages");
+ private File pagesCacheFile(Lease lease, String id, File file) {
+  return new File(cacheDir(lease.owner()), id + "-" + file.lastModified() + "-" + file.length() + ".pages");
+ }
+
+ private void discardCacheFiles(Lease lease, String id) {
+  File dir = new File(getContext().getCacheDir(), "grace-file-cache/" + lease.owner());
+  File[] matches = dir.listFiles((d, name) -> name.startsWith(id + "-") && (name.endsWith(".thumb") || name.endsWith(".pages")));
+  if (matches != null) for (File match : matches) match.delete();
  }
 
  private File folder(Lease lease, String id) throws IOException {
   if (!ID.matcher(id).matches()) throw new IllegalArgumentException();
-  File cached = folderIndex.get(id);
-  if (cached != null && cached.isDirectory()) return cached;
+  File root = library(lease);
+  File cached = folderIndex.get(folderKey(lease, id));
+  if (cached != null && cached.isDirectory() && cached.toPath().normalize().startsWith(root.toPath().normalize())) return cached;
   for (File candidate : catalog(lease)) {
-   folderIndex.put(candidate.getName(), candidate);
+   if (isLeaseActive(lease)) folderIndex.put(folderKey(lease, candidate.getName()), candidate);
    if (candidate.getName().equals(id)) return candidate;
   }
   return null;
@@ -192,10 +236,10 @@ public final class GraceFiles extends Plugin {
   return children[0];
  }
 
- private int pages(File file) throws IOException {
+ private int pages(Lease lease, String id, File file, boolean cache) throws IOException {
   if (!"pdf".equals(kind(file.getName()))) return 0;
-  File cached = pagesCacheFile(file);
-  if (cached.isFile()) {
+  File cached = cache ? pagesCacheFile(lease, id, file) : null;
+  if (cached != null && cached.isFile()) {
    try {
     int count = Integer.parseInt(new String(Files.readAllBytes(cached.toPath()), StandardCharsets.UTF_8).trim());
     if (count >= 1 && count <= 1000) return count;
@@ -204,15 +248,22 @@ public final class GraceFiles extends Plugin {
   try (PdfRenderer pdf = new PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY))) {
    int count = pdf.getPageCount();
    if (count < 1 || count > 1000) throw new IOException("Unsupported document");
-   try { Files.write(cached.toPath(), Integer.toString(count).getBytes(StandardCharsets.UTF_8)); }
-   catch (IOException ignored) { }
+   if (cached != null) {
+    File temp = new File(cacheDir(lease.owner()), ".tmp-" + UUID.randomUUID() + ".pages");
+    try {
+     Files.write(temp.toPath(), Integer.toString(count).getBytes(StandardCharsets.UTF_8));
+     Files.move(temp.toPath(), cached.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    } catch (IOException ignored) {
+     temp.delete();
+    }
+   }
    return count;
   }
  }
 
- private JSObject entry(String id, File file) throws IOException {
+ private JSObject entry(Lease lease, String id, File file, boolean cachePages) throws IOException {
   JSObject entry = new JSObject().put("id", id).put("name", file.getName()).put("kind", kind(file.getName()))
-    .put("savedAt", file.lastModified()).put("pages", pages(file));
+    .put("savedAt", file.lastModified()).put("pages", pages(lease, id, file, cachePages));
   try {
    JSONObject metadata = metadata(file.getParentFile());
    if (metadata != null) entry.put("source", metadata.getJSONObject("source")).put("version", metadata.getString("version"));
@@ -250,13 +301,22 @@ public final class GraceFiles extends Plugin {
  @PluginMethod public void open(PluginCall call) {
   perform(call, () -> {
    var session = session();
-   discard();
+   String expected = call.getString("owner");
+   if (expected != null && !expected.equals(expectedOwner(session)) && !expected.equals(owner(session))) throw new SecurityException();
+   if (staged != null && !staged.lease().session().equals(session)) discard();
    Lease lease = new Lease(UUID.randomUUID().toString(), owner(session), session);
    library(lease);
    File[] abandoned = batches(lease).listFiles(f -> f.isDirectory() && f.getName().startsWith(".pending-"));
    if (abandoned != null) for (File f : abandoned) discardDirectory(f);
-   folderIndex.clear();
-   active = lease;
+   synchronized (GracePasswordsOwner.class) {
+    if (!session.equals(session())) throw new SecurityException();
+    if (!session.equals(leaseSession)) {
+     leases.clear();
+     folderIndex.clear();
+     leaseSession = session;
+    }
+    leases.put(lease.token(), lease);
+   }
    call.resolve(new JSObject().put("lease", lease.token()));
   });
  }
@@ -264,14 +324,15 @@ public final class GraceFiles extends Plugin {
  @PluginMethod public void close(PluginCall call) {
   Lease lease;
   synchronized (GracePasswordsOwner.class) {
-   lease = active;
-   if (lease != null && lease.token().equals(call.getString("lease"))) {
-    active = null;
+   String token = call.getString("lease");
+   lease = token == null ? null : leases.remove(token);
+   if (leases.isEmpty()) {
     folderIndex.clear();
+    leaseSession = null;
    }
   }
   perform(call, () -> {
-   if (staged != null && staged.lease().equals(lease)) discard();
+   if (lease != null && staged != null && staged.lease().equals(lease)) discard();
    call.resolve();
   });
  }
@@ -280,13 +341,14 @@ public final class GraceFiles extends Plugin {
   perform(call, () -> {
    Lease lease = current(call);
    List<File> files = catalog(lease);
-   folderIndex.clear();
-   for (File candidate : files) folderIndex.put(candidate.getName(), candidate);
+   String prefix = lease.owner() + "/";
+   folderIndex.keySet().removeIf(k -> k.startsWith(prefix));
+   if (isLeaseActive(lease)) for (File candidate : files) folderIndex.put(folderKey(lease, candidate.getName()), candidate);
    JSArray catalog = new JSArray();
    files.sort(Comparator.comparingLong(File::lastModified).reversed());
    for (File folder : files) {
     if (catalog.length() >= MAX_FILES) break;
-    catalog.put(entry(folder.getName(), item(folder)));
+    catalog.put(entry(lease, folder.getName(), item(folder), true));
    }
    current(call);
    call.resolve(new JSObject().put("entries", catalog));
@@ -341,8 +403,14 @@ public final class GraceFiles extends Plugin {
     if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 80, bytes) || bytes.size() > 750_000) throw new IOException("Preview unavailable");
     byte[] jpeg = bytes.toByteArray();
     if (small && !isPdf && page == 0) {
-     try { Files.write(thumbCacheFile(lease, id, file).toPath(), jpeg); }
-     catch (IOException ignored) { }
+     File target = thumbCacheFile(lease, id, file);
+     File temp = new File(cacheDir(lease.owner()), ".tmp-" + UUID.randomUUID() + ".thumb");
+     try {
+      Files.write(temp.toPath(), jpeg);
+      Files.move(temp.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+     } catch (IOException ignored) {
+      temp.delete();
+     }
     }
     current(call);
     call.resolve(new JSObject().put("id", id).put("page", page).put("image", "data:image/jpeg;base64," + Base64.encodeToString(jpeg, Base64.NO_WRAP)));
@@ -378,8 +446,13 @@ public final class GraceFiles extends Plugin {
    current(call);
    String kind = call.getString("kind", "");
    if (!"pdf".equals(kind) && !"photo".equals(kind)) throw new IllegalArgumentException();
+   Activity activity = getActivity();
+   if (activity == null) { call.reject("Files unavailable", "files_unavailable"); return; }
    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("photo".equals(kind) ? "image/*" : "application/pdf");
-   getActivity().runOnUiThread(() -> startActivityForResult(call, intent, "picked"));
+   activity.runOnUiThread(() -> {
+    try { startActivityForResult(call, intent, "picked"); }
+    catch (RuntimeException failed) { call.reject("Document picker unavailable", "files_unavailable"); }
+   });
   });
  }
 
@@ -400,8 +473,10 @@ public final class GraceFiles extends Plugin {
  @PluginMethod public void capture(PluginCall call) {
   perform(call, () -> {
    current(call);
+   Activity activity = getActivity();
+   if (activity == null) { call.reject("Camera unavailable", "files_unavailable"); return; }
    if (getPermissionState("camera") != PermissionState.GRANTED) {
-    getActivity().runOnUiThread(() -> requestPermissionForAlias("camera", call, "cameraAllowed"));
+    activity.runOnUiThread(() -> requestPermissionForAlias("camera", call, "cameraAllowed"));
     return;
    }
    File folder = new File(getContext().getCacheDir(), "grace-capture");
@@ -412,7 +487,7 @@ public final class GraceFiles extends Plugin {
    Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE).putExtra(MediaStore.EXTRA_OUTPUT, uri)
      .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
    intent.setClipData(ClipData.newRawUri("Photo", uri));
-   getActivity().runOnUiThread(() -> {
+   activity.runOnUiThread(() -> {
     try { startActivityForResult(call, intent, "captured"); }
     catch (RuntimeException failed) { destination.delete(); call.reject("Camera unavailable", "files_unavailable"); }
    });
@@ -482,7 +557,7 @@ public final class GraceFiles extends Plugin {
      output.getFD().sync();
     }
    }
-   JSObject ready = entry(id, file);
+   JSObject ready = entry(lease, id, file, false);
    current(call);
    return new Stage(lease, id, file, ready, source);
   } catch (Exception failed) {
@@ -561,15 +636,15 @@ public final class GraceFiles extends Plugin {
    String id = raw.substring(0, 8) + "-" + raw.substring(8, 12) + "-" + raw.substring(12, 16) + "-" + raw.substring(16, 20) + "-" + raw.substring(20, 32);
    File destination = new File(library(lease), id);
    var candidate = destination.exists()
-    ? new Stage(lease, id, null, existingImport(destination, id, source), source)
+    ? new Stage(lease, id, null, existingImport(lease, destination, id, source), source)
     : stage(call, displayName(receipt.name(), kind(receipt.name())), new ByteArrayInputStream(receipt.bytes()), id, source);
    offer(call, candidate);
   });
  }
 
- private JSObject existingImport(File destination, String id, AttachmentSource source) throws Exception {
+ private JSObject existingImport(Lease lease, File destination, String id, AttachmentSource source) throws Exception {
   File saved = item(destination);
-  JSObject entry = entry(id, saved);
+  JSObject entry = entry(lease, id, saved, true);
   if (!source.identity().equals(entry.getString("attachmentSource")) || !source.sha().equals(entry.getString("attachmentSha256")) ||
       saved.length() > MAX_BYTES || !source.sha().equals(ManagedAttachmentImport.hash(Files.readAllBytes(saved.toPath())))) throw new IOException("Attachment collision");
   return entry;
@@ -584,8 +659,9 @@ public final class GraceFiles extends Plugin {
    if (folder != null) {
     File removed = new File(library(lease), ".removed-" + id);
     moveCurrent(call, lease, folder, removed);
-    folderIndex.remove(id);
+    folderIndex.remove(folderKey(lease, id));
     discardDirectory(removed);
+    discardCacheFiles(lease, id);
     File group = folder.getParentFile();
     if (!group.equals(library(lease))) group.delete();
    }
@@ -613,11 +689,11 @@ public final class GraceFiles extends Plugin {
    if (candidate.source() != null && currentImport() != candidate.source().request()) throw new SecurityException();
    if (destination.exists()) {
     if (candidate.source() == null) throw new IOException("Already saved");
-    existingImport(destination, candidate.id(), candidate.source());
+    existingImport(lease, destination, candidate.id(), candidate.source());
    } else {
     if (candidate.temporary() == null) throw new IOException("Attachment no longer saved");
     Files.move(candidate.temporary().getParentFile().toPath(), destination.toPath(), StandardCopyOption.ATOMIC_MOVE);
-    folderIndex.put(candidate.id(), destination);
+    folderIndex.put(folderKey(lease, candidate.id()), destination);
    }
   }
   if (candidate.source() != null) pendingImport = null;
@@ -696,11 +772,12 @@ public final class GraceFiles extends Plugin {
       }
       stored.put(a.key(), file);
      }
-     if (returned.add(a.key())) entries.put(entry(file.getParentFile().getName(), file));
+     if (returned.add(a.key())) entries.put(entry(lease, file.getParentFile().getName(), file, false));
     }
     if (count != files.size()) {
      moveCurrent(call, lease, pending, new File(groups, batchId));
-     folderIndex.clear();
+     String prefix = lease.owner() + "/";
+     folderIndex.keySet().removeIf(k -> k.startsWith(prefix));
     } else current(call);
     call.resolve(new JSObject().put("entries", entries));
    } finally {

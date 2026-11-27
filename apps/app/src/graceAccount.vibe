@@ -338,7 +338,7 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
 
   effect function readDevice(): GraceAccount!unknown {
     if (plugin === undefined) throw new AccountRequestFailed()
-    const status: unknown = try tryPromise(() => plugin.status())
+    const status: unknown = try timeout(tryPromise(() => plugin.status()), "5 seconds")
     const result = try Schema.decodeUnknownEffect(DeviceAccountStatus)(status)
     if (result.mailLease !== undefined) {
       if (result.kind !== "signedIn" || result.legacySignInNeedsCleanup === true || result.mailLeaseUpgrade !== undefined) throw new AccountRequestFailed()
@@ -494,13 +494,12 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
     if (operation.kind === "disconnectGoogle") {
       if ((try setup.get()).googleLink.tag !== "GoogleLinkConnected") return false
       try accepted(transport, "/api/v1/eliza/google/disconnect", "POST")
-      try refresh()
-      return true
+      const refreshed = try refresh()
+      return refreshed.tag === "GraceSignedIn" && refreshed.accountId === account.accountId && (try setup.get()).googleLink.tag === "GoogleLinkReady"
     }
     if (operation.kind === "signOut") {
       try accepted(transport, "/api/auth/logout", "POST")
-      try refresh()
-      return true
+      return (try refresh()).tag === "GraceSignedOut"
     }
     if (operation.kind === "checkout" ? !mayStartCheckout(account) : !mayOpenBillingPortal(account)) return false
     try openBilling(transport, operation.kind)
@@ -526,8 +525,8 @@ export const graceAccount = (native: boolean, hasLocalConnector: boolean, plugin
   if (native && plugin !== undefined) {
     try fork.scoped Stream.runForEach(
       Stream.callback<void>((queue) => acquireRelease(
-        promise(() => plugin.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })),
-        (handle) => promise(() => handle.remove()),
+        Effect.option(tryPromise(() => plugin.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) }))),
+        (listener) => Option.isSome(listener) ? Effect.ignore(tryPromise(() => listener.value.remove())) : Effect.void,
       )),
       () => gate.withPermit(refresh()),
     )

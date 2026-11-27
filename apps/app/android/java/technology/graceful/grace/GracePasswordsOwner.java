@@ -17,7 +17,7 @@ import org.json.JSONObject;
 final class GracePasswordsOwner {
  private static final String OWNER = "password-owner";
  private static volatile boolean changingAccount;
- private static long generation;
+ private static volatile long generation;
  private static Enrollment enrollment;
 
  static final class Enrollment implements AutoCloseable {
@@ -104,7 +104,7 @@ final class GracePasswordsOwner {
     .put("organizationId", current.organizationId()).put("credentialId", credentialId(context, current));
  }
 
- static synchronized long generation() { return generation; }
+ static long generation() { return generation; }
 
  static synchronized boolean enrollmentInProgress() { return enrollment != null; }
 

@@ -11,6 +11,7 @@ import { entryAt } from "../gen/app__calendarView.effect.vibe"
 import { messageRecord } from "../gen/app__email.effect.vibe"
 import type { Interaction } from "../gen/app__interaction.effect.vibe"
 import { openSource, showsMail, told as mailTold } from "../gen/app__mailboxes.effect.vibe"
+import { audible } from "../gen/app__preferences.effect.vibe"
 import type { Origin } from "../gen/app__request.effect.vibe"
 import { Machine as Setup } from "../gen/app__setup.effect.vibe"
 import { allowsManagedGuidedReading, canConfirmGuidedNameCorrection, guidedDetails, guidedLinkObserved, hasNext, Machine as Workspaces, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, privateSurfaceActive, publicResultLoad, resumeAvailable, replyControlContext, replyControlsCurrent, usedSource, type Event, type GuidedEvidenceUse, type GuidedMail, type GuidedNameCorrection, type GuidedObservation, type GuidedStep } from "../gen/app__workspace.effect.vibe"
@@ -19,7 +20,7 @@ import { BrowserGuide } from "./browserGuide.vibe"
 import { browserSessionScope, nativeBrowserGuideLease } from "./graceAccount.vibe"
 import { CalendarNews } from "./calendar.vibe"
 import { confidentialMail, type Help, helpWith, type Last, looker, render, sendable, type Scene, toldOfAccounts, toldOfCalendar, toldOfMail, vocabulary } from "./context.vibe"
-import { Instances, tablet } from "./instances.vibe"
+import { followAccounts, Instances, tablet } from "./instances.vibe"
 import { webView } from "./surfacePlugin.ts"
 import { withhold } from "./private.ts"
 import { Reply, unreadable } from "./reply.schema.ts"
@@ -32,11 +33,13 @@ import { statementRead } from "./statement.vibe"
 export type CloudLink = { readonly url: string; readonly key: string }
 export type GuidedCheck = "Confirmed" | "NotFound" | "Several" | "Past" | "Changed" | "Covered" | "Used" | "PrivateForm" | "Refused" | "CategoryOffered"
 export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer" }>
+export type SpokenTurn = Extract<Interaction, { tag: "Hear" }>
 
 type TurnSource = { readonly origin: Exclude<Origin, "AskedForHelp"> } | { readonly origin: "AskedForHelp"; readonly context: string }
 
 export service Conversation {
   say(input: PersonTurn): boolean!!
+  hear(input: SpokenTurn): boolean!!
   turnSource(generation: number): TurnSource!!
   checkGuidedRead(): GuidedCheck!!
   confirmSortName(correction: GuidedNameCorrection): boolean!!
@@ -46,6 +49,7 @@ export service Conversation {
 }
 
 const origins: Record<PersonTurn["tag"], "Typed" | "Tapped"> = { SendDraft: "Typed", ChooseAnswer: "Tapped" }
+const newsLimit = 50
 const replyTokenLimit = 2048
 const apology = "Sorry, I didn’t catch that. Could you say it again?"
 const noControls = "This conversation shows no controls under your reply. Never offer {kind:\"privateSignIn\"}. If the person asks to sign in, direct them to the website’s own sign-in form."
@@ -439,7 +443,7 @@ effect function reobserveSortName(
 
 effect function followNews<S>(scope: Scope.Scope, changes: Stream.Stream<S>, tell: (words: string) => void!!, words: (before: S, after: S) => string!!) {
   const last = try Ref.make<S | undefined>(undefined)
-  try fork.in(scope) Stream.runForEach(changes, effect (after) => {
+  return try fork.in(scope) Stream.runForEach(changes, effect (after) => {
     const before = try Ref.getAndSet(last, after)
     if (before !== undefined) try tell(try words(before, after))
   })
@@ -455,7 +459,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const accepting = try Semaphore.make(1)
   const asked = try Ref.make<{ generation: number; source: TurnSource } | undefined>(undefined)
   const last = try Ref.make<Last>({ notDone: [], unread: [] })
-  const told = try Ref.make<readonly string[]>([])
+  const told = try Ref.make<{ readonly next: number; readonly items: readonly { readonly seq: number; readonly text: string }[] }>({ next: 0, items: [] })
   const look = try looker()
   const registry = try Accounts
   const shelf = try Instances
@@ -466,23 +470,21 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const recovery = try GuidedRecovery
 
   effect function tell(words: string) {
-    if (words !== "" && link !== undefined) try Ref.update(told, (all) => [...all, words])
+    if (words !== "" && link !== undefined) try Ref.update(told, ({ next, items }) => {
+      const seq = next + 1
+      return { next: seq, items: [...items, { seq, text: words }].slice(-newsLimit) }
+    })
   }
 
   if (link !== undefined) {
-    const watched = new Set<number>()
-    try fork.in(scope) Stream.runForEach(registry.changes, effect (now: Registry) => {
-      for (const { id } of now.accounts) {
-        const box = watched.has(id) ? undefined : shelf.mail(id) catch () => undefined
-        if (box === undefined) continue
-        watched.add(id)
-        try followNews(scope, box.changes, tell, effect (was, after) => {
-          const mailNews = mailTold(id, was, after)
-          if (mailNews.news === "NoMailNews") return ""
-          const s = try look()
-          return showsMail(s.registry, id) ? toldOfMail(s, mailNews) : ""
-        })
-      }
+    try fork.in(scope) followAccounts(Stream.map(registry.changes, ({ accounts }) => accounts), effect ({ id }) => {
+      const box = try shelf.mail(id)
+      return try followNews(scope, box.changes, tell, effect (was, after) => {
+        const mailNews = mailTold(id, was, after)
+        if (mailNews.news === "NoMailNews") return ""
+        const s = try look()
+        return showsMail(s.registry, id) ? toldOfMail(s, mailNews) : ""
+      })
     })
     try followNews(scope, registry.changes, tell, effect (before: Registry, after: Registry) => toldOfAccounts(before, after))
     try fork.scoped Stream.runForEach(news.reports, effect (report) => tell(toldOfCalendar(try look(), report)))
@@ -512,18 +514,19 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       return
     }
     const authority = guidedAuthority(try setup.get(), webView.window.location.hash)
-    const news = try Ref.get(told)
+    const snapshot = try Ref.get(told)
+    const news = snapshot.items.map((item) => item.text)
     const source = try turnSource(token)
     const help = source.origin === "AskedForHelp" ? "\n" + source.context : ""
     const system = { role: "system", content: `${character.system}\n\n${noControls}\n\n${vocabulary}\n\n${render(scene, try Clock.currentTimeMillis, try Ref.get(last), news, try managed.guidedSelection()).text}${help}` }
     const { origin } = w.assistant.conversation
     const started = origin === "HerRequest" ? [] : [{ role: "user", content: origin === "AskedForHelp" ? helpAsked : hostStarted }]
     if (privateSurfaceActive(try workspace.get())) return
-    const said = ask(link, [system, ...outgoing, ...started]) catch () => undefined
+    const said = Effect.timeout(ask(link, [system, ...outgoing, ...started]), "60 seconds") catch () => undefined
     const reply = try decoded(said)
     if (said === undefined || reply === undefined) return try fail(token, w.assistant.workVersion)
     const unread = try Effect.orDie(Effect.try(() => unreadable(said)))
-    try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply, unread, news.length, authority))
+    try Effect.uninterruptible(respond(token, w.assistant.workVersion, reply, unread, snapshot.next, authority))
   }
 
   effect function respond(token: number, workVersion: number, reply: typeof Reply.Type, unread: readonly string[], seen: number, authority: GuidedAuthority) {
@@ -547,16 +550,17 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       : offeredRead
       ? { text: offered ? "Review the selected-item checks before starting." : "I could not prepare that read plan.", isQuestion: false, answers: [] }
       : { text, isQuestion, answers: [...answers] }
-    const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, ...response, audible: false } }, "Host") catch () => undefined
-    if (responded === undefined || unavailableSave) return
-    try Ref.update(told, (all) => all.slice(seen))
+    const responded = workspace.send({ type: "interact", input: { tag: "Respond", token, ...response, audible: offeredRead || unavailableSave ? false : audible(current.preferences.session) } }, "Host") catch () => undefined
+    if (responded === undefined) return
+    try Ref.update(told, ({ next, items }) => ({ next, items: items.filter((item) => item.seq > seen) }))
+    if (unavailableSave) return
     const applied = planned ?? (try agent.apply(actions, requested))
     try Ref.set(last, { notDone: applied.filter((a) => a.outcome !== "Applied"), unread })
   }
 
-  function take(input: PersonTurn | typeof askedForHelp, source: TurnSource) {
+  function take(input: PersonTurn | SpokenTurn | typeof askedForHelp, source: TurnSource, by: "Person" | "Host" = "Person") {
     return accepting.withPermit(Effect.uninterruptible(effect {
-      const taken = workspace.send({ type: "interact", input }, "Person") catch () => undefined
+      const taken = workspace.send({ type: "interact", input }, by) catch () => undefined
       if (taken === undefined) return false
       try Ref.set(asked, { generation: taken.state.assistant.conversation.generation, source })
       return true
@@ -695,6 +699,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
       return accepted === undefined ? "Refused" : "Confirmed"
     },
     say: (input) => take(input, { origin: origins[input.tag] }),
+    hear: (input) => take(input, { origin: "Spoken" }, "Host"),
     help: effect (need) => {
       const text = helpWith(need, try registry.get())
       const context = try Effect.orDie(Effect.try(() => withhold({ text, passwords: [] })))

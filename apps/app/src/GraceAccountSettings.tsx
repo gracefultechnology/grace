@@ -141,23 +141,23 @@ export function GraceAccountSettings() {
             }}>
               <fieldset disabled={pending || confirmingSignOut} className="flex flex-col gap-3">
                 <legend>{link.tag === "GoogleLinkConnected" ? "Change Google permissions" : "Connect Google"}</legend>
-                <label className="flex items-center gap-3">
+                <label className="flex min-h-11 items-center gap-3">
                   <Checkbox checked={mail} onCheckedChange={(checked) => setMail(checked === true)} />
                   Read Gmail
                 </label>
-                <label className="flex items-center gap-3">
+                <label className="flex min-h-11 items-center gap-3">
                   <Checkbox checked={calendar} onCheckedChange={(checked) => setCalendar(checked === true)} />
                   Read Google Calendar
                 </label>
-                <label className="flex items-center gap-3">
+                <label className="flex min-h-11 items-center gap-3">
                   <Checkbox checked={mail && sendMail} disabled={!mail} onCheckedChange={(checked) => setSendMail(checked === true)} />
                   Send Gmail messages I approve
                 </label>
-                <label className="flex items-center gap-3">
+                <label className="flex min-h-11 items-center gap-3">
                   <Checkbox checked={mail && trashMail} disabled={!mail} onCheckedChange={(checked) => setTrashMail(checked === true)} />
                   Move Gmail messages to Trash and undo
                 </label>
-                <label className="flex items-center gap-3">
+                <label className="flex min-h-11 items-center gap-3">
                   <Checkbox checked={calendar && writeCalendar} disabled={!calendar} onCheckedChange={(checked) => setWriteCalendar(checked === true)} />
                   Add, edit and remove appointments I approve
                 </label>

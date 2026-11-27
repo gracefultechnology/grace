@@ -60,6 +60,8 @@ async function lockResults(run: string) {
     "    print('locked', flush=True)",
     "    sys.stdin.buffer.read()",
   ].join("\n"), join(run, "writer.lock")], { stdio: ["pipe", "pipe", "ignore"] });
+  const closed = new Promise<void>((released) => { guard.once("close", () => released()); });
+  guard.stdin.on("error", () => {});
   await new Promise<void>((ready, reject) => {
     guard.once("error", reject);
     guard.once("exit", () => reject(new Error("Fleet result directory is locked by another writer")));
@@ -67,11 +69,13 @@ async function lockResults(run: string) {
   });
   guard.stdout.destroy();
   guard.unref();
-  return () => new Promise<void>((released) => {
-    guard.ref();
-    guard.once("close", () => released());
-    guard.stdin.end();
-  });
+  return () => {
+    if (guard.exitCode === null && guard.signalCode === null) {
+      guard.ref();
+      guard.stdin.end();
+    }
+    return closed;
+  };
 }
 
 async function openFleetServer(tree: string, loginPaths?: Set<string>) {

@@ -828,7 +828,7 @@ pure def mayOfferGoogleLink(account: GraceAccount, link: GoogleLink): bool =
   val details = accountDetails(account)
   val identityKnown = match details {
     | TabletAccountKnown(member) => webAccountId(account) != "" or
-      (member.email != "" and member.accountId == tabletMailAccountId(account))
+      (member.email != "" and member.accountId != "" and member.accountId == tabletMailAccountId(account))
     | _ => false
   }
   identityKnown and match link {
@@ -919,7 +919,7 @@ as a new draft automatically.
 pure def maySendManagedMail(account: GraceAccount, link: GoogleLink, accountId: str, grant: str): bool =
   match account {
     | GraceSignedIn(person) => match link {
-      | GoogleLinkConnected(g) => person.accountId == accountId and g.grant == grant and grant != "" and g.mail and g.sendMail
+      | GoogleLinkConnected(g) => accountId != "" and person.accountId == accountId and g.grant == grant and grant != "" and g.mail and g.sendMail
       | _ => false
     }
     | _ => false
@@ -998,7 +998,7 @@ type ManagedChange = ManagedTrash | ManagedAppointmentChange
 pure def mayChangeManaged(account: GraceAccount, link: GoogleLink, accountId: str, grant: str, request: ManagedChange): bool =
   match account {
     | GraceSignedIn(person) => match link {
-      | GoogleLinkConnected(g) => person.accountId == accountId and g.grant == grant and grant != "" and
+      | GoogleLinkConnected(g) => accountId != "" and person.accountId == accountId and g.grant == grant and grant != "" and
         (if (request == ManagedTrash) g.mail and g.trashMail else g.calendar and g.writeCalendar)
       | _ => false
     }
@@ -1068,7 +1068,7 @@ pure def grantOf(link: GoogleLink): str = match link {
 pure def lawAManagedChangeNeedsItsAccountItsGrantAndItsOwnPermission(account: GraceAccount, link: GoogleLink, accountId: str, grant: str, request: ManagedChange): bool =
   not(mayChangeManaged(signedInTablet, link, accountId, grant, request)) and
   (mayChangeManaged(account, link, accountId, grant, request) implies
-    (grant != "" and webAccountId(account) == accountId and grantOf(link) == grant and match link {
+    (accountId != "" and grant != "" and webAccountId(account) == accountId and grantOf(link) == grant and match link {
       | GoogleLinkConnected(g) => if (request == ManagedTrash) (g.mail and g.trashMail) else (g.calendar and g.writeCalendar)
       | _ => false
     }))

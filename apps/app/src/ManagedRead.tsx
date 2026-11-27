@@ -115,14 +115,28 @@ function AppointmentEditor({ event, selectedDay, seriesFor, proposal, reviewing,
   pending: boolean;
   close: () => void;
 }) {
+  const allDay = event?.isAllDay === true;
   const [draft, setDraft] = useState<AppointmentDraft>(() => {
     const fresh = Math.max(Date.now(), instant(selectedDay, 10 * 60));
+    if (allDay && event) {
+      const spanDays = Math.max(86_400_000, Date.parse(event.endAt) - Date.parse(event.startAt));
+      const proposalStart = proposal ? proposal.start.slice(0, 10) : event.startAt;
+      const proposalEnd = proposal
+        ? new Date(Date.parse(`${proposalStart}T00:00:00Z`) + spanDays).toISOString().slice(0, 10)
+        : event.endAt;
+      return {
+        title: proposal?.title ?? event.title,
+        start: proposalStart,
+        end: proposalEnd,
+        location: proposal?.location ?? event.location,
+      };
+    }
     return {
       title: proposal?.title ?? event?.title ?? "",
-      start: proposal?.start ?? (event?.isAllDay ? event.startAt : dateInput(new Date(event?.startAt ?? fresh))),
+      start: proposal?.start ?? dateInput(new Date(event?.startAt ?? fresh)),
       end: proposal
         ? dateInput(new Date(new Date(proposal.start).getTime() + (event ? Date.parse(event.endAt) - Date.parse(event.startAt) : 3600000)))
-        : event?.isAllDay ? event.endAt : dateInput(new Date(event?.endAt ?? fresh + 3600000)),
+        : dateInput(new Date(event?.endAt ?? fresh + 3600000)),
       location: proposal?.location ?? event?.location ?? "",
     };
   });
@@ -131,7 +145,6 @@ function AppointmentEditor({ event, selectedDay, seriesFor, proposal, reviewing,
   const update = (field: keyof AppointmentDraft, value: string) => setDraft((previous) => ({ ...previous, [field]: value }));
   const startDate = new Date(draft.start);
   const endDate = new Date(draft.end);
-  const allDay = event?.isAllDay === true;
   const shifted = !allDay && endDate > startDate && (dateInput(startDate) !== draft.start || dateInput(endDate) !== draft.end);
   const valid = draft.title.trim() !== "" && endDate > startDate && !shifted;
   const reviewSave = () => {
@@ -466,8 +479,8 @@ export function ManagedRead({ view, today }: { view: ReadView; today: number }) 
           return href && canFollow ? <MailLink key={part.start} onOpen={() => follow(href, "open")}>{part.text}</MailLink> : part.text;
         }) : "This email has no plain-text preview."}</PageText>
         {canFollow && reviewLink && <BrowserDialog title="Open this link?" tone="caution" onEscape={() => follow(reviewLink, "cancel")} actions={<>
-          <Button variant="prominent" onClick={() => follow(reviewLink, "cancel")}>Stay in email</Button>
-          <Button variant="capsule" loading={pending} onClick={() => follow(reviewLink, "confirm")}>Open in Browser</Button>
+          <Button variant="prominent" size="pill" onClick={() => follow(reviewLink, "cancel")}>Stay in email</Button>
+          <Button variant="capsule" size="pill" loading={pending} onClick={() => follow(reviewLink, "confirm")}>Open in Browser</Button>
         </>}><BrowserDialogText className="break-all">{reviewLink}</BrowserDialogText></BrowserDialog>}
         {leaseVersion !== undefined && selected.attachments.length > 0 && <PageText>Open attachments on Grace’s website.</PageText>}
         {leaseVersion === undefined && selected.attachments.length > 0 && <section aria-label="Attachments" aria-busy={pending || undefined} className="flex w-full flex-col gap-3">

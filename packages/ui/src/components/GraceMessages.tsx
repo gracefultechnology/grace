@@ -75,7 +75,7 @@ export function GraceMessages({
         onScroll={scrolled}
         className={cn(
           focusRing,
-          "focus-visible:ring-inset",
+          "focus-visible:-outline-offset-3",
           "relative flex min-h-0 flex-1 flex-col justify-start gap-4 overflow-y-auto px-4 pt-[88px] pb-24 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
           "group-data-[size]/grace:py-0",
           "group-data-[size=expanded]/grace:mt-[88px] group-data-[size=expanded]/grace:mb-[max(calc(var(--spacing)*24),calc(var(--grace-dock-height,0px)_+_var(--spacing)*4))]",

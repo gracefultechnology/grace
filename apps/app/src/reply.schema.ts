@@ -122,22 +122,28 @@ const fields = (raw: string): Readonly<Record<string, unknown>> => {
   return /^(```|\{|\[)/.test(said) || Option.isSome(parsed) || Option.isSome(decodeJson(said)) ? { text: "" } : { text: said }
 }
 
+const isBareStep = (item: unknown) => isFields(item) &&
+  (item.kind === "ReachNamedPage" || item.kind === "SortPublicListing" || item.kind === "ReadLatestRecord" || item.kind === "SearchPublicSite")
+
+const normalizedActions = (rawActions: unknown): { readonly actions: readonly unknown[]; readonly bareMulti: boolean } => {
+  const supplied = list(rawActions).map(present)
+  if (!supplied.some(isBareStep)) return { actions: supplied, bareMulti: false }
+  return supplied.length === 1
+    ? { actions: [{ kind: "proposeReadPlan", steps: supplied }], bareMulti: false }
+    : { actions: supplied, bareMulti: true }
+}
+
 const read = (raw: string) => {
   const said = fields(raw)
   const text = String(said.text).trim()
   const answers = distinct(list(said.answers).map(trimmed).filter((answer): answer is string => typeof answer === "string" && answer !== "")).slice(0, most)
   const working = trimmed(said.working)
   const asked = said.isQuestion == null ? text.endsWith("?") : said.isQuestion === true || said.isQuestion === "true"
-  const supplied = list(said.actions).map(present)
-  const bareStep = supplied.some((item) => isFields(item) &&
-    (item.kind === "ReachNamedPage" || item.kind === "SortPublicListing" || item.kind === "ReadLatestRecord" || item.kind === "SearchPublicSite"))
-  const actions = bareStep
-    ? supplied.length === 1 ? [{ kind: "proposeReadPlan", steps: supplied }] : []
-    : supplied
+  const { actions, bareMulti } = normalizedActions(said.actions)
   const reply = {
     text,
     ...(typeof working === "string" && working !== "" ? { working } : {}),
-    actions: actions.flatMap((each) => Option.toArray(decodeAction(each))),
+    actions: bareMulti ? [] : actions.flatMap((each) => Option.toArray(decodeAction(each))),
   }
   return asked
     ? { ...reply, isQuestion: true as const, answers: answers.length >= fewest ? answers : [] }
@@ -145,8 +151,8 @@ const read = (raw: string) => {
 }
 
 export const unreadable = (raw: string): readonly string[] =>
-  list(fields(raw).actions)
-    .filter((each) => Option.isNone(decodeAction(present(each))))
+  normalizedActions(fields(raw).actions).actions
+    .filter((each) => Option.isNone(decodeAction(each)))
     .map((each) => isFields(each) && typeof each.kind === "string" && /^\w{1,40}$/.test(each.kind) ? each.kind : "an action")
 
 export const Reply = Schema.String.pipe(Schema.decodeTo(Schema.Union([Statement, Question]), {

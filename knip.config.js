@@ -24,6 +24,7 @@ export default {
   ],
   "ignoreExportsUsedInFile": true,
   "ignoreIssues": {
+    "vibestack/config.ts": ["exports"],
     "vibestack/studio/src/server.vibe": ["exports"]
   },
   "workspaces": {
@@ -41,10 +42,8 @@ export default {
         "!vibestack/studio/**"
       ],
       "ignoreDependencies": [
-        "@informalsystems/quint",
         "lemmascript",
-        "@vitest/browser",
-        "@repo/design-system"
+        "@vitest/browser"
       ]
     },
     "packages/ui": {
@@ -71,8 +70,8 @@ export default {
         "src/main.ts"
       ],
       "project": [
-        "src/**/*.ts",
-        "test/**/*.ts"
+        "src/**/*.{ts,vibe,vibex}",
+        "test/**/*.{ts,vibe,vibex}"
       ]
     },
     "vibestack/studio": {
@@ -113,10 +112,12 @@ export default {
     },
     "apps/cloud": {
       "entry": [
-        "src/{worker,migrate}.vibe"
+        "src/{worker,migrate}.vibe",
+        "test/**/*.test.{ts,vibe}"
       ],
       "project": [
-        "src/**/*.{vibe,vibex}"
+        "src/**/*.{ts,vibe,vibex}",
+        "test/**/*.{ts,vibe,vibex}"
       ]
     }
   }

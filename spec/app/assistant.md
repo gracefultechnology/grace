@@ -66,7 +66,8 @@ pure def started(task: str, goal: str, by: C::ConversationActor, a: Assistant): 
   val quieted = C::quiet(a.conversation, by)
   { ...a, taskId: task, goal: goal, checkpoint: goal, activity: ReadyForStep,
     workVersion: a.workVersion + 1, operation: "", outcome: Unfinished, evidence: "",
-    conversation: { ...quieted, question: false, answers: List() }, replacementId: "", replacementGoal: "" }
+    conversation: { ...quieted, question: false, answers: List() }, replacementId: "", replacementGoal: "",
+    interruptedWork: false }
 ```
 
 ### Above the website keyboard a caption strip shows the live conversation
@@ -145,7 +146,7 @@ evidence. Merely reopening is never Resume.
 pure def canResume(a: Assistant, by: C::ConversationActor): bool =
   by == C::ConversationUser and isVisible(a) and a.activity == Paused
 pure def resume(a: Assistant, by: C::ConversationActor): Assistant =
-  { ...a, activity: Rechecking, workVersion: a.workVersion + 1, operation: "" }
+  { ...a, activity: Rechecking, workVersion: a.workVersion + 1, operation: "", interruptedWork: false }
 pure def canReconcile(a: Assistant, task: str, version: int, checkpoint: str, by: C::ConversationActor): bool =
   by == C::ConversationRuntime and a.activity == Rechecking and task == a.taskId and
   version == a.workVersion and checkpoint != ""
@@ -182,7 +183,7 @@ pure def canAbandon(a: Assistant, by: C::ConversationActor): bool =
 pure def abandon(a: Assistant, by: C::ConversationActor): Assistant =
   { ...a, activity: Finished, outcome: Abandoned, operation: "", evidence: "",
     workVersion: a.workVersion + 1, conversation: C::quiet(a.conversation, by),
-    replacementId: "", replacementGoal: "" }
+    replacementId: "", replacementGoal: "", interruptedWork: false }
 ```
 
 ### Only the current task and operation can advance a meaningful step
@@ -253,7 +254,7 @@ pure def canFinishTask(a: Assistant, task: str, version: int, result: TaskOutcom
   (result == Completed or result == VerifiedFailure)
 pure def finishTask(a: Assistant, task: str, version: int, result: TaskOutcome, evidence: str, by: C::ConversationActor): Assistant =
   { ...a, activity: Finished, outcome: result, evidence: evidence, operation: "",
-    workVersion: a.workVersion + 1, replacementId: "", replacementGoal: "" }
+    workVersion: a.workVersion + 1, replacementId: "", replacementGoal: "", interruptedWork: false }
 ```
 
 ## Story: Dismiss guidance without stopping the task
@@ -496,7 +497,7 @@ pure def canNewConversation(a: Assistant, by: C::ConversationActor): bool =
 pure def newConversation(a: Assistant, by: C::ConversationActor): Assistant =
   { ...a, conversation: C::newConversation(a.conversation, by), activity: NoTask,
     taskId: "", goal: "", checkpoint: "", operation: "", evidence: "", outcome: Unfinished,
-    workVersion: a.workVersion + 1, replacementId: "", replacementGoal: "" }
+    workVersion: a.workVersion + 1, replacementId: "", replacementGoal: "", interruptedWork: false }
 ```
 
 ### Hidden assistance is quiet and every task status has its necessary context

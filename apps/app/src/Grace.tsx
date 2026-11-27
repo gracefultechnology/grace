@@ -4,7 +4,7 @@ import { Effect, Exit } from "effect";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import type { Pace } from "../gen/app__preferences.ts";
 import type { Setup } from "../gen/app__setup.ts";
-import { currentGuidedNameCorrection, guidanceVisible, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, resumeAvailable, type GuidedStep, type Workspace } from "../gen/app__workspace.ts";
+import { currentGuidedNameCorrection, enabled, guidanceVisible, guidedDetails, hasNext, localPasswordCommands, mayGuideReadLink, needsRecoveredPublicTab, nextOutcome, priorGuidedMail, resumeAvailable, type Event as WorkspaceEvent, type GuidedStep, type Workspace } from "../gen/app__workspace.ts";
 import type { Interaction } from "../gen/app__interaction.ts";
 import { ReplyControls, replyOfferIsVisible } from "./replyControls.vibe";
 import { CalendarNews } from "./calendar.vibe";
@@ -233,9 +233,12 @@ function GracePanel({ open, onClosed, onHeightChange }: { open: boolean; onClose
     : Promise.resolve(true);
   const openRecoveryCalendar = async () => {
     await closeInterruptedDraft();
-    await send(calendar);
+    if (enabled(current(), calendar, "Person")) await send(calendar);
     const opened = current();
-    if (opened.device.surface === "Calendar" && opened.assistant.presentation === "Expanded") interact({ tag: "Resize", expanded: false });
+    const collapse: WorkspaceEvent = { type: "interact", input: { tag: "Resize", expanded: false } };
+    if (opened.device.surface === "Calendar" && opened.assistant.presentation === "Expanded" && enabled(opened, collapse, "Person")) {
+      void send(collapse);
+    }
   };
   const recoveryInstruction = recoveredSave ? recoveredSave.occurrence
     ? "Open the saved appointment in Calendar to check it."
@@ -301,9 +304,11 @@ function GracePanel({ open, onClosed, onHeightChange }: { open: boolean; onClose
   };
   const chooseReply = (id: number, index: number) => {
     void runtime.runPromise(Effect.flatMap(ReplyControls, (controls) => controls.choose(id, index))).then((accepted) => {
-      if (!accepted) setUnavailable(current().assistant.conversation.generation);
-      else if (current().assistant.presentation === "Expanded" && can({ type: "interact", input: { tag: "Resize", expanded: false } }))
-        void send({ type: "interact", input: { tag: "Resize", expanded: false } });
+      const latest = current();
+      const collapse: WorkspaceEvent = { type: "interact", input: { tag: "Resize", expanded: false } };
+      if (!accepted) setUnavailable(latest.assistant.conversation.generation);
+      else if (latest.assistant.presentation === "Expanded" && enabled(latest, collapse, "Person"))
+        void send(collapse);
     });
   };
 

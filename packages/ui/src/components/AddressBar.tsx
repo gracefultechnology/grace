@@ -48,7 +48,7 @@ export function AddressBar({
   return (
     <label
       className={cn(
-        "relative flex h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 px-6 text-chrome shadow-capsule backdrop-blur-capsule backdrop-saturate-160",
+        "relative flex h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 px-6 text-chrome shadow-capsule backdrop-blur-capsule backdrop-saturate-160 focus-within:shadow-field-focus",
         className,
       )}
     >
@@ -72,7 +72,7 @@ export function AddressBar({
           onChange={(event) => onValueChange?.(event.target.value)}
           disabled={disabled}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !disabled) onSubmit?.();
+            if (event.key === "Enter" && !disabled && !event.nativeEvent.isComposing) onSubmit?.();
           }}
           className="min-w-0 flex-1 bg-transparent caret-primary outline-none placeholder:text-address-placeholder"
           {...props}

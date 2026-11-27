@@ -247,6 +247,13 @@ lemma SeriesMember(v: CalendarView, receipt: SeriesReceipt, by_: ViewActor, c: a
   ensures validStored(seriesMemberResult(v, c, receipt))
   ensures seriesMemberResult(v, c, receipt).identity == c.identity
   ensures seriesMemberResult(v, c, receipt).phase.Editing? ==> c.identity.occurrenceId == v.selectedId
+  ensures receipt.persisted && seriesMemberAffected(v, c) ==>
+    seriesMemberResult(v, c, receipt).phase.Deleted? ||
+    (seriesMemberResult(v, c, receipt).hasSaved && sameSeriesFields(seriesMemberResult(v, c, receipt).committed, selectedOccurrence(v).draft))
+  ensures !(receipt.persisted && seriesMemberAffected(v, c)) ==>
+    seriesMemberResult(v, c, receipt).committed == c.committed &&
+    seriesMemberResult(v, c, receipt).hasSaved == c.hasSaved &&
+    seriesMemberResult(v, c, receipt).phase.Deleted? == c.phase.Deleted?
 {
   CalendarEntryMember(v, v.selectedId);
   var selected := selectedOccurrence(v);
@@ -884,6 +891,106 @@ lemma changeOccurrence_ensures(v: CalendarView, id: string, command: OccurrenceA
   }
 }
 
+lemma SaveSeriesBasics(v: CalendarView, receipt: SeriesReceipt, by_: ViewActor)
+  requires inv(v) && canSaveSeries(v, receipt, by_)
+  ensures alwaysEntriesBelongToCalendar(saveSeries(v, receipt, by_))
+  ensures alwaysOccurrenceIsUnique(saveSeries(v, receipt, by_))
+  ensures alwaysCancelledIdsAreAbsent(saveSeries(v, receipt, by_))
+  ensures alwaysSeriesDefinitions(saveSeries(v, receipt, by_))
+  ensures alwaysSelectionIsCurrent(saveSeries(v, receipt, by_))
+  ensures stepOccurrenceIdentityIsFixed(v, saveSeries(v, receipt, by_))
+{
+  CalendarEntryMember(v, v.selectedId);
+  var selected := selectedOccurrence(v);
+  var after := saveSeries(v, receipt, by_);
+  if receipt.persisted {
+    var definition := SeriesDefinition(receipt.definitionVersion + 1, selected.draft);
+    SeriesLookup(v, seriesTarget(v));
+    if seriesAt(v, seriesTarget(v)).version != -1 {
+      SeriesAtMember(v, seriesTarget(v));
+    }
+    SeriesPut(v, after, definition);
+  }
+  CalendarUniqueDistinct(v);
+  forall i | 0 <= i < |v.entries|
+    ensures after.entries[i].identity == v.entries[i].identity
+    ensures validStored(after.entries[i])
+  {
+    SeriesMember(v, receipt, by_, v.entries[i]);
+  }
+  forall i, j | 0 <= i < |after.entries| && 0 <= j < |after.entries| && i != j
+    ensures (after.entries[i].identity.owner, after.entries[i].identity.calendarId, after.entries[i].identity.occurrenceId) !=
+      (after.entries[j].identity.owner, after.entries[j].identity.calendarId, after.entries[j].identity.occurrenceId)
+  {
+  }
+  CalendarDistinctUnique(after);
+  assert alwaysEntriesBelongToCalendar(after);
+  var at :| 0 <= at < |v.entries| && v.entries[at] == selected;
+  CalendarEntryFind(after, after.entries[at]);
+  forall prior, laterEntry | prior in v.entries && laterEntry in after.entries && app__calendar_sameOccurrence(prior, laterEntry)
+    ensures prior.identity == laterEntry.identity
+  {
+    var k :| 0 <= k < |after.entries| && after.entries[k] == laterEntry;
+    CalendarSameKey(v, prior, v.entries[k]);
+  }
+}
+
+lemma SaveSeriesEntryUsesSeries(v: CalendarView, receipt: SeriesReceipt, by_: ViewActor, i: int)
+  requires inv(v) && canSaveSeries(v, receipt, by_)
+  requires 0 <= i < |v.entries|
+  ensures var after := saveSeries(v, receipt, by_);
+    var c := after.entries[i];
+    (c.phase.Editing? ==> c.identity.occurrenceId == v.selectedId) &&
+    (c.committed.seriesId in v.deletedSeries ==> c.phase.Deleted?) &&
+    (c.hasSaved && !c.phase.Deleted? && c.committed.seriesId != "" ==>
+      seriesAt(after, c.committed.seriesId).version >= 0 && sameSeriesFields(c.committed, seriesAt(after, c.committed.seriesId).details))
+{
+  CalendarEntryMember(v, v.selectedId);
+  var selected := selectedOccurrence(v);
+  var after := saveSeries(v, receipt, by_);
+  if receipt.persisted {
+    var definition := SeriesDefinition(receipt.definitionVersion + 1, selected.draft);
+    SeriesLookup(v, seriesTarget(v));
+    if seriesAt(v, seriesTarget(v)).version != -1 {
+      SeriesAtMember(v, seriesTarget(v));
+    }
+    SeriesPut(v, after, definition);
+  }
+  var prior := v.entries[i];
+  SeriesMember(v, receipt, by_, prior);
+  assert after.entries[i] == seriesMemberResult(v, prior, receipt);
+  if receipt.persisted && seriesMemberAffected(v, prior) {
+    if !after.entries[i].phase.Deleted? {
+      assert after.entries[i].committed.seriesId == seriesTarget(v);
+    }
+  } else if prior.hasSaved && !prior.phase.Deleted? && prior.committed.seriesId != "" {
+    SeriesAtMember(v, prior.committed.seriesId);
+    var definition := seriesAt(v, prior.committed.seriesId);
+    if receipt.persisted {
+      assert definition.details.seriesId != seriesTarget(v);
+      assert seriesAt(after, prior.committed.seriesId) == definition;
+    }
+  }
+}
+
+lemma SaveSeriesEntries(v: CalendarView, receipt: SeriesReceipt, by_: ViewActor)
+  requires inv(v) && canSaveSeries(v, receipt, by_)
+  ensures alwaysEditingIsSelected(saveSeries(v, receipt, by_))
+  ensures alwaysEntriesUseSeries(saveSeries(v, receipt, by_))
+  ensures alwaysDeletedSeriesStayDeleted(saveSeries(v, receipt, by_))
+{
+  var after := saveSeries(v, receipt, by_);
+  forall c | c in after.entries
+    ensures c.phase.Editing? ==> c.identity.occurrenceId == v.selectedId
+    ensures c.committed.seriesId in v.deletedSeries ==> c.phase.Deleted?
+    ensures c.hasSaved && !c.phase.Deleted? && c.committed.seriesId != "" ==>
+      seriesAt(after, c.committed.seriesId).version >= 0 && sameSeriesFields(c.committed, seriesAt(after, c.committed.seriesId).details)
+  {
+    var i :| 0 <= i < |after.entries| && after.entries[i] == c;
+    SaveSeriesEntryUsesSeries(v, receipt, by_, i);
+  }
+}
+
 lemma saveSeries_ensures(v: CalendarView, receipt: SeriesReceipt, by_: ViewActor)
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysViewIdentity(saveSeries(v, receipt, by_)))
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> alwaysViewWindow(saveSeries(v, receipt, by_)))
@@ -901,59 +1008,8 @@ lemma saveSeries_ensures(v: CalendarView, receipt: SeriesReceipt, by_: ViewActor
   ensures (inv(v) ==> canSaveSeries(v, receipt, by_) ==> stepOccurrenceIdentityIsFixed(v, saveSeries(v, receipt, by_)))
 {
   if inv(v) && canSaveSeries(v, receipt, by_) {
-    CalendarEntryMember(v, v.selectedId);
-    var selected := selectedOccurrence(v);
-    var after := saveSeries(v, receipt, by_);
-    if receipt.persisted {
-      var definition := SeriesDefinition(receipt.definitionVersion + 1, selected.draft);
-      SeriesLookup(v, seriesTarget(v));
-      if seriesAt(v, seriesTarget(v)).version != -1 {
-        SeriesAtMember(v, seriesTarget(v));
-      }
-      SeriesPut(v, after, definition);
-    }
-    CalendarUniqueDistinct(v);
-    forall i | 0 <= i < |v.entries|
-      ensures after.entries[i].identity == v.entries[i].identity
-      ensures validStored(after.entries[i])
-    {
-      SeriesMember(v, receipt, by_, v.entries[i]);
-    }
-    forall i, j | 0 <= i < |after.entries| && 0 <= j < |after.entries| && i != j
-      ensures (after.entries[i].identity.owner, after.entries[i].identity.calendarId, after.entries[i].identity.occurrenceId) !=
-        (after.entries[j].identity.owner, after.entries[j].identity.calendarId, after.entries[j].identity.occurrenceId)
-    {
-    }
-    CalendarDistinctUnique(after);
-    assert alwaysEntriesBelongToCalendar(after);
-    var at :| 0 <= at < |v.entries| && v.entries[at] == selected;
-    CalendarEntryFind(after, after.entries[at]);
-    forall prior, laterEntry | prior in v.entries && laterEntry in after.entries && app__calendar_sameOccurrence(prior, laterEntry)
-      ensures prior.identity == laterEntry.identity
-    {
-      var at :| 0 <= at < |after.entries| && after.entries[at] == laterEntry;
-      CalendarSameKey(v, prior, v.entries[at]);
-    }
-    forall c | c in after.entries
-      ensures c.phase.Editing? ==> c.identity.occurrenceId == v.selectedId
-      ensures c.committed.seriesId in v.deletedSeries ==> c.phase.Deleted?
-      ensures c.hasSaved && !c.phase.Deleted? && c.committed.seriesId != "" ==>
-        seriesAt(after, c.committed.seriesId).version >= 0 && sameSeriesFields(c.committed, seriesAt(after, c.committed.seriesId).details)
-    {
-      var i :| 0 <= i < |after.entries| && after.entries[i] == c;
-      var prior := v.entries[i];
-      SeriesMember(v, receipt, by_, prior);
-      if receipt.persisted && seriesMemberAffected(v, prior) {
-        ScheduleMember(receipt.schedules, prior.identity.occurrenceId);
-      } else if prior.hasSaved && !prior.phase.Deleted? && prior.committed.seriesId != "" {
-        SeriesAtMember(v, prior.committed.seriesId);
-        var definition := seriesAt(v, prior.committed.seriesId);
-        if receipt.persisted {
-          assert definition.details.seriesId != seriesTarget(v);
-          assert seriesAt(after, prior.committed.seriesId) == definition;
-        }
-      }
-    }
+    SaveSeriesBasics(v, receipt, by_);
+    SaveSeriesEntries(v, receipt, by_);
   }
 }
 

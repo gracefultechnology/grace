@@ -121,7 +121,7 @@ export function NewTabPage({
                       type="button"
                       aria-label={labels.remove(s.title)}
                       onClick={() => onRemoveShortcut?.(s.url)}
-                      className={cn(focusRing, "absolute top-1 right-[22px] flex size-9 items-center justify-center rounded-full bg-card text-chrome-muted shadow-badge active:bg-panel")}
+                      className={cn(focusRing, "absolute top-0 right-[18px] flex size-11 items-center justify-center rounded-full bg-card text-chrome-muted shadow-badge active:bg-panel")}
                     >
                       <X size={18} strokeWidth={2.4} aria-hidden />
                     </button>

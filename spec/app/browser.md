@@ -135,7 +135,7 @@ pure def closeTab(b: Browser, id: int): Browser = {
 }
 pure def closeBrowser(b: Browser): Browser = {
   ...addressClosed(List(blankTab(b.nextId, b.serial + 1)), b), selected: b.nextId,
-  nextId: b.nextId + 1, serial: b.serial + 1
+  nextId: b.nextId + 1, serial: b.serial + 1, clearRequested: false
 }
 ```
 
@@ -179,6 +179,9 @@ pure def lawPrivateTabsCannotOpenOrdinaryWindows(b: Browser, url: str): bool =
 pure def lawPrivateVisitsStayOutOfRecent(b: Browser, id: int, loadVersion: int, result: Load, secure: bool, endedAt: str): bool =
   (canFinishPageLoad(b, id, loadVersion, result, endedAt) and tabById(b, id).manualSignIn) implies
     finishPageLoad(b, id, loadVersion, result, secure, endedAt).recent == b.recent
+pure def lawPrivateTabsRefuseRedirectAddresses(b: Browser, id: int, url: str): bool =
+  url != "" implies ((activeTab(b).manualSignIn implies not(canPageMoved(b, url))) and
+    (tabById(b, id).manualSignIn implies not(canTabMoved(b, id, url))))
 ~~~
 
 ## Story: Keep every tab reachable when the window changes
@@ -200,7 +203,6 @@ pure def tabVisible(b: Browser, candidate: Tab): bool =
     b.tabs.select(t => t.id != b.selected and moreRecent(t, candidate)).length() < b.capacity - 1
 pure def visibleTabs(b: Browser): List[Tab] = b.tabs.select(t => tabVisible(b, t))
 pure def overflowTabs(b: Browser): List[Tab] = b.tabs.select(t => not(tabVisible(b, t)))
-pure def hiddenCount(b: Browser): int = overflowTabs(b).length()
 pure def canResize(b: Browser, capacity: int): bool = capacity > 0
 pure def resize(b: Browser, capacity: int): Browser = {
   ...b, capacity: capacity, revision: b.revision + 1
@@ -311,7 +313,8 @@ Its history, forward entries and address edit survive.
 ```quint
 pure def restartableVisit(t: Tab): bool = tabUrl(t) != "" and t.load != Blank and t.load != Loading
 pure def canPageMoved(b: Browser, url: str): bool =
-  activeTab(b).load != Loading and (canNavigate(b, url) or restartableVisit(activeTab(b)))
+  activeTab(b).load != Loading and (not(activeTab(b).manualSignIn) or url == "") and
+    (canNavigate(b, url) or restartableVisit(activeTab(b)))
 pure def pageMoved(b: Browser, url: str): Browser = if (url == "") reload(b) else {
   ...navigate(b, url),
   editingAddress: b.editingAddress, addressDraft: b.addressDraft, emptyAddressNotice: b.emptyAddressNotice
@@ -341,7 +344,8 @@ its history and load outcome until a new load can be correlated.
 
 ```quint
 pure def canTabMoved(b: Browser, id: int, url: str): bool =
-  hasTab(b, id) and (canNavigate(b, url) or restartableVisit(tabById(b, id))) and tabById(b, id).load != Loading
+  hasTab(b, id) and (not(tabById(b, id).manualSignIn) or url == "") and
+    (canNavigate(b, url) or restartableVisit(tabById(b, id))) and tabById(b, id).load != Loading
 pure def tabMoved(b: Browser, id: int, url: str): Browser =
   if (id == b.selected) pageMoved(b, url) else {
     ...b, tabs: b.tabs.listMap(t => if (t.id != id) t else if (url == "") { ...t, secure: false }

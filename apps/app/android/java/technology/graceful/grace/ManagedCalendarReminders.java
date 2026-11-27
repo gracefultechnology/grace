@@ -78,14 +78,16 @@ final class ManagedCalendarReminders {
    }
    var eligible = eligible(schedule, local, prefix, engine.capacity(), System.currentTimeMillis());
    for (var row : local.values()) {
-    if (row.id().startsWith(prefix) && !eligible.contains(row.id()) && !row.terminal()) engine.cancel(row.id());
+    if (row.id().startsWith(prefix) && !eligible.contains(row.id())) {
+     if (!row.terminal()) engine.cancel(row.id());
+     deleteBinding(context, row.id());
+    }
    }
    for (var reminder : schedule) {
     var existing = local.get(reminder.id());
     if (!eligible.contains(reminder.id()) || reminder.fireAt() <= System.currentTimeMillis() ||
         (existing != null && !"cancelled".equals(existing.status()))) continue;
-    var file = bindingFile(context, reminder.id());
-    GraceRecordStorePlugin.commit(file, GraceRecordStorePlugin.load(file).revision(), reminder.binding());
+    GraceRecordStorePlugin.overwrite(bindingFile(context, reminder.id()), reminder.binding());
     var receipt = engine.schedule(reminder.id(), reminder.title(), "Open Grace to see your appointment.", reminder.fireAt(), null, null);
     if (!"scheduled".equals(receipt.optString("status"))) throw new IllegalStateException("Reminder not scheduled");
    }
@@ -150,8 +152,26 @@ final class ManagedCalendarReminders {
   for (int i = 0; i < entries.length(); i++) {
    var entry = entries.getJSONObject(i);
    String id = entry.getString("id");
-   if (!allowed(context, id) && !entry.optString("status").equals("cancelled")) engine.cancel(id);
+   if (!allowed(context, id)) {
+    if (!entry.optString("status").equals("cancelled")) engine.cancel(id);
+    deleteBinding(context, id);
+   }
   }
+  File dir = new File(context.getFilesDir(), "calendar-reminder-bindings");
+  File[] files = dir.listFiles((parent, name) -> name.endsWith(".json"));
+  if (files != null) {
+   for (File file : files) {
+    String name = file.getName();
+    String id = name.substring(0, name.length() - 5);
+    if (!allowed(context, id)) deleteBinding(context, id);
+   }
+  }
+ }
+
+ static void deleteBinding(Context context, String id) {
+  if (id == null || !id.startsWith(PREFIX)) return;
+  try { GraceRecordStorePlugin.delete(bindingFile(context, id)); }
+  catch (Exception ignored) { }
  }
 
  static JSONArray due(Context context) throws Exception {
@@ -165,7 +185,11 @@ final class ManagedCalendarReminders {
    String status = record.getString("status");
    if (!id.startsWith(PREFIX) || !allowed(context, id) || record.getLong("at") > now ||
        (!"scheduled".equals(status) && !"posted".equals(status))) continue;
-   var binding = new JSONArray(GraceRecordStorePlugin.load(bindingFile(context, id)).value());
+   String raw = GraceRecordStorePlugin.load(bindingFile(context, id)).value();
+   if (raw == null) continue;
+   JSONArray binding;
+   try { binding = new JSONArray(raw); }
+   catch (Exception invalid) { continue; }
    long eventAt = binding.getLong(3) + binding.getInt(4) * 60_000L;
    result.put(new JSONObject().put("id", id).put("title", record.getString("title")).put("eventAt", eventAt));
   }
@@ -187,7 +211,9 @@ final class ManagedCalendarReminders {
 
  static Uri detail(Context context, String id) throws Exception {
   if (!id.startsWith(PREFIX) || !allowed(context, id)) throw new IllegalStateException();
-  var binding = new JSONArray(GraceRecordStorePlugin.load(bindingFile(context, id)).value());
+  String raw = GraceRecordStorePlugin.load(bindingFile(context, id)).value();
+  if (raw == null) throw new IllegalStateException();
+  var binding = new JSONArray(raw);
   var owner = GracePasswordsOwner.stableSession(context);
   if (owner == null || !allowed(context, id)) throw new IllegalStateException();
   var target = GraceOwnerRead.read(GraceOwnerRead.Endpoint.REMINDERS, "?verify=" + Uri.encode(binding.getString(0)), owner);
@@ -208,9 +234,11 @@ final class ManagedCalendarReminders {
     if (!tap.optBoolean("retained")) return;
     String id = tap.getJSONObject("target").getString("reminderId");
     if (!id.startsWith(PREFIX)) return;
+    long generation = GracePasswordsOwner.generation();
     var view = detail(context, id);
+    if (GracePasswordsOwner.generation() != generation) return;
     activity.runOnUiThread(() -> {
-     if (!activity.hasWindowFocus() || !allowed(context, id) || activity.isFinishing()) return;
+     if (!activity.hasWindowFocus() || activity.isFinishing() || GracePasswordsOwner.generation() != generation || GracePasswordsOwner.accountChanging()) return;
      try { activity.startActivity(new Intent(Intent.ACTION_VIEW, view)); }
      catch (android.content.ActivityNotFoundException unavailable) { return; }
      WORK.execute(() -> {

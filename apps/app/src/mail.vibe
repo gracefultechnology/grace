@@ -1,5 +1,5 @@
 // spec/app/email.md, "Story: Write or reply and confirm before sending"; spec/app/files.md, "Sharing a photo opens a draft without sending it"; spec/app/files.md, "A photo taken or a file chosen on the device has its own local source identity"; spec/app/email.md, "Attachment actions preserve exact asset and message identity"; spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/email.md, "A reply is addressed to the selected message's verified reply-to"; spec/app/email.md, "Only the current approved draft may dispatch and an unknown send cannot retry"; spec/app/email.md, "An email sent while offline waits in Outbox and goes once, by itself, when the tablet is back online"; spec/app/email.md, "Back preserves the exact draft and storage failure leaves it recoverable"; spec/app/emailItem.md, "Story: Delete a message and recover it safely"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/mailboxes.md, "Story: Send from the right address"; spec/app/mailboxes.md, "Changing From moves a draft never saved, whole and unapproved, and a saved draft stays"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/email.md, "Sending a saved draft takes it out of Drafts"; spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"
-import { Machine as Accounts, type Account } from "../gen/app__accounts.effect.vibe"
+import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
 import { canEditDraft, canQueueSend, canSendDraft, currentDraft, draftStoreBusy, emptyContent, enabled, type Event as MailEvent, type Machine as MailMachine, mayExportAttachments, replyable, type DraftContent, type Mailbox, type QueuedSend, type ReplyHeader } from "../gen/app__email.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import type { MessageChange, MessageRecord } from "../gen/app__emailItem.effect.vibe"
@@ -231,15 +231,16 @@ function nameIn(people: readonly Contact[], shelf: Instances.Shape, to: string, 
 effect function contactsFor(registry: Accounts.Shape, connectionOf: (account: Account) => MailConnection, known: People | undefined, remember: (people: People) => void) {
   const a = try registry.get()
   const ids = contactAccounts(a)
-  if (known?.sources === ids.join(",")) return known.contacts
+  const sources = ids.join(",")
+  if (known?.sources === sources) return known.contacts
   const lists = try Effect.forEach(ids, effect (id) => {
     const account = a.accounts.find((x) => x.id === id)
     return account === undefined ? [] : (connectionOf(account).contacts() catch () => undefined)
   })
-  if (lists.some((list) => list === undefined)) return known?.contacts ?? []
+  if (lists.some((list) => list === undefined)) return []
   const found = lists.flat().filter((c): c is Contact => c !== undefined)
   const contacts = found.filter((c, i) => found.findIndex((f) => f.address.toLowerCase() === c.address.toLowerCase()) === i)
-  remember({ sources: ids.join(","), contacts })
+  remember({ sources, contacts })
   return contacts
 }
 
@@ -263,6 +264,33 @@ effect function prepareReplyHeader(
   if (known !== undefined) shelf.remember(id, { ...known, reply: { address: header.address, subject: header.subject, verified: header.verified } })
   try shelf.keep(id, new Set((try box.get()).messages.map((r) => r.identity.ref)))
   rememberHeader(header)
+}
+
+effect function confirmSendOf(shelf: Instances.Shape, id: number, revision: number) {
+  const box = shelf.mail(id) catch () => undefined
+  if (box === undefined) return
+  const m = try box.get()
+  if (m.revision !== revision || !recipientsValid(m.draft) || !sendableAttachments(m.draftAttachments)) return
+  const confirmed = box.send({ type: "confirmVisibleSend", revision }, "MailUser") catch () => undefined
+  if (confirmed !== undefined && m.view !== "Inbox") box.send({ type: "showInbox" }, "MailUser") catch () => undefined
+}
+
+function prunedBoard(board: Board, a: Registry): Partial<Board> | undefined {
+  const active = new Set(a.accounts.filter((x) => x.use.mail).map((x) => x.id))
+  const sources = contactAccounts(a).join(",")
+  const dropNote = board.note !== undefined && !active.has(board.note.source.id)
+  const dropUndeleted = [...board.undeleted].some((id) => !active.has(id))
+  const dropReplies = [...board.replies.keys()].some((id) => !active.has(id))
+  const dropUnsendable = [...board.unsendable.keys()].some((id) => !active.has(id))
+  const dropPeople = board.people !== undefined && board.people.sources !== sources
+  if (!dropNote && !dropUndeleted && !dropReplies && !dropUnsendable && !dropPeople) return undefined
+  return {
+    ...dropNote ? { note: undefined } : {},
+    ...dropUndeleted ? { undeleted: new Set([...board.undeleted].filter((id) => active.has(id))) } : {},
+    ...dropReplies ? { replies: new Map([...board.replies].filter(([id]) => active.has(id))) } : {},
+    ...dropUnsendable ? { unsendable: new Map([...board.unsendable].filter(([id]) => active.has(id))) } : {},
+    ...dropPeople ? { people: undefined } : {},
+  }
 }
 
 export const mailing = Layer.effect(Mail, effect {
@@ -417,6 +445,12 @@ export const mailing = Layer.effect(Mail, effect {
     return try fork.in(scope) Stream.runDrain(Stream.merge(work, draftCounts(mail, box)))
   }
 
+  try fork.in(scope) Stream.runForEach(registry.changes, (a) => sync(() => {
+    const active = new Set(a.accounts.filter((x) => x.use.mail).map((x) => x.id))
+    for (const id of [...quiet]) if (!active.has(id)) quiet.delete(id)
+    const next = prunedBoard(board, a)
+    if (next !== undefined) post(next)
+  }))
   try fork.in(scope) forgetOutboxOnLeaving(workspace, try MailChoices)
   const selections = Stream.map(registry.changes, ({ accounts }) => accounts)
   try fork.in(scope) followAccounts(selections, effect (account) => try watch(account, try shelf.mail(account.id)))
@@ -427,15 +461,6 @@ export const mailing = Layer.effect(Mail, effect {
     const { account, box, m } = owned
     const header = headerFor(board, shelf.held(id, m.messageRef), id, m) ?? (connectionOf(account).header(m.messageRef, m.generation) catch () => undefined)
     if (header !== undefined) box.send({ type: "replyToMessage", header }, "MailHost") catch () => undefined
-  }
-
-  effect function confirmSend(id: number, revision: number) {
-    const box = shelf.mail(id) catch () => undefined
-    if (box === undefined) return
-    const m = try box.get()
-    if (m.revision !== revision || !recipientsValid(m.draft) || !sendableAttachments(m.draftAttachments)) return
-    const confirmed = box.send({ type: "confirmVisibleSend", revision }, "MailUser") catch () => undefined
-    if (confirmed !== undefined && m.view !== "Inbox") box.send({ type: "showInbox" }, "MailUser") catch () => undefined
   }
 
   effect function moveDraft(from: number, to: number) {
@@ -513,7 +538,7 @@ export const mailing = Layer.effect(Mail, effect {
 
   return {
     reply: (id) => asBuilt(reply(id)),
-    confirmSend: (id, revision) => asBuilt(confirmSend(id, revision)),
+    confirmSend: (id, revision) => asBuilt(confirmSendOf(shelf, id, revision)),
     moveDraft: (from, to) => asBuilt(moveDraft(from, to)),
     save: (id, refs) => asBuilt(save(id, refs)),
     attach: (id, asset) => asBuilt(attach(id, asset)),

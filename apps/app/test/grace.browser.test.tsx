@@ -66,6 +66,7 @@ async function start(withOutlook = false) {
     say: async (said: string, reply: Reply) => {
       await scripted(said, reply);
       await act(() => page.getByRole("textbox", { name: "Message to Grace" }).fill(said));
+      await expect.element(page.getByRole("region", { name: "Grace" }).getByRole("button", { name: "Send" })).toBeEnabled();
       await act(() => userEvent.keyboard("{Enter}"));
       await expect.element(page.getByText(reply.text)).toBeVisible();
     },

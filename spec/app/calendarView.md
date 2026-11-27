@@ -247,8 +247,6 @@ pure def canBackToCalendar(v: CalendarView, by: ViewActor): bool =
   by == ViewUser and v.opened and v.selectedId != "" and v.deletion != DeletionPending and not(hasEditing(v))
 pure def backToCalendar(v: CalendarView, by: ViewActor): CalendarView =
   { ...v, selectedId: "", deletion: NoDeletion }
-pure def visibleOccurrences(v: CalendarView): List[C::Calendar] =
-  C::visibleEntries(v.entries, v.owner, v.calendarId, v.window.fromTime, v.window.untilTime)
 pure def selectedOccurrence(v: CalendarView): C::Calendar = entryAt(v, v.selectedId)
 pure def alwaysSelectionIsCurrent(v: CalendarView): bool =
   v.selectedId != "" implies
@@ -461,8 +459,9 @@ calendar is renamed this way; the tablet's own calendar changes only through
 the form. The new text is the series' only when at least two occurrences in
 reach carry it; a renamed series with a single occurrence in reach shows that
 occurrence as an appointment of its own until more arrive. The rename replaces
-the text of every occurrence the tablet holds, the one being edited included,
-as any newer revision from the company replaces an edit in progress.
+the text of every occurrence the tablet holds once no form is being edited;
+while a form is open, publishing waits until editing ends or is cancelled so
+an edit in progress is not overwritten by a background read.
 
 ```quint
 pure def renamedSeries(known: C::EntryDetails, text: C::EntryDetails): C::EntryDetails =

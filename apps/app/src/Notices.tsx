@@ -46,7 +46,7 @@ type ToastViewProps = {
 function ToastView({ above, toast, canAct, canClose, told, onAct, onClose }: ToastViewProps) {
   const actable = canAct && (told?.seeDetails ?? true);
   return (
-    <OverPage className="absolute left-1/2 z-[45] -translate-x-1/2" style={{ bottom: above + 24 }}>
+    <OverPage className="absolute left-1/2 z-[25] -translate-x-1/2" style={{ bottom: above + 24 }}>
       <Toast key={toast.id} onUndo={toast.offer === "Undo" && actable ? onAct : undefined}>
         {words(toast, told)}
         {toast.offer === "SeeDetails" && actable && (

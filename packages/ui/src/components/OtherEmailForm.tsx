@@ -1,4 +1,4 @@
-import { useRef, useState, type ComponentProps, type FormEvent } from "react";
+import { useId, useRef, useState, type ComponentProps, type FormEvent } from "react";
 import { TriangleAlert } from "lucide-react";
 import { cn } from "../lib/cn.ts";
 import { Alert } from "./Alert.tsx";
@@ -57,6 +57,7 @@ export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem,
   const name = typedName ?? defaultName;
   const [address, setAddress] = useState(defaultAddress);
   const [filled, setFilled] = useState(false);
+  const passwordId = useId();
   const secretRef = useRef<SecretFieldHandle>(null);
   const ready = name.trim() !== "" && /@.+\./.test(address) && accepts(address.trim()) && filled && !checking && onNext !== undefined;
   const submit = (event: FormEvent) => {
@@ -84,9 +85,10 @@ export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem,
         autoCapitalize="none"
         className="mt-3.5 max-w-[620px]"
       />
-      <Label className="mt-3.5 max-w-[620px] flex-col items-stretch gap-2">
-        <span className="pl-[26px]">Password</span>
+      <div className="mt-3.5 flex max-w-[620px] flex-col gap-2">
+        <Label htmlFor={passwordId} className="pl-[26px]">Password</Label>
         <SecretField
+          id={passwordId}
           label="Password"
           send={false}
           handle={secretRef}
@@ -94,7 +96,7 @@ export function OtherEmailForm({ defaultName = "", defaultAddress = "", problem,
           onSubmit={(password) => onNext?.({ name: name.trim(), address: address.trim(), password })}
           labels={{ placeholder: "Your email password" }}
         />
-      </Label>
+      </div>
       <div className="mt-5 flex flex-wrap gap-3">
         <Button type="submit" variant="prominent" size="pill" loading={checking} disabled={!ready}>
           {checking ? "Checking…" : "Next"}

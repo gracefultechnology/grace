@@ -1,6 +1,7 @@
 import { useId, type ComponentProps, type ReactNode } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { cn } from "../lib/cn.ts";
+import { usePortalContainer } from "../lib/portal.tsx";
 import { Button } from "./Button.tsx";
 import { CalendarGlyph } from "./CalendarIcon.tsx";
 import { fieldCapsule } from "./Input.tsx";
@@ -41,6 +42,7 @@ export type CalendarPickerFieldProps = {
 /** A form field whose value is picked from a list under it: Day and Time (prototype `.a-fld` with `.apop`). */
 export function CalendarPickerField({ label, value, icon, choices, selected, open, onOpenChange, onPick, changeLabel = "Change", disabled = false }: CalendarPickerFieldProps) {
   const id = useId();
+  const portalContainer = usePortalContainer();
   return (
     <div role="group" aria-labelledby={id} aria-disabled={disabled || undefined} className="flex flex-col gap-2">
       <Label id={id} className="pl-[26px]">
@@ -56,7 +58,7 @@ export function CalendarPickerField({ label, value, icon, choices, selected, ope
             </Button>
           </Popover.Trigger>
         </Popover.Anchor>
-        <Popover.Portal>
+        <Popover.Portal container={portalContainer ?? undefined}>
           <Popover.Content
             side="bottom"
             align="start"

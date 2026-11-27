@@ -1,6 +1,6 @@
 // spec/app/network.md, "Story: Join the network I choose"; spec/app/network.md, "Story: See why no networks are listed"; spec/app/network.md, "The password goes from Grace's field to Android only, and Show never shares it with Grace"; spec/app/network.md, "Wi-Fi sign-in opens in Grace's browser"
 import { Alert, Button, PageHeading, PageText, WifiJoinForm, WifiNetworkList, type WifiNetwork, type WifiStatus } from "@repo/ui";
-import { Effect, ManagedRuntime } from "effect";
+import { Effect, Exit, ManagedRuntime } from "effect";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 import type { Machine } from "../gen/app__network.effect.vibe";
 import { type Discovery, type Event, type ListAction, type NetworkJoin, helpOffered, listAction, wifiSignInOffered } from "../gen/app__network.ts";
@@ -13,20 +13,98 @@ import { type Offer, WifiPage, ssidOf, wifiPage } from "./wifi.vibe";
 
 export type WifiRuntime = ManagedRuntime.ManagedRuntime<WifiPage | Machine, never>;
 
-let cachedDevice: WifiRuntime | undefined;
-function getDeviceRuntime(): WifiRuntime | undefined {
-  if (!wifiPlugin || !graceWifi) return undefined;
-  cachedDevice ??= ManagedRuntime.make(wifiPage(wifiPlugin, graceWifi));
-  return cachedDevice;
-}
+const deviceWifiStore = (() => {
+  let active: WifiRuntime | undefined;
+  let subscribers = 0;
+  const listeners = new Set<() => void>();
+  const emit = () => {
+    for (const listener of listeners) listener();
+  };
+  return {
+    get: () => active,
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+      subscribers += 1;
+      if (!active && wifiPlugin && graceWifi) {
+        active = ManagedRuntime.make(wifiPage(wifiPlugin, graceWifi));
+        emit();
+      }
+      return () => {
+        listeners.delete(listener);
+        subscribers -= 1;
+        if (subscribers === 0 && active) {
+          const closing = active;
+          active = undefined;
+          void closing.dispose();
+        }
+      };
+    },
+  };
+})();
 
-const wifiPages = new WeakMap<WifiRuntime, WifiPage["Service"]>();
-function wifiPageFor(runtime: WifiRuntime): WifiPage["Service"] {
-  const known = wifiPages.get(runtime);
+type WifiOfferSnapshot = ReturnType<WifiPage["Service"]["offers"]["current"]>;
+const emptyOffers: WifiOfferSnapshot = { nearby: [], connected: undefined, signInRequired: false, wifiValidated: false };
+
+type WifiPageStore = {
+  readonly subscribe: (listener: () => void) => () => void;
+  readonly getPage: () => WifiPage["Service"] | undefined;
+  readonly getOffers: () => WifiOfferSnapshot;
+};
+
+const wifiPageStores = new WeakMap<WifiRuntime, WifiPageStore>();
+
+function wifiPageStoreFor(runtime: WifiRuntime): WifiPageStore {
+  const known = wifiPageStores.get(runtime);
   if (known) return known;
-  const page = runtime.runSync(Effect.service(WifiPage));
-  wifiPages.set(runtime, page);
-  return page;
+  let page: WifiPage["Service"] | undefined;
+  let offers: WifiOfferSnapshot = emptyOffers;
+  let loading = false;
+  let unsubscribeOffers: (() => void) | undefined;
+  const listeners = new Set<() => void>();
+  const emit = () => {
+    for (const listener of listeners) listener();
+  };
+  const subscribeOffers = (resolved: WifiPage["Service"]) => {
+    offers = resolved.offers.current();
+    if (listeners.size > 0 && !unsubscribeOffers) {
+      unsubscribeOffers = resolved.offers.subscribe(() => {
+        const next = resolved.offers.current();
+        if (Object.is(offers, next)) return;
+        offers = next;
+        emit();
+      });
+    }
+  };
+  const store: WifiPageStore = {
+    getPage: () => page,
+    getOffers: () => offers,
+    subscribe: (listener) => {
+      listeners.add(listener);
+      if (page) {
+        subscribeOffers(page);
+      } else if (!loading) {
+        loading = true;
+        void runtime.runPromise(Effect.service(WifiPage)).then(
+          (resolved) => {
+            loading = false;
+            page = resolved;
+            subscribeOffers(resolved);
+            emit();
+          },
+          () => { loading = false; },
+        );
+      }
+      return () => {
+        listeners.delete(listener);
+        if (listeners.size === 0) {
+          unsubscribeOffers?.();
+          unsubscribeOffers = undefined;
+        }
+      };
+    },
+  };
+  wifiPageStores.set(runtime, store);
+  return store;
 }
 
 const statuses: Readonly<Record<Discovery["tag"], WifiStatus>> = {
@@ -47,16 +125,23 @@ const unnamed: WifiNetwork = { name: "Internet connection" };
 
 const selectWifiWorkspace = (workspace: Workspace | undefined) => ({
   online: workspace?.device.connectivity === "Online",
-  canFix: workspace !== undefined && enabled(workspace, fix, "Person"),
 });
 
 export function Wifi() {
-  const { online, canFix } = useWorkspaceSelector(selectWifiWorkspace, shallowEqual);
-  const { send } = useWorkspaceActions();
-  const device = getDeviceRuntime();
-  const onFix = useCallback(() => { if (canFix) void send(fix); }, [canFix, send]);
-  const onSignIn = useCallback(() => { void send(showBrowser).then(() => send(signInPage)); }, [send]);
-  if (!device) return <><PageHeading>Wi-Fi</PageHeading><PageText role="status">{online ? "Connected" : "No internet connection"}</PageText></>;
+  const { online } = useWorkspaceSelector(selectWifiWorkspace, shallowEqual);
+  const { current, send } = useWorkspaceActions();
+  const device = useSyncExternalStore(deviceWifiStore.subscribe, deviceWifiStore.get, deviceWifiStore.get);
+  const onFix = useCallback(() => {
+    if (enabled(current(), fix, "Person")) void send(fix);
+  }, [current, send]);
+  const onSignIn = useCallback(() => {
+    if (!enabled(current(), showBrowser, "Person")) return;
+    void send(showBrowser).then((exit) => {
+      if (Exit.isSuccess(exit) && enabled(current(), signInPage, "Person")) void send(signInPage);
+    });
+  }, [current, send]);
+  if (!wifiPlugin || !graceWifi) return <><PageHeading>Wi-Fi</PageHeading><PageText role="status">{online ? "Connected" : "No internet connection"}</PageText></>;
+  if (!device) return null;
   return <WifiNetworks runtime={device} online={online} onFix={onFix} onSignIn={onSignIn} />;
 }
 
@@ -88,8 +173,9 @@ function PrivateEntry({ n, name, person, join }: { n: NetworkJoin; name: string;
 /** @model spec/app/network.md */
 export function WifiNetworks({ runtime, online, onFix, onSignIn }: { runtime: WifiRuntime; online: boolean; onFix: () => void; onSignIn: () => void }) {
   const { state: n, can, send } = useMachine(runtime);
-  const page = wifiPageFor(runtime);
-  const { nearby: offers, connected: identified, signInRequired, wifiValidated } = useSyncExternalStore(page.offers.subscribe, page.offers.current);
+  const pageStore = wifiPageStoreFor(runtime);
+  const page = useSyncExternalStore(pageStore.subscribe, pageStore.getPage, pageStore.getPage);
+  const { nearby: offers, connected: identified, signInRequired, wifiValidated } = useSyncExternalStore(pageStore.subscribe, pageStore.getOffers, pageStore.getOffers);
   const offersById = useMemo(() => new Map(offers.map((offer) => [offer.network.id, offer])), [offers]);
   const discovery = n?.discovery;
   const nearby = useMemo(() => (
@@ -100,7 +186,7 @@ export function WifiNetworks({ runtime, online, onFix, onSignIn }: { runtime: Wi
         })
       : []
   ), [discovery, offersById, identified?.id]);
-  if (!n) return null;
+  if (!n || !page) return null;
   const person = (event: Event) => { if (can(event, "Person")) void send(event, "Person"); };
   const run = (effect: Effect.Effect<void>) => void runtime.runPromise(effect);
   const name = ssidOf(n);

@@ -2,12 +2,15 @@ import type { ComponentProps } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { cn } from "../lib/cn.ts";
+import { usePortalContainer } from "../lib/portal.tsx";
 import { Button } from "./Button.tsx";
 
 export type DialogProps = ComponentProps<typeof DialogPrimitive.Root>;
 export type DialogContentProps = ComponentProps<typeof DialogPrimitive.Content> & {
   /** The accessible name of a ✕ close button; without it there is none, as on the prototype's dialogs, and a `DialogClose` in the content dismisses it. */
   closeLabel?: string;
+  /** Where the dialog's portal mounts; defaults to the enclosing `PortalContainerProvider` or `document.body`. */
+  container?: HTMLElement | null;
 };
 export type DialogTitleProps = ComponentProps<typeof DialogPrimitive.Title>;
 export type DialogActionsProps = ComponentProps<"div">;
@@ -27,10 +30,12 @@ export const DialogClose = DialogPrimitive.Close;
  * The white panel over a dimmed screen (prototype `.a-dlg` over `.a-scrim`: 560px of content and 32px padding). Needs a `DialogTitle`; Escape dismisses it.
  * @design packages/design-system/design.md#windows
  */
-export function DialogContent({ closeLabel, className, children, ...props }: DialogContentProps) {
+export function DialogContent({ closeLabel, container, className, children, ...props }: DialogContentProps) {
+  const contextContainer = usePortalContainer();
+  const portalContainer = container ?? contextContainer;
   return (
-    <DialogPrimitive.Portal>
-      <div className="isolate">
+    <DialogPrimitive.Portal container={portalContainer ?? undefined}>
+      <div className="relative z-[55] isolate">
         <DialogPrimitive.Overlay className="fixed inset-0 bg-scrim/32" />
         <DialogPrimitive.Content
           aria-describedby={undefined}

@@ -639,6 +639,28 @@ it.live("Browse my calendar and open an exact occurrence: a calendar the tablet 
     const opened = try box.get()
     try Effect.try(() => assert.deepStrictEqual([opened.opened, opened.picker, opened.entries.map((c) => [c.identity.occurrenceId, c.phase])], [true, "NoPicker", [["bridge", "Saved"]]]))
   }
+  provide Layer.provideMerge(instances, Layer.merge(accountsMachine(), KeyValueStore.layerMemory)) {
+    try (try KeyValueStore.KeyValueStore).set("calendar/0", "{corrupt json")
+    const box = try (try Instances).calendar(tablet)
+    try box.send({ type: "openCalendar", owner: "tablet", calendarId: "tablet", timezone: "UTC" }, "ViewUser")
+    const opened = try box.get()
+    try Effect.try(() => assert.deepStrictEqual([opened.opened, opened.entries], [true, []]))
+  }
+  const fullStore = Layer.effect(KeyValueStore.KeyValueStore, effect {
+    const base = try KeyValueStore.KeyValueStore
+    return {
+      ...base,
+      set: (key: string) => Effect.fail(new KeyValueStore.KeyValueStoreError({
+        message: "Quota exceeded", method: "set", key, cause: new Error("QuotaExceededError"),
+      })),
+    }
+  }).pipe(Layer.provide(KeyValueStore.layerMemory))
+  provide Layer.provideMerge(instances, Layer.merge(accountsMachine(), fullStore)) {
+    const box = try (try Instances).calendar(tablet)
+    try box.send({ type: "openCalendar", owner: "tablet", calendarId: "tablet", timezone: "UTC" }, "ViewUser")
+    const opened = try box.get()
+    try Effect.try(() => assert.strictEqual(opened.opened, true))
+  }
 })
 
 it.live("Read the Google mail and calendar I connected: the pinned Eliza Cloud routes every Google read and change Grace makes, and the status, connect and disconnect of her Google link", () => effect {

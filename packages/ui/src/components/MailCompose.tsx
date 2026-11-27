@@ -1,7 +1,7 @@
 import { useId, type ComponentProps, type ReactNode } from "react";
 import { ArrowUp, ChevronDown, Image, Plus, X } from "lucide-react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { cn, focusRing } from "../lib/cn.ts";
+import { cn, focusRing, withKeys } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { Button } from "./Button.tsx";
 import { guided, type Guide } from "./GuideAnchor.tsx";
@@ -36,7 +36,7 @@ export function MailRecipientChip({ contact, onRemove, removeLabel = `Remove ${c
       <MailContactAvatar contact={contact} size={46} style={{ fontSize: 18 }} aria-hidden data-prototype-ink />
       {contact.name}
       {onRemove && (
-        <button type="button" aria-label={removeLabel} onClick={onRemove} className={cn(focusRing, "-mr-2 ml-1 inline-flex size-8 cursor-pointer items-center justify-center rounded-full text-muted-foreground")}>
+        <button type="button" aria-label={removeLabel} onClick={onRemove} className={cn(focusRing, "-mr-3.5 ml-0.5 inline-flex size-11 cursor-pointer items-center justify-center rounded-full text-muted-foreground")}>
           <X size={18} strokeWidth={2.4} aria-hidden />
         </button>
       )}
@@ -256,6 +256,7 @@ export function MailCompose({
   const notices: Partial<Record<MailSendStatus, string>> = { failed: l.sendFailed, unknown: l.sendUnknown, saveFailed: l.saveFailed };
   const notice = notices[sendStatus];
   const sending = sendStatus === "sending";
+  const canSend = Boolean(onSend) && !sending && sendStatus !== "unknown" && sendStatus !== "saveFailed";
   const subjectId = useId();
   const recipients = (field: MailRecipientField, people: MailContact[]) => (
     <Line label={l[field]}>
@@ -286,7 +287,7 @@ export function MailCompose({
       }
       {...props}
     >
-      <form className="font-sans" onSubmit={(event) => { event.preventDefault(); onSend?.(); }}>
+      <form className="font-sans" onSubmit={(event) => { event.preventDefault(); if (canSend) onSend?.(); }}>
         {draftError != null && (
           <MailNotice actionLabel={onRetryDraft && l.retry} onAction={onRetryDraft} className="mb-3">
             {draftError}
@@ -318,7 +319,7 @@ export function MailCompose({
             placeholder={l.subjectPlaceholder}
             readOnly={!onSubjectChange}
             onChange={(event) => onSubjectChange?.(event.target.value)}
-            className="min-w-0 flex-1 bg-transparent px-0.5 py-px text-body-lg leading-[30px] text-foreground outline-none placeholder:text-field-placeholder"
+            className={cn(focusRing, "min-w-0 flex-1 rounded-sm bg-transparent px-0.5 py-px text-body-lg leading-[30px] text-foreground placeholder:text-field-placeholder")}
           />
         </Line>
         <div className="mt-[18px] flex">
@@ -331,18 +332,18 @@ export function MailCompose({
               placeholder={l.bodyPlaceholder}
               readOnly={!onBodyChange}
               onChange={(event) => onBodyChange?.(event.target.value)}
-              className={cn("box-border block w-full", notice || draftError != null ? "min-h-0" : "min-h-[154px]", "resize-none bg-transparent pt-1 pb-2 text-body-lg leading-8 text-foreground outline-none placeholder:text-field-placeholder")}
+              className={cn(focusRing, "box-border block w-full rounded-sm", notice || draftError != null ? "min-h-0" : "min-h-[154px]", "resize-none bg-transparent pt-1 pb-2 text-body-lg leading-8 text-foreground placeholder:text-field-placeholder")}
             />,
             { radius: 12, placement: "below", className: "flex flex-1" },
           )}
         </div>
         {attachments.length > 0 && (
           <ul className="m-0 mt-2.5 flex list-none gap-3 p-0">
-            {attachments.map((photo, i) => (
-              <li key={photo.src} className="relative h-[110px] w-[150px] overflow-hidden rounded-xl shadow-attachment">
+            {withKeys(attachments, (photo) => photo.src).map(({ item: photo, key }, i) => (
+              <li key={key} className="relative h-[110px] w-[150px] overflow-hidden rounded-xl shadow-attachment">
                 <img src={photo.src} alt={photo.alt} decoding="async" loading="lazy" className="size-full object-cover" />
                 {onRemoveAttachment && (
-                  <Button variant="capsule" size="compact-icon" className="absolute top-1.5 right-1.5 size-9 text-chrome transition-none active:scale-96" aria-label={`${l.removeAttachment} ${photo.alt}`} onClick={() => onRemoveAttachment(i)}>
+                  <Button variant="capsule" size="compact-icon" className="absolute top-1.5 right-1.5 size-11 text-chrome transition-none active:scale-96" aria-label={`${l.removeAttachment} ${photo.alt}`} onClick={() => onRemoveAttachment(i)}>
                     <X size={20} strokeWidth={2.4} aria-hidden />
                   </Button>
                 )}
@@ -359,7 +360,7 @@ export function MailCompose({
           {guided(
             guide,
             "send",
-            <Button type="submit" variant="prominent" size="pill" className={appProminent} aria-busy={sending || undefined} disabled={!onSend || sending || sendStatus === "unknown" || sendStatus === "saveFailed"}>
+            <Button type="submit" variant="prominent" size="pill" className={appProminent} aria-busy={sending || undefined} disabled={!canSend}>
               {pendingMark(sending, <ArrowUp size={22} strokeWidth={2.4} aria-hidden />)}
               {l.send}
             </Button>,

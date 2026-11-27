@@ -3,6 +3,7 @@ import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { cva } from "class-variance-authority";
 import { Check } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
+import { usePortalContainer } from "../lib/portal.tsx";
 
 export type MenuSurface = "glass" | "page";
 
@@ -40,6 +41,8 @@ export type MenuProps = Omit<MenuPopoverProps, "asChild"> & {
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Where the menu's portal mounts; defaults to the enclosing `PortalContainerProvider` or `document.body`. */
+  container?: HTMLElement | null;
 };
 
 /**
@@ -47,11 +50,13 @@ export type MenuProps = Omit<MenuPopoverProps, "asChild"> & {
  * Like the prototype's popover it is not modal: the rest of the screen stays reachable, and a tap elsewhere closes it.
  * @design packages/design-system/design.md#selected
  */
-export function Menu({ trigger, children, open, defaultOpen, onOpenChange, ...props }: MenuProps) {
+export function Menu({ trigger, children, open, defaultOpen, onOpenChange, container, ...props }: MenuProps) {
+  const contextContainer = usePortalContainer();
+  const portalContainer = container ?? contextContainer;
   return (
     <DropdownMenu.Root modal={false} open={open} defaultOpen={defaultOpen} onOpenChange={onOpenChange}>
       <DropdownMenu.Trigger asChild>{trigger}</DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
+      <DropdownMenu.Portal container={portalContainer ?? undefined}>
         <MenuPopover {...props}>{children}</MenuPopover>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

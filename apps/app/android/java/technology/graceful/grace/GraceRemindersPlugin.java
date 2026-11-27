@@ -70,6 +70,7 @@ public class GraceRemindersPlugin extends ReminderPlugin {
      var reminders = ManagedCalendarReminders.due(getContext());
      for (int i = 0; i < reminders.length(); i++) {
       if (reminders.getJSONObject(i).getString("id").equals(id) && reminderEngine(getContext()).cancel(id)) {
+       ManagedCalendarReminders.deleteBinding(getContext(), id);
        call.resolve(new JSObject().put("id", id));
        managedDueChanged();
        return;
@@ -85,11 +86,15 @@ public class GraceRemindersPlugin extends ReminderPlugin {
   FOREGROUND_IO.execute(() -> {
    try {
     String id = call.getString("id", "");
+    long generation = GracePasswordsOwner.generation();
     var details = ManagedCalendarReminders.detail(getContext(), id);
-    getActivity().runOnUiThread(() -> {
+    if (GracePasswordsOwner.generation() != generation) throw new IllegalStateException();
+    var activity = getActivity();
+    if (activity == null) throw new IllegalStateException();
+    activity.runOnUiThread(() -> {
      try {
-      if (foreground != this || !ManagedCalendarReminders.allowed(getContext(), id)) throw new IllegalStateException();
-      getActivity().startActivity(new Intent(Intent.ACTION_VIEW, details));
+      if (foreground != this || activity.isFinishing() || GracePasswordsOwner.generation() != generation || GracePasswordsOwner.accountChanging()) throw new IllegalStateException();
+      activity.startActivity(new Intent(Intent.ACTION_VIEW, details));
       call.resolve();
      } catch (Exception unavailable) { call.reject("Calendar reminder couldn’t open"); }
     });
@@ -115,19 +120,21 @@ public class GraceRemindersPlugin extends ReminderPlugin {
   @Override public String read(String key) throws Exception { return GraceRecordStorePlugin.load(file(key)).value(); }
 
   @Override public void write(String key, String value) throws Exception {
-   File file = file(key);
-   GraceRecordStorePlugin.commit(file, GraceRecordStorePlugin.load(file).revision(), value);
+   GraceRecordStorePlugin.overwrite(file(key), value);
   }
  };
 
  public GraceRemindersPlugin() { super(CONFIGURATION, STORE); }
 
  @Override public void load() {
-  synchronized (GracePasswordsOwner.class) {
-   try { ManagedCalendarReminders.pruneOtherOwners(getContext(), reminderEngine(getContext())); }
-   catch (Exception unavailable) { return; }
-   super.load();
-  }
+  super.load();
+  Context app = getContext().getApplicationContext();
+  FOREGROUND_IO.execute(() -> {
+   synchronized (GracePasswordsOwner.class) {
+    try { ManagedCalendarReminders.pruneOtherOwners(app, reminderEngine(app)); }
+    catch (Exception unavailable) { }
+   }
+  });
  }
 
  @PluginMethod public void enableManagedReminders(PluginCall call) {
@@ -158,22 +165,17 @@ public class GraceRemindersPlugin extends ReminderPlugin {
 
   @Override public void onReceive(Context context, Intent intent) {
    String action = intent.getAction();
-   if (!Intent.ACTION_BOOT_COMPLETED.equals(action) && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action) &&
-       !Intent.ACTION_TIME_CHANGED.equals(action) && !Intent.ACTION_TIMEZONE_CHANGED.equals(action)) {
-    dispatch(context, intent);
-    return;
-   }
    var application = context.getApplicationContext();
    var pending = goAsync();
    try {
     RESTORE_WORK.execute(() -> {
      try { dispatch(application, intent); }
-     catch (RuntimeException unavailable) { Log.w("GraceReminders", "Could not restore reminders for " + action, unavailable); }
+     catch (RuntimeException unavailable) { Log.w("GraceReminders", "Could not handle reminder broadcast for " + action, unavailable); }
      finally { pending.finish(); }
     });
    } catch (RejectedExecutionException unavailable) {
     pending.finish();
-    Log.w("GraceReminders", "Could not schedule reminder restoration for " + action, unavailable);
+    Log.w("GraceReminders", "Could not schedule reminder broadcast for " + action, unavailable);
    }
   }
 

@@ -1,43 +1,34 @@
 // spec/app/notices.md, "Story: See one message at a time, in the order things happened"; spec/app/notices.md, "A toast stays its whole lifetime unless the person closes it or acts"; spec/app/notices.md, "Coming back online is told once, in a toast"; spec/app/notices.md, "No notice shows over a commitment review or a website's question"
 import { Effect, ManagedRuntime, Stream } from "effect";
 import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { beforeAll, describe, expect, it, onTestFinished } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { Machine as Notices } from "../gen/app__notices.effect.vibe";
 import { type Event as ProposalEvent, Machine as Proposals, addVisit } from "../gen/app__proposal.effect.vibe";
 import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe";
-import { App } from "../src/App.tsx";
 import { application } from "../src/app.vibe";
 import { NoticeHost, type Reply } from "../src/notices.vibe";
-import { mount, signInToGrace } from "./screen.tsx";
+import { mockNetworkReach, mount, signInToGrace, tabletView } from "./screen.tsx";
 import "../src/main.css";
 
 beforeAll(() => page.viewport(1280, 800));
 
 describe('spec/app/notices.md, "Story: See one message at a time, in the order things happened"', () => {
   it("See one message at a time", async () => {
-    const network = { online: true };
-    Object.defineProperty(navigator, "onLine", { configurable: true, get: () => network.online });
-    const reach = (online: boolean) => {
-      network.online = online;
-      window.dispatchEvent(new Event(online ? "online" : "offline"));
-    };
+    const reach = mockNetworkReach();
     const runtime = ManagedRuntime.make(application(undefined));
-    const root = createRoot(document.body.appendChild(document.createElement("div")));
+    const view = tabletView(runtime);
     const toasts: (string | null)[] = [null];
     const watcher = new MutationObserver(() => {
       const shown = [...document.querySelectorAll("[role=status]")].find((x) => x.querySelector("b") === null)?.textContent ?? null;
       if (toasts.at(-1) !== shown) toasts.push(shown);
     });
-    watcher.observe(document.body, { subtree: true, childList: true, characterData: true });
     onTestFinished(async () => {
       watcher.disconnect();
-      root.unmount();
-      await runtime.dispose();
-      Reflect.deleteProperty(navigator, "onLine");
+      await view.dispose();
     });
-    root.render(<App runtime={runtime} />);
+    await view.render();
+    watcher.observe(document.body, { subtree: true, childList: true, characterData: true });
     const notices = (use: (host: NoticeHost["Service"]) => Effect.Effect<unknown, unknown>) => runtime.runPromise(Effect.flatMap(Effect.service(NoticeHost), use));
     const connectivity = () => runtime.runPromise(Effect.flatMap(Effect.service(Workspaces), (w) => Effect.map(w.get(), ({ device }) => device.connectivity)));
     const replies: Reply[] = [];
@@ -46,13 +37,13 @@ describe('spec/app/notices.md, "Story: See one message at a time, in the order t
     await expect.poll(connectivity).toBe("Online");
     // spec/app/notices.md, "Home shows one banner, for the first cause: no Wi-Fi, a signed-out account, no email, then a reminder"
     await expect.element(page.getByRole("status").filter({ hasText: "Add your email" })).toBeVisible();
-    reach(false);
+    await reach(false);
     await expect.poll(connectivity).toBe("Offline");
-    reach(true);
+    await reach(true);
     await expect.element(page.getByRole("status").filter({ hasText: "Back online" })).toBeVisible();
 
     await notices((host) => Effect.all([host.raise({ source: "Settings", offer: "Undo", subject: "Text size changed" }), host.raise({ source: "Files", offer: "NoOffer", subject: "Saved to Files" })]));
-    await userEvent.click(page.getByRole("button", { name: "Undo" }));
+    await act(() => userEvent.click(page.getByRole("button", { name: "Undo" })));
     await notices((host) => host.act(1));
     await expect.poll(() => ({ toasts, replies }), { timeout: 15_000 }).toEqual({
       toasts: [null, "Back online", "Text size changedUndo", "Saved to Files", null],

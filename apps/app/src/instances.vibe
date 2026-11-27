@@ -1,11 +1,11 @@
 // spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "Each account’s state is read from its own mailbox and never stored twice"; spec/app/accounts.md, "Story: Choose what each email brings and take it off the tablet"; spec/app/email.md, "Each search or content read needs current access and the user's choice"; spec/app/email.md, "Selected-message changes update the same canonical record and invalidate stale actions"; spec/app/email.md, "Sending or discarding retires the completed draft revision without hiding newer work"; spec/app/email.md, "Drafts shows the provider's count of saved drafts, whichever folder is open"; spec/app/mailboxes.md, "The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new"
 import { Machine as Accounts, type Account, type Accounts as Registry } from "../gen/app__accounts.effect.vibe"
-import { Machine as CalendarMachine, stored as storedCalendar } from "../gen/app__calendarView.effect.vibe"
-import { type Event as MailEvent, hasMessage, initial as initialMail, listingScope, Machine as MailMachine, messageRecord, parseState as parseMail, retainedOnly, stored as storedMail, type Mailbox, type ReadReceipt } from "../gen/app__email.effect.vibe"
+import { machine as calendarMachine, Machine as CalendarMachine, parseState as parseCalendar, stored as storedCalendar } from "../gen/app__calendarView.effect.vibe"
+import { type Event as MailEvent, hasMessage, initial as initialMail, listingScope, machine as mailMachine, Machine as MailMachine, messageRecord, parseState as parseMail, retainedOnly, stored as storedMail, type Mailbox, type ReadReceipt } from "../gen/app__email.effect.vibe"
 import type { ChangeReceipt } from "../gen/app__emailItem.effect.vibe"
 import type { SavedFile } from "../gen/app__files.effect.vibe"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
-import { type Attached, Connector, type MailConnection, MailContent, NeedsSignIn } from "./connector.vibe"
+import { type Attached, Connector, type MailConnection, MailContent, NeedsSignIn, pruneCalendarJournals } from "./connector.vibe"
 
 export error NotAnAccount { id: number }
 
@@ -70,34 +70,40 @@ const decodeMailRecord = Schema.decodeUnknownOption(Schema.fromJsonString(Schema
 
 function currentMailRecord(text: string) {
   const box = Option.getOrUndefined(decodeMailRecord(text))
-  if (box === undefined) return text
+  if (box === undefined) return undefined
   const current = { ...initialMail, ...box }
   if (typeof box.bill === "object" && box.bill !== null && !("sourceRef" in box.bill)) {
     const historical = parseMail({ ...current, bill: { ...box.bill, sourceRef: box.messageRef } })
-    return historical === undefined ? text : JSON.stringify({ ...historical, bill: initialMail.bill })
+    return historical === undefined ? undefined : JSON.stringify({ ...historical, bill: initialMail.bill })
   }
+  if (parseMail(current) === undefined) return undefined
   return Object.keys(initialMail).some((key) => !(key in box)) ? JSON.stringify(current) : text
 }
 
-effect function upgradedCalendar(text: string, account: number) {
+function upgradedCalendar(text: string, account: number) {
   let changed = false
-  const parsed: unknown = try Effect.try(() => JSON.parse(text, (key: string, value: unknown): unknown => {
-    if (key === "" && typeof value === "object" && value !== null && "entries" in value) {
-      if ("picker" in value && "feedNeedsSignIn" in value) return value
+  try {
+    const parsed: unknown = JSON.parse(text, (key: string, value: unknown): unknown => {
+      if (key === "" && typeof value === "object" && value !== null && "entries" in value) {
+        if ("picker" in value && "feedNeedsSignIn" in value) return value
+        changed = true
+        return { picker: "NoPicker", feedNeedsSignIn: false, ...value }
+      }
+      if (typeof value === "object" && value !== null && "approvedRevision" in value && !("version" in value)) {
+        changed = true
+        return { ...value, version: "" }
+      }
+      if (key !== "identity" || typeof value !== "object" || value === null || !("occurrenceId" in value) ||
+          !("kind" in value) || !("sourceRef" in value) || "sourceAccount" in value) return value
+      const sourceAccount = value.kind === "Appointment" && typeof value.sourceRef === "string" && value.sourceRef !== "" ? account : 0
       changed = true
-      return { picker: "NoPicker", feedNeedsSignIn: false, ...value }
-    }
-    if (typeof value === "object" && value !== null && "approvedRevision" in value && !("version" in value)) {
-      changed = true
-      return { ...value, version: "" }
-    }
-    if (key !== "identity" || typeof value !== "object" || value === null || !("occurrenceId" in value) ||
-        !("kind" in value) || !("sourceRef" in value) || "sourceAccount" in value) return value
-    const sourceAccount = value.kind === "Appointment" && typeof value.sourceRef === "string" && value.sourceRef !== "" ? account : 0
-    changed = true
-    return { ...value, sourceAccount }
-  }))
-  return changed ? JSON.stringify(parsed) : text
+      return { ...value, sourceAccount }
+    })
+    if (parseCalendar(parsed) === undefined) return undefined
+    return changed ? JSON.stringify(parsed) : text
+  } catch {
+    return undefined
+  }
 }
 
 function reviewedRead(known: Held | undefined, content: MailContent, observed: ObservedRead | undefined) {
@@ -112,14 +118,29 @@ function reviewedRead(known: Held | undefined, content: MailContent, observed: O
     known.read.evidence === suspicion ? known.read : undefined
 }
 
-export function compatibleStore<E>(store: KeyValueStore.KeyValueStore, key: string, upgrade: (raw: string) => string!E) {
-  let last: { raw: string; compatible: string } | undefined
+export function compatibleStore<E>(store: KeyValueStore.KeyValueStore, key: string, upgrade: (raw: string) => (string | undefined)!E) {
+  let last: { raw: string; compatible: string | undefined } | undefined
+  let fallback: { value: string | undefined } | undefined
   return Layer.succeed(KeyValueStore.KeyValueStore, {
-    ...store, get: effect (name: string) => {
-      const raw = try store.get(name)
-      if (name !== key || raw === undefined) return raw
-      if (last?.raw !== raw) last = { raw, compatible: try Effect.orDie(upgrade(raw)) }
+    ...store,
+    get: effect (name: string) => {
+      if (name !== key) return try store.get(name)
+      if (fallback !== undefined) return fallback.value
+      const raw = store.get(name) catch () => undefined
+      if (raw === undefined) return undefined
+      if (last?.raw !== raw) last = { raw, compatible: upgrade(raw) catch () => undefined }
       return last.compatible
+    },
+    set: effect (name: string, value: string | Uint8Array) => {
+      if (name !== key || typeof value !== "string") return try store.set(name, value)
+      const saved = Effect.as(store.set(name, value), true) catch () => false
+      fallback = saved ? undefined : { value }
+    },
+    remove: effect (name: string) => {
+      if (name !== key) return try store.remove(name)
+      fallback = undefined
+      last = undefined
+      store.remove(name) catch () => undefined
     }
   })
 }
@@ -157,18 +178,37 @@ export const instances = Layer.effect(Instances, effect {
   const openMail = (id: number) => effect {
     const key = mailKey(id)
     const compatible = compatibleStore(store, key, (raw) => Effect.succeed(currentMailRecord(raw)))
-    const box = try Effect.orDie(Effect.provide(effect { return try MailMachine }, Layer.provide(storedMail(key), compatible)))
-    try Effect.orDie(box.send({ type: "restartMailbox" }, "MailHost"))
+    const box = (Effect.provide(effect { return try MailMachine }, Layer.provide(storedMail(key), compatible)) catch () => undefined)
+      ?? (try Effect.provide(effect { return try MailMachine }, mailMachine()))
+    box.send({ type: "restartMailbox" }, "MailHost") catch () => undefined
     return box
   }
-  const openCalendar = (account: number) => {
+  const openCalendar = (account: number) => effect {
     const key = calendarKey(account)
-    const compatible = compatibleStore(store, key, (text) => upgradedCalendar(text, account))
-    return Effect.orDie(Effect.provide(effect { return try CalendarMachine }, Layer.provide(storedCalendar(key), compatible)))
+    const compatible = compatibleStore(store, key, (text) => Effect.succeed(upgradedCalendar(text, account)))
+    return (Effect.provide(effect { return try CalendarMachine }, Layer.provide(storedCalendar(key), compatible)) catch () => undefined)
+      ?? (try Effect.provide(effect { return try CalendarMachine }, calendarMachine()))
   }
   const mail = (id: number) => id === tablet ? Effect.fail(new NotAnAccount({ id })) : ensure(mails, id, openMail(id))
   const calendar = (key: number) => ensure(calendars, key, openCalendar(key))
   const heldOf = (id: number) => [...contents].filter(([key]) => key.startsWith(contentKey(id, "")))
+
+  effect function persistHeld(id: number) {
+    const items = heldOf(id).map(([, held]) => held)
+    effect function save(list: readonly Held[]) {
+      return Effect.as(store.set(heldKey(id), JSON.stringify(list)), true) catch () => false
+    }
+    if (try save(items)) return
+    const newestFirst = items.toSorted((a, b) => b.content.receivedAt - a.content.receivedAt)
+    const stripBody = (h: Held): Held => h.content.body === "" ? h : { ...h, content: { ...h.content, body: "" } }
+    for (const keepBodies of [Math.floor(newestFirst.length / 2), 0]) {
+      if (try save(newestFirst.map((h, i) => i < keepBodies ? h : stripBody(h)))) return
+    }
+    const headersOnly = newestFirst.map(stripBody)
+    for (let limit = Math.floor(headersOnly.length / 2); limit > 0; limit = Math.floor(limit / 2)) {
+      if (try save(headersOnly.slice(0, limit))) return
+    }
+  }
 
   effect function forget(id: number) {
     try SynchronizedRef.updateEffect(attached, effect (all: Map<number, Scope.Closeable>) => {
@@ -183,7 +223,7 @@ export const instances = Layer.effect(Instances, effect {
       for (const [key] of heldOf(id)) contents.delete(key)
       for (const key of [...files.keys()].filter((k) => k.startsWith(contentKey(id, "")))) files.delete(key)
       for (const key of [updatedKey("mail", id), updatedKey("calendar", id)]) updates.delete(key)
-      for (const key of [mailKey(id), calendarKey(id), heldKey(id), updatedKey("mail", id), updatedKey("calendar", id)]) try Effect.orDie(store.remove(key))
+      for (const key of [mailKey(id), calendarKey(id), heldKey(id), updatedKey("mail", id), updatedKey("calendar", id)]) store.remove(key) catch () => undefined
       return new Map([...all].filter(([k]) => k !== id))
     })
   }
@@ -195,24 +235,32 @@ export const instances = Layer.effect(Instances, effect {
       calendar(id) catch () => undefined
     }
     const opened = new Set([...(try SynchronizedRef.get(mails)).keys(), ...(try SynchronizedRef.get(calendars)).keys()])
-    for (const id of opened) if (id !== tablet && !ids.has(id)) try forget(id)
+    let removed = false
+    for (const id of opened) if (id !== tablet && !ids.has(id)) {
+      try forget(id)
+      removed = true
+    }
+    if (removed) try pruneCalendarJournals(store, a.accounts)
   }
 
-  const present = new Set((try registry.get()).accounts.map((x) => x.id))
-  for (const key of try Effect.orDie(store.keys)) {
+  const initialAccounts = (try registry.get()).accounts
+  const present = new Set(initialAccounts.map((x) => x.id))
+  const storedKeys = store.keys catch () => [] as readonly string[]
+  for (const key of storedKeys) {
     const id = Number(keyPattern.exec(key)?.[1] ?? tablet)
     if (id !== tablet && !present.has(id)) try forget(id)
   }
+  try pruneCalendarJournals(store, initialAccounts)
   for (const id of present) {
     for (const key of [updatedKey("mail", id), updatedKey("calendar", id)]) {
-      const at = Number(try Effect.orDie(store.get(key)))
+      const at = Number(store.get(key) catch () => undefined)
       if (Number.isSafeInteger(at) && at > 0) updates.set(key, at)
     }
-    const text = try Effect.orDie(store.get(heldKey(id)))
+    const text = store.get(heldKey(id)) catch () => undefined
     const found = text === undefined ? [] : decodeHeld(text) catch () => []
     for (const held of found) contents.set(contentKey(id, held.content.ref), held)
   }
-  try Effect.orDie(calendar(tablet))
+  calendar(tablet) catch () => undefined
   try fork.scoped Stream.runForEach(registry.changes, follow)
 
   function cached<R>(all: Map<number, R>, id: number, make: () => R) {
@@ -238,7 +286,7 @@ export const instances = Layer.effect(Instances, effect {
     keep: effect (id, refs) => {
       for (const [key, held] of heldOf(id)) if (!refs.has(held.content.ref)) contents.delete(key)
       for (const key of [...files.keys()].filter((k) => k.startsWith(contentKey(id, "")) && !refs.has(k.slice(contentKey(id, "").length).split("/")[0]))) files.delete(key)
-      try Effect.orDie(store.set(heldKey(id), JSON.stringify(heldOf(id).map(([, held]) => held))))
+      try persistHeld(id)
     },
     mailRuntime: (id) => cached(mailRuntimes, id, () => ManagedRuntime.make(Layer.effect(MailMachine, mail(id)))),
     calendarRuntime: (key) => cached(calendarRuntimes, key, () => ManagedRuntime.make(Layer.effect(CalendarMachine, calendar(key)))),
@@ -259,7 +307,7 @@ export const instances = Layer.effect(Instances, effect {
     stamp: effect (kind, id) => {
       const at = try Clock.currentTimeMillis
       updates.set(updatedKey(kind, id), at)
-      try Effect.orDie(store.set(updatedKey(kind, id), String(at)))
+      store.set(updatedKey(kind, id), String(at)) catch () => undefined
     }
   }
 })
@@ -362,19 +410,33 @@ export const reading = Layer.effectDiscard(effect {
   }
 
   effect function settle(id: number, mail: MailConnection, box: MailMachine.Shape, m: Mailbox, sent: Ref.Ref<ReadonlySet<string>>) {
+    if (m.connection !== "Connected") return
+    const release = (key: string) => Ref.update(sent, (all) => {
+      const next = new Set(all)
+      next.delete(key)
+      return next
+    })
     for (const record of m.messages) {
       const key = `${record.identity.ref}@${record.revision}`
       if (record.status !== "ChangePending" || record.pending === "NoMessageChange" || (try Ref.get(sent)).has(key)) continue
       try Ref.update(sent, (all) => new Set(all).add(key))
       const op = { identity: record.identity, change: record.pending, revision: record.revision, version: shelf.content(id, record.identity.ref)?.version ?? "" }
-      const receipt: ChangeReceipt | undefined = mail.change(op) catch (e) => match (e) {
-        when NeedsSignIn: undefined;
-      }
-      if (receipt === undefined) {
-        box.send({ type: "endConnection", resultStatus: "Expired" }, "MailConnector") catch () => undefined
-        return
-      }
-      box.send({ type: "completeMessageChange", messageReceipt: receipt }, "MailConnector") catch () => undefined
+      let completed = false
+      const expired = try ensuring(effect {
+        const receipt: ChangeReceipt | undefined = mail.change(op) catch (e) => match (e) {
+          when NeedsSignIn: undefined;
+        }
+        if (receipt === undefined) {
+          box.send({ type: "endConnection", resultStatus: "Expired" }, "MailConnector") catch () => undefined
+          return true
+        }
+        box.send({ type: "completeMessageChange", messageReceipt: receipt }, "MailConnector") catch () => undefined
+        completed = true
+        return false
+      }, effect {
+        if (!completed) try release(key)
+      })
+      if (expired) return
     }
   }
 

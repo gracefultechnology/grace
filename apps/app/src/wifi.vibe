@@ -45,14 +45,17 @@ export const ssidOf = (n: NetworkJoin) => n.selected.id.slice(n.selected.id.inde
 const refusals: Readonly<Record<string, string>> = { NOT_MANAGED: "Grace doesn’t manage this tablet, so she can’t join networks on it." }
 const codeOf = (cause: unknown) => new Refused({ code: typeof cause === "object" && cause !== null && "code" in cause ? String(cause.code) : "" })
 
-effect function ask<A>(decode: (input: unknown) => A!Schema.SchemaError, run: () => Promise<unknown>): A!Refused {
-  const reply = try tryPromise({ try: run, catch: codeOf })
+effect function ask<A>(decode: (input: unknown) => A!Schema.SchemaError, run: () => Promise<unknown>, limit: "10 seconds" | "30 seconds" = "10 seconds"): A!Refused {
+  const reply = timeout(tryPromise({ try: run, catch: codeOf }), limit) catch effect (error) => {
+    throw error instanceof Refused ? error : new Refused({ code: "TIMEOUT" })
+  }
   return decode(reply) catch effect () => { throw new Refused({ code: "MALFORMED" }) }
 }
 
 const host = (wifi: WiFiPlugin, device: GraceWifi) => Layer.effect(WifiPage, effect {
   const networks = try Machine
   const scanning = try Semaphore.make(1)
+  const turningOn = try Semaphore.make(1)
   const listeners = new Set<() => void>()
   let shown: Listing = { nearby: [], signInRequired: false, wifiValidated: false }
   let requested: { version: number; offer: Offer } | undefined
@@ -60,7 +63,7 @@ const host = (wifi: WiFiPlugin, device: GraceWifi) => Layer.effect(WifiPage, eff
   const offerOf = (n: NetworkJoin) => shown.nearby.find((offer) => offer.network.id === n.selected.id)
 
   effect function panel() {
-    tryPromise(() => wifi.openInternetPanel()) catch () => undefined
+    timeout(tryPromise(() => wifi.openInternetPanel()), "10 seconds") catch () => undefined
   }
 
   function show(listing: Listing) {
@@ -157,7 +160,7 @@ const host = (wifi: WiFiPlugin, device: GraceWifi) => Layer.effect(WifiPage, eff
     if (n.phase !== "Joining") return
     if (offer === undefined) return try answer(n, "Unavailable", "The tablet can’t see this network now.")
     if (offer.network.remembered) return try answer(n, "Joined", "")
-    const joined = ask(Schema.decodeUnknownEffect(Join), () => device.joinWifi({ ssid: offer.name, security: offer.security, ...(password === undefined ? {} : { password }) })) catch (refused) => refused.code
+    const joined = ask(Schema.decodeUnknownEffect(Join), () => device.joinWifi({ ssid: offer.name, security: offer.security, ...(password === undefined ? {} : { password }) }), "30 seconds") catch (refused) => refused.code
     if (typeof joined === "string") {
       if (joined === "INVALID_ARGUMENT" && n.selected.authentication === "SharedPassword") return try answer(n, "RejectedCredentials", "Android won’t take that password. Wi-Fi passwords have 8 to 63 characters.")
       return try answer(n, "Unavailable", refusals[joined] ?? "The tablet couldn’t join " + offer.name + ".")
@@ -195,10 +198,12 @@ const host = (wifi: WiFiPlugin, device: GraceWifi) => Layer.effect(WifiPage, eff
       if (opened !== undefined) try panel()
     },
     effect turnOn() {
-      if (!canTurnOn(try networks.get(), "Person")) return
-      const turned = tryPromise(() => device.turnOnWifi().then(() => true)) catch () => false
-      if (!turned) try panel()
-      networks.send({ type: "turnOn" }, "Person") catch () => undefined
+      try turningOn.withPermitsIfAvailable(1)(effect {
+        if (!canTurnOn(try networks.get(), "Person")) return
+        const turned = timeout(tryPromise(() => device.turnOnWifi().then(() => true)), "10 seconds") catch () => false
+        if (!turned) try panel()
+        networks.send({ type: "turnOn" }, "Person") catch () => undefined
+      })
     },
   }
 })

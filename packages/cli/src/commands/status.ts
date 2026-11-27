@@ -92,11 +92,11 @@ export const statusCommand = defineCommand({
     const rootManifest = readJsonRecord(path.join(ctx.rootDir, "package.json"));
     const project = typeof rootManifest?.name === "string" ? rootManifest.name : path.basename(ctx.rootDir);
     const allPackages = listWorkspacePackages(ctx.rootDir);
-    const packages = flags.package
+    const packages = flags.package !== undefined
       ? allPackages.filter((pkg) => pkg.name === flags.package || pkg.path === flags.package)
       : allPackages;
 
-    if (flags.package && packages.length === 0) {
+    if (flags.package !== undefined && packages.length === 0) {
       const available = allPackages.map((pkg) => pkg.name).join(", ") || "none";
       return {
         ok: false,

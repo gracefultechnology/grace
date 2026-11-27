@@ -362,17 +362,20 @@ it("See all my email in one place", async () => {
   await click(page.getByRole("button", { name: "Next photo" }));
   await expect.element(page.getByRole("heading", { name: "Photo 2 of 3" })).toBeVisible();
   await expect.element(page.getByRole("img", { name: "Piano.png" })).toHaveAttribute("src", expect.stringMatching(png));
-  const blocking = await library(libraryOwner, 2);
-  await click(page.getByRole("button", { name: "Save to Files" }));
   const unsaved = page.getByRole("alert");
-  await expect.element(unsaved).toBeVisible();
-  await expect.element(unsaved.getByRole("button", { name: "Try again" })).toBeVisible();
-  await click(page.getByRole("button", { name: "Next photo" }));
-  await expect.element(page.getByRole("heading", { name: "Photo 3 of 3" })).toBeVisible();
-  await expect.element(unsaved).not.toBeInTheDocument();
-  await click(page.getByRole("button", { name: "Save to Files" }));
-  await expect.element(unsaved).toBeVisible();
-  blocking.close();
+  const blocking = await library(libraryOwner, 2);
+  try {
+    await click(page.getByRole("button", { name: "Save to Files" }));
+    await expect.element(unsaved).toBeVisible();
+    await expect.element(unsaved.getByRole("button", { name: "Try again" })).toBeVisible();
+    await click(page.getByRole("button", { name: "Next photo" }));
+    await expect.element(page.getByRole("heading", { name: "Photo 3 of 3" })).toBeVisible();
+    await expect.element(unsaved).not.toBeInTheDocument();
+    await click(page.getByRole("button", { name: "Save to Files" }));
+    await expect.element(unsaved).toBeVisible();
+  } finally {
+    blocking.close();
+  }
   await forgotten(libraryOwner);
   await click(page.getByRole("button", { name: "Try again" }));
   await expect.element(page.getByText("Saved to Files").first()).toBeVisible();

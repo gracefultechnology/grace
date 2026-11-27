@@ -130,7 +130,7 @@ export function GraceDock({
       <label
         data-multi={multi || undefined}
         className={cn(
-          "flex min-h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 py-4 pr-4 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 group-data-moving/grace:bg-glass/92 group-data-moving/grace:backdrop-blur-none group-data-moving/grace:backdrop-saturate-100 data-multi:items-end data-multi:rounded-window",
+          "flex min-h-16 min-w-0 flex-1 cursor-text items-center gap-3 rounded-full bg-glass/62 py-4 pr-4 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 focus-within:shadow-field-focus group-data-moving/grace:bg-glass/92 group-data-moving/grace:backdrop-blur-none group-data-moving/grace:backdrop-saturate-100 data-multi:items-end data-multi:rounded-window",
           quiet && "opacity-70",
         )}
       >
@@ -145,9 +145,9 @@ export function GraceDock({
           onFocus={onFieldFocus}
           style={{ maxHeight: maxLines * LINE }}
           onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
-              onSend?.();
+              if (!quiet && draft && !listening) onSend?.();
             }
           }}
           className="m-0 min-h-8 min-w-0 flex-1 resize-none field-sizing-content overflow-y-auto border-0 bg-transparent p-0 font-sans text-lead leading-8 font-medium text-grace-ink caret-primary outline-none placeholder:text-placeholder placeholder:opacity-100"

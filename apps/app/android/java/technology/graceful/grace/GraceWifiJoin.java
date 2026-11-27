@@ -14,8 +14,11 @@ import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
+import androidx.core.content.ContextCompat;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PluginCall;
+import java.util.List;
 import java.util.function.Consumer;
 
 @SuppressWarnings("deprecation")
@@ -33,9 +36,9 @@ final class GraceWifiJoin {
  private final Handler main = new Handler(Looper.getMainLooper());
 
  GraceWifiJoin(Context context) {
-  this.context = context;
-  this.wifi = context.getSystemService(WifiManager.class);
-  this.connectivity = context.getSystemService(ConnectivityManager.class);
+  this.context = context.getApplicationContext();
+  this.wifi = this.context.getSystemService(WifiManager.class);
+  this.connectivity = this.context.getSystemService(ConnectivityManager.class);
  }
 
  static Security security(String name) {
@@ -60,11 +63,11 @@ final class GraceWifiJoin {
    call.reject("Android did not turn Wi-Fi on", "WIFI_REQUEST_FAILED");
    return;
   }
-  long deadline = System.currentTimeMillis() + RADIO_MS;
+  long deadline = SystemClock.elapsedRealtime() + RADIO_MS;
   Runnable[] check = { null };
   check[0] = () -> {
    if (wifi.isWifiEnabled()) call.resolve();
-   else if (System.currentTimeMillis() >= deadline) call.reject("Wi-Fi did not come on", "WIFI_REQUEST_FAILED");
+   else if (SystemClock.elapsedRealtime() >= deadline) call.reject("Wi-Fi did not come on", "WIFI_REQUEST_FAILED");
    else main.postDelayed(check[0], RADIO_POLL_MS);
   };
   main.post(check[0]);
@@ -91,7 +94,9 @@ final class GraceWifiJoin {
 
  private void forget(String ssid) {
   String quoted = "\"" + ssid + "\"";
-  for (WifiConfiguration saved : wifi.getConfiguredNetworks()) {
+  List<WifiConfiguration> configured = wifi.getConfiguredNetworks();
+  if (configured == null) return;
+  for (WifiConfiguration saved : configured) {
    if (quoted.equals(saved.SSID)) wifi.removeNetwork(saved.networkId);
   }
  }
@@ -127,8 +132,8 @@ final class GraceWifiJoin {
   Consumer<String> finish = status -> main.post(() -> {
    if (done[0]) return;
    done[0] = true;
-   connectivity.unregisterNetworkCallback(watch[0]);
-   context.unregisterReceiver(supplicant[0]);
+   try { connectivity.unregisterNetworkCallback(watch[0]); } catch (IllegalArgumentException ignored) { }
+   try { context.unregisterReceiver(supplicant[0]); } catch (IllegalArgumentException ignored) { }
    main.removeCallbacks(poll[0]);
    settle.accept(status);
   });
@@ -147,11 +152,11 @@ final class GraceWifiJoin {
     if (shared && intent.getIntExtra(WifiManager.EXTRA_SUPPLICANT_ERROR, -1) == WifiManager.ERROR_AUTHENTICATING) finish.accept("wrongPassword");
    }
   };
-  context.registerReceiver(supplicant[0], new IntentFilter(WifiManager.SUPPLICANT_STATE_CHANGED_ACTION), null, main);
-  long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+  ContextCompat.registerReceiver(context, supplicant[0], new IntentFilter(WifiManager.SUPPLICANT_STATE_CHANGED_ACTION), null, main, ContextCompat.RECEIVER_NOT_EXPORTED);
+  long deadline = SystemClock.elapsedRealtime() + TIMEOUT_MS;
   poll[0] = () -> {
    if (shared && rejectedPassword(id)) finish.accept("wrongPassword");
-   else if (System.currentTimeMillis() >= deadline) finish.accept("notConnected");
+   else if (SystemClock.elapsedRealtime() >= deadline) finish.accept("notConnected");
    else main.postDelayed(poll[0], POLL_MS);
   };
   main.postDelayed(poll[0], POLL_MS);
@@ -165,10 +170,10 @@ final class GraceWifiJoin {
   else if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) finish.accept("connected");
  }
 
- // Android switches a saved network off once its password is refused; the
- // network-selection reason that names the password is not open to apps.
  private boolean rejectedPassword(int id) {
-  for (WifiConfiguration saved : wifi.getConfiguredNetworks()) {
+  List<WifiConfiguration> configured = wifi.getConfiguredNetworks();
+  if (configured == null) return false;
+  for (WifiConfiguration saved : configured) {
    if (saved.networkId == id) return saved.status == WifiConfiguration.Status.DISABLED;
   }
   return false;

@@ -48,7 +48,8 @@ export const WireEvent = Schema.Struct({
 })
 export const Feed = Schema.Struct({ events: Schema.Array(WireEvent), defaultReminders: optional(Reminders) })
 export const Stored = Schema.Struct({ event: WireEvent })
-export const Session = Schema.Struct({ sessionId: Text, pageUrl: Text, embeddable: optional(Flag) })
+const SessionId = Text.check(Schema.isPattern(/^[A-Za-z0-9_-]{1,128}$/))
+export const Session = Schema.Struct({ sessionId: SessionId, pageUrl: Text, embeddable: optional(Flag) })
 export const SessionOutcome = Schema.Struct({
   status: Schema.Literals(["allowed", "cancelled", "refused"]), address: optional(Text),
   granted: optional(Schema.Struct({ mail: Flag, calendar: Flag, contacts: Flag })),

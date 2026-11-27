@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "../lib/cn.ts";
+import { usePortalContainer } from "../lib/portal.tsx";
 import { Button } from "./Button.tsx";
 
 export type SignInSheetProps = Omit<DialogPrimitive.DialogContentProps, "title"> & {
@@ -15,6 +16,8 @@ export type SignInSheetProps = Omit<DialogPrimitive.DialogContentProps, "title">
   /** Called by Cancel and Escape. */
   onCancel?: () => void;
   cancelLabel?: string;
+  /** Where the sheet's portal mounts; defaults to the enclosing `PortalContainerProvider` or inline when none is provided. */
+  container?: HTMLElement | null;
   /** The owner's own web page, as the owner serves it: its fields and branding are not the tablet's, and the tablet never reads what is typed there. */
   children: ReactNode;
 };
@@ -33,17 +36,22 @@ export function SignInSheet({
   open = true,
   onCancel,
   cancelLabel = "Cancel",
+  container,
   className,
   children,
   ...props
 }: SignInSheetProps) {
-  return (
-    <DialogPrimitive.Root open={open} onOpenChange={(next) => !next && onCancel?.()}>
-      <DialogPrimitive.Overlay className="absolute inset-0 z-20 bg-scrim/32" />
+  const contextContainer = usePortalContainer();
+  const portalContainer = container ?? contextContainer;
+  const positioning = portalContainer ? "fixed" : "absolute";
+  const sheet = (
+    <>
+      <DialogPrimitive.Overlay className={cn(positioning, "inset-0 z-20 bg-scrim/32")} />
       <DialogPrimitive.Content
         aria-describedby={undefined}
         className={cn(
-          "absolute top-1/2 left-1/2 z-20 flex h-[min(700px,calc(100%-3rem))] w-[min(900px,calc(100%-3rem))] -translate-1/2 flex-col overflow-hidden rounded-screen bg-card font-sans shadow-dialog outline-none",
+          positioning,
+          "top-1/2 left-1/2 z-20 flex h-[min(700px,calc(100%-3rem))] w-[min(900px,calc(100%-3rem))] -translate-1/2 flex-col overflow-hidden rounded-screen bg-card font-sans shadow-dialog outline-none",
           className,
         )}
         onOpenAutoFocus={(event) => {
@@ -69,6 +77,11 @@ export function SignInSheet({
         </div>
         <div className="flex-1 overflow-auto">{children}</div>
       </DialogPrimitive.Content>
+    </>
+  );
+  return (
+    <DialogPrimitive.Root open={open} onOpenChange={(next) => !next && onCancel?.()}>
+      {portalContainer ? <DialogPrimitive.Portal container={portalContainer}>{sheet}</DialogPrimitive.Portal> : sheet}
     </DialogPrimitive.Root>
   );
 }

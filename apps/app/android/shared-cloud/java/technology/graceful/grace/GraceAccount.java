@@ -425,7 +425,12 @@ public final class GraceAccount extends ElizaSignInPlugin {
  }
 
  private void cancelEmailAttempt(PluginCall call, int number) {
-  super.cancel(accountCall(call, new JSObject().put("attempt", number), ignored -> {}, null));
+  JSObject input = new JSObject().put("attempt", number).put("environment", ENVIRONMENT);
+  super.cancel(new PluginCall(null, call.getPluginId(), call.getCallbackId(), call.getMethodName(), input) {
+   @Override public void resolve(JSObject data) {}
+   @Override public void resolve() {}
+   @Override public void reject(String message, String code, Exception ignored, JSObject data) {}
+  });
  }
 
  @PluginMethod public void beginLeaseUpgrade(PluginCall call) {

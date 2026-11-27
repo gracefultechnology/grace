@@ -3,14 +3,15 @@ import { Schema } from "effect";
 import type { FoundServer, Security, ServerKind } from "../gen/app__accounts.ts";
 
 const hostname = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/i;
-const kinds: Partial<Record<string, ServerKind>> = { imap: "ImapServer", smtp: "SmtpServer", pop3: "PopServer" };
-const securities: Partial<Record<string, Security>> = { SSL: "SecureDirect", STARTTLS: "SecureUpgrade", plain: "Insecure" };
+export const validHostname = (host: string) => hostname.test(host);
+const kinds = new Map<string, ServerKind>([["imap", "ImapServer"], ["smtp", "SmtpServer"], ["pop3", "PopServer"]]);
+const securities = new Map<string, Security>([["SSL", "SecureDirect"], ["STARTTLS", "SecureUpgrade"], ["plain", "Insecure"]]);
 const serviceRecord = 33;
 
 export const Resolved = Schema.Struct({ Answer: Schema.optionalKey(Schema.Array(Schema.Struct({ type: Schema.Number, data: Schema.String }))) });
 
 function server(kind: ServerKind | undefined, host: string, port: number, security: Security | undefined): FoundServer[] {
-  const valid = kind !== undefined && security !== undefined && hostname.test(host) && Number.isInteger(port) && port > 0 && port <= 65535;
+  const valid = kind !== undefined && security !== undefined && validHostname(host) && Number.isInteger(port) && port > 0 && port <= 65535;
   return valid ? [{ kind, host: host.toLowerCase(), port, security }] : [];
 }
 
@@ -20,7 +21,7 @@ export function serversIn(xml: string, domain: string): FoundServer[] {
   const nodes = doc.querySelectorAll("clientConfig > emailProvider > incomingServer, clientConfig > emailProvider > outgoingServer");
   return [...nodes].flatMap((node) => {
     const field = (tag: string) => node.querySelector(`:scope > ${tag}`)?.textContent?.trim() ?? "";
-    return server(kinds[node.getAttribute("type") ?? ""], field("hostname").replaceAll("%EMAILDOMAIN%", domain), Number(field("port")), securities[field("socketType")]);
+    return server(kinds.get(node.getAttribute("type") ?? ""), field("hostname").replaceAll("%EMAILDOMAIN%", domain), Number(field("port")), securities.get(field("socketType")));
   });
 }
 

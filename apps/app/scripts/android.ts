@@ -688,8 +688,10 @@ const avds = () => execFileSync(sdk("emulator/emulator"), ["-list-avds"], { enco
 type Target = { serial: typeof EmulatorSerial.Type; exited: Promise<never>; stop: () => void };
 
 const attached = (serial: typeof EmulatorSerial.Type): Target => ({ serial, exited: forever, stop: () => {} });
-const exit = (child: ChildProcess, log: string) => new Promise<never>((_, reject) =>
-  child.once("exit", (code) => reject(new Error(`The emulator exited with ${code} before it booted; see ${log}`))));
+const exit = (child: ChildProcess, log: string) => new Promise<never>((_, reject) => {
+  child.once("error", (error) => reject(new Error(`Could not start the emulator; see ${log}`, { cause: error })));
+  child.once("exit", (code) => reject(new Error(`The emulator exited with ${code} before it booted; see ${log}`)));
+});
 
 async function emulatorTarget(avd: string): Promise<Target> {
   const serials = await emulators();
@@ -701,9 +703,20 @@ async function emulatorTarget(avd: string): Promise<Target> {
   const log = path.join(artifacts, `emulator-${avd}.log`);
   const output = openSync(log, "w");
   const flags = ["-gpu", "host", "-no-window", "-no-audio", "-no-boot-anim", "-no-snapshot-save"];
-  const child = spawn(sdk("emulator/emulator"), ["-avd", avd, "-port", String(port), ...flags], { detached: true, stdio: ["ignore", output, output] });
+  let child: ChildProcess;
+  try {
+    child = spawn(sdk("emulator/emulator"), ["-avd", avd, "-port", String(port), ...flags], { detached: true, stdio: ["ignore", output, output] });
+  } finally {
+    closeSync(output);
+  }
   child.unref();
-  return { serial: `emulator-${port}`, exited: exit(child, log), stop: () => spawnSync("kill", ["-TERM", "--", `-${child.pid}`], { stdio: "ignore" }) };
+  return {
+    serial: `emulator-${port}`,
+    exited: exit(child, log),
+    stop: () => {
+      if (child.pid !== undefined) spawnSync("kill", ["-TERM", "--", `-${child.pid}`], { stdio: "ignore" });
+    },
+  };
 }
 
 const Reply = Schema.Struct({ id: Schema.optional(Schema.Number), result: Schema.optional(Schema.Unknown), error: Schema.optional(Schema.Struct({ message: Schema.String })) });
@@ -739,11 +752,30 @@ const MainFrame = Schema.Struct({ frameTree: Schema.Struct({ frame: Schema.Struc
 const GraceReadback = Schema.Struct({ address: Schema.NullOr(Schema.String), visible: Schema.NullOr(Schema.String) });
 
 async function devTools(url: string, signal: AbortSignal, cloudProfile: CloudProfile = standaloneProfile) {
+  signal.throwIfAborted();
   const socket = new WebSocket(url);
-  await new Promise((resolve, reject) => {
-    socket.addEventListener("open", resolve);
-    socket.addEventListener("error", () => reject(new Error(`Could not open ${url}`)));
-    signal.addEventListener("abort", () => reject(new Error(`Could not open ${url}`, { cause: signal.reason })));
+  await new Promise<void>((resolve, reject) => {
+    const onOpen = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error(`Could not open ${url}`));
+    };
+    const onAbort = () => {
+      cleanup();
+      socket.close();
+      reject(new Error(`Could not open ${url}`, { cause: signal.reason }));
+    };
+    const cleanup = () => {
+      socket.removeEventListener("open", onOpen);
+      socket.removeEventListener("error", onError);
+      signal.removeEventListener("abort", onAbort);
+    };
+    socket.addEventListener("open", onOpen);
+    socket.addEventListener("error", onError);
+    signal.addEventListener("abort", onAbort);
   });
   const pending = new Map<number, { resolve: (result: unknown) => void; reject: (error: unknown) => void }>();
   const rejectAll = (error: Error) => { for (const waiter of pending.values()) waiter.reject(error); };

@@ -181,7 +181,10 @@ export function HomeScreen({ greeting, name, line, banner, calendar, email, inte
   const swipedRef = useRef(false);
   const lastLayoutRef = useRef<HomeLayout | undefined>(undefined);
   const settle = useCallback((stage: HTMLDivElement | null) => {
-    if (!stage) return;
+    if (!stage) {
+      railRef.current = null;
+      return;
+    }
     const entering = railRef.current?.stage !== stage;
     const layoutChanged = lastLayoutRef.current !== undefined && lastLayoutRef.current !== layout;
     lastLayoutRef.current = layout;

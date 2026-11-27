@@ -40,6 +40,8 @@ export type SecretFieldProps = Omit<ComponentProps<"div">, "onSubmit"> & {
   onFilledChange?: (filled: boolean) => void;
   /** Receives `submit`, which sends the secret as Send does. */
   handle?: Ref<SecretFieldHandle>;
+  /** Associates an external `Label`'s `htmlFor` with the password input. */
+  id?: string;
 };
 
 /**
@@ -48,7 +50,7 @@ export type SecretFieldProps = Omit<ComponentProps<"div">, "onSubmit"> & {
  * goes.
  * @design packages/design-system/design.md#grace
  */
-export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels: words, send = true, onFilledChange, handle, className, ...props }: SecretFieldProps) {
+export function SecretField({ id, label, onSubmit, onEmptySubmit, autoFocus, labels: words, send = true, onFilledChange, handle, className, ...props }: SecretFieldProps) {
   const labels = { ...secretFieldLabels, ...words };
   const inputRef = useRef<HTMLInputElement>(null);
   const [shown, setShown] = useState(false);
@@ -75,8 +77,9 @@ export function SecretField({ label, onSubmit, onEmptySubmit, autoFocus, labels:
   };
   return (
     <div className={cn("flex items-end gap-2 font-sans", className)} {...props}>
-      <div className="flex h-16 min-w-0 flex-1 items-center gap-2 rounded-full bg-glass/62 pr-1 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160">
+      <div className="flex h-16 min-w-0 flex-1 items-center gap-2 rounded-full bg-glass/62 pr-1 pl-6 shadow-capsule backdrop-blur-capsule backdrop-saturate-160 focus-within:shadow-field-focus">
         <input
+          id={id}
           ref={holdUntilGone}
           type={shown ? "text" : "password"}
           aria-label={label}

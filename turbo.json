@@ -75,13 +75,16 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/vendor/eliza/tsconfig.base.json",
+        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/package.json",
         "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/tsconfig*.json",
-        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/src/**"
+        "$TURBO_ROOT$/vendor/eliza/packages/{cloud,cloud-worker}/src/**",
+        "$TURBO_ROOT$/vendor/eliza/packages/design-system/**"
       ],
       "outputs": [
         "dist/**",
         "$TURBO_ROOT$/vendor/eliza/packages/cloud/dist/{gen,src}/**",
-        "$TURBO_ROOT$/vendor/eliza/packages/cloud-worker/dist/{gen,src,pages}/**"
+        "$TURBO_ROOT$/vendor/eliza/packages/cloud-worker/dist/{gen,src,pages}/**",
+        "$TURBO_ROOT$/vendor/eliza/packages/design-system/generated/**"
       ]
     },
     "@grace/cloud#typecheck": {
@@ -103,6 +106,7 @@
     },
     "@repo/app#build": {
       "dependsOn": ["gen", "//#gen", "^build"],
+      "env": ["VITE_GRACE_CLOUD_*"],
       "outputs": ["dist/**"]
     },
     "@repo/app#typecheck": {
@@ -125,6 +129,14 @@
       "env": [
         "VIBESTACK_QUINT_EVALUATOR"
       ]
+    },
+    "@repo/benchmark#test:browser": {
+      "dependsOn": [
+        "gen",
+        "//#gen",
+        "^build"
+      ],
+      "cache": false
     },
     "check": {
       "dependsOn": [
@@ -553,6 +565,13 @@
     "@repo/cli#test": {
       "dependsOn": [
         "^build"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/apps/*/package.json",
+        "$TURBO_ROOT$/packages/*/package.json",
+        "$TURBO_ROOT$/spec/**/*.md"
       ],
       "outputs": [
         ".cache/test-result-*.json"

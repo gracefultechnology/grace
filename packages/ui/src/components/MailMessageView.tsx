@@ -1,6 +1,6 @@
 import type { ComponentProps, ReactNode } from "react";
 import { Forward, Reply, Undo2 } from "lucide-react";
-import { cn, focusRing } from "../lib/cn.ts";
+import { cn, focusRing, withKeys } from "../lib/cn.ts";
 import { Alert } from "./Alert.tsx";
 import { GuideAnchor, guided, type Guide, type GuidePointing } from "./GuideAnchor.tsx";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
@@ -47,10 +47,10 @@ const tile = "block h-[190px] w-full overflow-hidden rounded-photo shadow-photo-
 export function MailPhotoGrid({ photos, onSelect, className, ...props }: MailPhotoGridProps) {
   return (
     <ul className={cn("m-0 grid list-none grid-cols-3 gap-4 p-0", className)} {...props}>
-      {photos.map((photo, i) => {
+      {withKeys(photos, (photo) => photo.src).map(({ item: photo, key }, i) => {
         const image = <img src={photo.src} alt={photo.alt} decoding="async" loading="lazy" className="size-full object-cover" />;
         return (
-          <li key={photo.src}>
+          <li key={key}>
             {onSelect ? (
               <button type="button" onClick={() => onSelect(i)} className={cn(focusRing, tile, "cursor-pointer")}>
                 {image}
@@ -211,7 +211,7 @@ export function MailMessageView({
   const l = { ...viewLabels, ...labels };
   const held = status !== "ready";
   const action = (label: string, icon: ReactNode, onClick?: () => void, prominent = false, disabled = false) => (onClick || disabled) && (
-    <Button variant={prominent ? "prominent" : "plain"} size="compact" className={prominent ? "disabled:text-primary-foreground disabled:opacity-100" : headerPill} disabled={disabled} onClick={onClick}>
+    <Button variant={prominent ? "prominent" : "plain"} size="compact" className={prominent ? "disabled:text-primary-foreground" : headerPill} disabled={disabled} onClick={onClick}>
       {icon}
       {label}
     </Button>
@@ -283,10 +283,10 @@ export function MailMessageView({
           </>
         ) : null}
         {!held &&
-          files?.map((file, i) => {
+          withKeys(files ?? [], (file) => file.name).map(({ item: file, key }, i) => {
             const attachment = <MailAttachment name={file.name} detail={file.detail} className="flex-1" onOpen={onOpenFile && (() => onOpenFile(i))} />;
             return (
-              <div key={file.name} className="mt-[22px] flex max-w-[760px]">
+              <div key={key} className="mt-[22px] flex max-w-[760px]">
                 {i === 0 ? guided(guide, "file", attachment, { radius: 22, placement: "below", className: "flex flex-1" }) : attachment}
               </div>
             );

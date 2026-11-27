@@ -510,7 +510,6 @@ statement that continues is not cut off by this limit.
 
 ```quint
 pure val firstWordLimitMs = 8000
-pure def silenceDue(listeningSinceMs: int, nowMs: int): bool = nowMs - listeningSinceMs >= firstWordLimitMs
 ```
 
 ### Her words show as she says them and are never a request

@@ -79,7 +79,7 @@ export function WebsiteRequests() {
   };
 
   return (
-    <OverPage className="absolute top-6 left-1/2 z-[2] flex w-[560px] -translate-x-1/2 flex-col gap-3">
+    <OverPage className="absolute top-6 left-1/2 z-[2] flex w-[560px] max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col gap-3">
       {request.id > 0 && <Question key={request.id} request={request} said={said(request.id)} answer={answer} />}
       {notices.map(({ key, mark, title, close }) => (
         <Card key={key} className="flex-row items-center gap-4 py-4">

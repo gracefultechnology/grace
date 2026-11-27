@@ -33,7 +33,7 @@ public class MainActivity extends ElizaBridgeActivity {
  private static final String HARDWARE_BACK = "window.dispatchEvent(new Event('hardware-back',{cancelable:true}))";
  private static final String LAUNCHER_HOME = "window.dispatchEvent(new Event('launcher-home'))";
 
- private final ConnectivityManager.NetworkCallback defaultNetwork = new NetworkChange();
+ private final NetworkChange defaultNetwork = new NetworkChange();
  private volatile WifiNetworkChange wifiNetwork;
  private boolean hostTransparent;
 
@@ -43,6 +43,8 @@ public class MainActivity extends ElizaBridgeActivity {
   NetworkChange() {}
   @RequiresApi(Build.VERSION_CODES.S)
   NetworkChange(int flags) { super(flags); }
+
+  void clear() { states.clear(); }
 
   String stateOf(NetworkCapabilities capabilities) {
    boolean validated = capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
@@ -54,12 +56,14 @@ public class MainActivity extends ElizaBridgeActivity {
   @Override public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
    String next = stateOf(capabilities);
    if (next.equals(states.put(network, next))) return;
-   getBridge().triggerWindowJSEvent("android-network-changed");
+   var bridge = getBridge();
+   if (bridge != null) bridge.triggerWindowJSEvent("android-network-changed");
   }
 
   @Override public void onLost(Network network) {
    states.remove(network);
-   getBridge().triggerWindowJSEvent("android-network-changed");
+   var bridge = getBridge();
+   if (bridge != null) bridge.triggerWindowJSEvent("android-network-changed");
   }
  }
 
@@ -69,6 +73,11 @@ public class MainActivity extends ElizaBridgeActivity {
   WifiNetworkChange() {}
   @RequiresApi(Build.VERSION_CODES.S)
   WifiNetworkChange(int flags) { super(flags); }
+
+  @Override void clear() {
+   super.clear();
+   validated.clear();
+  }
 
   @Override String stateOf(NetworkCapabilities capabilities) {
    String base = super.stateOf(capabilities);
@@ -160,9 +169,14 @@ public class MainActivity extends ElizaBridgeActivity {
 
  @Override public void onStop() {
   ConnectivityManager connectivity = getSystemService(ConnectivityManager.class);
-  connectivity.unregisterNetworkCallback(wifiNetwork);
+  WifiNetworkChange wifi = wifiNetwork;
   wifiNetwork = null;
-  connectivity.unregisterNetworkCallback(defaultNetwork);
+  if (wifi != null) {
+   try { connectivity.unregisterNetworkCallback(wifi); } catch (IllegalArgumentException ignored) { }
+   wifi.clear();
+  }
+  try { connectivity.unregisterNetworkCallback(defaultNetwork); } catch (IllegalArgumentException ignored) { }
+  defaultNetwork.clear();
   super.onStop();
  }
 
@@ -191,7 +205,11 @@ public class MainActivity extends ElizaBridgeActivity {
  @Override public boolean dispatchKeyEvent(KeyEvent event) {
   int key = event.getKeyCode();
   if (key != KeyEvent.KEYCODE_VOLUME_UP && key != KeyEvent.KEYCODE_VOLUME_DOWN) return super.dispatchKeyEvent(event);
-  if (event.getAction() == KeyEvent.ACTION_DOWN) ((GraceDevicePlugin) getBridge().getPlugin("GraceDevice").getInstance()).stepVolume(key == KeyEvent.KEYCODE_VOLUME_UP);
+  if (event.getAction() == KeyEvent.ACTION_DOWN) {
+   var bridge = getBridge();
+   var handle = bridge == null ? null : bridge.getPlugin("GraceDevice");
+   if (handle != null && handle.getInstance() instanceof GraceDevicePlugin device) device.stepVolume(key == KeyEvent.KEYCODE_VOLUME_UP);
+  }
   return true;
  }
 

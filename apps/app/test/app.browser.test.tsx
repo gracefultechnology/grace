@@ -353,6 +353,7 @@ it("Use the website under Grace's controls", async () => {
   // A control that moves, as when the keyboard opens, stays drawn, and painted, where it is routed until its new rect is routed beside it.
   const painted = () => ({ ...rectOf(compact, true), cornerRadius: 0 });
   const routedAt = painted();
+  onTestFinished(() => page.viewport(1280, 800));
   await page.viewport(1280, 700);
   await expect.poll(native.unanswered).toBe(1);
   const [movedTo, held] = native.calls("setOcclusionRects").at(-1)?.rects as Rect[];
@@ -426,8 +427,11 @@ it("Use the website under Grace's controls", async () => {
   await expect.poll(() => native.calls("setOcclusionRects").at(-1)).toMatchObject({ rects: [] });
   expect(native.unanswered()).toBe(1);
   // spec/app/browser.md, "Load results must match the tab and request that produced them": the site's certificate is refused this time.
+  const settle = () => act(async () => {
+    for (let turn = 0; turn < 10; turn++) await runtime.runPromise(Effect.yieldNow);
+  });
   await native.report("tab-1", "https://example.com/", 43, { securityBlocked: true, pageError: "net::ERR_CERT_DATE_INVALID" });
-  await act(() => new Promise((resolve) => setTimeout(resolve, 100)));
+  await settle();
   expect(tab(1).load).not.toBe("SecurityBlocked");
   await native.route();
   await expect.poll(() => tab(1).load).toBe("SecurityBlocked");
@@ -458,8 +462,7 @@ it("Use the website under Grace's controls", async () => {
   await act(() => userEvent.type(address, ".org{Enter}"));
   await expect.poll(() => native.calls("navigate")).toMatchObject([{ id: "tab-1", url: "https://example.org/" }]);
   await native.report("tab-1", "https://example.com/#moved", 100);
-  // The fiber has heard the late report once it has had a moment.
-  await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  await settle();
   expect(tab(1).load).toBe("Loading");
   // The person goes back to where the page is before it starts: the navigate superseded never starts, and the page's start is the new load's.
   await act(() => userEvent.clear(address));
@@ -474,7 +477,7 @@ it("Use the website under Grace's controls", async () => {
   expect(await pressBack()).toBe(true);
   await expect.poll(() => native.calls("goBack")).toHaveLength(1);
   await act(() => userEvent.click(page.getByRole("button", { name: "Forward" })));
-  await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
+  await settle();
   expect(native.calls("goForward")).toEqual([]);
   await native.start();
   await expect.poll(() => native.calls("goForward")).toMatchObject([{ id: "tab-1" }]);
@@ -1352,6 +1355,7 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
       }
     }
   });
+  onTestFinished(() => { vi.unstubAllGlobals(); });
   const audio = vi.spyOn(navigator.mediaDevices, "getUserMedia").mockImplementation(async () => {
     const microphone = new AudioContext({ sampleRate: 16_000 });
     microphones.push(microphone);
@@ -1363,6 +1367,7 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
     captures.push(...input.stream.getAudioTracks());
     return input.stream;
   });
+  onTestFinished(() => audio.mockRestore());
   const originalFetch = window.fetch.bind(window);
   const request = vi.spyOn(window, "fetch").mockImplementation(async (input, options) => {
     const pathname = new URL(input instanceof Request ? input.url : input, location.href).pathname;
@@ -1384,6 +1389,7 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
     }
     return Response.json({ revoked: true });
   });
+  onTestFinished(() => request.mockRestore());
   const sockets: FixtureSocket[] = [];
   let recordedFrames = 0;
   class FixtureSocket extends EventTarget {
@@ -1586,15 +1592,22 @@ async function meteredSpeech(journey: typeof speechJourneys[number] | typeof wak
       await expect.poll(() => calls).toEqual(speechSession);
 
       if (journey === "Talk and hear a reply") {
+        replies.push(JSON.stringify({ text: "Review the plan.", isQuestion: false, answers: [], actions: [{ kind: "proposeReadPlan", steps: ["ReadBrowser"] }] }));
+        nextTranscript = "Check the website I have open.";
+        await press(talkControl);
+        await expect.poll(() => [workspace().review.request.steps, workspace().assistant.conversation.messages.at(-1)?.text])
+          .toEqual([[{ tag: "ReadBrowser" }], "Review the selected-item checks before starting."]);
+        await expect.poll(() => [workspace().assistant.conversation.turn, captures.map((track) => track.readyState)]).toEqual(["Ready", ["ended", "ended"]]);
+        await expect.poll(() => calls).toEqual([...speechSession, ...speechSession]);
         audio.mockRejectedValueOnce(new DOMException("Permission denied", "NotAllowedError"));
         await press(talkControl);
-        await expect.poll(() => audio.mock.calls.length).toBe(2);
+        await expect.poll(() => audio.mock.calls.length).toBe(3);
         await expect.element(notice).not.toBeInTheDocument();
         accountId = firstAccount;
         await refresh();
         await press(talkControl);
         await expect.element(notice).toBeVisible();
-        expect(audio).toHaveBeenCalledTimes(2);
+        expect(audio).toHaveBeenCalledTimes(3);
         await press(notice.getByRole("button", { name: "Cancel" }));
         return;
       }
@@ -1813,12 +1826,19 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
   const chosen = chooseProvider(initialAccounts, "Gmail", "AccountPerson");
   const legacyAccount = sheetResult(chosen, { attempt: chosen.signIn.attempt, outcome: "Allowed", address: "previous@example.test", granted: allowedUse }, "Gmail", "AccountConnector");
   localStorage.setItem("accounts", JSON.stringify(legacyAccount));
+  onTestFinished(() => {
+    if (oldAccounts === null) localStorage.removeItem("accounts");
+    else localStorage.setItem("accounts", oldAccounts);
+    if (oldIntent === null) sessionStorage.removeItem("grace-hosted-read");
+    else sessionStorage.setItem("grace-hosted-read", oldIntent);
+  });
   const hint = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(person.id));
   const ownerHint = Array.from(new Uint8Array(hint), (byte) => byte.toString(16).padStart(2, "0")).join("");
   const url = new URL(oldURL);
   url.hash = "email";
   url.searchParams.set("owner_hint", ownerHint);
   window.history.replaceState(undefined, "", url);
+  onTestFinished(() => window.history.replaceState(undefined, "", oldURL));
 
   let signedIn = false;
   let connectorConfigured = false;
@@ -2007,6 +2027,7 @@ it('Return to owned Google mail and calendar (spec/app/setup.md, "Story: Read th
       default: return fetch(input, options);
     }
   });
+  onTestFinished(() => provider.mockRestore());
 
   const runtime = ManagedRuntime.make(application(undefined));
   let view = tabletView(runtime);
@@ -2564,18 +2585,18 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
   await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
   expect(page.getByRole("button", { name: photo.name }).query()).toBeNull();
 
-  const handoff = () => act(() => { incoming = request; notify(); });
+  const handoff = () => act(() => { incoming = request; notify(); return Promise.resolve(); });
   await tap("Close Files");
-  handoff();
+  await handoff();
   await tap("Cancel");
   expect(transfers).toEqual([]);
-  handoff();
+  await handoff();
   await tap("Save attachment");
   await expect.element(page.getByRole("status").filter({ hasText: "The attachment couldn’t be saved." })).toBeVisible();
   expect(entries).toEqual([]);
   await tap("Save attachment");
   await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
-  handoff();
+  await handoff();
   await tap("Save attachment");
   await expect.element(page.getByRole("button", { name: "Import photo" })).toBeVisible();
   expect(entries).toEqual([attachment]);
@@ -2914,6 +2935,10 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
     if (key.startsWith("grace/guided-task-") && !readable) throw new Error("The store is unavailable");
     return (this === localStorage ? get : sessionGet)(key);
   });
+  onTestFinished(() => {
+    read.mockRestore();
+    localStorage.clear();
+  });
   const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
     if (key.startsWith("grace/guided-task-") && !writable) throw new Error("The store is unavailable");
     if (key.startsWith("grace/guided-task-") && delayProgress && storedRecord(value).value !== "") {
@@ -2934,6 +2959,7 @@ it('Retry a task checkpoint (spec/app/workspace.md, "An authenticated restart re
       throw new Error("The write response was lost");
     }
   });
+  onTestFinished(() => write.mockRestore());
   let runtime = ManagedRuntime.make(application(undefined));
   let view = tabletView(runtime);
   const sync = () => runtime.runPromise(Effect.flatMap(GuidedRecovery, (recovery) => recovery.keepProgress()));
@@ -3252,6 +3278,10 @@ it('Follow one reviewed plan across apps (spec/app/workspace.md, "Story: Follow 
       }
       default: return browserFetch(input, init);
     }
+  });
+  onTestFinished(() => {
+    accountNetwork.mockRestore();
+    localStorage.clear();
   });
   let tablet = await cloudReadPlan(native, cloud, secret);
   const { routeTo, tap } = tablet;
@@ -4043,6 +4073,10 @@ it('Approve the website’s exact label for one step (spec/app/workspace.md, "St
       default: return browserFetch(input, init);
     }
   });
+  onTestFinished(() => {
+    accountNetwork.mockRestore();
+    localStorage.clear();
+  });
   const { routeTo, tap, dispose } = await cloudReadPlan(native, cloud, secret);
   const button = (name: string | RegExp) => page.getByRole("button", { name, exact: true });
   const status = (name: string) => page.getByRole("status", { name });
@@ -4235,6 +4269,7 @@ it('Use signed-in selections in a reviewed plan (spec/app/workspace.md, "Story: 
       case "/api/auth/providers": return respond({ google: false, email: true, sms: false });
       case "/api/v1/billing/limits": return respond(browserBillingSnapshot());
       case "/api/v1/subscriptions/plans": return respond({ plans: [{ key: "plus_monthly" }] });
+      case "/api/v1/voice/speech/consent": return respond({}, 503);
       case "/api/v1/eliza/google/status": return !statusAvailable ? respond({}, 503) : respond({
         accountId: person.id, provider: "google", side: "owner", mode: "cloud_managed", configured: connected, connected,
         identity: connected ? { email: person.email } : null, connectionId: connected ? grant : null,

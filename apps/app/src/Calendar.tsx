@@ -1,7 +1,7 @@
 // spec/app/calendarView.md, "Story: Browse my calendar and open an exact occurrence"; spec/app/calendarView.md, "Story: Delete this occurrence or the whole repeating event"; spec/app/calendarView.md, "Owned occurrence actions preserve one identity and one reminder lifecycle"; spec/app/calendarView.md, "The form opens its Day or its Time list, one at a time"; spec/app/calendar.md, "Story: Add and correct an appointment or bill reminder"; spec/app/calendar.md, "Story: See a reminder and choose what to do"; spec/app/calendars.md, "Story: See every calendar together and know where each appointment lives"; spec/app/calendars.md, "Tags show only when an email’s calendar is on"; spec/app/calendars.md, "The connect banner shows until an email’s calendar is on or she says Not now"; spec/app/calendars.md, "While Grace asks, the appointment shows on its day as not added yet"; spec/app/calendars.md, "Home and the sleep screen show the next saved appointments"; spec/app/calendarView.md, "A shown reminder appears on Home or as a toast and See details opens its event"; spec/app/calendars.md, "Grace is told what changed in a calendar, and being told authorizes nothing"; spec/app/workspace.md, "Guidance is visible only on its current surface and target"; spec/app/calendarView.md, "A change at the company names the revision it read and never overwrites a newer one"
 import { Banner, BannerButton, CalendarApp, type CalendarAppProps, CalendarDeleteDialog, type CalendarEventItem, CalendarGlyph } from "@repo/ui";
-import { Effect } from "effect";
-import { useMemo } from "react";
+import { Effect, Exit } from "effect";
+import { useMemo, useState } from "react";
 import type { Accounts, Event as AccountEvent } from "../gen/app__accounts.ts";
 import type { Calendar as Entry, EntryDetails, Recurrence } from "../gen/app__calendar.ts";
 import { type CalendarSource, type CalRow, connectBanner, dayRows, openSelected, overlaps, rowTag, tabletKey, upcoming } from "../gen/app__calendars.ts";
@@ -11,7 +11,7 @@ import type { Event as WorkspaceEvent } from "../gen/app__workspace.ts";
 import { adding, CalendarNews, dayOf, editingPlan, hour, instant, midnight, minutesOf, navigation, shownDays, timeLabel } from "./calendar.vibe";
 import { createDayStarts } from "./calendarWindow.vibe";
 import type { HomeCards } from "./managedReads.vibe";
-import { type CalendarInstance, useAccounts, useCalendarActions, useCalendarKeys, useCalendarNote, useDraft, useProposal, useRecoveredCalendarDrafts, useRuntime, useWorkspace, WithCalendars } from "./useApp.ts";
+import { type CalendarInstance, useAccounts, useCalendarActions, useCalendarKeys, useCalendarNote, useProposal, useRecoveredCalendarDrafts, useRuntime, useWorkspace, WithCalendars } from "./useApp.ts";
 
 type Covered = { inert?: boolean; "aria-hidden"?: boolean };
 
@@ -280,6 +280,18 @@ function Shown({ registry, canAccount, sendAccount, pending, views, now, ...prop
 
 const emptyChoices: { value: string; label: string }[] = [];
 
+type LocalField = { readonly value: string; readonly source: string; readonly inflight: number };
+
+function reconcileField(local: LocalField | undefined, remote: string): { value: string; next: LocalField | undefined } {
+  if (!local) return { value: remote, next: undefined };
+  if (local.inflight > 0) return { value: local.value, next: local };
+  if (remote === local.value.trim()) {
+    return { value: local.value, next: local.value === remote ? undefined : { value: local.value, source: remote, inflight: 0 } };
+  }
+  if (remote === local.source) return { value: local.value, next: local };
+  return { value: remote, next: undefined };
+}
+
 function Form({ box, entry, today, closeProps, uncertain }: {
   box: CalendarInstance;
   entry: Entry;
@@ -290,20 +302,44 @@ function Form({ box, entry, today, closeProps, uncertain }: {
   const runtime = useRuntime();
   const { owner, calendarId, occurrenceId: id } = entry.identity;
   const d = entry.draft;
-  const [typedTitle, setTitle] = useDraft(d.title, true);
-  const [typedWhere, setWhere] = useDraft(d.location, true);
-  const title = typedTitle.trim() === d.title ? typedTitle : d.title;
-  const where = typedWhere.trim() === d.location ? typedWhere : d.location;
+  const [titleDraft, setTitleDraft] = useState<LocalField>();
+  const [whereDraft, setWhereDraft] = useState<LocalField>();
+  const resolvedTitle = reconcileField(titleDraft, d.title);
+  if (resolvedTitle.next !== titleDraft) setTitleDraft(resolvedTitle.next);
+  const resolvedWhere = reconcileField(whereDraft, d.location);
+  if (resolvedWhere.next !== whereDraft) setWhereDraft(resolvedWhere.next);
+  const title = resolvedTitle.value;
+  const where = resolvedWhere.value;
   const pick = shownPicker(box.state);
   const toggle = (picker: FormPicker) => (opened: boolean) => offer(box, { type: opened ? "showPicker" : "hidePicker", picker })?.();
   const startingAt = (startAt: number) => ({ startAt, endAt: startAt + d.endAt - d.startAt });
-  const change = (next: Partial<EntryDetails>) => {
+  const sendChange = (next: Partial<EntryDetails>) => {
     const details = { ...d, title: title.trim(), location: where.trim(), ...next };
     const recurring = details.recurrence !== "Once";
-    offer(box, {
+    const event: CalendarEvent = {
       type: "changeOccurrence", id,
       command: { tag: "ChangeDetails", details: { ...details, seriesId: entry.committed.seriesId || (recurring ? d.seriesId || id : "") } },
-    })?.();
+    };
+    return box.can(event) ? box.send(event) : undefined;
+  };
+  const change = (next: Partial<EntryDetails>) => { void sendChange(next); };
+  const editText = (
+    typed: string,
+    remote: string,
+    setField: typeof setTitleDraft,
+    patch: Partial<EntryDetails>,
+  ) => {
+    const sending = sendChange(patch);
+    if (!sending) return;
+    setField((prev) => ({ value: typed, source: prev?.source ?? remote, inflight: (prev?.inflight ?? 0) + 1 }));
+    void sending.then((exit) => {
+      setField((prev) => {
+        if (!prev) return undefined;
+        const inflight = Math.max(0, prev.inflight - 1);
+        if (inflight === 0 && !Exit.isSuccess(exit)) return undefined;
+        return { ...prev, inflight };
+      });
+    });
   };
   const approve: CalendarEvent = { type: "changeOccurrence", id, command: { tag: "ApproveEntry", revision: entry.revision } };
   const minutes = minutesOf(d.startAt);
@@ -350,8 +386,8 @@ function Form({ box, entry, today, closeProps, uncertain }: {
       saveError={uncertain ? "This appointment may already be saved. Go back to Calendar to check." : undefined}
       form={{
         heading: entry.hasSaved ? "Edit appointment" : "New appointment",
-        title, onTitleChange: (typed) => { setTitle(typed); change({ title: typed.trim() }); },
-        where, onWhereChange: (typed) => { setWhere(typed); change({ location: typed.trim() }); },
+        title, onTitleChange: (typed) => editText(typed, d.title, setTitleDraft, { title: typed.trim() }),
+        where, onWhereChange: (typed) => editText(typed, d.location, setWhereDraft, { location: typed.trim() }),
         day: {
           value: formatLongDate(chosenDay), selected: String(chosenDay), open: pick === "DayPicker",
           onOpenChange: toggle("DayPicker"),

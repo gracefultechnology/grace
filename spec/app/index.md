@@ -84,15 +84,18 @@ pure val initial: PasswordView = { vault: ClosedPasswords, generation: 0, notice
 pure def canOpenPasswords(v: PasswordView, by: VaultActor): bool =
   by == PasswordsHost and not(isCheckingVault(v.vault)) and not(isOpenVault(v.vault))
 pure def openPasswords(v: PasswordView, by: VaultActor): PasswordView =
-  { ...v, vault: CheckingVault, generation: v.generation + 1, notice: QuietVault }
+  { ...v, vault: CheckingVault, generation: v.generation + 1, notice: QuietVault,
+    guideMic: GuideMicIdle, guideMicEpoch: v.guideMicEpoch + 1 }
 pure def canClosePasswords(v: PasswordView, by: VaultActor): bool =
   by == PasswordsHost and not(isClosedVault(v.vault))
 pure def closePasswords(v: PasswordView, by: VaultActor): PasswordView =
-  { ...v, vault: ClosedPasswords, generation: v.generation + 1, notice: QuietVault, guide: NoPasswordGuide, backupReady: false }
+  { ...v, vault: ClosedPasswords, generation: v.generation + 1, notice: QuietVault, guide: NoPasswordGuide, backupReady: false,
+    guideMic: GuideMicIdle, guideMicEpoch: v.guideMicEpoch + 1 }
 pure def canLockPasswords(v: PasswordView, by: VaultActor): bool =
   by == PasswordsHost and not(isClosedVault(v.vault)) and not(isLockedVault(v.vault))
 pure def lockPasswords(v: PasswordView, by: VaultActor): PasswordView =
-  { ...v, vault: LockedVault, generation: v.generation + 1, notice: QuietVault }
+  { ...v, vault: LockedVault, generation: v.generation + 1, notice: QuietVault,
+    guideMic: GuideMicIdle, guideMicEpoch: v.guideMicEpoch + 1 }
 pure def canReportUnavailable(v: PasswordView, generation: int, by: VaultActor): bool =
   by == PasswordsHost and generation == v.generation and not(isClosedVault(v.vault))
 pure def reportUnavailable(v: PasswordView, generation: int, reason: VaultIssue, by: VaultActor): PasswordView =
@@ -226,13 +229,15 @@ pure def stepGuidanceNeverChangesVault(before: PasswordView, via: str, after: Pa
   via == "setPasswordGuide" implies before.vault == after.vault
 pure def sometimesPasswordsGuideToCopy(v: PasswordView): bool = v.guide == CopyPasswordGuide
 pure def canStartGuideMic(v: PasswordView, by: VaultActor): bool =
-  by == PasswordsPerson and v.guideMic != GuideMicListening
+  by == PasswordsPerson and isClosedVault(v.vault) and v.guideMic != GuideMicListening
 pure def startGuideMic(v: PasswordView, by: VaultActor): PasswordView =
   { ...v, guideMic: GuideMicListening, guideMicEpoch: v.guideMicEpoch + 1 }
 pure def canFinishGuideMic(v: PasswordView, ticket: int, result: GuideMic, by: VaultActor): bool =
   by == PasswordsHost and v.guideMic == GuideMicListening and ticket == v.guideMicEpoch and result != GuideMicListening
 pure def finishGuideMic(v: PasswordView, ticket: int, result: GuideMic, by: VaultActor): PasswordView =
   { ...v, guideMic: result }
+pure def alwaysPrivatePasswordsKeepsMicOff(v: PasswordView): bool =
+  not(isClosedVault(v.vault)) implies v.guideMic == GuideMicIdle
 pure def sometimesGuideMicListens(v: PasswordView): bool = v.guideMic == GuideMicListening
 pure def lawOldGuideMicResultIsIgnored(v: PasswordView, ticket: int, result: GuideMic): bool =
   ticket != v.guideMicEpoch implies not(canFinishGuideMic(v, ticket, result, PasswordsHost))
@@ -254,7 +259,8 @@ pure def canPasswordOwnerChanged(v: PasswordView, by: VaultActor): bool =
 pure def passwordOwnerChanged(v: PasswordView, by: VaultActor): PasswordView =
   { ...v,
     vault: if (isClosedVault(v.vault)) ClosedPasswords else CheckingVault,
-    generation: v.generation + 1, guide: NoPasswordGuide, notice: QuietVault, guideMic: GuideMicIdle, backupReady: false }
+    generation: v.generation + 1, guide: NoPasswordGuide, notice: QuietVault,
+    guideMic: GuideMicIdle, guideMicEpoch: v.guideMicEpoch + 1, backupReady: false }
 pure def stepAccountChangeDiscardsPriorPasswordView(before: PasswordView, via: str, after: PasswordView): bool =
   via == "passwordOwnerChanged" implies not(isOpenVault(after.vault)) and after.guide == NoPasswordGuide and not(after.backupReady)
 ```

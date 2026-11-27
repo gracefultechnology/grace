@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { CircleAlert, Download, FileText, FolderOpen, X } from "lucide-react";
 import { cn, focusRing } from "../lib/cn.ts";
+import { usePortalContainer } from "../lib/portal.tsx";
 import { Button } from "./Button.tsx";
 import { BrowserPopoverContent } from "./BrowserTabStrip.tsx";
 import { Panel } from "./Panel.tsx";
@@ -61,6 +62,7 @@ const defaultLabels: BrowserDownloadsLabels = {
  */
 export function BrowserDownloads({ downloads, onOpen, onDismiss, open, onOpenChange, labels: words, className, ...props }: BrowserDownloadsProps) {
   const labels = { ...defaultLabels, ...words };
+  const portalContainer = usePortalContainer();
   return (
     <Popover.Root open={open} onOpenChange={onOpenChange}>
       <Popover.Trigger asChild>
@@ -68,7 +70,7 @@ export function BrowserDownloads({ downloads, onOpen, onDismiss, open, onOpenCha
           <Download size={22} strokeWidth={2.2} aria-hidden />
         </Button>
       </Popover.Trigger>
-      <Popover.Portal>
+      <Popover.Portal container={portalContainer ?? undefined}>
         <BrowserPopoverContent aria-label={labels.title} align="end" className="w-[520px] gap-0 p-4">
           <h2 className="mx-2 mt-1 mb-3 text-title-sm leading-8 font-bold text-chrome">{labels.title}</h2>
           {downloads.length === 0 ? (

@@ -50,6 +50,11 @@ export function MailServersForm({
   ...props
 }: MailServersFormProps) {
   const [servers, setServers] = useState(defaultServers);
+  const [prevDefault, setPrevDefault] = useState(defaultServers);
+  if (defaultServers.incoming !== prevDefault.incoming || defaultServers.outgoing !== prevDefault.outgoing) {
+    setPrevDefault(defaultServers);
+    setServers(defaultServers);
+  }
   const ready = servers.incoming.trim() !== "" && servers.outgoing.trim() !== "" && !connecting;
   const submit = (event: FormEvent) => {
     event.preventDefault();

@@ -121,10 +121,9 @@ export function application(plugin: SurfacePlugin | undefined, wifi?: WiFiPlugin
   const machines = Layer.provideMerge(library, Layer.mergeAll(storage, workspaceAndRequests, pageLayers(), nativePage(plugin), kept, setup(), passwordViews(), mailChoices()))
   const recoverable = Layer.provideMerge(guidedRecovery(platform.native, host.guidedTasks ?? (platform.native ? guidedTaskRecords : undefined)), machines)
   const guidance = Layer.provideMerge(agent, services(cloud))
-  const voice = Layer.provideMerge(graceSpeech(platform.native, platform.wake ?? (platform.native ? wakePlugin : undefined)), passwords(platform.vault ?? vault, platform.backup ?? backup))
   const noticed = Layer.provideMerge(notices(wifi, platform.native ? platform.reminders ?? reminderPlugin : undefined), recoverable)
-  const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateVerificationApp), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native, cloud !== undefined, platform.account), voice), noticed)
+  const shell = Layer.provideMerge(Layer.mergeAll(pageHost(platform.openPrivateVerificationApp), started, persistPreferences(records), connectivity(wifi), keyboard(plugin), guidance, browserGuide(platform.native, host.guideDecision), graceAccount(platform.native, cloud !== undefined, platform.account), passwords(platform.vault ?? vault, platform.backup ?? backup)), noticed)
   const managed = Layer.provideMerge(Layer.mergeAll(managedReads(platform.native), applyDeviceChoices(platform.native ? platform.display ?? preferenceDevice : undefined), fileLibrary(platform.account ?? accountPlugin)), shell)
   const controlled = Layer.provideMerge(Layer.mergeAll(replyControls, conversation(cloud)), managed)
-  return Layer.provideMerge(graceTurns(platform.agent), controlled)
+  return Layer.provideMerge(Layer.mergeAll(graceTurns(platform.agent), graceSpeech(platform.native, platform.wake ?? (platform.native ? wakePlugin : undefined))), controlled)
 }

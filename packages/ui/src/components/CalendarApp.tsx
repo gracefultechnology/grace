@@ -149,7 +149,7 @@ export function CalendarApp({
         backLabel={title}
         onBack={onBack}
         actions={
-          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px] active:bg-primary disabled:text-primary-foreground disabled:opacity-100 [&>svg]:size-[22px] [&>svg]:text-primary-foreground" disabled={!canSave} loading={saving} onClick={onSave}>
+          <Button variant="prominent" size="compact" className="pr-[26px] pl-[22px] active:bg-primary disabled:text-primary-foreground [&>svg]:size-[22px] [&>svg]:text-primary-foreground" disabled={!canSave} loading={saving} onClick={onSave}>
             {!saving && <Check {...pill} />}
             {labels.save}
           </Button>

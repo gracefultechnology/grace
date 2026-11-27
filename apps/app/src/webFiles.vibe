@@ -134,7 +134,9 @@ export function browserFiles(): FilesPort {
       const access = try browserSessionScope()
       if (access === undefined || (expected && access.owner !== expected.owner)) throw new BrowserFilesUnavailable()
       const lease = try Effect.try(() => webView.window.crypto.randomUUID())
-      leases.clear()
+      for (const [token, saved] of leases) {
+        if (saved.owner !== access.owner || saved.session !== access.session) leases.delete(token)
+      }
       leases.set(lease, access)
       return { lease }
     }),

@@ -47,15 +47,27 @@ effect function fileImage(port: FileStorage.Shape["port"], lease: string, id: st
   return preview.image
 }
 
+effect function readAttachmentImport(port: FileStorage.Shape["port"]) {
+  const request = Effect.flatMap(tryPromise(() => port?.attachmentImport?.() ?? Promise.resolve({})), Schema.decodeUnknownEffect(AttachmentImport)) catch () => undefined
+  return request?.id
+}
+
 type FileContentAccess = {
   port: FileStorage.Shape["port"]
+  latest: SubscriptionRef.SubscriptionRef<FileSnapshot>
   advance: (ready: Ready, event: Event, actor: FileActor) => Effect.Effect<{ ready: Ready }, FilesRejected>
   keep: (ready: Ready) => Effect.Effect<void, FilesRejected>
   exposeCatalog: (ready: Ready) => Effect.Effect<void, FilesRejected>
-  readAttachmentImport: () => Effect.Effect<string | undefined>
 }
 
-function fileContents({ port, advance, keep, exposeCatalog, readAttachmentImport }: FileContentAccess) {
+function fileContents({ port, latest, advance, keep, exposeCatalog }: FileContentAccess) {
+  effect function clearBusy(lease: string) {
+    const current = try SubscriptionRef.get(latest)
+    if (current.kind === "ready" && current.lease === lease && current.busy) {
+      keep({ ...current, busy: false }) catch () => undefined
+    }
+  }
+
   effect function readSelected(ready: Ready) {
     const { model } = ready
     if (!model.selected) return false
@@ -75,44 +87,49 @@ function fileContents({ port, advance, keep, exposeCatalog, readAttachmentImport
     const { capture, pick, commit, stageAttachmentImport } = port
     if (command.kind === "capture" && !capture || command.kind === "pick" && !pick || command.kind === "confirmAttachment" && !stageAttachmentImport) return false
     const input = { lease: ready.lease }
-    try keep({ ...ready, busy: true, issue: false })
-    const entry = effect {
-      const result = try tryPromise(() => command.kind === "capture" ? capture?.(input) ?? Promise.resolve(undefined)
-        : command.kind === "pick" ? pick?.({ ...input, kind: command.file }) ?? Promise.resolve(undefined)
-        : stageAttachmentImport?.({ ...input, request: command.request }) ?? Promise.resolve(undefined))
-      return try Schema.decodeUnknownEffect(Entry)(result)
-    } catch () => undefined
-    if (!entry) {
-      try keep({ ...ready, attachmentImport: command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport, busy: false })
-      return false
-    }
-    const file = savedFile(entry, ready.owner, ready.lease)
-    const { ready: storing } = try advance(ready, { type: "saveFiles", fileImport: {
-      owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
-    } }, "FileHost")
-    const stored = Effect.flatMap(tryPromise(() => commit({ ...input, id: entry.id })), completion) catch () => undefined
-    const success = stored?.id === entry.id
-    const attachmentImport = command.kind === "confirmAttachment" ? (try readAttachmentImport()) : ready.attachmentImport
-    const { ready: after } = try advance({ ...storing, attachmentImport }, { type: "writeResult", fileReceipt: {
-      owner: ready.lease, generation: storing.model.generation, id: "", succeeded: success, evidence: "device-save",
-    } }, "FileStore")
-    if (success) try exposeCatalog(after)
-    return success
+    const busy = { ...ready, busy: true, issue: false }
+    try keep(busy)
+    return try Effect.ensuring(effect {
+      const entry = effect {
+        const result = try tryPromise(() => command.kind === "capture" ? capture?.(input) ?? Promise.resolve(undefined)
+          : command.kind === "pick" ? pick?.({ ...input, kind: command.file }) ?? Promise.resolve(undefined)
+          : stageAttachmentImport?.({ ...input, request: command.request }) ?? Promise.resolve(undefined))
+        return try Schema.decodeUnknownEffect(Entry)(result)
+      } catch () => undefined
+      if (!entry) {
+        try keep({ ...busy, attachmentImport: command.kind === "confirmAttachment" ? (try readAttachmentImport(port)) : ready.attachmentImport, busy: false })
+        return false
+      }
+      const file = savedFile(entry, ready.owner, ready.lease)
+      const { ready: storing } = try advance(busy, { type: "saveFiles", fileImport: {
+        owner: ready.lease, generation: ready.model.generation, entries: [file], authorization: ready.lease,
+      } }, "FileHost")
+      const stored = Effect.flatMap(tryPromise(() => commit({ ...input, id: entry.id })), completion) catch () => undefined
+      const success = stored?.id === entry.id
+      const attachmentImport = command.kind === "confirmAttachment" ? (try readAttachmentImport(port)) : ready.attachmentImport
+      const { ready: after } = try advance({ ...storing, attachmentImport, busy: false }, { type: "writeResult", fileReceipt: {
+        owner: ready.lease, generation: storing.model.generation, id: "", succeeded: success, evidence: "device-save",
+      } }, "FileStore")
+      if (success) try exposeCatalog(after)
+      return success
+    }, clearBusy(ready.lease))
   }
 
   effect function deletePhoto(ready: Ready, command: Extract<Command, { kind: "deletePhoto" }>) {
     if (!port || ready.lease !== command.lease || !ready.model.contentReady) return false
     const { id, generation } = command
     const { ready: removing } = try advance({ ...ready, busy: true }, { type: "deletePhoto", id, generation }, "FileUser")
-    const succeeded = effect {
-      try tryPromise(() => port.remove({ lease: ready.lease, id }))
-      return true
-    } catch () => false
-    const { ready: after } = try advance({ ...removing, busy: false, image: succeeded ? undefined : ready.image }, { type: "writeResult", fileReceipt: {
-      owner: ready.lease, generation: removing.model.generation, id, succeeded, evidence: "device-removal",
-    } }, "FileStore")
-    if (succeeded) try exposeCatalog(after)
-    return succeeded
+    return try Effect.ensuring(effect {
+      const succeeded = effect {
+        try tryPromise(() => port.remove({ lease: ready.lease, id }))
+        return true
+      } catch () => false
+      const { ready: after } = try advance({ ...removing, busy: false, image: succeeded ? undefined : ready.image }, { type: "writeResult", fileReceipt: {
+        owner: ready.lease, generation: removing.model.generation, id, succeeded, evidence: "device-removal",
+      } }, "FileStore")
+      if (succeeded) try exposeCatalog(after)
+      return succeeded
+    }, clearBusy(ready.lease))
   }
 
   return { readSelected, importOwner, deletePhoto }
@@ -162,6 +179,7 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
   const home = try SubscriptionRef.make<FileHome | undefined>(undefined)
   const serial = try Semaphore.make(1)
   const scope = try Scope.Scope
+  let lastTab: Files["tab"] = initial.tab
 
   effect function admitted() {
     const w = try desk.get()
@@ -247,26 +265,27 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
       ? "device/" + current.voiceDisclosureScope : undefined
   }
 
-  effect function readAttachmentImport() {
-    const request = Effect.flatMap(tryPromise(() => port?.attachmentImport?.() ?? Promise.resolve({})), Schema.decodeUnknownEffect(AttachmentImport)) catch () => undefined
-    return request?.id
-  }
-
   effect function openLibrary() {
     const owner = try admitted()
     if (!port || !owner) return
+    const prior = try SubscriptionRef.get(latest)
+    if (prior.kind === "ready") {
+      if (prior.owner === owner) lastTab = prior.model.tab
+      tryPromise(() => port.close({ lease: prior.lease })) catch () => undefined
+    }
     try SubscriptionRef.set(latest, { kind: "opening" })
     const opened = Effect.flatMap(tryPromise(() => port.open()), Schema.decodeUnknownEffect(Lease)) catch () => undefined
     if (!opened) {
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
       return
     }
+    const attachmentImport = try readAttachmentImport(port)
+    const findAuthority = try findOwner()
     if ((try admitted()) !== owner) {
       tryPromise(() => port.close(opened)) catch () => undefined
       return
     }
-    const attachmentImport = try readAttachmentImport()
-    const ready: Ready = { kind: "ready", owner, findAuthority: try findOwner(), importer: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: initial, thumbs: {}, origins: {}, listedAt: 0, attachmentImport, busy: false, issue: false }
+    const ready: Ready = { kind: "ready", owner, findAuthority, importer: Boolean(port.pick && port.capture && port.commit), lease: opened.lease, model: { ...initial, tab: lastTab }, thumbs: {}, origins: {}, listedAt: 0, attachmentImport, busy: false, issue: false }
     try SubscriptionRef.set(latest, ready)
     load(ready) catch effect () => {
       if (try admitted()) try SubscriptionRef.set(latest, { kind: "unavailable" })
@@ -274,7 +293,7 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
     }
   }
 
-  const { readSelected, importOwner, deletePhoto } = fileContents({ port, advance, keep, exposeCatalog, readAttachmentImport })
+  const { readSelected, importOwner, deletePhoto } = fileContents({ port, latest, advance, keep, exposeCatalog })
 
   effect function sharePhoto(ready: Ready, command: Extract<Command, { kind: "sharePhoto" }>) {
     const { id, generation } = command
@@ -370,15 +389,15 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
       (listener) => Option.isSome(listener) ? Effect.ignore(tryPromise(() => listener.value.remove())) : Effect.void,
     ))
     try fork.scoped Stream.runForEach(links, () => Effect.ignore(effect {
-      const requested = try readAttachmentImport()
+      const requested = try readAttachmentImport(port)
       if (!requested) return
       const work = try Stream.runHead(Stream.filter(Stream.zipLatest(desk.changes, setup.changes), ([state, account]) =>
         state.device.readiness === "Ready" && account.graceAccount.tag === "GraceDeviceSignedIn"))
-      if (Option.isNone(work) || !(try readAttachmentImport())) return
+      if (Option.isNone(work) || !(try readAttachmentImport(port))) return
       if (work.value[0].device.surface !== "Files") try desk.send({ type: "visit", destination: "Files" }, "Person")
       else try serial.withPermit(effect {
         const current = try SubscriptionRef.get(latest)
-        if (current.kind === "ready") try keep({ ...current, attachmentImport: try readAttachmentImport() })
+        if (current.kind === "ready") try keep({ ...current, attachmentImport: try readAttachmentImport(port) })
       })
     }))
   }
@@ -395,6 +414,8 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
     const owner = filesAccount((try setup.get()).graceAccount)
     const visible = w.device.surface === "Files" && w.device.readiness === "Ready"
     const prior = try SubscriptionRef.get(latest)
+    if (owner !== lastOwner || !owner) lastTab = initial.tab
+    else if (prior.kind === "ready") lastTab = prior.model.tab
     if (renew || owner !== lastOwner || !owner) try SubscriptionRef.set(home, undefined)
     lastOwner = owner
     if (prior.kind === "ready" && port) tryPromise(() => port.close({ lease: prior.lease })) catch () => undefined

@@ -224,8 +224,9 @@ export async function runCli(options: RunCliOptions): Promise<number> {
   const { json, help, rest } = extractGlobalFlags(options.argv);
   const byName = new Map(options.commands.map((cmd) => [cmd.name, cmd]));
   const [first, ...tail] = rest;
+  const helpTarget = tail[0];
 
-  if (first === undefined || (first === "help" && (help || tail[0] === undefined))) {
+  if (first === undefined || (first === "help" && (help || helpTarget === undefined))) {
     if (json) {
       emitJson(options.io, { ok: true, command: "help", data: { commands: options.commands.map(commandManifest) } });
     } else {
@@ -234,19 +235,22 @@ export async function runCli(options: RunCliOptions): Promise<number> {
     return 0;
   }
 
-  if (first === "help") {
-    const targetName = tail[0] ?? "";
-    const target = byName.get(targetName);
-    if (!target) {
-      emitFailure(options.io, json, "help", `Unknown command "${targetName}". Run "pnpm cli --help" to list commands.`);
-      return 2;
-    }
+  const emitCommandHelp = (cmd: RegisteredCommand): number => {
     if (json) {
-      emitJson(options.io, { ok: true, command: "help", data: commandManifest(target) });
+      emitJson(options.io, { ok: true, command: "help", data: commandManifest(cmd) });
     } else {
-      options.io.writeOut(formatCommandHelp(target));
+      options.io.writeOut(formatCommandHelp(cmd));
     }
     return 0;
+  };
+
+  if (first === "help" && helpTarget !== undefined) {
+    const target = byName.get(helpTarget);
+    if (!target) {
+      emitFailure(options.io, json, "help", `Unknown command "${helpTarget}". Run "pnpm cli --help" to list commands.`);
+      return 2;
+    }
+    return emitCommandHelp(target);
   }
 
   const command = byName.get(first);
@@ -255,14 +259,7 @@ export async function runCli(options: RunCliOptions): Promise<number> {
     return 2;
   }
 
-  if (help) {
-    if (json) {
-      emitJson(options.io, { ok: true, command: "help", data: commandManifest(command) });
-    } else {
-      options.io.writeOut(formatCommandHelp(command));
-    }
-    return 0;
-  }
+  if (help) return emitCommandHelp(command);
 
   const ctx: CliContext = {
     rootDir: options.rootDir,

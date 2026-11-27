@@ -440,7 +440,52 @@ data CreateBinding {
   Received { providerId: string; version: string }
 }
 
-schema CalendarCreateClaim { grantId: Schema.NonEmptyString; mutation: Schema.NonEmptyString; fingerprint: Schema.NonEmptyString; providerId?: Schema.NonEmptyString }
+const createJournalPrefix = "calendar-create:"
+const guidedFencePrefix = "calendar-guided-create:"
+const maxCalendarJournalKeys = 100
+const journalAccountKey = (account: AccountRef) => `${account.provider}:${account.address.toLowerCase()}`
+
+schema CalendarCreateClaim {
+  grantId: Schema.NonEmptyString; mutation: Schema.NonEmptyString; fingerprint: Schema.NonEmptyString; providerId?: Schema.NonEmptyString
+  account?: Schema.NonEmptyString; calendarId?: Schema.NonEmptyString; updatedAt?: Schema.Number
+}
+schema CalendarGuidedFence {
+  task: Schema.NonEmptyString; account: Schema.NonEmptyString; calendarId: Schema.NonEmptyString; updatedAt: Schema.Number
+}
+const decodeClaim = Schema.decodeUnknownOption(Schema.fromJsonString(CalendarCreateClaim))
+const decodeFence = Schema.decodeUnknownOption(Schema.fromJsonString(CalendarGuidedFence))
+
+function parseFence(raw: string) {
+  return Option.getOrElse(decodeFence(raw), () => ({ task: raw, account: undefined as string | undefined, calendarId: undefined as string | undefined, updatedAt: 0 }))
+}
+
+export effect function pruneCalendarJournals(store: KeyValueStore.KeyValueStore, activeAccounts: readonly AccountRef[]) {
+  const active = new Set(activeAccounts.map(journalAccountKey))
+  const keys = store.keys catch () => [] as readonly string[]
+  for (const key of keys) {
+    if (key.startsWith(createJournalPrefix)) {
+      if (active.size === 0) {
+        store.remove(key) catch () => undefined
+        continue
+      }
+      if (key.endsWith(":receipt")) continue
+      const raw = store.get(key) catch () => undefined
+      const claim = raw === undefined ? undefined : Option.getOrUndefined(decodeClaim(raw))
+      if (claim?.account !== undefined && !active.has(claim.account)) {
+        store.remove(key) catch () => undefined
+        store.remove(guidedFencePrefix + key.slice(createJournalPrefix.length)) catch () => undefined
+      }
+    } else if (key.startsWith(guidedFencePrefix)) {
+      if (active.size === 0) {
+        store.remove(key) catch () => undefined
+        continue
+      }
+      const raw = store.get(key) catch () => undefined
+      const fence = raw === undefined ? undefined : parseFence(raw)
+      if (fence?.account !== undefined && !active.has(fence.account)) store.remove(key) catch () => undefined
+    }
+  }
+}
 
 export const browserCalendarLocks = (host: { readonly locks?: LockManager }) => effect {
   const manager = Effect.try(() => host.locks) catch effect () => { throw new Unreachable() }
@@ -456,21 +501,88 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
     (bytes) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(""))
   const scopeOf = (account: AccountRef, { calendarId, occurrenceId }: Calendar["identity"]) =>
     hash(JSON.stringify([service, account.provider, account.address.toLowerCase(), calendarId, occurrenceId]))
-  const fenceKey = (scope: string) => "calendar-guided-create:" + scope
+  const fenceKey = (scope: string) => guidedFencePrefix + scope
+  effect function evictCreates(keepKey: string, limit: number) {
+    const keys = (storage.keys catch () => [] as readonly string[]).filter((k) => k.startsWith(createJournalPrefix) && !k.endsWith(":receipt") && k !== keepKey)
+    if (keys.length < limit) return false
+    const ranked: { key: string; completed: boolean; updatedAt: number }[] = []
+    for (const key of keys) {
+      const raw = storage.get(key) catch () => undefined
+      const claim = raw === undefined ? undefined : Option.getOrUndefined(decodeClaim(raw))
+      ranked.push({ key, completed: claim?.providerId !== undefined, updatedAt: claim?.updatedAt ?? 0 })
+    }
+    ranked.sort((a, b) => Number(b.completed) - Number(a.completed) || a.updatedAt - b.updatedAt)
+    const drop = ranked.slice(0, Math.max(1, keys.length - limit + 1))
+    for (const { key } of drop) {
+      storage.remove(key) catch () => undefined
+      storage.remove(guidedFencePrefix + key.slice(createJournalPrefix.length)) catch () => undefined
+    }
+    return drop.length > 0
+  }
+  effect function evictFences(keepKey: string, limit: number) {
+    const keys = (storage.keys catch () => [] as readonly string[]).filter((k) => k.startsWith(guidedFencePrefix) && k !== keepKey)
+    if (keys.length < limit) return false
+    const ranked: { key: string; updatedAt: number }[] = []
+    for (const key of keys) {
+      const raw = storage.get(key) catch () => undefined
+      ranked.push({ key, updatedAt: raw === undefined ? 0 : parseFence(raw).updatedAt })
+    }
+    ranked.sort((a, b) => a.updatedAt - b.updatedAt)
+    const drop = ranked.slice(0, Math.max(1, keys.length - limit + 1))
+    for (const { key } of drop) storage.remove(key) catch () => undefined
+    return drop.length > 0
+  }
+  effect function writeClaim(at: string, value: typeof CalendarCreateClaim.Type): void!Unreachable {
+    try evictCreates(at, maxCalendarJournalKeys)
+    const saved = Effect.as(journal.set(at, value), true) catch () => false
+    if (saved) return
+    if (try evictCreates(at, 1)) {
+      const retried = Effect.as(journal.set(at, value), true) catch () => false
+      if (retried) return
+    }
+    throw new Unreachable()
+  }
   effect function fence(account: AccountRef, identity: Calendar["identity"], task: string): boolean!! {
     const scope = try scopeOf(account, identity)
-    return Effect.as(storage.set(fenceKey(scope), task), true) catch () => false
+    const key = fenceKey(scope)
+    const payload = JSON.stringify({ task, account: journalAccountKey(account), calendarId: identity.calendarId, updatedAt: try Clock.currentTimeMillis })
+    try evictFences(key, maxCalendarJournalKeys)
+    const saved = Effect.as(storage.set(key, payload), true) catch () => false
+    if (saved) return true
+    if (try evictFences(key, 1)) return Effect.as(storage.set(key, payload), true) catch () => false
+    return false
   }
   effect function isFenced(account: AccountRef, identity: Calendar["identity"], task: string): boolean!Unreachable {
     const scope = try scopeOf(account, identity)
-    return Effect.map(storage.get(fenceKey(scope)), (value) => value === task) catch effect () => { throw new Unreachable() }
+    return Effect.map(storage.get(fenceKey(scope)), (value) => value !== undefined && parseFence(value).task === task) catch effect () => { throw new Unreachable() }
+  }
+  effect function pruneCompleted(account: AccountRef, view: CalendarView) {
+    const ownerKey = journalAccountKey(account)
+    const activeScopes = new Set<string>()
+    for (const c of view.entries) {
+      if (c.identity.owner === view.owner && c.identity.calendarId === view.calendarId && (c.phase === "Saved" || (c.phase === "Editing" && !c.hasSaved)))
+        activeScopes.add(try scopeOf(account, c.identity))
+    }
+    const keys = storage.keys catch () => [] as readonly string[]
+    for (const key of keys) {
+      if (!key.startsWith(createJournalPrefix) || key.endsWith(":receipt")) continue
+      const scope = key.slice(createJournalPrefix.length)
+      if (activeScopes.has(scope)) continue
+      const raw = storage.get(key) catch () => undefined
+      const claim = raw === undefined ? undefined : Option.getOrUndefined(decodeClaim(raw))
+      if (claim?.providerId !== undefined && claim.account === ownerKey && claim.calendarId === view.calendarId) {
+        storage.remove(key) catch () => undefined
+        storage.remove(guidedFencePrefix + scope) catch () => undefined
+      }
+    }
   }
   const bind = (account: AccountRef, send: (body: object, key: string) => ProviderEvent!ConnectorFailure) => effect (entry: Calendar, grantId: string, approve: boolean, dispatch: GuidedDispatch | undefined) => {
     const { owner, calendarId, occurrenceId } = entry.identity
     if (owner !== account.address || entry.identity.kind !== "Appointment" || (entry.phase !== "Saved" && entry.phase !== "Editing")) return CreateBinding.Unknown()
     if (approve && entry.phase === "Editing" && entry.approvedRevision !== entry.revision) return CreateBinding.Unknown()
     const scope = try scopeOf(account, entry.identity)
-    const at = "calendar-create:" + scope
+    const at = createJournalPrefix + scope
+    const ownerKey = journalAccountKey(account)
     const providerKey = (revision: number) => hash(JSON.stringify([service, account.provider, grantId, account.address, owner, calendarId, occurrenceId, revision]))
     const read = effect {
       const stored = journal.get(at) catch effect () => { throw new Unreachable() }
@@ -479,7 +591,7 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
     const readLegacy = effect {
       for (let revision = 1; revision <= entry.revision; revision++) {
         const mutation = try providerKey(revision)
-        const oldKey = "calendar-create:" + mutation
+        const oldKey = createJournalPrefix + mutation
         const fingerprint = storage.get(oldKey) catch effect () => { throw new Unreachable() }
         if (fingerprint === undefined) continue
         if (!/^[0-9a-f]{64}$/.test(fingerprint)) throw new Unreachable()
@@ -492,7 +604,11 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
     const record = effect {
       const current = try read
       const previous = current ?? (try readLegacy)
-      if (current === undefined && previous !== undefined) journal.set(at, previous) catch effect () => { throw new Unreachable() }
+      if (current === undefined && previous !== undefined) {
+        try writeClaim(at, { ...previous, account: ownerKey, calendarId, updatedAt: try Clock.currentTimeMillis })
+        storage.remove(createJournalPrefix + previous.mutation) catch () => undefined
+        storage.remove(createJournalPrefix + previous.mutation + ":receipt") catch () => undefined
+      }
       if (previous === undefined && !approve) return CreateBinding.Unknown()
       if (previous !== undefined && previous.grantId !== grantId) return CreateBinding.Pending()
       const fields = event({ ...entry, hasSaved: false })
@@ -507,8 +623,8 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
       if (previous?.providerId !== undefined) return CreateBinding.Received({ providerId: previous.providerId, version: "" })
       if (dispatch === undefined && fenced) return CreateBinding.Pending()
       if (previous !== undefined && account.provider !== "Gmail") return CreateBinding.Pending()
-      const claim = previous ?? { fingerprint, grantId, mutation: try providerKey(entry.revision) }
-      if (previous === undefined) journal.set(at, claim) catch effect () => { throw new Unreachable() }
+      const claim = previous ?? { fingerprint, grantId, mutation: try providerKey(entry.revision), account: ownerKey, calendarId, updatedAt: try Clock.currentTimeMillis }
+      if (previous === undefined) try writeClaim(at, claim)
       const request = send(body, claim.mutation)
       const issued = dispatch === undefined ? undefined : try dispatch.website.start(dispatch.current, request)
       if (issued === "Held" || issued === "Stale") {
@@ -521,7 +637,7 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
         throw cause
       }
       if (saved.calendarId !== calendarId || saved.externalId === "") throw new ProviderRefused({ status: 409 })
-      journal.set(at, { ...claim, providerId: saved.externalId }) catch effect () => { throw new Unreachable() }
+      try writeClaim(at, { ...claim, account: ownerKey, calendarId, updatedAt: try Clock.currentTimeMillis, providerId: saved.externalId })
       return CreateBinding.Received({ providerId: saved.externalId, version: versionOf(saved) })
     }
     return try Effect.scoped(effect {
@@ -529,7 +645,7 @@ effect function calendarCreates(service: string, locks: Experimental.Locks.Locks
       return try record
     })
   }
-  return { bind, fence, isFenced }
+  return { bind, fence, isFenced, pruneCompleted }
 }
 
 function connectedCalendar(link: CloudLink, account: AccountRef, zones: ReadonlySet<string>,
@@ -663,6 +779,7 @@ function connectedCalendar(link: CloudLink, account: AccountRef, zones: Readonly
           if (!feed.some((e) => e.externalId === bound.providerId)) waiting.add(c)
         } else if (bound._tag === "Pending" || (c.phase === "Saved" && legacyCalendarDraft.test(c.identity.occurrenceId))) waiting.add(c)
       }
+      try creates.pruneCompleted(account, view)
       return Stream.fromIterable(published(zones, view, feed, defaults, bindings, waiting))
     }),
     isGuidedCreateFenced: (identity, task) => creates.isFenced(account, identity, task),
@@ -953,11 +1070,12 @@ export const connector = (link: CloudLink, locks: Experimental.Locks.Locks!Unrea
     clearGrants()
     const session = try fetched(post(`/api/v1/eliza/connections/${routes[provider].slug}/sessions`, { loginHint: renewing }), Session)
     const where = session.embeddable === true && framable(session.pageUrl) ? inSheet : handedOff
+    const sessionId = encodeURIComponent(session.sessionId)
     const waited = ensuring(effect {
       try where.open(session.pageUrl)
-      return try fetched(get(`/api/v1/eliza/connections/sessions/${session.sessionId}`, {}), SessionOutcome)
+      return try fetched(get(`/api/v1/eliza/connections/sessions/${sessionId}`, {}), SessionOutcome)
     }, where.close(session.pageUrl))
-    const answer = try onInterrupt(waited, () => Effect.ignore(call(Effect.succeed(HttpClientRequest.make("DELETE")(`${link.url}/api/v1/eliza/connections/sessions/${session.sessionId}`)))))
+    const answer = try onInterrupt(waited, () => Effect.ignore(call(Effect.succeed(HttpClientRequest.make("DELETE")(`${link.url}/api/v1/eliza/connections/sessions/${sessionId}`)))))
     clearGrants()
     const address = answer.address ?? ""
     const result = answer.status === "allowed" && address === "" ? "Refused" : ended[answer.status]

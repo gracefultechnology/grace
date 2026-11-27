@@ -6,7 +6,7 @@ import { Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
 import { Connector, type OtherForm, type SecretPassword, type ShownPage } from "./connector.vibe"
 import * as KeyValueStore from "effect/persistence/KeyValueStore"
 import { compatibleStore, Instances } from "./instances.vibe"
-import { Resolved, serversIn, serversListed } from "./mailSettings.ts"
+import { Resolved, serversIn, serversListed, validHostname } from "./mailSettings.ts"
 
 const restarted = Layer.effectDiscard(effect {
   try Effect.orDie((try Accounts).send({ type: "restartAccounts" }, "AccountHost"))
@@ -20,10 +20,11 @@ const readRows = Schema.decodeUnknownOption(Schema.Array(rawRecord))
 
 function upgradedAccounts(text: string) {
   const raw = Option.getOrUndefined(readRecord(text))
-  if (raw === undefined || parseAccounts(raw) !== undefined) return text
+  if (raw === undefined) return undefined
+  if (parseAccounts(raw) !== undefined) return text
   const rows = Option.getOrUndefined(readRows(raw.accounts))
   const signIn = Option.getOrUndefined(readSignIn(raw.signIn))
-  if (rows === undefined || signIn === undefined) return text
+  if (rows === undefined || signIn === undefined) return undefined
   const { lookup, incoming, outgoing } = initialAccounts.signIn
   const upgraded = parseAccounts({
     discarding: initialAccounts.discarding,
@@ -31,7 +32,7 @@ function upgradedAccounts(text: string) {
     signIn: { lookup, incoming, outgoing, ...signIn },
     accounts: rows.map((row) => ({ fromName: "", ...row })),
   })
-  return upgraded === undefined ? text : JSON.stringify(upgraded)
+  return upgraded === undefined ? undefined : JSON.stringify(upgraded)
 }
 
 const accountStorage = Layer.unwrap(effect {
@@ -80,7 +81,12 @@ const companies: Record<Provider, string> = { Gmail: "Gmail", Outlook: "Outlook"
 const internetCompanies: Record<string, string> = { "comcast.net": "Comcast", "att.net": "AT&T", "verizon.net": "Verizon", "cox.net": "Cox", "charter.net": "Charter" }
 const noteFor = "2600 millis"
 
-export const domainOf = (address: string) => address.slice(address.lastIndexOf("@") + 1).trim().toLowerCase()
+export const domainOf = (address: string) => {
+  const at = address.lastIndexOf("@")
+  if (at < 0) return ""
+  const domain = address.slice(at + 1).trim().toLowerCase()
+  return validHostname(domain) ? domain : ""
+}
 
 function nameFor(a: Registry, provider: Provider, address: string): string {
   const known = accountWith(a, address)
@@ -246,6 +252,7 @@ export const signIns = Layer.effect(SignIns, effect {
   }
 
   effect function serversOf(domain: string) {
+    if (!(Effect.try(() => validHostname(domain)) catch () => false)) return [] as FoundServer[]
     const files = setupFiles(domain)
     const asked: Fiber.Fiber<readonly FoundServer[]>[] = []
     for (const url of files) asked.push(try fork fromFile(url, domain))

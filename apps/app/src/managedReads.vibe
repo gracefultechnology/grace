@@ -87,7 +87,20 @@ type OriginalAttachment = { name: string; mimeType: typeof supportedMedia.Type; 
 
 export schema LocalMailDraft { recipient: string; subject: string; text: string; operationId?: string; grant?: string }
 schema SentMail { accountId: idField; operationId: idField; messageId: idField }
-const draftKey = (accountId: string, email: string, replyTo?: string) => "grace-managed-draft-" + JSON.stringify([accountId, email, ...(replyTo ? [replyTo] : [])])
+const draftPrefix = "grace-managed-draft-"
+const draftKey = (accountId: string, email: string, replyTo?: string) => draftPrefix + JSON.stringify([accountId, email, ...(replyTo ? [replyTo] : [])])
+
+effect function clearMailDrafts() {
+  Effect.try(() => {
+    const storage = webView.window.sessionStorage
+    const keys: string[] = []
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i)
+      if (key?.startsWith(draftPrefix)) keys.push(key)
+    }
+    for (const key of keys) storage.removeItem(key)
+  }) catch () => undefined
+}
 
 export effect function localMailDraft(accountId: string, email: string, replyTo?: string): LocalMailDraft!! {
   const raw = Effect.try(() => webView.window.sessionStorage.getItem(draftKey(accountId, email, replyTo))) catch () => null
@@ -263,53 +276,68 @@ function sameReadIdentity(left: ReadIdentity, right: ReadIdentity) {
   return left.accountId === right.accountId && left.grant === right.grant && left.leaseVersion === right.leaseVersion
 }
 
+async function readAttachmentBody(response: Response, signal: AbortSignal): Promise<unknown> {
+  const reader = response.body?.getReader()
+  if (!reader) throw new Error("Missing attachment response")
+  const decoder = new TextDecoder()
+  let length = 0
+  let contents = ""
+  const stop = () => { void reader.cancel().catch(() => undefined) }
+  signal.addEventListener("abort", stop, { once: true })
+  try {
+    for (;;) {
+      const next = await reader.read()
+      if (next.done) break
+      length += next.value.byteLength
+      if (length > encodedAttachmentLimit + 16_384) throw new Error("Attachment response is too large")
+      contents += decoder.decode(next.value, { stream: true })
+    }
+    return JSON.parse(contents + decoder.decode())
+  } finally {
+    signal.removeEventListener("abort", stop)
+    stop()
+  }
+}
+
 effect function query<A>(route: GoogleRead, search: Record<string, string | undefined>, schema: Schema.Decoder<A>, authorization: AccountActions.Shape, scope: ReadyScope) {
   const params = new URLSearchParams(Object.entries(search).flatMap(([name, value]) => value ? [[name, value]] : []))
-  const get = () => timeout(tryPromise((signal) => webView.window.fetch(google + route + "?" + params, {
-    method: "GET", credentials: "include", cache: "no-store", headers: { Accept: "application/json" }, signal,
-  })), "12 seconds")
-  const response = try effect {
-    if (scope.leaseVersion !== undefined) {
-      if (!isTabletGoogleRead(route)) throw new ManagedReadFailed()
-      return try timeout(authorization.readTabletGoogle({ accountId: scope.accountId, leaseVersion: scope.leaseVersion }, route, Object.fromEntries(params)), "12 seconds")
-    }
-    const first = try get()
-    return first.status === 401 && (try authorization.run({ kind: "refresh" })) ? (try get()) : first
+  if (scope.leaseVersion !== undefined) {
+    if (!isTabletGoogleRead(route)) throw new ManagedReadFailed()
+    const response = try timeout(authorization.readTabletGoogle({ accountId: scope.accountId, leaseVersion: scope.leaseVersion }, route, Object.fromEntries(params)), "12 seconds")
+    if (!response.ok) throw new ManagedReadFailed()
+    const input: unknown = try timeout(tryPromise(() => response.json()), "12 seconds")
+    return try Schema.decodeUnknownEffect(schema)(input)
   }
-  if (!response.ok) throw new ManagedReadFailed()
-  const input: unknown = route === "gmail/attachment" ? (try timeout(tryPromise(async (signal) => {
-    const reader = response.body?.getReader()
-    if (!reader) throw new Error("Missing attachment response")
-    const decoder = new TextDecoder()
-    let length = 0
-    let contents = ""
-    const stop = () => { void reader.cancel().catch(() => undefined) }
-    signal.addEventListener("abort", stop, { once: true })
-    try {
-      for (;;) {
-        const next = await reader.read()
-        if (next.done) break
-        length += next.value.byteLength
-        if (length > encodedAttachmentLimit + 16_384) throw new Error("Attachment response is too large")
-        contents += decoder.decode(next.value, { stream: true })
-      }
-      return JSON.parse(contents + decoder.decode())
-    } finally {
-      signal.removeEventListener("abort", stop)
-      stop()
-    }
-  }), "12 seconds")) : (try tryPromise(() => response.json()))
-  return try Schema.decodeUnknownEffect(schema)(input)
+  const get = () => timeout(tryPromise(async (signal) => {
+    const response = await webView.window.fetch(google + route + "?" + params, {
+      method: "GET", credentials: "include", cache: "no-store", headers: { Accept: "application/json" }, signal,
+    })
+    if (response.status === 401) return { status: 401 as const }
+    if (!response.ok) return { status: "error" as const }
+    const input: unknown = route === "gmail/attachment"
+      ? await readAttachmentBody(response, signal)
+      : await response.json()
+    return { status: "ok" as const, input }
+  }), "12 seconds")
+  const first = try get()
+  const result = first.status === 401 && (try authorization.run({ kind: "refresh" })) ? (try get()) : first
+  if (result.status !== "ok") throw new ManagedReadFailed()
+  return try Schema.decodeUnknownEffect(schema)(result.input)
 }
 
 effect function postChange<A>(route: GoogleChange, payload: object, schema: Schema.Decoder<A>, authorization: AccountActions.Shape) {
-  const post = () => timeout(tryPromise((signal) => webView.window.fetch(google + route, {
-    method: "POST", credentials: "include", cache: "no-store", headers: { "Content-Type": "application/json" }, signal, body: JSON.stringify(payload),
-  })), "32 seconds")
+  const post = () => timeout(tryPromise(async (signal) => {
+    const response = await webView.window.fetch(google + route, {
+      method: "POST", credentials: "include", cache: "no-store", headers: { "Content-Type": "application/json" }, signal, body: JSON.stringify(payload),
+    })
+    if (response.status === 401) return { status: 401 as const }
+    if (!response.ok) return { status: "error" as const }
+    return { status: "ok" as const, input: await response.json() as unknown }
+  }), "32 seconds")
   const first = try post()
-  const response = first.status === 401 && (try authorization.run({ kind: "refresh" })) ? (try post()) : first
-  if (!response.ok) throw new ManagedReadFailed()
-  return try Schema.decodeUnknownEffect(schema)(try tryPromise(() => response.json()))
+  const result = first.status === 401 && (try authorization.run({ kind: "refresh" })) ? (try post()) : first
+  if (result.status !== "ok") throw new ManagedReadFailed()
+  return try Schema.decodeUnknownEffect(schema)(result.input)
 }
 
 function range(now: number) {
@@ -417,6 +445,38 @@ effect function saveIntent(pending: Ref.Ref<ReadIntent | undefined>, intent: Int
     if (intent === undefined) webView.window.sessionStorage.removeItem(retained)
     else webView.window.sessionStorage.setItem(retained, JSON.stringify(intent))
   }) catch () => undefined
+}
+
+function intentReconciler(pending: Ref.Ref<ReadIntent | undefined>) {
+  let previousAccountId = ""
+  let previousView: { readonly surface: string; readonly settingsPage: string } | undefined
+  return effect function reconcile(view: { readonly surface: string; readonly settingsPage: string }, account: SetupState) {
+    const currentAccountId = managedReadAccountId(account.graceAccount)
+    const signedOut = account.graceAccount.tag === "GraceSignedOut" || account.graceAccount.tag === "GraceDeviceSignedOut"
+    const accountChanged = previousAccountId !== "" && currentAccountId !== previousAccountId
+    if (signedOut || accountChanged) try clearMailDrafts()
+    if (accountChanged) {
+      const currentIntent = try Ref.get(pending)
+      if (currentIntent !== undefined) {
+        const sameAsPrevious = currentIntent.owner !== undefined &&
+          (ownerHash(previousAccountId) catch () => "") === currentIntent.owner
+        if (!currentIntent.returning || sameAsPrevious) try saveIntent(pending, undefined)
+      }
+    }
+    if (currentAccountId !== "") previousAccountId = currentAccountId
+    else if (signedOut) previousAccountId = ""
+
+    const currentIntent = try Ref.get(pending)
+    if (currentIntent !== undefined && previousView !== undefined &&
+      (previousView.surface !== view.surface || previousView.settingsPage !== view.settingsPage)) {
+      const leftTarget = !currentIntent.returning && previousView.surface === currentIntent.view && view.surface !== currentIntent.view
+      const leftAccountReturn = currentIntent.returning &&
+        previousView.surface === "DeviceSettings" && previousView.settingsPage === "AccountSettings" &&
+        view.surface !== currentIntent.view && (view.surface !== "DeviceSettings" || view.settingsPage !== "AccountSettings")
+      if (leftTarget || leftAccountReturn) try saveIntent(pending, undefined)
+    }
+    previousView = { surface: view.surface, settingsPage: view.settingsPage }
+  }
 }
 
 function mailAttachments(authorization: AccountActions.Shape, files: Library.Shape,
@@ -811,12 +871,15 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       const selected = query("calendar/reminder/event", { occurrenceId: occurrence, grantId: scope.grant },
         Schema.Struct({ accountId: idField, event: EventRow }), authorization, scope) catch () => undefined
       if (try still(scope)) {
-        try saveIntent(pending, { ...intent, occurrence: undefined })
+        try saveIntent(pending, undefined)
         if (selected && managedReadMatches(scope.accountId, selected.accountId, intent.occurrence, selected.event.externalId))
           return try publish({ ...result, selected: selected.event })
       }
     }
-    if (try still(scope)) try publish(result)
+    if (try still(scope)) {
+      if (intent !== undefined && !intent.returning) try saveIntent(pending, undefined)
+      try publish(result)
+    }
   }
 
   const { openAttachment, saveAttachment } = mailAttachments(authorization, files,
@@ -937,8 +1000,12 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       }
     })
   }
+  const reconcileIntent = intentReconciler(pending)
   const scopes = Stream.changesWith(
-    Stream.mapEffect(Stream.zipLatest(deskView, setup.changes), () => activeScope()),
+    Stream.mapEffect(Stream.zipLatest(deskView, setup.changes), effect ([view, account]) => {
+      try reconcileIntent(view, account)
+      return try activeScope()
+    }),
     sameScope,
   )
   try fork.scoped Stream.runDrain(Stream.switchMap(scopes, (scope) => Stream.fromEffect(refresh(scope))))

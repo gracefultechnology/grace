@@ -69,6 +69,7 @@ export function PasswordBackupConsent({ approval, account: originalAccount, prov
           {approval && !offersApproval && !provider && (
             <>
               {providers.google && <Button variant="prominent" size="pill" disabled={pending} onClick={() => run(async () => {
+                setCodeFailed(false);
                 if (!await signInForApproval(approval)) setCodeFailed(true);
               })}>Continue with Google</Button>}
               {providers.email && <Button variant="capsule" size="pill" disabled={pending} onClick={() => setProvider("email")}>Use email</Button>}
@@ -81,8 +82,14 @@ export function PasswordBackupConsent({ approval, account: originalAccount, prov
               setStatus(await confirmPasswordApproval(approval, account.id));
             })}>Approve</Button>
           )}
-          {status?.kind === "returning" && <a href={status.href} rel="noreferrer" className="text-primary underline">Return to Grace</a>}
-          <Button variant="capsule" size="pill" disabled={pending} onClick={() => void cancelPasswordApproval()}>Cancel</Button>
+          {status?.kind === "returning" && (
+            <Button asChild variant="prominent" size="pill">
+              <a href={status.href} rel="noreferrer">Return to Grace</a>
+            </Button>
+          )}
+          <Button variant="capsule" size="pill" disabled={pending} onClick={() => run(async () => {
+            await cancelPasswordApproval();
+          })}>Cancel</Button>
         </div>
       </section>
     </main>

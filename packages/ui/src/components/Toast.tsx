@@ -29,9 +29,11 @@ export function Toast({ open = true, onUndo, undoLabel = "Undo", onDismiss, dism
   return (
     <div
       role="status"
+      inert={!open}
+      aria-hidden={!open || undefined}
       className={cn(
         "flex w-max items-center gap-[18px] rounded-tile bg-chrome px-5 py-3 font-sans text-body leading-[normal] text-primary-foreground transition-opacity duration-quick ease-css-default",
-        placement === "screen" && "absolute bottom-6 left-1/2 z-[45] -translate-x-1/2",
+        placement === "screen" && "absolute bottom-6 left-1/2 z-[25] -translate-x-1/2",
         open ? "opacity-100" : "pointer-events-none opacity-0",
         className,
       )}

@@ -8,6 +8,7 @@ import { voiceDisclosure } from "../gen/app__conversation.ts";
 import { brightnessChoice, type DisplayPreferences, type Pace, type TextSize } from "../gen/app__preferences.ts";
 import type { Setup } from "../gen/app__setup.ts";
 import type { SettingsPage } from "../gen/app__shell.ts";
+import { enabled } from "../gen/app__workspace.ts";
 import { appointmentWeekday, type HostedAppointment, hostedAppointmentDisplay } from "./Calendar.tsx";
 import { dayOf, relative } from "./calendar.vibe";
 import { EmailAccounts } from "./EmailAccounts.tsx";
@@ -166,7 +167,7 @@ function VoiceSettings({ preferences, preview, personName, sampleAllowed }: {
 /** @model spec/app/websiteRequests.md
  * @model spec/app/accounts.md */
 export function Settings({ hostedAppointment, ...props }: Pick<ComponentProps<"div">, "inert" | "aria-hidden"> & { hostedAppointment?: HostedAppointment }) {
-  const { workspace, can, send, guide } = useWorkspace();
+  const { workspace, can, current, send, guide } = useWorkspace();
   const runtime = useRuntime();
   const { owner, accountEmail } = useSetupSelector(selectSettingsSetup, shallowEqual);
   const { accounts } = useAccounts();
@@ -208,7 +209,10 @@ export function Settings({ hostedAppointment, ...props }: Pick<ComponentProps<"d
           }} />
       ) : page === "BrightnessSettings" ? (
         <SettingsBrightness brightness={preferences.brightness} onBrightnessChange={(value) => preview(brightnessChoice(preferences, value))}
-          onBrightnessStep={(amount) => void send({ type: "adjustPreferenceLevel", levelStep: { tag: "BrightnessBy", amount } })}
+          onBrightnessStep={(amount) => {
+            const event = { type: "adjustPreferenceLevel", levelStep: { tag: "BrightnessBy", amount } } as const;
+            if (enabled(current(), event, "Person")) void send(event);
+          }}
           nightDim={preferences.nightDimming} nightDimHint="From 9 pm to 7 am, easier on the eyes"
           onNightDimChange={(nightDimming) => preview({ ...preferences, nightDimming })} />
       ) : page === "VoiceSettings" ? (

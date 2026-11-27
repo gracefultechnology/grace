@@ -400,7 +400,6 @@ is on.
 pure def sendsFrom(mailbox: E::Mailbox): bool = mailbox.connection == E::Connected and mailbox.canSend
 pure def fromChoices(registry: A::Accounts, sources: List[MailSource]): List[A::Account] =
   A::mailAccounts(registry).select(x => sendsFrom(sourceOf(sources, x.id).mailbox))
-pure def showsFrom(registry: A::Accounts, sources: List[MailSource]): bool = fromChoices(registry, sources).length() >= 2
 pure def startFrom(registry: A::Accounts, sources: List[MailSource], recipient: str): int =
   val preferred = A::defaultFrom(registry, recipient)
   if (fromChoices(registry, sources).some(x => x.id == preferred)) preferred

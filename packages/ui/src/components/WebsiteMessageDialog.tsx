@@ -56,6 +56,11 @@ const defaultLabels: WebsiteMessageLabels = {
 export function WebsiteMessageDialog({ kind, site, message, defaultText = "", onAnswer, open = true, labels: words, className }: WebsiteMessageDialogProps) {
   const labels = { ...defaultLabels, ...words };
   const [text, setText] = useState(defaultText);
+  const [prev, setPrev] = useState({ open, kind, site, message, defaultText });
+  if (open !== prev.open || kind !== prev.kind || site !== prev.site || message !== prev.message || defaultText !== prev.defaultText) {
+    setPrev({ open, kind, site, message, defaultText });
+    if (open) setText(defaultText);
+  }
   const quoteId = useId();
   const leaving = kind === "beforeunload";
   const answer = (accept: boolean) => onAnswer(accept, kind === "prompt" && accept ? text : undefined);
@@ -92,7 +97,7 @@ export function WebsiteMessageDialog({ kind, site, message, defaultText = "", on
           value={text}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === "Enter") answer(true);
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) answer(true);
           }}
           aria-describedby={quoteId}
           className="mt-3.5"

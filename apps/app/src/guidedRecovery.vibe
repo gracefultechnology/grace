@@ -49,16 +49,17 @@ function safeCheckpoint(checkpoint: GuidedCheckpoint) {
 
 const webKey = (name: GuidedRecordName) => "grace/" + name
 const nameFor = (scope: string): GuidedRecordName => `guided-task-${scope}`
+const StoredRecord = Schema.fromJsonString(RecordValue)
+function storedRecord(raw: string | null) {
+  const decoded = raw === null ? Option.none() : Schema.decodeUnknownOption(StoredRecord)(raw)
+  return Option.isSome(decoded) ? decoded.value : { revision: 0 }
+}
 const webRecords: GuidedTaskRecords = {
-  read: async ({ name }) => {
-    const value = webView.window.localStorage.getItem(webKey(name))
-    return value === null ? { revision: 0 } : JSON.parse(value)
-  },
+  read: async ({ name }) => storedRecord(webView.window.localStorage.getItem(webKey(name))),
   write: async ({ name, revision, value }) => {
     const write = async () => {
       const key = webKey(name)
-      const stored = webView.window.localStorage.getItem(key)
-      const prior = stored === null ? 0 : Schema.decodeUnknownSync(RecordValue)(JSON.parse(stored)).revision
+      const prior = storedRecord(webView.window.localStorage.getItem(key)).revision
       if (prior !== revision) throw new Error("The guided task changed")
       webView.window.localStorage.setItem(key, JSON.stringify({ revision: revision + 1, value }))
       return { revision: revision + 1 }
@@ -165,8 +166,8 @@ function sessionChanges(native: boolean) {
   return nativeAccount === undefined
     ? Stream.fromEventListener(webView.document, "visibilitychange")
     : Stream.callback<void>((queue) => acquireRelease(
-        promise(() => nativeAccount.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) })),
-        (handle) => promise(() => handle.remove())
+        Effect.option(tryPromise(() => nativeAccount.addListener("sessionChanged", () => { Queue.offerUnsafe(queue, undefined) }))),
+        (listener) => Option.isSome(listener) ? Effect.ignore(tryPromise(() => listener.value.remove())) : Effect.void,
       ))
 }
 

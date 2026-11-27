@@ -1,7 +1,7 @@
 // spec/app/files.md, "Saving one attachment or all selected photos is one acknowledged local transaction"; spec/app/mailboxes.md, "Story: See all my email in one place"; spec/app/mailboxes.md, "All inboxes is the union of the shown accounts’ inboxes"; spec/app/mailboxes.md, "Each account’s banner shows its own state, and offline is not a broken account"; spec/app/mailboxes.md, "A switched-off or removed account shows nothing anywhere"; spec/app/email.md, "Story: Read an email and its original attachment"; spec/app/email.md, "Switching folders clears the old query and starts a scoped listing"; spec/app/mailboxes.md, "With no account’s Email on, Email offers only Connect your email and Ask Grace"; spec/app/mailboxes.md, "The Home Email card says No email added yet, Last updated only while it can’t update, or how many are new"; spec/app/mailboxes.md, "Choosing Outbox shows its waiting email, and an emptied Outbox gives way to the folder"; spec/app/agentActions.md, "Grace opens a setting, and points only at what is on the screen"; spec/app/mailboxes.md, "Drafts counts the shown accounts’ saved drafts"
 import { BrowserDialog, BrowserDialogText, Button, type Guide, type GuidePointing, MailApp, type MailContact, type MailFolder, MailLink, type MailMessageTarget, MailMessageView, type MailPhoto, type MailSaveStatus, MailSignInBanner, type MailSummary, MailSyncingRow, PdfViewer, PhotoViewer, Toast } from "@repo/ui";
 import { Exit } from "effect";
-import { type ReactNode, Suspense, useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useMachine as useMailChoices } from "../gen/app__mailboxes.react.ts";
 import type { Accounts, Event as AccountEvent } from "../gen/app__accounts.ts";
 import { canReplyToMessage, emptyContent, enabled, type Event as MailEvent, mayExportAttachments, messageRecord, photoAssets, readable, showsScamWarning } from "../gen/app__email.ts";
@@ -121,6 +121,7 @@ function Mail({ registry, accountCan, accountSend, boxes, ...props }: MailProps)
   const { workspace, can, send, guide, askGrace } = useWorkspace();
   const runtime = useRuntime();
   const [unopenedLink, setUnopenedLink] = useState<string>();
+  const [searchDraft, setSearchDraft] = useState<{ readonly value: string; readonly folder: Folder; readonly source: string; readonly inflight: number }>();
   const read = useMailContent();
   const kept = useMailHeld();
   const held = useMailFile();
@@ -217,11 +218,7 @@ function Mail({ registry, accountCan, accountSend, boxes, ...props }: MailProps)
 
   const composing = shown.find((b) => b.state.composeVisible);
   if (mail && composing)
-    return (
-      <Suspense fallback={null}>
-        <EmailCompose key={composing.id} registry={registry} boxes={shown} box={composing} mail={mail} sender={sender} frame={frame} />
-      </Suspense>
-    );
+    return <EmailCompose key={composing.id} registry={registry} boxes={shown} box={composing} mail={mail} sender={sender} frame={frame} />;
 
   if (opening) {
     const m = opening.state;
@@ -286,8 +283,8 @@ function Mail({ registry, accountCan, accountSend, boxes, ...props }: MailProps)
         onDelete={change("TrashMessage")} onRestore={change("RestoreMessage")} onDeleteForever={change("PurgeMessage")}
         backLabel={backTo[m.folder]} onBack={offer(opening, { type: "showInbox" })} {...frame} />
       {ready && m.link.status === "LinkHeld" && <BrowserDialog title="Open this link?" tone="caution" onEscape={() => follow(m.link.link, "cancel")} actions={<>
-        <Button variant="prominent" onClick={() => follow(m.link.link, "cancel")}>Stay in email</Button>
-        <Button variant="capsule" onClick={() => follow(m.link.link, "confirm")}>Open in Browser</Button>
+        <Button variant="prominent" size="pill" onClick={() => follow(m.link.link, "cancel")}>Stay in email</Button>
+        <Button variant="capsule" size="pill" onClick={() => follow(m.link.link, "confirm")}>Open in Browser</Button>
       </>}><BrowserDialogText className="break-all">{m.link.link}</BrowserDialogText></BrowserDialog>}
       {unopenedLink === linkSource && <Toast placement="screen">This link couldn’t open.</Toast>}
       {toast}
@@ -304,18 +301,25 @@ function Mail({ registry, accountCan, accountSend, boxes, ...props }: MailProps)
   const toast = undo ? <Toast placement="screen" onUndo={offer(undo.b, undo.event)}>Moved to Trash</Toast>
     : note ? <Toast key={note.id} placement="screen">{note.text}</Toast> : undefined;
   const writable = mail && fromChoices(registry, sources).some((a) => shown.find((b) => b.id === a.id)?.can({ type: "startDraft", reply: false }));
-  const replace = (b: MailInstance, event: MailEvent) => {
+  const replace = (b: MailInstance, event: MailEvent): Promise<unknown> => {
     const stop: MailEvent = { type: "showInbox" };
-    if (b.can(event)) void b.send(event);
-    else if (b.state.readStatus === "Reading" && b.state.readKind === "Search" && b.can(stop))
-      void b.send(stop).then((exit) => { if (Exit.isSuccess(exit) && enabled(exit.value, event, "MailUser")) void b.send(event); });
+    if (b.can(event)) return b.send(event);
+    if (b.state.readStatus === "Reading" && b.state.readKind === "Search" && b.can(stop))
+      return b.send(stop).then((exit) => { if (Exit.isSuccess(exit) && enabled(exit.value, event, "MailUser")) return b.send(event); });
+    return Promise.resolve();
   };
+  const remoteQuery = lead?.query ?? "";
+  const activeSearchDraft = searchDraft && searchDraft.folder === folder && (
+    searchDraft.inflight > 0 || (remoteQuery === searchDraft.source && remoteQuery !== searchDraft.value)
+  ) ? searchDraft : undefined;
+  if (searchDraft !== activeSearchDraft) setSearchDraft(activeSearchDraft);
+  const shownQuery = activeSearchDraft?.value ?? remoteQuery;
   const visibleMessages = outbox ? waiting : listed;
   const onScreen = new Set(visibleMessages.map((r) => r.id));
   const rowGuide = guide((target) => { const id = rowOf(target); return id !== undefined && onScreen.has(id) ? id : undefined; });
   const show = (chosen: Folder) => shown.forEach((b) => {
-    if (b.state.folder !== chosen) replace(b, { type: "chooseFolder", folder: chosen });
-    else if (b.state.query !== "") replace(b, search(""));
+    if (b.state.folder !== chosen) void replace(b, { type: "chooseFolder", folder: chosen });
+    else if (b.state.query !== "") void replace(b, search(""));
   });
 
   return (
@@ -323,16 +327,27 @@ function Mail({ registry, accountCan, accountSend, boxes, ...props }: MailProps)
       guide={rowGuide} accounts={rows} account={registry.inboxFilter || undefined} banners={notes.length ? notes : undefined} messages={visibleMessages} toast={toast}
       onWrite={writable ? offer(shown.find((b) => b.id === startFrom(registry, sources, "")) ?? shown[0], { type: "startDraft", reply: false }) : undefined}
       status={shownBanners.some((b) => b.kind === "OfflineBanner") ? "offline" : failed.length ? "failed" : "ready"}
-      query={lead?.query ?? ""}
-      onQueryChange={(query) => shown.forEach((b) => replace(b, search(query)))}
+      query={shownQuery}
+      onQueryChange={(next) => {
+        setSearchDraft((prev) => ({
+          value: next,
+          folder,
+          source: prev && prev.folder === folder ? prev.source : remoteQuery,
+          inflight: (prev && prev.folder === folder ? prev.inflight : 0) + 1,
+        }));
+        void Promise.all(shown.map((b) => replace(b, search(next)))).finally(() => {
+          setSearchDraft((prev) => (prev && prev.folder === folder ? { ...prev, inflight: Math.max(0, prev.inflight - 1) } : prev));
+        });
+      }}
       onRetry={failed.some((b) => b.can(search(b.state.query))) ? () => failed.forEach((b) => offer(b, search(b.state.query))?.()) : undefined}
       onSelectFolder={(chosen) => {
+        setSearchDraft(undefined);
         void tell({ type: chosen === "outbox" ? "chooseOutbox" : "chooseFolderList" });
         if (chosen === "outbox") return;
         if (registry.inboxFilter !== 0) filter(0);
         show(folders[chosen]);
       }}
-      onAccount={(id) => { void tell({ type: "chooseFolderList" }); filter(id); show("InboxFolder"); }}
+      onAccount={(id) => { setSearchDraft(undefined); void tell({ type: "chooseFolderList" }); filter(id); show("InboxFolder"); }}
       onOpen={(id) => {
         const [owner, ...rest] = id.split("/");
         const box = shown.find((b) => b.id === Number(owner));

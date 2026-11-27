@@ -6,7 +6,12 @@ const Binding = Schema.Struct({
   CLOUD_IDENTITY_DIGEST: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/)),
   CLOUD_ENVIRONMENT: Schema.Literals(["staging", "production"])
 })
-const Worker = Schema.Struct({ vars: Binding, env: Schema.Struct({ production: Schema.Struct({ vars: Binding }) }) })
+const Worker = Schema.Struct({
+  env: Schema.Struct({
+    staging: Schema.Struct({ vars: Binding }),
+    production: Schema.Struct({ vars: Binding })
+  })
+})
 const renamedMigrations = [
   ["0125_device_mail_lease.sql", "0126_device_mail_lease.sql"],
   ["0126_normalize_renewed_device_grants.sql", "0127_normalize_renewed_device_grants.sql"]
@@ -20,7 +25,7 @@ const migration = effect {
   const settings = try Schema.decodeUnknownEffect(Schema.fromJsonString(Worker))(file)
   const name = try Config.withDefault(Config.String("CLOUD_ENVIRONMENT"), "staging")
   const environment = try Schema.decodeUnknownEffect(Schema.Literals(["staging", "production"]))(name)
-  const vars = environment === "production" ? settings.env.production.vars : settings.vars
+  const vars = settings.env[environment].vars
   if (vars.CLOUD_ENVIRONMENT !== environment) throw new EnvironmentMismatch()
   const url = Redacted.value(try Config.Redacted("DATABASE_URL"))
   const now = try Clock.currentTimeMillis

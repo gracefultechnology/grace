@@ -407,13 +407,14 @@ pure def changeLifecycle(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor)
     | RestartDevice => S::restart(w.device)
   }
   if (lifecycle == RestartDevice)
-    { ...w, device: device, browser: { ...B::closeBrowser(w.browser), clearRequested: false },
+    { ...w, device: device, browser: B::closeBrowser(w.browser),
       assistant: restartedAssistant(w.assistant), review: emptyReview(w.review.revision + 1), plan: emptyPlan,
       execution: if (X::canRetire(w.execution, X::BrowserBridge)) X::retire(w.execution, X::BrowserBridge) else w.execution,
       commitmentTask: "", preferences: R::restart(w.preferences, R::PreferenceStore),
       wake: W::cancel(w.wake, W::WakeHost),
       commitment: if (CM::canRestart(w.commitment, T::Store)) CM::restart(w.commitment, T::Store) else w.commitment,
-      otherCommitments: w.otherCommitments.listMap(p => CM::restart(p, T::Store)) }
+      otherCommitments: w.otherCommitments.listMap(p => CM::restart(p, T::Store)),
+      website: WR::closeBrowser(w.website, WR::WebsiteHost).state, lastWebsiteAnswer: NoWebsiteAnswer }
   else pausedLifecycle(device, lifecycle == SleepDevice, w)
 pure def lawNonRestartKeepsSession(w: Workspace, lifecycle: Lifecycle, by: WorkspaceActor): bool =
   val after = changeLifecycle(w, lifecycle, by)
@@ -447,7 +448,8 @@ pure def lawRestartClearsSession(w: Workspace, by: WorkspaceActor): bool =
     (w.execution.phase != X::Idle implies after.execution.generation > w.execution.generation) and
     after.browser.tabs == List(B::blankTab(w.browser.nextId, w.browser.serial + 1)) and
     after.browser.revision > w.browser.revision and after.browser.recent == w.browser.recent and
-    not(after.browser.editingAddress) and not(after.browser.clearRequested)
+    not(after.browser.editingAddress) and not(after.browser.clearRequested) and
+    not(heldByWebsite(after)) and after.lastWebsiteAnswer == NoWebsiteAnswer
 pure def sameDurableCommitmentRecord(priorCommitment: CM::Commitment, restoredCommitment: CM::Commitment): bool =
   priorCommitment.key == restoredCommitment.key and priorCommitment.attempt == restoredCommitment.attempt and
     priorCommitment.durable == restoredCommitment.durable
@@ -1720,7 +1722,7 @@ pure def reviewedRequest(w: Workspace, offer: ReviewOffer): GuidedRequest = {
   { owner: offer.owner, task: offer.task, goal: ask, steps: offer.steps }
 }
 pure def canOfferReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): bool =
-  by == Host and w.commitmentTask == "" and
+  by == Host and
   offer.generation == w.assistant.conversation.generation and offer.workVersion == w.assistant.workVersion and
   offer.steps.length() > 0 and offer.steps.every(offeredOutcome => hasGuidedAdapter(offeredOutcome)) and
   canBeginGuided(w, reviewedRequest(w, offer), Person) and not(heldByWebsite(w))
@@ -1731,7 +1733,7 @@ pure def offerReadReview(w: Workspace, offer: ReviewOffer, by: WorkspaceActor): 
 pure def scopedReadRequest(review: GuidedReview): GuidedRequest =
   { ...review.request, goal: "Check the items I open" }
 pure def canStartReadReview(w: Workspace, reviewRevision: int, by: WorkspaceActor): bool =
-  by == Person and reviewRevision == w.review.revision and w.commitmentTask == "" and
+  by == Person and reviewRevision == w.review.revision and
   w.review.generation == w.assistant.conversation.generation and w.review.workVersion == w.assistant.workVersion and
   w.assistant.conversation.turn == C::Ready and not(w.assistant.conversation.question) and
   w.review.request.goal != "" and canBeginGuided(w, scopedReadRequest(w.review), Person)

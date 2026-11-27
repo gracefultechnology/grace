@@ -141,11 +141,13 @@ export function Files({ onClose, ...cover }: Pick<ComponentProps<"div">, "inert"
       const idle = (event: Event, act: () => void) => (waiting ? undefined : offered(model, event, act));
       const remove = idle({ type: "deletePhoto", ...target }, () => run({ kind: "deletePhoto", ...target }));
       const share = selected.origin === deviceOrigin ? undefined : idle({ type: "sharePhoto", ...target }, () => run({ kind: "sharePhoto", ...target }));
+      const previous = idle({ type: "movePhoto", direction: -1 }, () => run({ kind: "photo", direction: -1 }));
+      const next = idle({ type: "movePhoto", direction: 1 }, () => run({ kind: "photo", direction: 1 }));
       const deleteFailed = model.feedback === "WriteFailed";
       return <FilePhotoViewer {...cover} onClose={back} closeLabel="Back to Files" title={selected.name} src={readySnapshot.image} alt={selected.name}
         first={!enabled(model, { type: "movePhoto", direction: -1 }, "FileUser")}
         last={!enabled(model, { type: "movePhoto", direction: 1 }, "FileUser")}
-        onPrevious={() => run({ kind: "photo", direction: -1 })} onNext={() => run({ kind: "photo", direction: 1 })}
+        onPrevious={previous} onNext={next}
         onShare={share} onDelete={remove}
         deleteError={deleteFailed ? "This photo wasn’t deleted." : unshared === selected.id ? "This photo couldn’t be shared." : undefined}
         onRetryDelete={deleteFailed ? remove : share} />;
