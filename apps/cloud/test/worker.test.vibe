@@ -69,10 +69,11 @@ describe("Sign in to Grace and manage my subscription (spec/app/setup.md, \"Stor
   })
 })
 
-it.effect('Keep the signed-in browser session for a voice exchange (spec/app/conversation.md, "Story: Talk with Grace through her cloud voice")', () => effect {
+it.effect('Keep the signed-in browser session for voice and membership (spec/app/conversation.md, "Story: Talk with Grace through her cloud voice"; spec/app/setup.md, "A signed-in account with an inactive subscription can redeem a membership code")', () => effect {
   const webOrigin = "https://grace.example.test"
   const api = "https://api.example.test"
   const speech = "/api/v1/voice/speech"
+  const redeem = "/api/v1/subscription/redeem"
   const cookie = "__Host-eliza-session=eliza_session_" + "s".repeat(43)
   const browser = { Origin: webOrigin, Cookie: cookie }
   const bearer = "Bearer " + cookie.slice(cookie.indexOf("=") + 1)
@@ -93,5 +94,7 @@ it.effect('Keep the signed-in browser session for a voice exchange (spec/app/con
     try outbound("POST", speech + "/consent", { ...browser, Origin: "https://foreign.example.test" }),
     try outbound("POST", speech + "/consent", { ...browser, Cookie: cookie + "; " + cookie }),
     try outbound("POST", speech + "/consent", { ...browser, Authorization: "Bearer explicit" }),
-  ], [[bearer, "{}"], [bearer, "{}"], [bearer, "{}"], [null, ""], [null, ""], [null, "{}"], [null, "{}"], [null, "{}"], ["Bearer explicit", "{}"]])
+    try outbound("POST", redeem),
+    try outbound("POST", redeem, { ...browser, Origin: "https://foreign.example.test" }),
+  ], [[bearer, "{}"], [bearer, "{}"], [bearer, "{}"], [null, ""], [null, ""], [null, "{}"], [null, "{}"], [null, "{}"], ["Bearer explicit", "{}"], [bearer, "{}"], [null, "{}"]])
 })
