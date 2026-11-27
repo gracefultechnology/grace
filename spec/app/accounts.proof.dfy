@@ -1365,28 +1365,42 @@ lemma NoteSentDistinct(a: Accounts, recipient: string, id: int, by_: AccountActo
   MappedRenewing(a, b);
 }
 
-lemma NoteSentBody(a: Accounts, recipient: string, id: int, by_: AccountActor)
+lemma NoteSentShape(a: Accounts, recipient: string, id: int, by_: AccountActor)
   requires inv(a) && canNoteSent(a, recipient, id, by_)
   ensures alwaysAccountsAreWellFormed(noteSent(a, recipient, id, by_))
   ensures alwaysOnlyOtherEmailKeepsAFromName(noteSent(a, recipient, id, by_))
-  ensures alwaysFromHistoryNamesAccounts(noteSent(a, recipient, id, by_))
-  ensures alwaysFilterNamesAnEmailAccount(noteSent(a, recipient, id, by_))
 {
   var b := noteSent(a, recipient, id, by_);
   NoteSentView(a, recipient, id, by_);
-  MappedMatchIndex(a, b);
   forall y | y in b.accounts
     ensures y.colour >= 0 && y.colour < 5 && y.sent >= 0 && (y.fromName != "" ==> y.provider.OtherEmail?)
   {
     var i :| 0 <= i < |b.accounts| && b.accounts[i] == y;
     assert a.accounts[i] in a.accounts;
   }
+}
+
+lemma NoteSentFilter(a: Accounts, recipient: string, id: int, by_: AccountActor)
+  requires inv(a) && canNoteSent(a, recipient, id, by_)
+  ensures alwaysFilterNamesAnEmailAccount(noteSent(a, recipient, id, by_))
+{
+  var b := noteSent(a, recipient, id, by_);
+  NoteSentView(a, recipient, id, by_);
   if b.inboxFilter != 0 {
     var x :| x in mailAccounts(a) && x.id == a.inboxFilter;
     MailMember(a, x);
     var i :| 0 <= i < |a.accounts| && a.accounts[i] == x;
     MailMember(b, b.accounts[i]);
   }
+}
+
+lemma NoteSentHistoryRule(a: Accounts, recipient: string, id: int, by_: AccountActor)
+  requires inv(a) && canNoteSent(a, recipient, id, by_)
+  ensures alwaysFromHistoryNamesAccounts(noteSent(a, recipient, id, by_))
+{
+  var b := noteSent(a, recipient, id, by_);
+  NoteSentView(a, recipient, id, by_);
+  MappedMatchIndex(a, b);
   NoteSentHistory(a, b, recipient, id);
 }
 
@@ -1429,7 +1443,9 @@ lemma noteSent_ensures(a: Accounts, recipient: string, id: int, by_: AccountActo
 {
   if inv(a) && canNoteSent(a, recipient, id, by_) {
     NoteSentDistinct(a, recipient, id, by_);
-    NoteSentBody(a, recipient, id, by_);
+    NoteSentShape(a, recipient, id, by_);
+    NoteSentFilter(a, recipient, id, by_);
+    NoteSentHistoryRule(a, recipient, id, by_);
     NoteSentSteps(a, recipient, id, by_);
   }
 }
