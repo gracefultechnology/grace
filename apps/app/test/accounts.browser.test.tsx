@@ -150,7 +150,8 @@ async function askGrace(said: string) {
   const composer = page.getByRole("textbox", { name: "Message to Grace" });
   await tap(page.getByRole("button", { name: "Ask Grace", exact: true }));
   await expect.element(composer).toBeVisible();
-  await act(() => userEvent.type(composer, `${said}{Enter}`));
+  await act(() => composer.fill(said));
+  await tap(page.getByRole("region", { name: "Grace" }).getByRole("button", { name: "Send" }));
   await expect.element(page.getByText(reply(said))).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Grace" }));
 }
@@ -291,7 +292,8 @@ it("Connect the email I already use", async () => {
   const composer = page.getByRole("textbox", { name: "Message to Grace" });
   await expect.element(composer).toBeVisible();
   const asked = "What are mail servers?";
-  await act(() => userEvent.type(composer, `${asked}{Enter}`));
+  await act(() => composer.fill(asked));
+  await tap(page.getByRole("region", { name: "Grace" }).getByRole("button", { name: "Send" }));
   await expect.element(page.getByText(reply(asked))).toBeVisible();
   await tap(page.getByRole("button", { name: "Close Grace" }));
   await act(() => servers.getByLabelText("Incoming mail server").fill("mail.wrong.net"));
