@@ -206,7 +206,7 @@ export function guidedOwner(authority: GuidedAuthority, steps: readonly GuidedSt
   }) ? authority.connected : authority.device
 }
 
-export type HomeCards = { accountId: string; grant: string; mail: readonly MailRow[]; events: readonly EventRow[] }
+export type HomeCards = { accountId: string; grant: string; mail: readonly MailRow[] | undefined; unread: number; events: readonly EventRow[] | undefined }
 
 export service ManagedReads {
   readonly state: Stream.Stream<ManagedSnapshot>
@@ -412,30 +412,27 @@ effect function watchHomeCards(native: boolean, pending: Ref.Ref<ReadIntent | un
   const authorization = try AccountActions
   const setup = try Setup
   const desk = try Workspaces
-  if (!native) {
-    const homeScopes = Stream.changesWith(Stream.mapEffect(Stream.zipLatest(deskView, setup.changes),
-      effect ([view, account]) => {
-        if (view.surface !== "Home" || view.readiness !== "Ready") return undefined
-        const intent = try Ref.get(pending)
-        return [try scopeOf(native, "Email", account, intent), try scopeOf(native, "Calendar", account, intent)]
-          .filter((scope): scope is ReadyScope => scope.kind === "ready")
-      }), sameReadyScopes)
-    try fork.scoped Stream.runDrain(Stream.switchMap(homeScopes, (selected) => Stream.fromEffect(effect {
-      try SubscriptionRef.set(cards, undefined)
-      const one = selected?.[0]
-      if (!one || !selected) return
-      const loaded = try Effect.forEach(selected, effect (scope) => {
-        return fetchPage(authorization, scope, undefined, undefined, range(try Clock.currentTimeMillis)) catch () => undefined
-      }, { concurrency: 2 })
-      const account = try setup.get()
-      if (account.graceAccount.tag !== "GraceSignedIn" || account.graceAccount.accountId !== one.accountId ||
-        account.googleLink.tag !== "GoogleLinkConnected" || account.googleLink.grant !== one.grant ||
-        (try desk.get()).device.surface !== "Home") return
-      try SubscriptionRef.set(cards, { accountId: one.accountId, grant: one.grant,
-        mail: loaded.find((page) => page?.kind === "mail")?.rows ?? [],
-        events: loaded.find((page) => page?.kind === "calendar")?.rows ?? [] })
-    })))
-  }
+  const homeScopes = Stream.changesWith(Stream.mapEffect(Stream.zipLatest(deskView, setup.changes),
+    effect ([view, account]) => {
+      if (view.surface !== "Home" || view.readiness !== "Ready") return undefined
+      const intent = try Ref.get(pending)
+      return [try scopeOf(native, "Email", account, intent), try scopeOf(native, "Calendar", account, intent)]
+        .filter((scope): scope is ReadyScope => scope.kind === "ready")
+    }), sameReadyScopes)
+  try fork.scoped Stream.runDrain(Stream.switchMap(homeScopes, (selected) => Stream.fromEffect(effect {
+    try SubscriptionRef.set(cards, undefined)
+    const one = selected?.[0]
+    if (!one || !selected) return
+    const loaded = try Effect.forEach(selected, effect (scope) => {
+      return fetchPage(authorization, scope, undefined, undefined, range(try Clock.currentTimeMillis)) catch () => undefined
+    }, { concurrency: 2 })
+    const current = try scopeOf(native, one.view, try setup.get(), try Ref.get(pending))
+    if (!sameScope(current, one) || (try desk.get()).device.surface !== "Home") return
+    const mail = loaded.find((page) => page?.kind === "mail")
+    try SubscriptionRef.set(cards, { accountId: one.accountId, grant: one.grant, mail: mail?.rows,
+      unread: mail?.counts?.inboxUnread ?? mail?.rows.filter((row) => row.isUnread).length ?? 0,
+      events: loaded.find((page) => page?.kind === "calendar")?.rows })
+  })))
   return cards
 }
 
@@ -895,7 +892,7 @@ export const managedReads = (native: boolean) => Layer.effect(ManagedReads, effe
       if ((try desk.get()).device.surface !== "Home" || scope.kind !== "ready" ||
         scope.accountId !== row.accountId || scope.grant !== row.grant ||
         home?.accountId !== row.accountId || home.grant !== row.grant ||
-        !home.events.some((event) => event.externalId === row.id && (event.etag ?? null) === row.version)) return false
+        !home.events?.some((event) => event.externalId === row.id && (event.etag ?? null) === row.version)) return false
       try Ref.set(pending, { ...before, view: "Calendar", returning: false, occurrence: undefined, homeOccurrence: row })
       const visited = desk.send({ type: "visit", destination: "Calendar" }, "Person") catch () => undefined
       if (visited === undefined) try Ref.set(pending, before)

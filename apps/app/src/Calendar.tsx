@@ -23,7 +23,7 @@ const snoozeFor = 10 * 60 * 1000;
 const shortWeekday = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const shortTime = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 
-export type HostedAppointment = HomeCards["events"][number];
+export type HostedAppointment = NonNullable<HomeCards["events"]>[number];
 
 export const appointmentWeekday = (date: Date) => shortWeekday.format(date).toUpperCase();
 

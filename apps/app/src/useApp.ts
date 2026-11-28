@@ -48,8 +48,8 @@ import { type Board, Mail } from "./mail.vibe";
 import { PageHost } from "./page.vibe";
 import type { NoticeServices } from "./notices.vibe";
 import type { EntryDetails } from "../gen/app__calendar.ts";
-import { type CalendarSource, type CalRow, homeCalendarHint, homeCalendarStatus, type HomeCalendarStatus, shownReminders, tabletKey, upcoming } from "../gen/app__calendars.ts";
-import { type HomeMailStatus, type MailSource, type Row as MailRow, homeRows, homeStatus, showsMail } from "../gen/app__mailboxes.ts";
+import { type CalendarSource, type CalRow, homeCalendarHint, homeCalendarStatus, type HomeCalendarStatus, managedHomeCalendarStatus, shownReminders, tabletKey, upcoming } from "../gen/app__calendars.ts";
+import { type HomeMailStatus, type MailSource, type Row as MailRow, homeRows, homeStatus, managedHomeStatus, showsMail } from "../gen/app__mailboxes.ts";
 
 export type Runtime = ManagedRuntime.ManagedRuntime<Workspaces | PageLayers | WebsiteRequests | PageHost | Keyboard | Setup | AccountActions | ManagedReads | FileLibrary | SpeechActions | PasswordView | Passwords | ReplyControls | Agent | Conversation | BrowserGuide | GuidedRecovery | CalendarNews | Accounts | Proposal | Instances | SignIns | NoticeServices | Library | MailChoices, never>;
 type RuntimeEnv = Runtime extends ManagedRuntime.ManagedRuntime<infer Env, never> ? Env : never;
@@ -1078,6 +1078,34 @@ export function homeMail(
       return _exhaustive;
     }
   }
+}
+
+// spec/app/mailboxes.md, "A signed-in tablet’s Home Email card says No email added yet until Google mail may be read, then how many are new"
+export function managedHomeMail(cards: HomeCards | undefined, readable: boolean | undefined): Pick<HomeEmailCardProps, "messages" | "status" | "notConnected"> {
+  const messages: HomeMail[] = (cards?.mail ?? []).slice(0, 2).map((m) => ({ id: m.externalId, name: m.from || "Unknown sender", subject: m.subject || "No subject", unread: m.isUnread }));
+  if (readable === undefined || (readable && cards?.mail === undefined)) return { messages };
+  const status = managedHomeStatus(readable, cards?.unread ?? 0);
+  switch (status.tag) {
+    case "NoEmailAdded": return { messages, notConnected: true };
+    case "NewCount": return { messages, status: `${status.count} new` };
+    case "AllCaughtUp": return { messages, status: "All caught up" };
+    case "LastUpdated": return { messages };
+    default: {
+      const _exhaustive: never = status;
+      return _exhaustive;
+    }
+  }
+}
+
+// spec/app/calendars.md, "A signed-in tablet’s Home calendar card says what is planned from its Google calendar"
+export function managedHomeCalendar(starts: readonly number[] | undefined, readable: boolean | undefined, now: number): { status?: string; hint?: string } {
+  if (readable === undefined || (readable && starts === undefined)) return {};
+  const today = dayOf(now);
+  const status = managedHomeCalendarStatus(readable ? [...(starts ?? [])] : [], midnight(today), midnight(today + 1));
+  return {
+    status: status === "CalendarLastUpdated" ? undefined : calendarStatusText[status],
+    hint: homeCalendarHint(status) ? "Ask Grace to add an appointment." : undefined,
+  };
 }
 
 const escapedSvg = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");

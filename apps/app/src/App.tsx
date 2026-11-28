@@ -10,7 +10,7 @@ import { activeTab, tabUrl } from "../gen/app__browser.ts";
 import type { Turn } from "../gen/app__conversation.ts";
 import { type BackAction, backAction, declineChoice } from "../gen/app__deviceKeys.ts";
 import { effectiveBrightness, muteChoice, textScalePercent, volumeChoice } from "../gen/app__preferences.ts";
-import type { Setup } from "../gen/app__setup.ts";
+import { managedReadAccountId, mayReadManaged, type Setup } from "../gen/app__setup.ts";
 import type { Connectivity, RailPopover as Popover, Surface } from "../gen/app__shell.ts";
 import { sleepHint } from "../gen/app__wake.ts";
 import { type Event as WebsiteEvent, type WebsiteRequests, presented } from "../gen/app__websiteRequests.ts";
@@ -36,6 +36,8 @@ import {
   type Runtime,
   homeCalendar,
   homeMail,
+  managedHomeCalendar,
+  managedHomeMail,
   isRuntimePrimed,
   nextAppointment,
   primeRuntime,
@@ -87,7 +89,7 @@ const railDate = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "
 const sleepDate = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
 
 const managedNext = (cards: HomeCards | undefined, now: Date) => {
-  const next = cards?.events[0];
+  const next = cards?.events?.[0];
   if (!next) return undefined;
   const at = hostedAppointmentDate(next).getTime();
   return `${relative(dayOf(at), dayOf(now.getTime()))}: ${next.title || "Untitled appointment"}, ${next.isAllDay ? "All day" : timeLabel(at)}`;
@@ -180,11 +182,19 @@ function clockParts(now: Date) {
 
 type HomeCardIdentity = { readonly accountId: string; readonly grant: string } | undefined;
 const selectHomeCardIdentity = (setup: Setup | undefined): HomeCardIdentity =>
-  setup?.graceAccount.tag === "GraceSignedIn" && setup.googleLink.tag === "GoogleLinkConnected"
-    ? { accountId: setup.graceAccount.accountId, grant: setup.googleLink.grant }
+  setup !== undefined && managedReadAccountId(setup.graceAccount) !== "" && setup.googleLink.tag === "GoogleLinkConnected"
+    ? { accountId: managedReadAccountId(setup.graceAccount), grant: setup.googleLink.grant }
     : undefined;
 const sameHomeCardIdentity = (a: HomeCardIdentity, b: HomeCardIdentity) =>
   a === b || (a !== undefined && b !== undefined && a.accountId === b.accountId && a.grant === b.grant);
+
+type ManagedReadable = { readonly mail: boolean; readonly calendar: boolean } | undefined;
+const selectManagedReadable = (setup: Setup | undefined): ManagedReadable =>
+  setup?.googleLink.tag === "GoogleLinkReady" || setup?.googleLink.tag === "GoogleLinkConnected"
+    ? { mail: mayReadManaged(setup.graceAccount, setup.googleLink, "ManagedEmail"), calendar: mayReadManaged(setup.graceAccount, setup.googleLink, "ManagedCalendar") }
+    : undefined;
+const sameManagedReadable = (a: ManagedReadable, b: ManagedReadable) =>
+  a === b || (a !== undefined && b !== undefined && a.mail === b.mail && a.calendar === b.calendar);
 
 function useHomeCards(): HomeCards | undefined {
   const identity = useSetupSelector(selectHomeCardIdentity, sameHomeCardIdentity);
@@ -451,6 +461,7 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
   const { current, send } = useWorkspaceActions();
   const owner = useSetupSelector(selectOwner);
   const cards = useHomeCards();
+  const readable = useSetupSelector(selectManagedReadable, sameManagedReadable);
   const files = useFilesHome();
   const { accounts } = useAccounts();
   const accountIds = useAccountIds();
@@ -496,6 +507,7 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
               weekday,
               day,
               ...ours && accounts ? homeCalendar(accounts, calendars, slice.online, nowMs, updated, slice.canCalendar ? calendarActions : undefined) : {
+                ...owner === "Hosted" ? managedHomeCalendar(cards?.events?.map((event) => hostedAppointmentDate(event).getTime()), readable?.calendar, nowMs) : {},
                 events: (cards?.events ?? []).slice(0, 3).map((event, index) => {
                   const { date, time } = hostedAppointmentDisplay(event);
                   return {
@@ -513,14 +525,8 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
               ...visitProps.calendar,
             }}
             email={{
-              ...ours && accounts ? homeMail(accounts, boxes, read, slice.online, nowMs, updated) : {
-                messages: (owner === "Hosted" ? cards?.mail ?? [] : []).slice(0, 2).map((message) => ({
-                  id: message.externalId,
-                  name: message.from || "Unknown sender",
-                  subject: message.subject || "No subject",
-                  unread: message.isUnread,
-                })),
-              },
+              ...ours && accounts ? homeMail(accounts, boxes, read, slice.online, nowMs, updated)
+                : owner === "Hosted" ? managedHomeMail(cards, readable?.mail) : { messages: [] },
               ...visitProps.email,
             }}
             internet={{ ...visitProps.browser, "aria-label": "Internet", status: internetStatus, openLabel: slice.online && slice.publicUrl !== "" ? "Continue" : "Open" }}
@@ -548,7 +554,7 @@ function CalendarSurface({ covered }: { covered: boolean }) {
 function SettingsSurface({ covered }: { covered: boolean }) {
   const owner = useSetupSelector(selectOwner);
   const cards = useHomeCards();
-  return <Settings {...under(covered)} hostedAppointment={owner === "Hosted" ? cards?.events[0] : undefined} />;
+  return <Settings {...under(covered)} hostedAppointment={owner === "Hosted" ? cards?.events?.[0] : undefined} />;
 }
 
 function ManagedSurface({ surface, covered }: { surface: "Email" | "Calendar"; covered: boolean }) {
