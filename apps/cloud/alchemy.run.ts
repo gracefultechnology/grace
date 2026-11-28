@@ -103,51 +103,62 @@ function resolveAssetsDir(target: StageTarget): string {
 }
 
 function resolveStateLayer() {
-  if (process.env.ALCHEMY_STATE_STORE === "cloudflare") {
-    return Cloudflare.state({
-      ...(process.env.CLOUDFLARE_ACCOUNT_ID ? { accountId: process.env.CLOUDFLARE_ACCOUNT_ID } : {}),
-    });
-  }
-  const bucket = process.env.R2_STATE_BUCKET;
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const accessKeyId = process.env.R2_STATE_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_STATE_SECRET_ACCESS_KEY;
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  const wantsR2 = process.env.ALCHEMY_STATE_STORE === "r2" || Boolean(bucket && accountId && accessKeyId && secretAccessKey);
-  if (wantsR2 && bucket && accountId && ((accessKeyId && secretAccessKey) || apiToken)) {
-    const config = accessKeyId && secretAccessKey
-      ? { kind: "s3" as const, accountId, bucket, accessKeyId, secretAccessKey }
-      : { kind: "api" as const, accountId, bucket, apiToken: apiToken ?? "" };
-    const objects = makeR2BucketObjects<StateStoreError>(config, {
-      tryPromise: Effect.tryPromise,
-      makeError: ({ message, cause, status }) =>
-        new StateStoreError({
-          message,
-          ...(cause ? { cause } : {}),
-          ...(status !== undefined ? { http: { status } } : {}),
-        }),
-    });
-    return Layer.effect(
-      State,
-      Effect.gen(function* () {
-        const context = yield* Effect.context();
-        const scope = yield* Effect.scope;
-        const make = makeBucketState({
-          id: "r2",
-          label: "Cloudflare R2",
-          prefix: process.env.R2_STATE_PREFIX ?? "alchemy/grace-cloud/",
-          objects: Effect.succeed(objects),
-        }).pipe(Scope.provide(scope), Effect.provideContext(context));
-        return yield* Effect.cached(make);
-      }),
-    );
-  }
-  return Alchemy.localState();
+  return Layer.unwrap(
+    Effect.gen(function* () {
+      const stageName = yield* Alchemy.Stage;
+      const stageTarget = resolveStage({ stage: stageName, cwd: repoRoot });
+      if (stageTarget.kind === "dev" || stageTarget.kind === "test") {
+        return Alchemy.localState();
+      }
+      if (process.env.ALCHEMY_STATE_STORE === "cloudflare") {
+        return Cloudflare.state({
+          ...(process.env.CLOUDFLARE_ACCOUNT_ID ? { accountId: process.env.CLOUDFLARE_ACCOUNT_ID } : {}),
+        });
+      }
+      const bucket = process.env.R2_STATE_BUCKET;
+      const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+      const accessKeyId = process.env.R2_STATE_ACCESS_KEY_ID;
+      const secretAccessKey = process.env.R2_STATE_SECRET_ACCESS_KEY;
+      const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+      const wantsR2 = process.env.ALCHEMY_STATE_STORE === "r2" || Boolean(bucket && accountId && accessKeyId && secretAccessKey);
+      if (wantsR2 && bucket && accountId && ((accessKeyId && secretAccessKey) || apiToken)) {
+        const config = accessKeyId && secretAccessKey
+          ? { kind: "s3" as const, accountId, bucket, accessKeyId, secretAccessKey }
+          : { kind: "api" as const, accountId, bucket, apiToken: apiToken ?? "" };
+        const objects = makeR2BucketObjects<StateStoreError>(config, {
+          tryPromise: Effect.tryPromise,
+          makeError: ({ message, cause, status }) =>
+            new StateStoreError({
+              message,
+              ...(cause ? { cause } : {}),
+              ...(status !== undefined ? { http: { status } } : {}),
+            }),
+        });
+        return Layer.effect(
+          State,
+          Effect.gen(function* () {
+            const context = yield* Effect.context();
+            const scope = yield* Effect.scope;
+            const make = makeBucketState({
+              id: "r2",
+              label: "Cloudflare R2",
+              prefix: process.env.R2_STATE_PREFIX ?? `alchemy/grace-cloud/${stageTarget.stage}/`,
+              objects: Effect.succeed(objects),
+            }).pipe(Scope.provide(scope), Effect.provideContext(context));
+            return yield* Effect.cached(make);
+          }),
+        );
+      }
+      return Alchemy.localState();
+    }),
+  );
 }
 
 const VerifyGraceCloud = Alchemy.Action(
   "VerifyGraceCloud",
   (input: {
+    readonly workerName: string;
+    readonly workerUrl: string | undefined;
     readonly apiOrigin: string | undefined;
     readonly webOrigin: string | undefined;
     readonly assetHash: string;
@@ -157,14 +168,14 @@ const VerifyGraceCloud = Alchemy.Action(
       if (!input.verifyLive) {
         return {
           ok: true,
-          baseUrl: input.apiOrigin ?? "",
+          baseUrl: input.apiOrigin ?? input.workerUrl ?? "",
           verifiedAt: new Date().toISOString(),
           assetHash: input.assetHash,
           probes: [],
         };
       }
-      if (!input.apiOrigin || !input.webOrigin) {
-        throw new Error("Deployed Grace Cloud worker did not provide apiOrigin and webOrigin");
+      if (!input.workerName || !input.apiOrigin || !input.webOrigin) {
+        throw new Error("Deployed Grace Cloud worker did not provide workerName, apiOrigin, and webOrigin");
       }
       const apiReceipt = await verifyDeploymentEndpoints(
         input.apiOrigin,
@@ -253,28 +264,21 @@ export default Alchemy.Stack(
       sslmode: "disable" as const,
     };
     const hyperdriveOriginUrl = process.env.HYPERDRIVE_ORIGIN_URL?.trim();
-    const hyperdrive = hyperdriveOriginUrl
-      ? yield* Cloudflare.Hyperdrive.Connection("Hyperdrive", {
+    const hyperdrive = isHostedStage && stageHyperdriveId
+      ? Cloudflare.Hyperdrive.lookup("HYPERDRIVE", {
+          hyperdriveId: stageHyperdriveId,
+          dev: devOrigin,
+        })
+      : yield* Cloudflare.Hyperdrive.Connection("Hyperdrive", {
           name: isProduction
             ? "grace-cloud-production-postgres"
             : isStaging
               ? "grace-cloud-staging-postgres"
               : `grace-cloud-${stageTarget.stage}-postgres`,
-          origin: parsePostgresOrigin(hyperdriveOriginUrl),
+          origin: parsePostgresOrigin(hyperdriveOriginUrl || localDbUrl),
           caching: { disabled: true },
           dev: devOrigin,
-        }).pipe(Alchemy.AdoptPolicy.adopt(true), Alchemy.RemovalPolicy.retain())
-      : isHostedStage && stageHyperdriveId
-        ? Cloudflare.Hyperdrive.lookup("HYPERDRIVE", {
-            hyperdriveId: stageHyperdriveId,
-            dev: devOrigin,
-          })
-        : yield* Cloudflare.Hyperdrive.Connection("Hyperdrive", {
-            name: `grace-cloud-${stageTarget.stage}-postgres`,
-            origin: parsePostgresOrigin(localDbUrl),
-            caching: { disabled: true },
-            dev: devOrigin,
-          }).pipe(Alchemy.AdoptPolicy.adopt(true), Alchemy.RemovalPolicy.retain());
+        }).pipe(Alchemy.AdoptPolicy.adopt(true), Alchemy.RemovalPolicy.retain());
 
     const apiHost = envConfig.routes[0]?.pattern;
     const webHost = envConfig.routes[1]?.pattern;
@@ -319,6 +323,8 @@ export default Alchemy.Stack(
     const webOrigin = isHostedStage ? envConfig.vars.WEB_ORIGIN : (worker.url ?? wrangler.vars.WEB_ORIGIN);
 
     const receipt = yield* VerifyGraceCloud({
+      workerName: worker.workerName,
+      workerUrl: worker.url,
       apiOrigin,
       webOrigin,
       assetHash: assets.hash,

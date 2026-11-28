@@ -118,7 +118,6 @@ jobs:
           R2_STATE_PREFIX: ${{ vars.R2_STATE_PREFIX || '' }}
           R2_STATE_ACCESS_KEY_ID: ${{ secrets.R2_STATE_ACCESS_KEY_ID }}
           R2_STATE_SECRET_ACCESS_KEY: ${{ secrets.R2_STATE_SECRET_ACCESS_KEY }}
-          HYPERDRIVE_ORIGIN_URL: ${{ secrets.HYPERDRIVE_ORIGIN_URL }}
           STAGE: ${{ inputs.stage || 'staging' }}
           DRY_RUN: ${{ inputs.dry_run || false }}
         run: |
