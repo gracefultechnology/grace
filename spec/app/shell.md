@@ -190,31 +190,30 @@ pure def lawFilesHintOnlyWhenEmpty(photos: int, documents: int): bool =
   (homeFilesStatus(photos) == NoPhotosYet iff photos <= 0)
 ```
 
-### Passwords offers Grace’s help while none are saved, then shows only how many
+### Passwords offers Grace’s help while none are saved, then says only that some are kept on this tablet
 
-While no password is saved, the Passwords card shows Grace’s offer, "Grace
-offers to save them as you sign in", with Add one in place of Open, even
-while a banner is up; the offer has no ✕. Once some are saved it says "<n>
-saved, only on this tablet", with Open and a + that adds one. Only that count
-crosses from the vault to the app; the card never names a site or an
-account. While the app does not know the count, the card shows Open alone,
-with neither the offer nor a count.
+While no password is saved, the Passwords card says "None saved yet" and
+shows Grace’s offer, "Grace offers to save them as you sign in", with Add one
+in place of Open, even while a banner is up; the offer has no ✕. Once any is
+saved it says "Kept only on this tablet", with Open and a + that adds one.
+Only whether any is saved crosses from the vault to the app, never a count, a
+site or an account. While the app does not know, because the vault is locked
+or did not answer, the card shows Open alone, with neither the offer nor a
+status.
 
 ```quint
-type SavedPasswords = CountUnknown | SavedCount({ count: int })
-type PasswordsCardView = PlainPasswords | OfferToSave | ShowsSaved({ count: int })
+type SavedPasswords = SavedUnknown | NoneSaved | SomeSaved
+type PasswordsCardView = PlainPasswords | OfferToSave | KeptOnTablet
 pure def passwordsCard(saved: SavedPasswords): PasswordsCardView = match saved {
-  | SavedCount(x) => if (x.count > 0) ShowsSaved({ count: x.count }) else OfferToSave
-  | _ => PlainPasswords
+  | NoneSaved => OfferToSave
+  | SomeSaved => KeptOnTablet
+  | SavedUnknown => PlainPasswords
 }
-pure def lawPasswordsCardShowsOnlyACount(saved: SavedPasswords): bool =
-  val view = passwordsCard(saved)
-  match view {
-    | ShowsSaved(x) => x.count > 0 and saved == SavedCount({ count: x.count })
-    | OfferToSave => saved != CountUnknown
-    | _ => saved == CountUnknown
-  }
-pure val savedValues = Set(CountUnknown, SavedCount({ count: 0 }), SavedCount({ count: 3 }))
+pure def lawPasswordsCardSaysOnlyWhetherAnyIsSaved(saved: SavedPasswords): bool =
+  (passwordsCard(saved) == OfferToSave iff saved == NoneSaved) and
+  (passwordsCard(saved) == KeptOnTablet iff saved == SomeSaved) and
+  (passwordsCard(saved) == PlainPasswords iff saved == SavedUnknown)
+pure val savedValues = Set(SavedUnknown, NoneSaved, SomeSaved)
 ```
 
 ### Offline, Internet has no status and still opens the browser

@@ -37,6 +37,7 @@ import {
   homeCalendar,
   homeMail,
   managedHomeCalendar,
+  useSavedPasswords,
   managedHomeMail,
   isRuntimePrimed,
   nextAppointment,
@@ -438,15 +439,13 @@ const selectHomeSlice = (workspace: Workspace | undefined) => {
   };
 };
 
-const savedPasswords: SavedPasswords = { tag: "CountUnknown" };
-
-// spec/app/shell.md, "Passwords offers Grace’s help while none are saved, then shows only how many"
+// spec/app/shell.md, "Passwords offers Grace’s help while none are saved, then says only that some are kept on this tablet"
 function passwordsProps(saved: SavedPasswords, open: { disabled: boolean; onClick: () => void }): NonNullable<HomeScreenProps["passwords"]> {
   const view = passwordsCard(saved);
-  switch (view.tag) {
+  switch (view) {
     case "PlainPasswords": return open;
     case "OfferToSave": return { ...open, status: "None saved yet", offer: { message: "Grace offers to save them as you sign in", action: "Add one", onAction: open.disabled ? undefined : open.onClick } };
-    case "ShowsSaved": return { ...open, status: `${view.count} saved, only on this tablet`, onAdd: open.disabled ? undefined : open.onClick };
+    case "KeptOnTablet": return { ...open, status: "Kept only on this tablet", onAdd: open.disabled ? undefined : open.onClick };
     default: {
       const _exhaustive: never = view;
       return _exhaustive;
@@ -463,6 +462,7 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
   const cards = useHomeCards();
   const readable = useSetupSelector(selectManagedReadable, sameManagedReadable);
   const files = useFilesHome();
+  const saved = useSavedPasswords();
   const { accounts } = useAccounts();
   const accountIds = useAccountIds();
   const calKeys = useCalendarKeys();
@@ -537,7 +537,7 @@ function HomeSurface({ bottom, docked, keyboard, covered }: { bottom: number; do
               hint: files && homeFilesHint(photos.length, files.document ? 1 : 0) ? "Photos you save from email will appear here." : undefined,
               ...visitProps.files,
             }}
-            passwords={passwordsProps(savedPasswords, visitProps.passwords)}
+            passwords={passwordsProps(saved, visitProps.passwords)}
             page={slice.homePage}
             onPageChange={onPageChange} />
         )}</WithCalendars>

@@ -427,6 +427,29 @@ export const fileLibrary = (account: AccountBridge | undefined) => Layer.effect(
     try SubscriptionRef.set(latest, { kind: !visible ? "out" : !owner ? "signedOut" : !port ? "unsupported" : "opening" })
     if (visible && owner && port) try fork.scoped serial.withPermit(openLibrary())
   })
+
+  effect function previewHome(owner: string) {
+    if (!port) return
+    const opened = Effect.flatMap(tryPromise(() => port.open()), Schema.decodeUnknownEffect(Lease)) catch () => undefined
+    if (!opened) return
+    const catalog = Effect.flatMap(tryPromise(() => port.list({ lease: opened.lease })), Schema.decodeUnknownEffect(Catalog)) catch () => undefined
+    const entries = (catalog?.entries ?? []).slice(0, 250).map((entry) => savedFile(entry, owner, opened.lease))
+    const photos = entries.filter((entry) => entry.kind === "Photo").slice(0, 3)
+    const document = entries.find((entry) => entry.kind === "Pdf")
+    const thumbs = new Map(try loadMissingThumbs(port, opened.lease, photos, {}))
+    tryPromise(() => port.close(opened)) catch () => undefined
+    const w = try desk.get()
+    if (catalog === undefined || w.device.surface !== "Home" || filesAccount((try setup.get()).graceAccount) !== owner) return
+    try SubscriptionRef.set(home, {
+      photos: photos.flatMap((entry) => { const src = thumbs.get(entry.id); return src ? [{ src, alt: entry.name }] : [] }),
+      document: document ? { name: document.name } : undefined,
+    })
+  }
+
+  const homeVisible = Stream.changes(Stream.map(desk.changes, (w) => w.device.surface === "Home" && w.device.readiness === "Ready"))
+  try fork.scoped Stream.runForEach(Stream.zipLatest(homeVisible, accountOwner), effect ([shown, owner]) => {
+    if (shown && owner && port) try fork.scoped previewHome(owner)
+  })
   return {
     changes: SubscriptionRef.changes(latest),
     home: SubscriptionRef.changes(home),
