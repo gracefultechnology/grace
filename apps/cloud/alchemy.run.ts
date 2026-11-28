@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Alchemy from "alchemy";
+import * as Output from "alchemy/Output";
 import { makeBucketState } from "alchemy/State/BucketState";
 import { State, StateStoreError } from "alchemy/State/State";
 import * as Effect from "effect/Effect";
@@ -17,6 +18,31 @@ import {
   verifyDeploymentEndpoints,
   type StageTarget,
 } from "vibestack/alchemy";
+
+const hyperdriveLookupTypeId = Symbol.for("alchemy/Cloudflare/Hyperdrive/ConnectionLookup");
+
+function hyperdriveById(
+  id: string,
+  props: {
+    readonly hyperdriveId: string;
+    readonly accountId?: string;
+    readonly dev?: Cloudflare.Hyperdrive.DevOrigin;
+  },
+): Cloudflare.Hyperdrive.ConnectionLookup {
+  const ref: unknown = {
+    [hyperdriveLookupTypeId]: true,
+    Type: "Cloudflare.Hyperdrive",
+    LogicalId: id,
+    hyperdriveId: Output.asOutput(props.hyperdriveId),
+    name: Output.asOutput(id),
+    accountId: Output.asOutput(props.accountId ?? ""),
+    dev: Output.asOutput<Cloudflare.Hyperdrive.DevOrigin | undefined>(props.dev),
+  };
+  if (!Cloudflare.Hyperdrive.isConnectionLookup(ref)) {
+    throw new Error(`Invalid Hyperdrive lookup reference for ${id}`);
+  }
+  return ref;
+}
 
 const localWorkerdCompatDate = "2026-11-02";
 
@@ -265,8 +291,9 @@ export default Alchemy.Stack(
     };
     const hyperdriveOriginUrl = process.env.HYPERDRIVE_ORIGIN_URL?.trim();
     const hyperdrive = isHostedStage && stageHyperdriveId
-      ? Cloudflare.Hyperdrive.lookup("HYPERDRIVE", {
+      ? hyperdriveById("HYPERDRIVE", {
           hyperdriveId: stageHyperdriveId,
+          accountId: process.env.CLOUDFLARE_ACCOUNT_ID?.trim(),
           dev: devOrigin,
         })
       : yield* Cloudflare.Hyperdrive.Connection("Hyperdrive", {
