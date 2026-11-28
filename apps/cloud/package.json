@@ -4,12 +4,17 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "(node -e \"process.exit(process.env.TURBO_HASH ? 0 : 1)\" || pnpm -w all //#gen) && pnpm --dir ../../vendor/eliza --filter @elizaos/cloud --filter @repo/design-system run build && pnpm --dir ../../vendor/eliza --filter @elizaos/cloud-worker run build && vibelang -p tsconfig.json",
-    "typecheck": "vibelang --noEmit -p .",
+    "build": "(node -e \"process.exit(process.env.TURBO_HASH ? 0 : 1)\" || pnpm -w all //#gen) && pnpm --dir ../../vendor/eliza --filter @elizaos/cloud --filter @repo/design-system run build && pnpm --dir ../../vendor/eliza --filter @elizaos/cloud-worker run build && vibelang -p tsconfig.json && pnpm run bundle:worker",
+    "bundle:worker": "esbuild dist/src/worker.js --bundle --format=esm --platform=node --conditions=workerd --conditions=worker --external:cloudflare:* --external:pg-native --banner:js=\"import { createRequire as __graceCreateRequire } from 'node:module'; const require = __graceCreateRequire(import.meta.url);\" --outfile=dist/bundle/worker.mjs",
+    "typecheck": "vibelang --noEmit -p . && tsc --noEmit -p deploy/tsconfig.json",
     "test": "vitest run",
+    "test:deploy": "ALCHEMY_FAST_DISTILLED=1 vitest run --config deploy/vitest.config.ts",
     "dev": "pnpm build && wrangler dev --local --port 8787",
+    "dev:cf": "pnpm build && ALCHEMY_FAST_DISTILLED=1 alchemy --fast-distilled dev --config alchemy.run.ts",
     "bundle": "pnpm build && bundle() { VITE_GRACE_CLOUD_API_ORIGIN=\"$2\" VITE_GRACE_CLOUD_WEB_ORIGIN=\"$3\" pnpm --filter @repo/app build --outDir \"../cloud/.wrangler/assets/$1\" --emptyOutDir && cp -R ../../vendor/eliza/packages/cloud-worker/dist/pages/. \".wrangler/assets/$1/\" && wrangler deploy --env \"$1\" --dry-run --outdir \".wrangler/bundle/$1\"; } && bundle staging https://api-staging.graceforseniors.com https://app-staging.graceforseniors.com && bundle production https://api.graceforseniors.com https://app.graceforseniors.com",
     "deploy": "pnpm bundle && pnpm --filter @repo/app test:browser test/browser.browser.test.tsx -t 'Browse and return to the page I left' && wrangler deploy --env production",
+    "deploy:plan": "pnpm build && ALCHEMY_FAST_DISTILLED=1 alchemy --fast-distilled plan --config alchemy.run.ts --adopt",
+    "deploy:alchemy": "pnpm bundle && ALCHEMY_FAST_DISTILLED=1 alchemy --fast-distilled deploy --config alchemy.run.ts --adopt --yes --no-input",
     "migrate": "pnpm build && node --env-file-if-exists=.dev.vars dist/src/migrate.js"
   },
   "dependencies": {
@@ -19,6 +24,10 @@
     "@effect/platform-node": "4.1.1"
   },
   "devDependencies": {
+    "@alchemy.run/cloudflare": "catalog:",
+    "@alchemy.run/test": "catalog:",
+    "alchemy": "catalog:",
+    "esbuild": "catalog:",
     "wrangler": "4.164.0",
     "vibelang": "0.0.13",
     "vibestack": "workspace:*",

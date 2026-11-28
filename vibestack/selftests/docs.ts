@@ -37,7 +37,7 @@ describe("the documents name what exists", () => {
     const workspace = ["packages", "apps"].flatMap(within).filter((dir) => fs.existsSync(path.join(project, dir, "package.json")));
     // What pnpm itself provides, and what a document proposes rather than names.
     const scripts = new Set(["install", "exec", "add", "pack", ...["", "vibestack/studio", ...workspace, ...within("vibestack/examples")].flatMap((dir) => Object.keys(manifest(dir).scripts ?? {}))]);
-    const proposed = ["apps/billing", "packages/billing", "vibestack/README.md", "vibestack/LICENSE"];
+    const proposed = ["apps/billing", "packages/billing", "vibestack/README.md", "vibestack/LICENSE", "vibestack/alchemy"];
     // A heading as GitHub links to it.
     const anchors = (file: string) => read(file).split("\n").flatMap((line) => /^#{1,6} /.test(line) ? [line.replace(/^#+ /, "").toLowerCase().replace(/[^\p{L}\p{N}\s_-]/gu, "").trim().replace(/\s/g, "-")] : []);
     const lost = DOCS.flatMap((doc) => {

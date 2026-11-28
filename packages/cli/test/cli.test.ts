@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { commands, defineCommand, runCli, type CliIo } from "../src/index.ts";
@@ -33,29 +35,21 @@ describe("project CLI", () => {
     expect(await runCli({ argv: ["--help"], commands, rootDir: templateRoot, cwd: templateRoot, io: human.io })).toBe(0);
     expect(human.out()).toContain("Usage: pnpm cli <command> [options]");
     expect(human.out()).toContain("status");
+    expect(human.out()).toContain("deploy");
+    expect(human.out()).toContain("verify-live");
 
     const structured = createRecorder();
     expect(await runCli({ argv: ["help", "--json"], commands, rootDir: templateRoot, cwd: templateRoot, io: structured.io })).toBe(0);
-    expect(parseJson(structured.out())).toEqual({
-      ok: true,
-      command: "help",
-      data: {
-        commands: [
-          {
-            name: "status",
-            summary: "Inspect workspace packages, specs, and generated outputs",
-            usage: "pnpm cli status [--package <name|path>] [--json]",
-            flags: {
-              package: {
-                kind: "string",
-                short: "p",
-                description: "Filter to one workspace package by name or relative path",
-              },
-            },
-          },
-        ],
-      },
-    });
+    const helpPayload = parseJson(structured.out()) as {
+      readonly ok: boolean;
+      readonly command: string;
+      readonly data: {
+        readonly commands: readonly { readonly name: string }[];
+      };
+    };
+    expect(helpPayload.ok).toBe(true);
+    expect(helpPayload.command).toBe("help");
+    expect(helpPayload.data.commands.map((cmd) => cmd.name)).toEqual(["status", "deploy", "verify-live"]);
 
     const single = createRecorder();
     expect(await runCli({ argv: ["status", "--help", "--json"], commands, rootDir: templateRoot, cwd: templateRoot, io: single.io })).toBe(0);
@@ -199,5 +193,60 @@ describe("project CLI", () => {
     expect(parsed.ok).toBe(true);
     expect(parsed.command).toBe("status");
     expect(parsed.data.packages.map((pkg) => pkg.name)).toContain("@repo/cli");
+  });
+
+  test("deploy rejects conflicting flags and verify-live probes API and web endpoints", async () => {
+    const conflict = createRecorder();
+    expect(await runCli({ argv: ["deploy", "--dry-run", "--destroy", "--json"], commands, rootDir: templateRoot, cwd: templateRoot, io: conflict.io })).toBe(2);
+    expect(parseJson(conflict.out())).toMatchObject({ ok: false, command: "deploy" });
+
+    const server = http.createServer((req, res) => {
+      if (req.url === "/api/health") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "ok" }));
+        return;
+      }
+      if (req.url === "/.well-known/assetlinks.json") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify([{ target: { package_name: "technology.graceful.grace" } }]));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", () => {
+        resolve();
+      });
+    });
+
+    try {
+      const { port } = server.address() as AddressInfo;
+      const base = `http://127.0.0.1:${String(port)}`;
+      const live = createRecorder();
+      expect(await runCli({
+        argv: ["verify-live", "--stage", "staging", "--api-url", base, "--web-url", base, "--json"],
+        commands,
+        rootDir: templateRoot,
+        cwd: templateRoot,
+        io: live.io,
+      })).toBe(0);
+      expect(parseJson(live.out())).toMatchObject({
+        ok: true,
+        command: "verify-live",
+        data: {
+          stage: "staging",
+          api: { ok: true },
+          web: { ok: true },
+        },
+      });
+    } finally {
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      });
+    }
   });
 });

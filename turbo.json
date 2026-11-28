@@ -95,6 +95,32 @@
       "dependsOn": ["@grace/cloud#build"],
       "outputs": [".cache/test-result-*.json"]
     },
+    "test:deploy": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "passThroughEnv": ["ALCHEMY_*", "USER", "USERNAME"]
+    },
+    "@grace/cloud#test:deploy": {
+      "dependsOn": ["@grace/cloud#build"],
+      "cache": false,
+      "passThroughEnv": ["ALCHEMY_*", "USER", "USERNAME"]
+    },
+    "dev:cf": {
+      "dependsOn": ["//#gen"],
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": ["CLOUDFLARE_*", "ALCHEMY_*", "R2_STATE_*", "HYPERDRIVE_*", "DATABASE_URL", "USER", "USERNAME"]
+    },
+    "deploy": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "passThroughEnv": ["CLOUDFLARE_*", "ALCHEMY_*", "R2_STATE_*", "HYPERDRIVE_*", "DATABASE_URL", "GITHUB_*", "PR_NUMBER", "USER", "USERNAME"]
+    },
+    "deploy:plan": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "passThroughEnv": ["CLOUDFLARE_*", "ALCHEMY_*", "R2_STATE_*", "HYPERDRIVE_*", "DATABASE_URL", "GITHUB_*", "PR_NUMBER", "USER", "USERNAME"]
+    },
     "@repo/app#gen": {
       "inputs": [
         "$TURBO_ROOT$/vendor/eliza/packages/{cloud,core,os,os-bridges}/package.json",
@@ -204,7 +230,7 @@
         "!vibestack/{testing,stories,design}/test/**",
         "!vibestack/fixtures/**",
         "!vibestack/examples/**",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static}/**",
         "!**/.DS_Store",
         "!{apps,packages,vibestack/studio}/**/gen/**",
         "package.json",
@@ -222,7 +248,7 @@
       "inputs": [
         "vibestack/**",
         "!vibestack/examples/**",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static}/**",
         "!**/.DS_Store",
         "!{apps,packages,vibestack/studio}/**/gen/**",
         "package.json",
@@ -245,7 +271,7 @@
         "vibestack/**",
         "!vibestack/{examples,studio}/**",
         "!vibestack/selftests/{docs,examples}.ts",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static}/**",
         "!**/.DS_Store",
         "spec/**",
         "!spec/**/*.md",
@@ -271,7 +297,7 @@
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
         "!vibestack/selftests/{docs,examples}.ts",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static,__traces__}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static,__traces__}/**",
         "!**/.DS_Store",
         "!vibestack/{studio,examples}/**/gen/**",
         ".agents/**",
@@ -301,7 +327,7 @@
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
         "!vibestack/selftests/{docs,examples}.ts",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static,__traces__}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static,__traces__}/**",
         "!**/.DS_Store",
         "!vibestack/{studio,examples}/**/gen/**",
         ".agents/**",
@@ -333,7 +359,7 @@
         "vibestack/**",
         "!vibestack/examples/{assistant,dashboard,fullstack}/**",
         "!vibestack/selftests/{docs,examples}.ts",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static,__traces__}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static,__traces__}/**",
         "!**/.DS_Store",
         "!{packages,vibestack/studio,vibestack/examples}/**/gen/**",
         "patches/**",
@@ -360,7 +386,7 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "!.claude/worktrees/**",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static,__traces__}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static,__traces__}/**",
         "!{apps,packages,vibestack/studio,vibestack/examples}/**/gen/**"
       ],
       "outputs": []
@@ -372,7 +398,7 @@
         "!vibestack/selftests/{docs,tools}.ts",
         "!vibestack/{studio,fixtures}/**",
         "!vibestack/{testing,stories,design}/test/**",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static,__traces__}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static,__traces__}/**",
         "!**/.DS_Store",
         "!{apps,packages,vibestack/studio,vibestack/examples}/**/gen/**",
         "package.json"
@@ -411,7 +437,7 @@
         "packages/**",
         "vibestack/**",
         "!vibestack/examples/**",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static}/**",
         "!**/.DS_Store",
         "!{apps,packages,vibestack/studio}/**/gen/**",
         "package.json",
@@ -426,7 +452,7 @@
       "inputs": [
         "**/*.css",
         "!.claude/**",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static}/**",
         "!**/.DS_Store",
         "!{apps,packages,vibestack/studio}/**/gen/**",
         "!vibestack/{examples,fixtures}/**",
@@ -443,7 +469,7 @@
         "packages/**",
         "vibestack/**",
         "!vibestack/examples/**",
-        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,generated,storybook-static}/**",
+        "!**/{node_modules,dist,.vibe,.cache,.spec-cache,.turbo,.alchemy,.wrangler,generated,storybook-static}/**",
         "!**/.DS_Store",
         "!{apps,packages,vibestack/studio}/**/gen/**",
         "package.json",

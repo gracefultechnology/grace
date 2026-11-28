@@ -42,6 +42,7 @@ export default {
         "!vibestack/studio/**"
       ],
       "ignoreDependencies": [
+        "alchemy",
         "lemmascript",
         "@vitest/browser"
       ]
@@ -112,10 +113,13 @@ export default {
     },
     "apps/cloud": {
       "entry": [
+        "alchemy.run.ts",
+        "deploy/**/*.test.{ts,vibe}",
         "src/{worker,migrate}.vibe",
         "test/**/*.test.{ts,vibe}"
       ],
       "project": [
+        "deploy/**/*.{ts,vibe}",
         "src/**/*.{ts,vibe,vibex}",
         "test/**/*.{ts,vibe,vibex}"
       ]
