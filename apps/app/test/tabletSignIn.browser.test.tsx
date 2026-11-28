@@ -105,6 +105,7 @@ it.each(["confirmed", "interrupted"] as const)('Redeem and reconnect Google (%s)
   } finally {
     await first.dispose();
   }
+  await page.viewport(420, 850);
   const webRuntime = ManagedRuntime.make(application(undefined));
   const reopened = tabletView(webRuntime);
   try {
@@ -125,6 +126,7 @@ it.each(["confirmed", "interrupted"] as const)('Redeem and reconnect Google (%s)
     await reopened.dispose();
   }
 
+  await page.viewport(1280, 800);
   const device = { id: "tablet-owner", email: "tablet@example.test" };
   const leaseVersion = "active-tablet-lease";
   let deviceGrant: typeof granted | null = null;

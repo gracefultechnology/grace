@@ -124,7 +124,7 @@ export function GraceAccountSettings() {
           )}
           {link?.tag === "GoogleLinkConnected" && <AccountFacts facts={[{ label: "Google connected", value: link.email }]} />}
           {link !== undefined && mayOfferGoogleLink(snapshot, link) && (
-            <form key={`google-${member.accountId}`} className="flex flex-col items-start gap-3" onSubmit={(event) => {
+            <form key={`google-${member.accountId}`} className="flex max-w-full flex-col items-start gap-3" onSubmit={(event) => {
               event.preventDefault();
               const address = new FormData(event.currentTarget).get("google-email");
               run({ kind: "connectGoogle", expectedEmail: typeof address === "string" ? address.trim() : "" });
@@ -135,8 +135,9 @@ export function GraceAccountSettings() {
                   <Input id={googleAddressId} name="google-email" type="email" autoComplete="email" disabled={pending || confirmingSignOut} required />
                 </>
               )}
-              <div className="flex flex-wrap gap-3">
-                <Button type="submit" variant="capsule" size="pill" disabled={pending || confirmingSignOut}>
+              <div className="flex max-w-full flex-wrap gap-3">
+                <Button type="submit" variant="capsule" size="pill" disabled={pending || confirmingSignOut}
+                  className="max-sm:h-auto max-sm:min-h-16 max-sm:max-w-full max-sm:px-4 max-sm:whitespace-normal">
                   {link.tag === "GoogleLinkConnected" ? "Reconnect Google" : "Connect Gmail and Calendar"}
                 </Button>
                 {link.tag === "GoogleLinkConnected" && (

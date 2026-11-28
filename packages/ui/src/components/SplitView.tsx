@@ -16,7 +16,7 @@ export type SplitViewProps = ComponentProps<"div"> & {
  */
 export function SplitView({ nav, header, pageRef, className, children, ...props }: SplitViewProps) {
   return (
-    <div className={cn("relative grid h-full grid-cols-[270px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-6 px-4 pt-4", className)} {...props}>
+    <div className={cn("relative grid h-full grid-cols-[var(--split-view-sidebar,270px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-6 px-4 pt-4", className)} {...props}>
       {nav}
       <div
         ref={pageRef}
@@ -24,7 +24,7 @@ export function SplitView({ nav, header, pageRef, className, children, ...props 
       >
         {children}
       </div>
-      {header != null && <div className="pointer-events-none absolute top-0 right-0 left-[310px]">{header}</div>}
+      {header != null && <div className="pointer-events-none absolute top-0 right-0 left-[calc(var(--split-view-sidebar,270px)+40px)]">{header}</div>}
     </div>
   );
 }

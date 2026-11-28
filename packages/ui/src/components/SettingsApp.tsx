@@ -1,6 +1,7 @@
 import { Fragment, type ReactNode } from "react";
 import { CircleUserRound, Info, Mail, Shield, Wifi } from "lucide-react";
 import { GearIcon, SpeakerIcon } from "../icons.tsx";
+import { cn } from "../lib/cn.ts";
 import { AppWindow, type AppWindowProps } from "./AppWindow.tsx";
 import { guided, type Guide } from "./GuideAnchor.tsx";
 import { RetryNotice } from "./RetryNotice.tsx";
@@ -81,23 +82,26 @@ export function SettingsApp({
   pageTitle,
   labels,
   guide,
+  className,
   children,
   ...props
 }: SettingsAppProps) {
   const words = { ...defaultLabels, ...labels };
   return (
     <AppWindow
+      className={cn("max-sm:[--split-view-sidebar:112px]", className)}
       title={pageTitle ?? title}
       closeLabel={`Close ${title}`}
       icon={<GearIcon className="size-[26px]" strokeWidth={2} />}
       nav={
-        <SideNav aria-label={title}>
+        <SideNav aria-label={title} className="max-sm:p-1">
           {pages.map((item) => (
             <Fragment key={item}>
               {guided(
                 guide,
                 item,
-                <SideNavItem icon={icons[item]} selected={item === page} onClick={() => onPageChange?.(item)}>
+                <SideNavItem icon={icons[item]} selected={item === page} onClick={() => onPageChange?.(item)}
+                  className="max-sm:flex-col max-sm:justify-center max-sm:gap-1 max-sm:px-2 max-sm:text-control max-sm:leading-tight">
                   {words[item]}
                 </SideNavItem>,
                 { radius: 22, className: "flex" },

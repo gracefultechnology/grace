@@ -593,7 +593,7 @@ function ActiveSurface({ surface, bottom, docked, keyboard, covered, sleeping }:
       {surface === "Browser" && <div className={cn(lifted, besideRail, "pointer-events-none z-[1]")} style={boxStyle}><Browser {...under(covered)} /></div>}
       {surface === "Calendar" && ours && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><CalendarSurface covered={covered} /></OverPage>}
       {surface === "Email" && ours && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><Email {...under(covered)} /></OverPage>}
-      {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><SettingsSurface covered={covered} /></OverPage>}
+      {surface === "DeviceSettings" && <OverPage className={cn(lifted, besideRail, "z-[2] max-sm:left-1.5")} style={boxStyle}><SettingsSurface covered={covered} /></OverPage>}
       {surface === "Passwords" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><PasswordsSurface covered={covered} /></OverPage>}
       {surface === "Files" && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><FilesSurface covered={covered} /></OverPage>}
       {!ours && (surface === "Email" || surface === "Calendar") && <OverPage className={cn(lifted, besideRail, "z-[2]")} style={boxStyle}><ManagedSurface surface={surface} covered={covered} /></OverPage>}
