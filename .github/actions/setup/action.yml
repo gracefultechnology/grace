@@ -166,6 +166,24 @@ runs:
       if: github.job != 'vibestack-fixture-selftests'
       run: pnpm --dir vendor/eliza --filter @elizaos/cloud-worker... --filter @elizaos/agent-host... --filter @elizaos/os... --filter @elizaos/os-bridges... install --frozen-lockfile --ignore-scripts
       shell: bash
+    - id: eliza-submodule-sha
+      if: github.job != 'vibestack-fixture-selftests' && inputs.job == 'product'
+      shell: bash
+      run: |
+        echo "sha=$(git rev-parse HEAD:vendor/eliza)" >> "$GITHUB_OUTPUT"
+        echo "node=$(node --version)" >> "$GITHUB_OUTPUT"
+    - name: Restore pinned Eliza cloud build cache
+      if: steps.eliza-submodule-sha.outputs.sha != ''
+      continue-on-error: true
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          vendor/eliza/packages/cloud/dist
+          vendor/eliza/packages/cloud/gen
+          vendor/eliza/packages/cloud-worker/dist
+          vendor/eliza/packages/cloud-worker/gen
+          vendor/eliza/packages/design-system/generated
+        key: eliza-cloud-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.eliza-submodule-sha.outputs.node }}-${{ steps.eliza-submodule-sha.outputs.sha }}
     - id: gen-seed
       if: >-
         (inputs.job == 'product' || inputs.job == 'android') && inputs.cache-verification == 'true' &&

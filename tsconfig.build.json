@@ -33,6 +33,7 @@
     "vibestack/design/eslint.ts",
     "vibestack/design/tokens.ts",
     "vibestack/eslint.ts",
+    "vibestack/alchemy.ts",
     "vibestack/chromium.ts",
     "vibestack/config.ts"
   ],

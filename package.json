@@ -7,6 +7,10 @@
   },
   "scripts": {
     "dev": "turbo run dev //#studio",
+    "dev:cf": "ALCHEMY_FAST_DISTILLED=1 pnpm --filter @grace/cloud dev:cf",
+    "deploy": "ALCHEMY_FAST_DISTILLED=1 pnpm --filter @grace/cloud deploy:alchemy",
+    "deploy:plan": "ALCHEMY_FAST_DISTILLED=1 pnpm --filter @grace/cloud deploy:plan",
+    "test:deploy": "pnpm all test:deploy",
     "studio": "node vibestack/spec.ts studio",
     "cli": "node packages/cli/src/main.ts",
     "check": "node vibestack/spec.ts check",
@@ -87,6 +91,7 @@
     "@types/pg": "8.23.1",
     "@vitest/browser": "catalog:",
     "@vitest/browser-playwright": "catalog:",
+    "alchemy": "catalog:",
     "eslint": "catalog:",
     "eslint-plugin-better-tailwindcss": "catalog:",
     "eslint-plugin-boundaries": "catalog:",
@@ -132,6 +137,7 @@
     "./design/tokens": "./vibestack/design/tokens.ts",
     "./design/project": "./vibestack/design/project.ts",
     "./eslint": "./vibestack/eslint.ts",
+    "./alchemy": "./vibestack/alchemy.ts",
     "./chromium": "./vibestack/chromium.ts",
     "./config": "./vibestack/config.ts",
     "./package.json": "./package.json"
@@ -148,6 +154,7 @@
       "./design/tokens": "./dist/design/tokens.js",
       "./design/project": "./dist/design/project.js",
       "./eslint": "./dist/eslint.js",
+      "./alchemy": "./dist/alchemy.js",
       "./chromium": "./dist/chromium.js",
       "./config": "./dist/config.js",
       "./package.json": "./package.json"

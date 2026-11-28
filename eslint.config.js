@@ -24,7 +24,7 @@ const imports = {
 }
 const noReact = { patterns: [...imports.patterns, { regex: "^react(?:-dom)?(?:/|$)", message: `Tool and domain code does not import React: ${monorepo}.` }] }
 // What no tsconfig.json includes, so the type-aware rules cannot see it.
-const untyped = ["*.{js,ts}", "**/.storybook/**", "packages/design-system/**", "vibestack/design/test/**", "vibestack/stories/test/**"]
+const untyped = ["*.{js,ts}", "**/.storybook/**", "**/deploy/**", "**/alchemy.run.ts", "packages/design-system/**", "vibestack/design/test/**", "vibestack/stories/test/**"]
 // Every React interface: Studio's page is built on the same theme (vibestack/studio/vite.config.ts).
 const tsx = ["packages/ui/**/*.{ts,tsx}", "apps/**/*.{ts,tsx}", "vibestack/studio/src/page/**/*.{ts,tsx}"]
 const design = "packages/design-system"
@@ -91,7 +91,7 @@ const loose = Object.fromEntries(["no-explicit-any", "no-unsafe-argument", "no-u
 
 export default withWorkspaceBarrels(defineConfig(
   // Generated, disposable or vendored, and .claude/worktrees holds other checkouts of this repository.
-  globalIgnores(["vendor/", "apps/app/artifacts/", "**/gen/", "!vibestack/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.wrangler/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
+  globalIgnores(["vendor/", "apps/app/artifacts/", "**/gen/", "!vibestack/gen/", "**/.vibe/", "**/dist/", "**/.cache/", "**/.alchemy/", "**/.wrangler/", "**/.spec-cache/", "**/generated/", "**/storybook-static/", "**/test/fixtures/", "vibestack/examples/", "vibestack/fixtures/", ".claude/", ".lemmascript/", ".studio/", ".turbo/", "_apalache-out/"]),
   { linterOptions: { reportUnusedDisableDirectives: "error", reportUnusedInlineConfigs: "error" } },
   js.configs.recommended,
   tseslint.configs.recommendedTypeChecked,

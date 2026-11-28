@@ -31,6 +31,7 @@ debug-storybook.log
 test/__traces__/
 .DS_Store
 
+.alchemy/
 .wrangler/
 .dev.vars
 .dev.vars.*

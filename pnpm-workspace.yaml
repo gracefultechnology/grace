@@ -7,6 +7,8 @@ packages:
 # Effect and VibeLang are pinned exactly in the root package.json instead,
 # where `spec init` reads them: VibeLang 0.0.13 accepts Effect 4.1.1 only.
 catalog:
+  "@alchemy.run/cloudflare": 2.0.0-beta.85
+  "@alchemy.run/test": 2.0.0-beta.85
   "@eslint-react/eslint-plugin": ^5.30.2
   "@eslint/js": ^10.0.1
   "@tailwindcss/vite": ^4.3.5
@@ -17,6 +19,7 @@ catalog:
   "@vitest/browser": 5.1.0
   "@vitest/browser-playwright": 5.1.0
   eslint: ^10.14.0
+  esbuild: ^0.28.2
   eslint-plugin-boundaries: ^7.4.3
   eslint-plugin-react-hooks: ^7.1.1
   happy-dom: ^21.0.4
@@ -33,6 +36,7 @@ catalog:
   turbo: ^2.11.11
   typescript: ^6.0.3
   typescript-eslint: ^8.72.2
+  alchemy: 2.0.0-beta.85
   vite: 8.3.5
   vitest: 5.1.0
   # The component system: packages/ui, packages/design-system, packages/storybook.
@@ -69,6 +73,7 @@ peerDependencyRules:
 allowBuilds:
   esbuild: true
   protobufjs: false
+  workerd: true
 
 patchedDependencies:
   lemmascript@0.6.10: patches/lemmascript-0.6.10.patch

@@ -1434,9 +1434,58 @@ jobs:
     environment: *cache-environment
     env: *cache-env
     steps: *verification-steps
+  deploy-verify:
+    name: workerd deploy verify
+    if: ${{ !inputs.cross_app_only && (github.event_name != 'workflow_dispatch' || !inputs.benchmarks_only || !(inputs.billworld || inputs.billworld_statement_cohort == 'held-out' || inputs.webarena || inputs.webarena_gitlab || inputs.webarena_rating_only || inputs.webarena_sort_only)) }}
+    runs-on: ubuntu-24.04
+    environment: *cache-environment
+    env:
+      <<: *cache-env
+      ALCHEMY_FAST_DISTILLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: ./.github/actions/setup
+        with:
+          job: deploy-verify
+          verification: "false"
+          cache-verification: "false"
+      - id: eliza-sha
+        run: |
+          echo "sha=$(git rev-parse HEAD:vendor/eliza)" >> "$GITHUB_OUTPUT"
+          echo "node=$(node --version)" >> "$GITHUB_OUTPUT"
+      - name: Restore pinned Eliza cloud build cache
+        id: restore-eliza-cloud
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            vendor/eliza/packages/cloud/dist
+            vendor/eliza/packages/cloud/gen
+            vendor/eliza/packages/cloud-worker/dist
+            vendor/eliza/packages/cloud-worker/gen
+            vendor/eliza/packages/design-system/generated
+          key: eliza-cloud-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.eliza-sha.outputs.node }}-${{ steps.eliza-sha.outputs.sha }}
+      - name: Verify Grace Cloud worker boots in offline workerd
+        run: |
+          pnpm all @grace/cloud#build
+          pnpm --filter @grace/cloud test:deploy
+      - name: Save pinned Eliza cloud build cache
+        if: steps.restore-eliza-cloud.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            vendor/eliza/packages/cloud/dist
+            vendor/eliza/packages/cloud/gen
+            vendor/eliza/packages/cloud-worker/dist
+            vendor/eliza/packages/cloud-worker/gen
+            vendor/eliza/packages/design-system/generated
+          key: eliza-cloud-build-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.eliza-sha.outputs.node }}-${{ steps.eliza-sha.outputs.sha }}
   verification:
     name: verify
-    needs: [verify, vibestack-fixture-selftests]
+    needs: [verify, vibestack-fixture-selftests, deploy-verify]
     if: always() && needs.verify.result != 'skipped'
     runs-on: ${{ inputs.cross_app_only && vars.GRACE_CROSS_APP_RUNNER || 'ubuntu-24.04' }}
     steps:
@@ -1444,5 +1493,6 @@ jobs:
         env:
           CHECKS: ${{ needs.verify.result }}
           FIXTURES: ${{ needs.vibestack-fixture-selftests.result }}
+          DEPLOY_VERIFY: ${{ needs.deploy-verify.result }}
           EXPECTED_FIXTURES: ${{ inputs.cross_app_only && 'skipped' || 'success' }}
-        run: test "$CHECKS" = success && test "$FIXTURES" = "$EXPECTED_FIXTURES"
+        run: test "$CHECKS" = success && test "$FIXTURES" = "$EXPECTED_FIXTURES" && test "$DEPLOY_VERIFY" = "$EXPECTED_FIXTURES"
