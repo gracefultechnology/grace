@@ -122,6 +122,12 @@ it.each(["confirmed", "interrupted"] as const)('Redeem and reconnect Google (%s)
       { ...googlePermissions, expectedEmail: "" }, { ...googlePermissions, expectedEmail: account.email },
     ]);
     expect(googleReturns).toEqual([authorizeUrl, authorizeUrl]);
+    const settings = page.getByRole("navigation", { name: "Settings" });
+    const textSize = settings.getByRole("button", { name: "Text size", exact: true });
+    await act(() => userEvent.click(textSize));
+    await expect.element(textSize).toHaveAttribute("aria-current", "page");
+    await act(() => userEvent.click(settings.getByRole("button", { name: "Account", exact: true })));
+    await expect.element(page.getByText("Active", { exact: true })).toBeVisible();
   } finally {
     await reopened.dispose();
   }

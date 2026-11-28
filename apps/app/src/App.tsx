@@ -335,7 +335,7 @@ function RailSection() {
   });
   return (
     <>
-      <Rail aria-label="Rail" battery={battery} time={time} period={period}
+      <Rail aria-label="Rail" className={slice.surface === "DeviceSettings" ? "max-sm:hidden" : undefined} battery={battery} time={time} period={period}
         date={railDate.format(now)}
         status={<RailButton icon={slice.online ? <Wifi {...tile} /> : <WifiSlash />} label="Wi-Fi" aria-label={slice.online ? "Wi-Fi" : "Wi-Fi, not connected"} {...toggle("WifiPopover", slice.canWifi)} />}
         footer={<RailButton icon={<Gear {...tile} />} label="Settings" selected={!popoverOpen && !slice.covered && slice.surface === "DeviceSettings"} disabled={!slice.canSettings} onClick={() => void send(visitSettings)} />}
