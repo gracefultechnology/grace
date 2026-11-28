@@ -1,4 +1,4 @@
-// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"
+// spec/app/surface.md, "Story: Use the website under Grace's controls"; spec/app/websiteRequests.md, "Story: Decide what a website may use"; spec/app/websiteRequests.md, "Story: Stay signed in to my websites"; spec/app/deviceKeys.md, "Story: Step back inside Grace before leaving"; spec/app/conversation.md, "Story: Talk or type without losing the conversation"; spec/app/browser.md, "A load that ends at another address records where the page really is"; spec/app/workspace.md, "A read plan offered in chat waits for the person to start it"; spec/app/browser.md, "The padlock shows only on a page that loaded over a secure connection"; spec/app/shell.md, "Passwords offers Grace’s help while none are saved, then says only that some are kept on this tablet"; spec/app/shell.md, "Files says No photos yet, and how photos arrive while it holds nothing"
 // The native page plugin is native code and cannot run in a browser: it is faked once, at its boundary.
 // Each routing request waits until the test answers it, as the native router answers after a round trip.
 import { Effect, Fiber, Latch, Layer, ManagedRuntime, Option, Result, Schema } from "effect";
@@ -683,6 +683,7 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
       : { ...foregroundVault, available: false, locked: true, reason: "unsupported" }),
     lock: () => { lockRequests += 1; return Promise.resolve(); },
     unlock,
+    anySaved: () => Promise.resolve(true),
     list: () => Promise.resolve([
       { id: "first-login", revision: edited ? 5 : 4, updatedAt: 1, label: "Utility account", username: edited ? "New account" : "Pat", bindings: [] },
       ...(phoneRevision === undefined ? [] : [{ id: "phone", revision: phoneRevision, updatedAt: 2, label: "Phone account", username: phoneRevision === 1 ? "Original" : "Updated on Android", bindings: [] }]),
@@ -772,7 +773,8 @@ it('Manage my saved passwords privately (spec/app/index.md, "Story: Manage my sa
   await expect.poll(() => lockRequests).toBeGreaterThan(locksBeforeClose);
   const nextPage = page.getByRole("button", { name: "More apps" });
   await act(() => userEvent.click(nextPage));
-  const passwordsCard = page.getByRole("button", { name: "Passwords", exact: true });
+  const passwordsCard = page.getByRole("button", { name: /^Passwords\b/ });
+  await expect.element(page.getByText("Kept only on this tablet")).toBeVisible();
   await expect.element(passwordsCard).not.toBeInTheDocument();
   await act(() => userEvent.click(nextPage));
   await act(() => userEvent.click(page.getByRole("button", { name: "Previous page" })));
@@ -2473,6 +2475,11 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
     },
   }));
   await mount(runtime);
+  await expect.poll(() => reads.length).toBe(1);
+  await act(async () => {
+    reads[0].resolve({ entries: [previous] });
+    await reads[0].promise;
+  });
   const workspace = await runtime.runPromise(Workspaces);
   await expect.poll(() => runtime.runSync(workspace.get()).device.reasoningAvailable).toBe(true);
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
@@ -2491,25 +2498,25 @@ it('Find a saved file and replace the request before Files loads (spec/app/files
   await tap("Find in Files");
   await expect.element(page.getByRole("button", { name: "Find in Files", exact: true })).not.toBeInTheDocument();
   expect(runtime.runSync(workspace.get()).device.surface).toBe("Home");
-  expect(reads).toHaveLength(0);
+  expect(reads).toHaveLength(1);
   ownerScope = "a".repeat(64);
   await offer(1);
-  expect(reads).toHaveLength(0);
+  expect(reads).toHaveLength(1);
   await tap("Find in Files");
-  await expect.poll(() => reads.length).toBe(2);
+  await expect.poll(() => reads.length).toBe(3);
   await act(() => userEvent.fill(page.getByRole("textbox", { name: "Find a file" }), "Garden notes"));
   await tap("Find");
-  await expect.poll(() => reads.length).toBe(3);
+  await expect.poll(() => reads.length).toBe(4);
   await act(async () => {
-    reads[2].resolve({ entries: [current] });
-    await reads[2].promise;
+    reads[3].resolve({ entries: [current] });
+    await reads[3].promise;
   });
   const result = page.getByRole("button", { name: /Garden notes/ });
   const resultIsSelected = () => Boolean(result.query()?.closest('[aria-current="true"]'));
   await expect.poll(resultIsSelected).toBe(true);
   await act(async () => {
-    reads[0].resolve({ entries: [previous] });
     reads[1].resolve({ entries: [previous] });
+    reads[2].resolve({ entries: [previous] });
     await Promise.all(reads.map((read) => read.promise));
   });
   await expect.poll(resultIsSelected).toBe(true);
@@ -2574,6 +2581,7 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
   await signInToGrace(runtime);
   await act(() => runtime.runPromise(Effect.flatMap(Workspaces, (workspace) =>
     workspace.send({ type: "chooseHomePage", page: "FilesCard" }, "Person"))));
+  await expect.poll(() => document.querySelector(`img[alt="${photo.name}"]`)).not.toBeNull();
   await act(() => userEvent.click(page.getByRole("button", { name: /^Files\b/ })));
   const tap = (name: string) => act(() => userEvent.click(page.getByRole("button", { name, exact: true })));
   await tap("Garden.jpg");
@@ -2587,6 +2595,7 @@ it('Remove the chosen saved photo (spec/app/files.md, "Story: Save, share and re
 
   const handoff = () => act(() => { incoming = request; notify(); return Promise.resolve(); });
   await tap("Close Files");
+  await expect.element(page.getByText("No photos yet")).toBeVisible();
   await handoff();
   await tap("Cancel");
   expect(transfers).toEqual([]);
@@ -2618,6 +2627,7 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
       needsMigration = false;
       return Promise.resolve({ unlockRemainingMs: null });
     },
+    anySaved: () => needsMigration ? Promise.reject(new Error("The vault is locked")) : Promise.resolve(true),
     list: () => Promise.resolve([saved]),
     openEditor: (input) => {
       expect(input).toEqual({ entryId: "first-login", expectedRevision: 4 });
@@ -2665,15 +2675,15 @@ it('Use a standalone vault and private typed guidance (spec/app/index.md, "Story
   await expect.element(page.getByRole("button", { name: "Page 1", exact: true })).toHaveAttribute("aria-current", "true");
   await swipe("left");
   await expect.element(filesPage).toHaveAttribute("aria-current", "true");
-  await expect.element(page.getByRole("button", { name: "Passwords", exact: true })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: /^Passwords\b/ })).not.toBeInTheDocument();
   await swipe("left");
   await expect.element(page.getByRole("button", { name: "Page 3", exact: true })).toHaveAttribute("aria-current", "true");
   await expect.element(page.getByRole("button", { name: /^Files\b/ })).toBeVisible();
-  await expect.element(page.getByRole("button", { name: "Passwords", exact: true })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: /^Passwords\b/ })).toBeVisible();
   await swipe("right");
   await expect.element(filesPage).toHaveAttribute("aria-current", "true");
   await act(() => userEvent.click(page.getByRole("button", { name: "More apps" })));
-  await act(() => userEvent.click(page.getByRole("button", { name: "Passwords", exact: true })));
+  await act(() => userEvent.click(page.getByRole("button", { name: /^Passwords\b/ })));
   await expect.element(page.getByRole("button", { name: "Add password" })).toBeEnabled();
   await act(() => userEvent.click(page.getByRole("button", { name: "Close Passwords" })));
   await act(() => userEvent.click(page.getByRole("button", { name: "Ask Grace" })));

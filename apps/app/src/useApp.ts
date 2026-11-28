@@ -36,6 +36,7 @@ import { SpeechActions, type WakeStatus } from "./graceSpeech.vibe";
 import { Machine as PasswordView } from "../gen/app.effect.vibe";
 import type { PasswordGuide, PasswordView as PasswordViewState } from "../gen/app.ts";
 import { Passwords } from "./passwords.vibe";
+import type { SavedPasswords } from "../gen/app__shell.ts";
 import { type MailServers, type OtherDetails, SignIns } from "./accounts.vibe";
 import type { Agent } from "./agent.vibe";
 import { Keyboard } from "./app.vibe";
@@ -252,12 +253,14 @@ const fileLibraryChanges = Stream.unwrap(Effect.map(FileLibrary, (files) => file
 const fileLibraryHomeChanges = Stream.unwrap(Effect.map(FileLibrary, (files) => files.home));
 const managedReadsChanges = Stream.unwrap(Effect.map(ManagedReads, (reads) => reads.state));
 const managedHomeChanges = Stream.unwrap(Effect.map(ManagedReads, (reads) => reads.home));
+const savedPasswordsChanges = Stream.unwrap(Effect.map(Passwords, (passwords) => passwords.saved));
 const replyOfferChanges = Stream.unwrap(Effect.map(ReplyControls, (controls) => controls.state));
 const wakeStatusChanges = Stream.unwrap(Effect.map(SpeechActions, (speech) => SubscriptionRef.changes(speech.wakeStatus)));
 
 const workspaceStores = new WeakMap<Runtime, ValueStore<Workspace | undefined>>();
 const setupStores = new WeakMap<Runtime, ValueStore<SetupState | undefined>>();
 const passwordViewStores = new WeakMap<Runtime, ValueStore<PasswordViewState | undefined>>();
+const savedPasswordsStores = new WeakMap<Runtime, ValueStore<SavedPasswords>>();
 const pageLayerStores = new WeakMap<Runtime, ValueStore<PageLayer | undefined>>();
 const accountsStores = new WeakMap<Runtime, ValueStore<AccountsState | undefined>>();
 const keyboardStores = new WeakMap<Runtime, ValueStore<number>>();
@@ -755,6 +758,11 @@ export function useWakeStatus(): WakeStatus {
 
 export function useFileLibrarySnapshot(): FileSnapshot {
   const store = fileLibraryStoreFor(useRuntime());
+  return useSyncExternalStore(store.subscribe, store.get, store.get);
+}
+
+export function useSavedPasswords(): SavedPasswords {
+  const store = createValueStreamStore<SavedPasswords>(savedPasswordsStores, useRuntime(), "SavedUnknown", savedPasswordsChanges);
   return useSyncExternalStore(store.subscribe, store.get, store.get);
 }
 
