@@ -16,7 +16,7 @@ const acceptedChoice = Schema.is(Schema.Struct({
   http: Schema.Literal(200),
   candidates: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 16 })),
   result: Schema.Struct({
-    status: Schema.Literal("ok"), model: Schema.Literal("clef-flash"),
+    status: Schema.Literal("ok"), model: Schema.NonEmptyString,
     choice: Schema.String.check(Schema.isPattern(/^[1-9][0-9]*$/)),
     confidence: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
   }),
@@ -93,4 +93,28 @@ export function hasUserAssistedSearch(input: unknown, completed: CompletedPublic
     reviewedSteps[0]?.subject === publicSearch.query && matchesPublicSearch(landed, publicSearch) &&
     hops.length === 1 && hops[0]?.checked === true && hops[0].url === destination.url &&
     hops[0].documentId === destination.documentId && decisionResults.length === 0;
+}
+
+const TrajectoryEvent = Schema.Struct({
+  timestamp: Schema.NonEmptyString,
+  stepIndex: Schema.Int,
+  phase: Schema.NonEmptyString,
+  urlOriginPath: Schema.NonEmptyString,
+  domRevision: Schema.Int,
+  candidateCount: Schema.Int,
+  blockerKinds: Schema.Array(Schema.String),
+  darkPatternFlags: Schema.Array(Schema.String),
+  gateVerdict: Schema.NonEmptyString,
+  latencyMs: Schema.Finite,
+});
+
+export function hasValidWalkthroughTrajectory(lines: readonly string[], forbiddenSecrets: readonly string[] = []): boolean {
+  const nonEmpty = lines.map((line) => line.trim()).filter(Boolean);
+  if (nonEmpty.length === 0) return false;
+  for (const line of nonEmpty) {
+    if (forbiddenSecrets.some((secret) => secret.length >= 4 && line.includes(secret))) return false;
+    const parsed = Schema.decodeUnknownOption(Schema.fromJsonString(TrajectoryEvent))(line);
+    if (parsed._tag === "None") return false;
+  }
+  return true;
 }

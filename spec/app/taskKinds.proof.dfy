@@ -23,6 +23,14 @@ lemma lawASuggestionFitsOrIsAbsent_ensures(kind: app__task_TaskKind, facts: Fact
     assert app__bookingKind_bookingFits(visit, book);
     assert termsFit(facts, suggestion(facts, today));
   }
+  if factsFit(kind, facts) && facts.WalkthroughRead? && standing(facts).Actionable? && walkthroughDefaultAvailable(facts.walkthrough) {
+    var walkthrough := facts.walkthrough;
+    var offered := suggestedWalkthrough(walkthrough);
+    assert offered.shares == walkthrough.asks;
+    assert app__task_validWalkthrough(offered);
+    assert walkthroughFits(walkthrough, offered);
+    assert termsFit(facts, suggestion(facts, today));
+  }
 }
 
 lemma lawEveryPlanConfirmsReviewsAndConsents_ensures(kind: app__task_TaskKind)

@@ -13,6 +13,7 @@ import { ManagedReads, guidedAuthority, guidedOwner } from "./managedReads.vibe"
 import { ReplyControls } from "./replyControls.vibe"
 import { Reply } from "./reply.schema.ts"
 import { webView } from "./surfacePlugin.ts"
+import { Walkthrough } from "./walkthrough.vibe"
 
 const ConversationId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9-]{1,80}$/))
 const Creation = Schema.Struct({ status: Schema.Int, data: Schema.Struct({ conversation: Schema.Struct({ id: ConversationId, roomId: ConversationId }) }) })
@@ -95,6 +96,7 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
   const setup = try Setup
   const agent = try Agent
   const managed = try ManagedReads
+  const walkthrough = try Effect.serviceOption(Walkthrough)
   const look = try looker()
   const opened = try Ref.make<{ conversation: typeof Creation.Type.data.conversation; messages: number } | undefined>(undefined)
 
@@ -140,6 +142,7 @@ export const graceTurns = (plugin: EmbeddedAgent | undefined) => Layer.effectDis
       workspace.send({ type: "purgePrivate", token, messageIndex: index, purgeDraft: false }, "Host") catch () => undefined
       return
     }
+    if (Option.isSome(walkthrough)) try walkthrough.value.observe()
     const shown = render(try look(), try Clock.currentTimeMillis, { notDone: [], unread: [] }, [], try managed.guidedSelection())
     const prompt = words === undefined ? `${help}\n${helpAsked}` : `${personSays} ${JSON.stringify(words)}`
     const { text } = try Effect.orDie(Effect.try(() => turnText([tabletShows, ...shown.text.split("\n")], prompt, agentTextLimit)))

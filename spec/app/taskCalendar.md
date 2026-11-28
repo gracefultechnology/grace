@@ -54,6 +54,7 @@ pure def bookedService(booked: CM::Commitment): str =
     | NoTerms => ""
     | PayTerms(x) => ""
     | BookTerms(x) => x.book.service
+    | WalkthroughTerms(x) => ""
   }
 pure def bookedSlot(booked: CM::Commitment): T::Slot =
   val terms = booked.proposal
@@ -61,6 +62,7 @@ pure def bookedSlot(booked: CM::Commitment): T::Slot =
     | NoTerms => noSlot
     | PayTerms(x) => noSlot
     | BookTerms(x) => x.book.slot
+    | WalkthroughTerms(x) => noSlot
   }
 pure def appointmentFor(booked: CM::Commitment, calendarId: str, timezone: str): CV::EntrySeed = {
   identity: { ...C::noIdentity, owner: booked.key.owner, calendarId: calendarId, occurrenceId: booked.key.ref,

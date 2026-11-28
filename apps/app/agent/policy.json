@@ -129,9 +129,13 @@
       "GRACE_TASK": {
         "returns": [
           "beginTask",
-          "fill"
+          "walkthroughStep",
+          "fill",
+          "dismissBlocker",
+          "approveCommitment",
+          "declineCommitment"
         ],
-        "becomes": "spec/app/workspace.md begin, and the task's fill only after her yes to the chosen terms"
+        "becomes": "spec/app/workspace.md begin, observe, prepare, dispatch, verify and commitment transitions through spec/app/execution.md, spec/app/prep.md, spec/app/taskKinds.md (BillPay, AppointmentBooking, WebWalkthrough), spec/app/taskBridge.md, spec/app/actuation.md and spec/app/commitment.md"
       }
     },
     "upstream": {

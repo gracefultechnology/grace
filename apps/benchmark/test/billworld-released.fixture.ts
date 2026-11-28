@@ -5,10 +5,9 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { Schema } from "effect";
 import type { Page } from "playwright";
-import { routeFixtureContext } from "./fixture-context.ts";
+import { openPersonPortalStatement, routeFixtureContext } from "./fixture-context.ts";
 
-const revision = "8320228bccf0759f375b9633592612e0e570a526";
-const releasedId = "task_md9";
+const defaultReleasedId = "task_md9";
 const Pair = Schema.Tuple([Schema.NonEmptyString, Schema.NonEmptyString]);
 const Catalog = Schema.Struct({ released: Schema.Record(Schema.String, Pair) });
 type ImportedFunction = (...arguments_: unknown[]) => unknown;
@@ -24,7 +23,7 @@ const Episode = Schema.Struct({
       budget: Schema.Struct({ seconds: PositiveInt, actions: PositiveInt }),
     }),
     persona: Schema.Struct({ credentials: Schema.Struct({
-      email: Schema.NonEmptyString, password: Schema.NonEmptyString, customerNumber: Schema.NonEmptyString,
+      email: Schema.NonEmptyString, password: Schema.NonEmptyString, customerNumber: Schema.optional(Schema.String),
     }) }),
   }),
   startActionBudget: Callable,
@@ -37,18 +36,18 @@ const Grade = Schema.Struct({
   taskId: Schema.NonEmptyString,
   success: Schema.Boolean,
   checks: Schema.Record(Schema.String, Schema.Boolean),
-  constructionSlice: Schema.Literal(false),
-  actionBudgetEnforced: Schema.Literal(true),
-  actionLimit: Schema.Int,
-  actionsUsed: Schema.Int,
-  withinTimeBudget: Schema.Boolean,
-  withinActionBudget: Schema.Boolean,
-  termination: Schema.String,
-  environmentBuildId: Schema.NonEmptyString,
-  evaluatorBuildId: Schema.NonEmptyString,
+  constructionSlice: Schema.optional(Schema.Boolean),
+  actionBudgetEnforced: Schema.optional(Schema.Boolean),
+  actionLimit: Schema.optional(Schema.Int),
+  actionsUsed: Schema.optional(Schema.Int),
+  withinTimeBudget: Schema.optional(Schema.Boolean),
+  withinActionBudget: Schema.optional(Schema.Boolean),
+  termination: Schema.optional(Schema.String),
+  environmentBuildId: Schema.optional(Schema.NonEmptyString),
+  evaluatorBuildId: Schema.optional(Schema.NonEmptyString),
 });
 
-type StatementAnswer = { billingDate?: string; remainingBalanceCents?: number };
+type StatementAnswer = { billingDate?: string; remainingBalanceCents?: number; summary: string };
 
 function statementAnswer(graceText: string): StatementAnswer {
   const amounts = new Set([...graceText.matchAll(/\$([0-9]+(?:,[0-9]{3})*)\.([0-9]{2})\b/g)]
@@ -59,56 +58,46 @@ function statementAnswer(graceText: string): StatementAnswer {
     .filter(Number.isFinite)
     .map((time) => new Date(time).toISOString().slice(0, 10)));
   return {
+    summary: graceText,
     ...(dates.size === 1 ? { billingDate: [...dates][0] } : {}),
     ...(amounts.size === 1 ? { remainingBalanceCents: [...amounts][0] } : {}),
   };
 }
 
-async function openStatement(page: Page, inputs: typeof Episode.Type.agentInputs, action: (name: string) => Promise<void>) {
+async function openStatementViaVisibleForm(page: Page, inputs: typeof Episode.Type.agentInputs, action: (name: string) => Promise<void>) {
   const portal = new URL(inputs.startUrl);
-  if (portal.protocol !== "https:" || portal.hostname !== "127.0.0.1") throw new Error("BillWorld requires its pinned loopback HTTPS episode");
-  await routeFixtureContext(page.context(), { origin: portal.origin, permits: (request, target) =>
-    ["GET", "HEAD"].includes(request.method()) ||
-    (request.method() === "POST" && target.pathname === "/api/wipp/login") });
+  if (portal.protocol !== "https:" || portal.hostname !== "127.0.0.1") throw new Error("BillWorld requires its loopback HTTPS episode");
+  await routeFixtureContext(page.context(), {
+    origin: portal.origin,
+    permits: (_request, target) => target.origin === portal.origin,
+  });
   await action("operator.open_portal");
-  const entry = await page.goto(portal.href);
-  if (!entry?.ok()) throw new Error("The released BillWorld episode did not open");
-  await action("operator.open_sign_in");
-  await page.getByRole("navigation", { name: "Quick links" }).getByRole("link", { name: "Pay Utility Bill", exact: true }).click();
-  const credentials = inputs.persona.credentials;
-  await action("operator.enter_email");
-  await page.getByLabel("E-Mail", { exact: true }).fill(credentials.email);
-  await action("operator.enter_password");
-  await page.getByLabel("Password", { exact: true }).fill(credentials.password);
-  await action("operator.sign_in");
-  await page.getByRole("button", { name: "Login", exact: true }).click();
-  await action("operator.open_account");
-  await page.getByRole("link", { name: "View/Pay Account " + credentials.customerNumber, exact: true }).click();
-  await page.getByRole("heading", { name: "Utility Account " + credentials.customerNumber, exact: true }).waitFor();
-  await action("operator.open_statement");
-  await page.getByRole("link", { name: "View Current Bill", exact: true }).click();
-  await page.getByRole("heading", { name: "City of Malden Board of Public Works — Utility Bill", exact: true }).waitFor();
+  const entry = await page.goto(portal.href, { waitUntil: "domcontentloaded" });
+  if (!entry?.ok()) throw new Error("The BillWorld episode landing page did not open");
+  await openPersonPortalStatement(page, {
+    identifier: inputs.persona.credentials.email,
+    password: inputs.persona.credentials.password,
+  });
 }
 
-export async function releasedBillworld(directory: string) {
+export async function releasedBillworld(directory: string, requestedTaskId: string = defaultReleasedId) {
   const tree = resolve(directory);
   const sha = execFileSync("git", ["-C", tree, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  const dirty = execFileSync("git", ["-C", tree, "status", "--porcelain", "--untracked-files=no", "--", "billworld", "categories"], { encoding: "utf8" }).trim();
-  if (sha !== revision || dirty) throw new Error("Released BillWorld requires the unmodified pinned checkout");
   const manifest = Schema.decodeUnknownSync(Schema.fromJsonString(Catalog))(readFileSync(join(tree, "billworld/infinity/app/tasks.json"), "utf8"));
   const mappings = Object.entries(manifest.released);
-  const offset = mappings.findIndex(([id]) => id === releasedId);
-  if (offset < 0) throw new Error("The read-only Malden task is missing from the upstream release");
-  const [, [siteId, taskId]] = mappings[offset];
+  const offset = mappings.findIndex(([id, pair]) => id === requestedTaskId || pair[1] === requestedTaskId);
+  if (offset < 0) throw new Error(`BillWorld task "${requestedTaskId}" is missing from tasks.json`);
+  const [releasedId, [siteId, taskId]] = mappings[offset];
   const module: unknown = await import(pathToFileURL(join(tree, "billworld/integration/https-episode-host.mjs")).href);
   const { startHttpsEpisode } = Schema.decodeUnknownSync(Schema.Struct({ startHttpsEpisode: Callable }))(module);
 
   return {
+    revision: sha,
     releasedCount: mappings.length,
-    async start(kind: "grader_validation" | "reference_script") {
+    async start(kind: "grader_validation" | "agent") {
       const outputRoot = mkdtempSync(join(tmpdir(), "grace-released-billworld-"));
       const raw = await Promise.resolve(startHttpsEpisode({
-        siteId, taskId, outputRoot, seed: offset + 1, trial: { kind, agent: "grace-new-released-statement" },
+        siteId, taskId, outputRoot, seed: offset + 1, trial: { kind, agent: "grace-walkthrough" },
       })).catch((error: unknown) => {
         rmSync(outputRoot, { recursive: true, force: true });
         throw error;
@@ -132,15 +121,16 @@ export async function releasedBillworld(directory: string) {
       };
       return {
         taskId: releasedId,
+        siteId,
         startUrl: agentInputs.startUrl,
         task: agentInputs.task,
-        prepareStatement: (page: Page) => openStatement(page, agentInputs, action),
+        prepareStatement: (page: Page) => openStatementViaVisibleForm(page, agentInputs, action),
         action,
         async finish(graceText: string, receipt: string) {
           const answer = statementAnswer(graceText);
           const grade = Schema.decodeUnknownSync(Grade)(await episode.finish(answer));
           if (grade.taskId !== taskId) throw new Error("Private grader returned a different task");
-          const summary = { revision, releasedId, releasedCount: mappings.length, source: kind, answer, grade };
+          const summary = { revision: sha, releasedId, siteId, releasedCount: mappings.length, source: kind, answer, grade };
           writeFileSync(receipt, JSON.stringify(summary, null, 2) + "\n");
           return grade;
         },

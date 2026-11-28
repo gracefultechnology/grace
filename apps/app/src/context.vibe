@@ -17,6 +17,8 @@ import { Instances, tablet } from "./instances.vibe"
 import type { GuidedManagedSelection } from "./managedReads.vibe"
 import { namesCode, withhold } from "./private.ts"
 import { Action } from "./reply.schema.ts"
+import { Walkthrough } from "./walkthrough.vibe"
+import { formatRedactedPageLines, sameSiteOrigin, type RedactedPageSummary } from "./walkthrough.schema.ts"
 
 export type Scene = {
   readonly workspace: Workspace
@@ -26,6 +28,7 @@ export type Scene = {
   readonly calendars: CalendarSource[]
   readonly pending: Pending
   readonly content: (account: number, ref: string) => MailContent | undefined
+  readonly pageSummary?: RedactedPageSummary
 }
 
 export type Shown = { readonly text: string; readonly targets: ReadonlySet<string> }
@@ -38,6 +41,7 @@ export effect function looker() {
   const proposals = try Proposal
   const workspace = try Workspaces
   const chosen = try MailChoiceMachine
+  const walkthrough = try Effect.serviceOption(Walkthrough)
   return effect (): Scene!! => {
     const registry = try accounts.get()
     const mail: MailSource[] = []
@@ -48,7 +52,12 @@ export effect function looker() {
       const box = key === tablet ? undefined : shelf.mail(key) catch () => undefined
       if (box !== undefined) mail.push({ account: key, mailbox: try box.get() })
     }
-    return { workspace: try workspace.get(), registry, mail, choices: try chosen.get(), calendars, pending: try proposals.get(), content: shelf.content }
+    const current = try workspace.get()
+    const pageSummary = Option.isSome(walkthrough) && current.device.surface === "Browser" &&
+      current.device.observationAllowed && !privateSurfaceActive(current)
+      ? try walkthrough.value.currentSummary()
+      : undefined
+    return { workspace: current, registry, mail, choices: try chosen.get(), calendars, pending: try proposals.get(), content: shelf.content, ...(pageSummary ? { pageSummary } : {}) }
   }
 }
 
@@ -368,7 +377,13 @@ function browserScreen(s: Scene): Part {
   if (!URL.canParse(address)) return { lines: [], targets: [] }
   const url = new URL(address)
   if (url.protocol !== "https:" || url.username || url.password) return { lines: [], targets: [] }
-  return { lines: [`The person already has a website open in the selected tab on ${url.hostname}. The page is loaded.`], targets: [] }
+  const summary = s.pageSummary !== undefined && sameSiteOrigin(s.pageSummary.url, url.origin) ? s.pageSummary : undefined
+  const detailLines = summary ? formatRedactedPageLines(summary) : []
+  const targets = summary ? summary.controls.slice(0, 24).map((control) => control.id) : []
+  return {
+    lines: [`The person already has a website open in the selected tab on ${url.hostname}. The page is loaded.`, ...detailLines],
+    targets,
+  }
 }
 
 export type Help = "connectEmail" | "mailServers" | "fixWifi"

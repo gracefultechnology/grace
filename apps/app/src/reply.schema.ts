@@ -8,6 +8,7 @@ import type { DeleteScope } from "../gen/app__calendarView.effect.vibe"
 import type { Folder } from "../gen/app__emailItem.effect.vibe"
 import type { GuidedStep } from "../gen/app__workspace.effect.vibe"
 import type { FileTab } from "../gen/app__files.effect.vibe"
+import { WalkthroughStepOperation, WalkthroughTaskKind } from "./walkthrough.schema.ts"
 
 const Words = Schema.Trimmed.check(Schema.isMinLength(1))
 const Day = Schema.String.annotate({ description: "a date written YYYY-MM-DD" }).check(
@@ -68,7 +69,17 @@ export const Action = Schema.Union([
   action("confirmProposal", {}),
   action("cancelProposal", {}),
   action("findFile", { tab: of<FileTab>()(["Photos", "Documents"]), query: Words }),
-  action("beginTask", { task: Schema.Literals(["PayBill", "BookAppointment"]) }),
+  action("beginTask", { task: WalkthroughTaskKind, goal: Schema.optionalKey(Words) }),
+  action("walkthroughStep", {
+    operation: WalkthroughStepOperation,
+    target: Words,
+    value: Schema.optionalKey(Words),
+    option: Schema.optionalKey(Words),
+    direction: Schema.optionalKey(Schema.Literals(["up", "down"])),
+  }),
+  action("dismissBlocker", { target: Words }),
+  action("approveCommitment", {}),
+  action("declineCommitment", {}),
   action("proposeReadPlan", { steps: Schema.NonEmptyArray(Schema.Union([
     of<GuidedStep["tag"]>()(["ReadMail", "ReadBrowser", "ReadChangedBrowser", "ReadStatement", "ReadCalendar", "SaveMailAppointment"]),
     action("ReachNamedPage", { target: Words.check(Schema.isMaxLength(128)) }),
@@ -82,7 +93,7 @@ export const Action = Schema.Union([
       status: Words.check(Schema.isMaxLength(40), Schema.isPattern(/^[\p{L}]+(?: [\p{L}]+){0,2}$/u)),
     }),
   ])) }),
-  action("fill", {}),
+  action("fill", { target: Schema.optionalKey(Words), value: Schema.optionalKey(Words) }),
 ])
 
 const [fewest, most] = [2, 3]

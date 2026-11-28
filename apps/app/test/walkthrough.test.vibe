@@ -1,0 +1,188 @@
+// @vitest-environment happy-dom
+// spec/app/execution.md, "Story: Get help on the website I chose"; spec/app/taskKinds.md, "Story: Ask every kind the same questions"; spec/app/commitment.md, "Story: Review and authorize the exact payment"
+import { assert, it } from "@effect/vitest"
+import { Schema } from "effect"
+import { machine as workspaceMachine, Machine as Workspaces } from "../gen/app__workspace.effect.vibe"
+import { NativePage } from "../src/nativePage.vibe"
+import { LinkObservation, Url, type PageActionCommand } from "../src/nativePage.schema.ts"
+import { Walkthrough, walkthrough } from "../src/walkthrough.vibe"
+import { sameSiteOrigin } from "../src/origin.ts"
+
+it.live("Get help on the website I chose: walkthrough enforces consequence tiers, dark-pattern flags, person-only handoff, and explicit commitment approval", () => effect {
+  let domRevision = 1
+  let signedIn = false
+  const executed: PageActionCommand[] = []
+  const currentObservation = () => Schema.decodeUnknownSync(LinkObservation)({
+    documentId: signedIn ? "doc-portal-2" : "doc-portal-1",
+    frameScope: "main",
+    result: {
+      snapshotId: `snap-${domRevision}`,
+      url: signedIn ? "https://payments.portal.example/checkout" : "https://secure.portal.example/login",
+      complete: true,
+      readyState: "complete",
+      title: signedIn ? "Portal Checkout" : "Portal Sign In",
+      domRevision,
+      blockers: signedIn ? [{ kind: "modal", covers: "partial", text: "Upgrade promo", ref: "e-close" }] : [],
+      structuredRegions: {
+        complete: true,
+        pageHeading: signedIn ? "Review one-time payment" : "Sign in to your account",
+        landmarks: [{ regionId: "landmark-0", role: "main", label: null, heading: signedIn ? "Review one-time payment" : "Sign in", textPreview: signedIn ? "Review one-time payment $84.12" : "Enter your password" }],
+        tables: signedIn ? [{ regionId: "table-0", caption: "Bill summary", heading: "Charges", columns: ["Item", "Amount"], rows: [{ cells: ["Current balance", "$84.12"], actionRefs: ["e-submit"] }], rowCount: 1 }] : [],
+        cards: [{ regionId: "card-0", heading: signedIn ? "Amount due" : "Sign in", textLines: [signedIn ? "$84.12 due Dec 15, 2026" : "Enter your password to continue"], badges: [], actionRefs: [] }],
+        darkPatterns: signedIn ? [{ kind: "pre-checked-opt-in", label: "Enroll in AutoPay recurring billing" }] : [],
+      },
+      elements: signedIn
+        ? [
+            { id: "e-page", tag: "main", role: "main", label: "Page", href: null, inViewport: true, disabled: false, sensitive: null, form: null, targetSelector: "main", consequence: "observe", scroll: { x: 0, y: 0, minX: 0, maxX: 0, maxY: 600, width: 1280, height: 800, document: true }, scrollOnly: true },
+            { id: "e-close", tag: "button", role: "button", label: "No thanks", href: null, inViewport: true, disabled: false, sensitive: null, form: null, targetSelector: "#close-promo", consequence: "observe" },
+            { id: "e-autopay", tag: "input", type: "checkbox", role: "checkbox", label: "Enroll in AutoPay recurring billing", href: null, checked: true, inViewport: true, disabled: false, sensitive: null, form: null, targetSelector: "#autopay", consequence: "stage" },
+            { id: "e-continue", tag: "button", role: "button", label: "Continue to review", href: null, inViewport: true, disabled: false, sensitive: null, form: null, targetSelector: "#next", consequence: "navigate" },
+            { id: "e-submit", tag: "button", role: "button", label: "Submit Utility Payment", href: null, inViewport: true, disabled: false, sensitive: null, form: null, targetSelector: "#pay-now", consequence: "commit" },
+          ]
+        : [
+            { id: "e-password", tag: "input", type: "password", label: "Account password", href: null, inViewport: true, disabled: false, sensitive: "password", form: null, targetSelector: "#pw", consequence: "person_only" },
+          ],
+    },
+  })
+  const checkoutUrl = Url.make("https://payments.portal.example/checkout")
+  const fakePage = Layer.succeed(NativePage, {
+    privateSignIn: false,
+    opensWebsites: false,
+    observeLinks: () => Effect.succeed(currentObservation()),
+    observePage: () => Effect.succeed(currentObservation()),
+    observeStatement: () => Effect.succeed(currentObservation()),
+    executePage: (_id, _doc, command) => effect {
+      executed.push(command)
+      domRevision += 1
+      return { documentId: "doc-portal-2", frameScope: "main", result: { dispatched: true, completed: true, requiresReadback: true, domRevision } }
+    },
+    readRecordText: () => Effect.succeed({ url: checkoutUrl, text: "$84.12", truncated: false as const }),
+    readPrimaryHeading: () => Effect.succeed({ url: checkoutUrl, text: "Review one-time payment", truncated: false as const }),
+    hasNavigationMenu: () => Effect.succeed(false),
+    visibleMenuChild: () => Effect.succeed(false),
+    pointAt: () => Effect.succeed(true),
+    clearGuide: () => Effect.void,
+    claim: () => Effect.void,
+    create: () => Effect.void,
+    place: () => Effect.void,
+    route: () => Effect.void,
+    present: () => Effect.void,
+    pause: () => Effect.void,
+    resume: () => Effect.void,
+    navigate: () => Effect.void,
+    back: () => Effect.void,
+    forward: () => Effect.void,
+    reload: () => Effect.void,
+    stop: () => Effect.void,
+    destroy: () => Effect.void,
+    reply: () => Effect.void,
+    grant: () => Effect.succeed("AndroidGranted" as const),
+    purge: () => Effect.succeed(true),
+    events: Stream.empty,
+  })
+  const layer = Layer.provideMerge(walkthrough, Layer.merge(workspaceMachine(), fakePage))
+  provide layer {
+    const desk = try Workspaces
+    const guide = try Walkthrough
+    try desk.send({ type: "setAvailability", availability: { connection: "Online", reasoning: true, microphone: true, observation: false } }, "Host")
+    try desk.send({ type: "changeLifecycle", lifecycle: "StartupSucceeded" }, "Host")
+    try desk.send({ type: "openGrace" }, "Person")
+    try desk.send({ type: "interact", input: { tag: "Resize", expanded: false } }, "Person")
+    try desk.send({ type: "visit", destination: "Browser" }, "Person")
+    const afterVisit = try desk.get()
+    try desk.send({ type: "setBrowserObservation", choice: { allowed: true, deviceVersion: afterVisit.device.contextVersion, browserRevision: afterVisit.browser.revision } }, "Person")
+    try desk.send({ type: "changePage", browserInput: { tag: "Navigate", url: "https://secure.portal.example/login" } }, "Person")
+    const preLoad = try desk.get()
+    try desk.send({ type: "receiveLoad", loadReport: { id: preLoad.browser.tabs[0].id, version: preLoad.browser.revision, result: "Loaded", secure: true, endedAt: "https://secure.portal.example/login" } }, "Host")
+
+    const begun = try guide.begin({ kind: "WebWalkthrough", goal: "Pay one-time bill without AutoPay", owner: "owner-1", account: "acct-1" })
+    const afterBegin = try desk.get()
+    try desk.send({ type: "receiveLoad", loadReport: { id: afterBegin.browser.tabs[0].id, version: afterBegin.browser.revision, result: "Loaded", secure: true, endedAt: "https://secure.portal.example/login" } }, "Host")
+
+    const personWall = try guide.step({ operation: "fill", target: "e-password", value: "never-typed" })
+
+    signedIn = true
+    domRevision += 1
+    const dismiss = try guide.dismissBlocker("e-close")
+    const summary = try guide.currentSummary()
+    const scrolled = try guide.step({ operation: "scroll", target: "e-page", direction: "down" })
+    const uncheckAutoPay = try guide.step({ operation: "click", target: "e-autopay" })
+    const commitBlocked = try guide.step({ operation: "click", target: "e-submit" })
+    const staged = try guide.stageCommitment({
+      subject: { kind: "WebWalkthrough", owner: "owner-1", origin: "https://secure.portal.example", account: "acct-1", ref: "checkout-1" },
+      facts: {
+        tag: "WalkthroughRead",
+        walkthrough: {
+          goal: "Pay one-time bill without AutoPay",
+          summary: "Submit Utility Payment",
+          targetRef: "e-submit",
+          priced: true,
+          cost: 8412,
+          currency: "USD",
+          recurringOffered: true,
+          asks: ["name"],
+          alreadyCompleted: false,
+          actionAvailable: true,
+          blockedReason: "",
+        },
+      },
+      terms: {
+        tag: "WalkthroughTerms",
+        walkthrough: {
+          summary: "Submit Utility Payment",
+          targetRef: "e-submit",
+          priced: true,
+          cost: 8412,
+          currency: "USD",
+          recurring: false,
+          shares: ["name"],
+        },
+      },
+      evidence: "https://payments.portal.example/checkout",
+    })
+    try desk.send({ type: "talk" }, "Person")
+    const listening = try desk.get()
+    const approved = try guide.approveCommitment(listening.assistant.conversation.generation, "yes, pay $84.12")
+    const trace = try guide.trajectory()
+    const commitCmd = executed[3]
+    try Effect.try(() => assert.deepStrictEqual({
+      sameSubdomain: sameSiteOrigin("https://payments.portal.example/checkout", "https://secure.portal.example"),
+      begun,
+      hasDarkPatternWarning: (summary?.darkPatternWarnings.length ?? 0) > 0,
+      blockerLabel: summary?.blockers[0]?.label,
+      pageHeading: summary?.primaryHeading,
+      dismissKind: dismiss.kind,
+      scrollKind: scrolled.kind,
+      uncheckKind: uncheckAutoPay.kind,
+      personWallKind: personWall.kind,
+      commitBlockedKind: commitBlocked.kind,
+      staged,
+      approved,
+      executedSummary: executed.map((cmd) => `${cmd.subaction}:${cmd.nodeId}`),
+      subdomainPolicyOrigin: executed[0]?.taskPolicy?.origin,
+      commitMaxConsequence: commitCmd?.taskPolicy?.maxConsequence,
+      commitGrantSelector: commitCmd?.taskPolicy?.commitGrant?.selector,
+      commitExpectedSelector: commitCmd?.taskPolicy?.expectedSelector,
+      traceCount: trace.length,
+    }, {
+      sameSubdomain: true,
+      begun: true,
+      hasDarkPatternWarning: true,
+      blockerLabel: "Upgrade promo",
+      pageHeading: "Review one-time payment",
+      dismissKind: "Applied",
+      scrollKind: "Applied",
+      uncheckKind: "Applied",
+      personWallKind: "NeedsPerson",
+      commitBlockedKind: "NeedsCommitApproval",
+      staged: true,
+      approved: true,
+      executedSummary: ["click:e-close", "scroll:e-page", "click:e-autopay", "click:e-submit"],
+      subdomainPolicyOrigin: "https://payments.portal.example",
+      commitMaxConsequence: "stage",
+      commitGrantSelector: "#pay-now",
+      commitExpectedSelector: "#pay-now",
+      traceCount: 6,
+    }))
+  }
+})

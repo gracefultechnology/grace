@@ -1,0 +1,641 @@
+// spec/app/execution.md, "Story: Get help on the website I chose"; spec/app/prep.md, "Story: Understand the bill before deciding how to pay"; spec/app/commitment.md, "Story: Review and authorize the exact payment"; spec/app/taskBridge.md, "Story: Review the payment I actually chose"; spec/app/actuation.md, "Story: Stop old website actions before they reach the page"
+import { currentEffect } from "../gen/app__actuation.effect.vibe"
+import { activeTab, tabUrl } from "../gen/app__browser.effect.vibe"
+import type { OperationKind } from "../gen/app__execution.effect.vibe"
+import { Machine as Preparations, machine as prepMachine } from "../gen/app__prep.effect.vibe"
+import type { Subject, TaskKind, Terms } from "../gen/app__task.effect.vibe"
+import { captureWebsiteCommand, convertPreparedReview, fillPermitted, journaledTaskAttempt, type TaskProgress } from "../gen/app__taskBridge.effect.vibe"
+import { factsFit, standing, termsFit, type Facts } from "../gen/app__taskKinds.effect.vibe"
+import { Machine as Workspaces, privateSurfaceActive, type CommitmentTokens, type Workspace, type WorkspaceEffect } from "../gen/app__workspace.effect.vibe"
+import { NativePage, walkthroughPageState } from "./nativePage.vibe"
+import { PageId, type LinkObservation, type PageActionCommand } from "./nativePage.schema.ts"
+import { withhold } from "./private.ts"
+import {
+  sameSiteOrigin, summarizeRedactedPage,
+  type RedactedPageSummary, type WalkthroughStepOperation, type WalkthroughTaskKind, type WalkthroughTrajectoryEntry
+} from "./walkthrough.schema.ts"
+
+export type WalkthroughStepOutcome =
+  | { readonly kind: "Applied"; readonly summary: RedactedPageSummary }
+  | { readonly kind: "NeedsPerson"; readonly target: string; readonly reason: string }
+  | { readonly kind: "NeedsCommitApproval"; readonly target: string; readonly label: string }
+  | { readonly kind: "BlockedOrigin"; readonly origin: string }
+  | { readonly kind: "Refused"; readonly reason: string }
+
+export type BeginWalkthroughRequest = {
+  readonly kind: WalkthroughTaskKind
+  readonly goal: string
+  readonly owner: string
+  readonly account?: string
+  readonly ref?: string
+}
+
+export type StepWalkthroughRequest = {
+  readonly operation: WalkthroughStepOperation
+  readonly target: string
+  readonly value?: string
+  readonly option?: string
+  readonly direction?: "up" | "down"
+}
+
+export type CommitWalkthroughReview = {
+  readonly subject: Subject
+  readonly facts: Facts
+  readonly terms: Terms
+  readonly evidence: string
+}
+
+export service Walkthrough {
+  begin(request: BeginWalkthroughRequest): boolean!!
+  observe(): (RedactedPageSummary | undefined)!!
+  currentSummary(): (RedactedPageSummary | undefined)!!
+  step(request: StepWalkthroughRequest): WalkthroughStepOutcome!!
+  dismissBlocker(target: string): WalkthroughStepOutcome!!
+  stageCommitment(review: CommitWalkthroughReview): boolean!!
+  approveCommitment(token: number, text: string): boolean!!
+  declineCommitment(): boolean!!
+  complete(evidence: string): boolean!!
+  trajectory(): readonly WalkthroughTrajectoryEntry[]!!
+}
+
+type PendingCommitTarget = {
+  readonly targetId: string
+  readonly selector: string
+  readonly documentId: string
+  readonly snapshotId: string
+  readonly origin: string
+  readonly allowedOrigins: readonly string[]
+  readonly label: string
+}
+
+type WalkthroughDeps = {
+  readonly workspace: Workspaces.Shape
+  readonly prep: Preparations.Shape
+  readonly page: NativePage.Shape
+  readonly lastSummary: Ref.Ref<RedactedPageSummary | undefined>
+  readonly lastObservation: Ref.Ref<LinkObservation | undefined>
+  readonly trace: Ref.Ref<readonly WalkthroughTrajectoryEntry[]>
+  readonly progress: Ref.Ref<TaskProgress>
+  readonly matchedAccount: Ref.Ref<string>
+  readonly pendingCommit: Ref.Ref<PendingCommitTarget | undefined>
+}
+
+function specTaskKind(kind: WalkthroughTaskKind): TaskKind {
+  return kind === "PayBill" ? "BillPay" : kind === "BookAppointment" ? "AppointmentBooking" : "WebWalkthrough"
+}
+
+function originPathOf(rawUrl: string): string {
+  const parsed = URL.parse(rawUrl)
+  return parsed ? `${parsed.origin}${parsed.pathname}` : "about:blank"
+}
+
+function operationKindFor(operation: WalkthroughStepOperation): OperationKind {
+  switch (operation) {
+    case "click":
+    case "select":
+    case "dismissBlocker":
+      return "Choose"
+    case "fill":
+      return "FillOrdinary"
+    case "follow":
+    case "scroll":
+      return "Navigate"
+  }
+}
+
+function actionErrorText(error: string | { readonly kind: string; readonly message?: string } | null | undefined): string | undefined {
+  if (error == null) return undefined
+  if (typeof error === "string") return error
+  return error.message ? `${error.kind}: ${error.message}` : error.kind
+}
+
+function actionOutcome(execution: {
+  readonly result: {
+    readonly ok?: boolean
+    readonly accepted?: boolean
+    readonly dispatched?: boolean
+    readonly completed?: boolean
+    readonly error?: string | { readonly kind: string; readonly message?: string } | null
+  }
+} | undefined): { readonly ok: boolean; readonly errText: string | undefined } {
+  const errText = actionErrorText(execution?.result.error)
+  const ok = execution !== undefined && errText === undefined &&
+    execution.result.ok !== false && execution.result.accepted !== false &&
+    (execution.result.dispatched === true || execution.result.completed === true || execution.result.ok === true || execution.result.accepted === true)
+  return { ok, errText }
+}
+
+function commandForStep(
+  request: StepWalkthroughRequest,
+  snapshotId: string,
+  targetId: string,
+  origin: string,
+  allowedOrigins: readonly string[],
+  selector: string | undefined,
+  expiresAt: number,
+): PageActionCommand | undefined {
+  const uniqueOrigins = [...new Set([origin, ...allowedOrigins].filter((item) => item.length > 0))]
+  const targetPolicy = (action: "click" | "fill" | "select" | "scroll" | "follow") => selector
+    ? {
+        origin,
+        allowedOrigins: uniqueOrigins,
+        allowSameSiteSubdomains: true,
+        maxConsequence: "stage" as const,
+        expectedSelector: selector,
+        expiresAt,
+        assistantName: "Grace",
+        targets: [{ selector, action }],
+      }
+    : undefined
+  switch (request.operation) {
+    case "click":
+    case "dismissBlocker":
+      return { subaction: "click", snapshotId, nodeId: targetId, ...(targetPolicy("click") ? { taskPolicy: targetPolicy("click") } : {}) }
+    case "fill":
+      return request.value === undefined
+        ? undefined
+        : { subaction: "fill", snapshotId, nodeId: targetId, text: request.value, ...(targetPolicy("fill") ? { taskPolicy: targetPolicy("fill") } : {}) }
+    case "select": {
+      const choice = request.option ?? request.value
+      return choice === undefined
+        ? undefined
+        : { subaction: "select", snapshotId, nodeId: targetId, text: choice, ...(targetPolicy("select") ? { taskPolicy: targetPolicy("select") } : {}) }
+    }
+    case "follow":
+      return { subaction: "follow", snapshotId, nodeId: targetId, ...(targetPolicy("follow") ? { taskPolicy: targetPolicy("follow") } : {}) }
+    case "scroll":
+      return {
+        subaction: "scroll",
+        snapshotId,
+        nodeId: targetId,
+        direction: request.direction ?? "down",
+        ...(targetPolicy("scroll") ? { taskPolicy: targetPolicy("scroll") } : {}),
+      }
+  }
+}
+
+function commitmentTokensOf(w: Workspace): CommitmentTokens {
+  return {
+    deviceVersion: w.device.contextVersion,
+    browserRevision: w.browser.revision,
+    taskVersion: w.assistant.workVersion,
+    revision: w.commitment.revision,
+    attempt: w.commitment.attempt,
+  }
+}
+
+effect function recordTrace(deps: WalkthroughDeps, entry: WalkthroughTrajectoryEntry) {
+  try Ref.update(deps.trace, (items) => [...items.slice(-199), entry])
+}
+
+effect function observeCurrent(deps: WalkthroughDeps): (RedactedPageSummary | undefined)!! {
+  const w = try deps.workspace.get()
+  if (privateSurfaceActive(w) || w.device.surface !== "Browser" || !w.device.observationAllowed) {
+    try Ref.set(deps.lastSummary, undefined)
+    return undefined
+  }
+  const tab = activeTab(w.browser)
+  const url = tabUrl(tab)
+  if (tab.load !== "Loaded" || !URL.canParse(url)) return undefined
+  const id = PageId.make(`tab-${tab.id}`)
+  const raw = deps.page.observePage(id) catch () => undefined
+  if (raw === undefined) return undefined
+  const summary = summarizeRedactedPage(raw, url)
+  try Ref.set(deps.lastObservation, raw)
+  try Ref.set(deps.lastSummary, summary)
+  if (w.execution.phase === "NeedObservation" || w.execution.phase === "Verified" || w.execution.phase === "Blocked") {
+    const expectedOrigin = w.execution.origin
+    const sameOrigin = sameSiteOrigin(summary.url, expectedOrigin)
+    const report = {
+      owner: w.execution.owner,
+      task: w.execution.task,
+      origin: sameOrigin ? expectedOrigin : summary.origin,
+      generation: w.execution.generation,
+      contextRef: `${summary.documentId}:${summary.domRevision}`,
+      originVerified: sameOrigin,
+      matchedAccount: w.execution.matchedAccount || (try Ref.get(deps.matchedAccount)),
+      privateInput: summary.hasPrivateInputs && walkthroughPageState(raw, summary.url, [expectedOrigin]) === "PrivateChallenge",
+      redactionReady: true,
+      facts: [...summary.facts],
+      targets: [...summary.targets],
+    }
+    if (!sameOrigin) {
+      deps.workspace.send({
+        type: "refuseOrigin",
+        currentObservation: {
+          deviceVersion: w.device.contextVersion,
+          browserRevision: w.browser.revision,
+          taskVersion: w.assistant.workVersion,
+          website: report,
+          checkpoint: `Stopped because the page moved to ${summary.origin || "another site"}.`,
+        },
+      }, "Host") catch () => undefined
+    } else {
+      deps.workspace.send({
+        type: "observe",
+        currentObservation: {
+          deviceVersion: w.device.contextVersion,
+          browserRevision: w.browser.revision,
+          taskVersion: w.assistant.workVersion,
+          website: report,
+          checkpoint: summary.primaryHeading || summary.title || "Observed website",
+        },
+      }, "Host") catch () => undefined
+    }
+  }
+  return summary
+}
+
+effect function beginTask(deps: WalkthroughDeps, request: BeginWalkthroughRequest): boolean!! {
+  const w = try deps.workspace.get()
+  if (privateSurfaceActive(w)) return false
+  const tab = activeTab(w.browser)
+  const url = tabUrl(tab)
+  const parsed = URL.parse(url)
+  if (!parsed || (parsed.protocol !== "https:" && parsed.protocol !== "http:")) return false
+  const stamp = try Clock.currentTimeMillis
+  const taskId = `walkthrough-${stamp.toString(36)}`
+  const safeGoal = try Effect.orDie(Effect.try(() => withhold({ text: request.goal, passwords: [] })))
+  if (safeGoal === "") return false
+  const started = deps.workspace.send({
+    type: "begin",
+    taskRequest: { owner: request.owner, task: taskId, goal: safeGoal, origin: parsed.origin },
+  }, "Person") catch () => undefined
+  if (started === undefined) return false
+  const currentPrep = try deps.prep.get()
+  if (currentPrep.phase !== "NoTask") {
+    deps.prep.send({ type: "retire", expectedVersion: currentPrep.version }, "Host") catch () => undefined
+  }
+  const account = request.account ?? "active-session"
+  try Ref.set(deps.matchedAccount, account)
+  const subject: Subject = {
+    kind: specTaskKind(request.kind),
+    owner: request.owner,
+    origin: parsed.origin,
+    account,
+    ref: request.ref ?? taskId,
+  }
+  deps.prep.send({ type: "begin", key: subject, evidence: parsed.href }, "Person") catch () => undefined
+  try Ref.set(deps.progress, { tag: "NoLinkedAttempt" })
+  try observeCurrent(deps)
+  return true
+}
+
+function buildWorkspaceOpRequest(
+  w: Workspace,
+  target: string,
+  valueRef: string,
+  kind: OperationKind,
+) {
+  return {
+    deviceVersion: w.device.contextVersion,
+    browserRevision: w.browser.revision,
+    taskVersion: w.assistant.workVersion,
+    generation: w.execution.generation,
+    observation: w.execution.observation,
+    target,
+    valueRef,
+    kind,
+  }
+}
+
+effect function executeStep(deps: WalkthroughDeps, request: StepWalkthroughRequest): WalkthroughStepOutcome!! {
+  const startedAt = try Clock.currentTimeMillis
+  let w0 = try deps.workspace.get()
+  if (privateSurfaceActive(w0) || w0.device.surface !== "Browser" || !w0.device.observationAllowed) {
+    return { kind: "Refused", reason: "Browser observation is not active." }
+  }
+  if (w0.execution.phase === "Idle") {
+    return { kind: "Refused", reason: "No walkthrough task is active." }
+  }
+  if (w0.execution.phase === "Blocked" && w0.assistant.activity === "UserWait") {
+    deps.workspace.send({ type: "continueTask" }, "Person") catch () => undefined
+    w0 = try deps.workspace.get()
+  }
+  if (w0.execution.phase === "NeedObservation" || w0.execution.phase === "Verified" || w0.execution.phase === "Blocked") {
+    try observeCurrent(deps)
+    w0 = try deps.workspace.get()
+  }
+  const current = (try Ref.get(deps.lastSummary)) ?? (try observeCurrent(deps))
+  const raw = try Ref.get(deps.lastObservation)
+  if (current === undefined || raw === undefined) {
+    return { kind: "Refused", reason: "No verified page observation is available." }
+  }
+  if (!sameSiteOrigin(current.url, w0.execution.origin)) {
+    return { kind: "BlockedOrigin", origin: current.origin }
+  }
+  const targetControl = current.controls.find((item) => item.id === request.target) ??
+    current.controls.find((item) => item.label.toLowerCase() === request.target.toLowerCase())
+  const resolvedId = targetControl?.id ?? request.target
+  const targetInfo = current.targets.find((item) => item.id === resolvedId)
+  const consequence = targetInfo?.consequence ?? "PersonOnly"
+  const traceIndex = (try Ref.get(deps.trace)).length + 1
+  const baseTrace = {
+    step: traceIndex,
+    timestamp: new Date(startedAt).toISOString(),
+    urlOriginPath: originPathOf(current.url),
+    domRevision: current.domRevision,
+    candidateCount: current.controls.length,
+    blockerKinds: current.blockers.map((b) => b.kind),
+    darkPatternFlags: [...current.darkPatternWarnings],
+    action: request.operation,
+    targetRef: resolvedId,
+    consequence,
+  }
+  if (targetInfo === undefined || !targetInfo.inReach || consequence === "PersonOnly") {
+    deps.workspace.send({
+      type: "leaveToPerson",
+      operationRequest: buildWorkspaceOpRequest(w0, resolvedId, "", "PrivateEntry"),
+    }, "Host") catch () => undefined
+    try recordTrace(deps, { ...baseTrace, gateVerdict: "handoff-person", readbackVerified: false, reason: "Sensitive or out-of-reach control left to the person.", latencyMs: Math.max(0, (try Clock.currentTimeMillis) - startedAt) })
+    return { kind: "NeedsPerson", target: resolvedId, reason: "Please complete this private step yourself on the website." }
+  }
+  if (consequence === "Commit") {
+    const commitElement = raw.result.elements.find((item) => item.id === resolvedId)
+    if (commitElement?.targetSelector) {
+      try Ref.set(deps.pendingCommit, {
+        targetId: resolvedId,
+        selector: commitElement.targetSelector,
+        documentId: current.documentId,
+        snapshotId: current.snapshotId,
+        origin: current.origin,
+        allowedOrigins: [w0.execution.origin, current.origin].filter((item) => item.length > 0),
+        label: targetControl?.label ?? resolvedId,
+      })
+    }
+    try recordTrace(deps, { ...baseTrace, gateVerdict: "commit-approval-required", readbackVerified: false, reason: "Final commitment requires explicit review and person approval.", latencyMs: Math.max(0, (try Clock.currentTimeMillis) - startedAt) })
+    return { kind: "NeedsCommitApproval", target: resolvedId, label: targetControl?.label ?? resolvedId }
+  }
+  const opKind = operationKindFor(request.operation)
+  const safeValue = request.value === undefined ? "" : (try Effect.orDie(Effect.try(() => withhold({ text: request.value ?? "", passwords: [] }))))
+  const valueRef = opKind === "FillOrdinary" ? (safeValue || "person-value") : (request.option ?? "")
+  const prepared = deps.workspace.send({
+    type: "prepare",
+    operationRequest: buildWorkspaceOpRequest(w0, resolvedId, valueRef, opKind),
+  }, "Host") catch () => undefined
+  if (prepared === undefined) {
+    try recordTrace(deps, { ...baseTrace, gateVerdict: "refused", readbackVerified: false, reason: "Workspace execution guard refused preparation.", latencyMs: Math.max(0, (try Clock.currentTimeMillis) - startedAt) })
+    return { kind: "Refused", reason: "That step is not allowed in the current state." }
+  }
+  const w1 = prepared.state
+  const dispatched = deps.workspace.send({
+    type: "dispatch",
+    tokens: {
+      deviceVersion: w1.device.contextVersion,
+      browserRevision: w1.browser.revision,
+      taskVersion: w1.assistant.workVersion,
+      generation: w1.execution.generation,
+      observation: w1.execution.observation,
+    },
+  }, "Actuator") catch () => undefined
+  const emitted: WorkspaceEffect | undefined = dispatched?.out[0]
+  if (dispatched === undefined || emitted === undefined || !currentEffect(dispatched.state, emitted, "Actuator")) {
+    try recordTrace(deps, { ...baseTrace, gateVerdict: "refused", readbackVerified: false, reason: "Actuator check refused stale or invalid command.", latencyMs: Math.max(0, (try Clock.currentTimeMillis) - startedAt) })
+    return { kind: "Refused", reason: "The page changed before that step could run." }
+  }
+  const prepState = try deps.prep.get()
+  if (opKind === "FillOrdinary" && prepState.phase === "Preparing" && prepState.fillBy !== "GraceFills") {
+    const queued = captureWebsiteCommand(prepState, emitted, dispatched.state.assistant.taskId, { tag: "NoBookingField" })
+    if (!fillPermitted(prepState, dispatched.state, queued, { tag: "NoTaskForm" }, "Actuator")) {
+      try recordTrace(deps, { ...baseTrace, gateVerdict: "handoff-person", readbackVerified: false, reason: "Task form fill requires the person's fill confirmation.", latencyMs: Math.max(0, (try Clock.currentTimeMillis) - startedAt) })
+      return { kind: "NeedsPerson", target: resolvedId, reason: "Confirm whether you would like Grace to fill this form value." }
+    }
+  }
+  const scrollFallback = request.operation === "scroll"
+    ? raw.result.elements.find((item) => item.id === resolvedId && item.scroll !== undefined) ??
+      raw.result.elements.find((item) => item.scroll !== undefined)
+    : undefined
+  const element = scrollFallback ?? raw.result.elements.find((item) => item.id === resolvedId)
+  const effectiveTargetId = element?.id ?? resolvedId
+  const expiresAt = (try Clock.currentTimeMillis) + 15000
+  const command = commandForStep(
+    request,
+    current.snapshotId,
+    effectiveTargetId,
+    current.origin,
+    [w0.execution.origin, current.origin],
+    element?.targetSelector ?? undefined,
+    expiresAt,
+  )
+  if (command === undefined) {
+    return { kind: "Refused", reason: "Missing value or option for the requested page step." }
+  }
+  const tab = activeTab(dispatched.state.browser)
+  const id = PageId.make(`tab-${tab.id}`)
+  const execution = deps.page.executePage(id, current.documentId, command) catch () => undefined
+  const { ok, errText } = actionOutcome(execution)
+  const after = ok ? (try observeCurrent(deps)) : undefined
+  const w2 = try deps.workspace.get()
+  deps.workspace.send({
+    type: "verify",
+    currentVerification: {
+      deviceVersion: w2.device.contextVersion,
+      browserRevision: w2.browser.revision,
+      taskVersion: w2.assistant.workVersion,
+      website: {
+        owner: w2.execution.owner,
+        task: w2.execution.task,
+        generation: w2.execution.generation,
+        observation: w2.execution.observation,
+        matches: ok && after !== undefined,
+        reason: ok && after !== undefined ? "" : (errText ?? "Could not verify the updated page."),
+      },
+      checkpoint: after?.primaryHeading || after?.title || "Checked updated page",
+      needsUser: false,
+    },
+  }, "Host") catch () => undefined
+  try recordTrace(deps, {
+    ...baseTrace,
+    gateVerdict: ok && after !== undefined ? "allowed" : "refused",
+    readbackVerified: ok && after !== undefined,
+    ...(ok && after !== undefined ? {} : { reason: errText ?? "Readback did not match." }),
+    latencyMs: Math.max(0, (try Clock.currentTimeMillis) - startedAt),
+  })
+  if (!ok || after === undefined) {
+    return { kind: "Refused", reason: errText ?? "Could not verify the updated page." }
+  }
+  return { kind: "Applied", summary: after }
+}
+
+effect function stageTaskCommitment(deps: WalkthroughDeps, review: CommitWalkthroughReview): boolean!! {
+  if (!factsFit(review.subject.kind, review.facts) || standing(review.facts) !== "Actionable" || !termsFit(review.facts, review.terms)) {
+    return false
+  }
+  const currentPrep = try deps.prep.get()
+  if (currentPrep.phase !== "NoTask") {
+    deps.prep.send({ type: "retire", expectedVersion: currentPrep.version }, "Host") catch () => undefined
+  }
+  const begun = deps.prep.send({ type: "begin", key: review.subject, evidence: review.evidence }, "Person") catch () => undefined
+  if (begun === undefined) return false
+  const signed = deps.prep.send({ type: "inspectAccess", accessReport: { key: review.subject, version: begun.state.version, access: "SignedIn" } }, "Host") catch () => undefined
+  if (signed === undefined) return false
+  const read = deps.prep.send({ type: "readFacts", factReport: { key: review.subject, facts: review.facts, evidence: review.evidence, version: signed.state.version } }, "Host") catch () => undefined
+  if (read === undefined) return false
+  const confirmed = deps.prep.send({ type: "confirmFacts" }, "Person") catch () => undefined
+  if (confirmed === undefined) return false
+  const chosen = deps.prep.send({ type: "choose", terms: review.terms }, "Person") catch () => undefined
+  if (chosen === undefined) return false
+  const verified = deps.prep.send({
+    type: "verifyForm",
+    formReport: { key: review.subject, proposal: review.terms, revision: chosen.state.version, evidence: review.evidence },
+  }, "Host") catch () => undefined
+  if (verified === undefined) return false
+  const handed = deps.prep.send({ type: "handOff" }, "Actuator") catch () => undefined
+  const handoff = handed?.out[0]
+  if (handed === undefined || handoff === undefined) return false
+  let w0 = try deps.workspace.get()
+  if (w0.execution.phase === "Blocked" && w0.assistant.activity === "UserWait") {
+    deps.workspace.send({ type: "continueTask" }, "Person") catch () => undefined
+    w0 = try deps.workspace.get()
+  }
+  if (w0.execution.phase !== "Observed") {
+    try observeCurrent(deps)
+    w0 = try deps.workspace.get()
+  }
+  const bound = deps.workspace.send({ type: "bindCommitment", key: review.subject }, "Person") catch () => undefined
+  const w1 = bound?.state ?? w0
+  const captured = commitmentTokensOf(w1)
+  const transfer = { handoff, captured }
+  const converted = convertPreparedReview(handed.state, w1, transfer, "Host")
+  if (converted.tag !== "ReviewConverted") return false
+  const reviewed = deps.workspace.send({ type: "reviewCommitment", currentReview: converted.report }, "Host") catch () => undefined
+  if (reviewed === undefined) return false
+  const readBack = deps.workspace.send({ type: "readBackCommitment", commitmentTokens: commitmentTokensOf(reviewed.state) }, "Host") catch () => undefined
+  if (readBack === undefined) return false
+  const journaled = deps.workspace.send({ type: "journalCommitment", commitmentTokens: commitmentTokensOf(readBack.state), succeeded: true }, "Store") catch () => undefined
+  if (journaled === undefined) return false
+  const linked = journaledTaskAttempt(handed.state, journaled.state, { task: journaled.state.commitmentTask, transfer })
+  try Ref.set(deps.progress, linked)
+  if (linked.tag !== "Following") return false
+  const raw = try Ref.get(deps.lastObservation)
+  const summary = try Ref.get(deps.lastSummary)
+  const targetRef = review.terms.tag === "WalkthroughTerms" ? review.terms.walkthrough.targetRef : undefined
+  if (raw && summary && targetRef) {
+    const matched = raw.result.elements.find((item) => item.id === targetRef || item.targetSelector === targetRef || item.label === targetRef)
+    if (matched?.targetSelector) {
+      try Ref.set(deps.pendingCommit, {
+        targetId: matched.id,
+        selector: matched.targetSelector,
+        documentId: summary.documentId,
+        snapshotId: summary.snapshotId,
+        origin: summary.origin,
+        allowedOrigins: [journaled.state.execution.origin, summary.origin].filter((item) => item.length > 0),
+        label: matched.label ?? matched.id,
+      })
+    }
+  }
+  return true
+}
+
+effect function approveTaskCommitment(deps: WalkthroughDeps, token: number, text: string): boolean!! {
+  const startedAt = try Clock.currentTimeMillis
+  const w0 = try deps.workspace.get()
+  const approved = deps.workspace.send({
+    type: "approveSpokenCommitment",
+    commitmentTokens: commitmentTokensOf(w0),
+    spoken: { token, text, owner: "HumanAudio", complete: true, approves: true, correction: false },
+  }, "Person") catch () => undefined
+  if (approved === undefined) return false
+  const submitted = deps.workspace.send({
+    type: "submitCommitment",
+    commitmentTokens: commitmentTokensOf(approved.state),
+  }, "Actuator") catch () => undefined
+  const emitted = submitted?.out[0]
+  if (submitted === undefined || emitted === undefined || !currentEffect(submitted.state, emitted, "Actuator")) {
+    return false
+  }
+  const pending = try Ref.getAndSet(deps.pendingCommit, undefined)
+  if (pending === undefined) return false
+  const expiresAt = (try Clock.currentTimeMillis) + 15000
+  const grantId = `grant-${submitted.state.commitment.revision}-${submitted.state.commitment.attempt}-${startedAt}`
+  const tab = activeTab(submitted.state.browser)
+  const id = PageId.make(`tab-${tab.id}`)
+  const command: PageActionCommand = {
+    subaction: "click",
+    snapshotId: pending.snapshotId,
+    nodeId: pending.targetId,
+    taskPolicy: {
+      origin: pending.origin,
+      allowedOrigins: [...new Set([pending.origin, ...pending.allowedOrigins].filter((item) => item.length > 0))],
+      allowSameSiteSubdomains: true,
+      maxConsequence: "stage",
+      expectedSelector: pending.selector,
+      expiresAt,
+      assistantName: "Grace",
+      commitGrant: { grantId, selector: pending.selector, expiresAt },
+      targets: [{ selector: pending.selector, action: "click" }],
+    },
+  }
+  const execution = deps.page.executePage(id, pending.documentId, command) catch () => undefined
+  const { ok, errText } = actionOutcome(execution)
+  const after = ok ? (try observeCurrent(deps)) : undefined
+  const summary = after ?? (try Ref.get(deps.lastSummary))
+  try recordTrace(deps, {
+    step: (try Ref.get(deps.trace)).length + 1,
+    timestamp: new Date(startedAt).toISOString(),
+    urlOriginPath: originPathOf(summary?.url ?? pending.origin),
+    domRevision: summary?.domRevision ?? 0,
+    candidateCount: summary?.controls.length ?? 0,
+    blockerKinds: summary ? summary.blockers.map((b) => b.kind) : [],
+    darkPatternFlags: summary ? [...summary.darkPatternWarnings] : [],
+    action: "approveCommitment",
+    targetRef: pending.targetId,
+    consequence: "Commit",
+    gateVerdict: ok && after !== undefined ? "allowed" : "refused",
+    readbackVerified: ok && after !== undefined,
+    ...(ok && after !== undefined ? {} : { reason: errText ?? "Approved commitment execution failed." }),
+    latencyMs: Math.max(0, (try Clock.currentTimeMillis) - startedAt),
+  })
+  return ok && after !== undefined
+}
+
+export const walkthrough = Layer.provide(
+  Layer.effect(Walkthrough, effect {
+    const deps: WalkthroughDeps = {
+      workspace: try Workspaces,
+      prep: try Preparations,
+      page: try NativePage,
+      lastSummary: try Ref.make<RedactedPageSummary | undefined>(undefined),
+      lastObservation: try Ref.make<LinkObservation | undefined>(undefined),
+      trace: try Ref.make<readonly WalkthroughTrajectoryEntry[]>([]),
+      progress: try Ref.make<TaskProgress>({ tag: "NoLinkedAttempt" }),
+      matchedAccount: try Ref.make("active-session"),
+      pendingCommit: try Ref.make<PendingCommitTarget | undefined>(undefined),
+    }
+    return {
+      begin: (request) => beginTask(deps, request),
+      observe: () => observeCurrent(deps),
+      currentSummary: () => Ref.get(deps.lastSummary),
+      step: (request) => executeStep(deps, request),
+      dismissBlocker: (target) => executeStep(deps, { operation: "dismissBlocker", target }),
+      stageCommitment: (review) => stageTaskCommitment(deps, review),
+      approveCommitment: (token, text) => approveTaskCommitment(deps, token, text),
+      declineCommitment: effect () => {
+        try Ref.set(deps.pendingCommit, undefined)
+        const w0 = try deps.workspace.get()
+        const stopped = deps.workspace.send({ type: "stop" }, "Person") catch () => undefined
+        return stopped !== undefined && w0.commitment.stage !== "Empty"
+      },
+      complete: effect (evidence) => {
+        const w = try deps.workspace.get()
+        const completed = deps.workspace.send({
+          type: "completeOrdinary",
+          completion: {
+            owner: w.execution.owner,
+            task: w.assistant.taskId,
+            goal: w.assistant.goal,
+            evidence,
+            deviceVersion: w.device.contextVersion,
+            browserRevision: w.browser.revision,
+            taskVersion: w.assistant.workVersion,
+            generation: w.execution.generation,
+            observation: w.execution.observation,
+          },
+        }, "Host") catch () => undefined
+        return completed !== undefined
+      },
+      trajectory: () => Ref.get(deps.trace),
+    }
+  }),
+  prepMachine(),
+)

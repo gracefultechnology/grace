@@ -1,5 +1,5 @@
 // spec/app/agentActions.md, "Story: Ask Grace to help with my email"; spec/app/agentActions.md, "Story: Ask Grace about my calendar"; spec/app/agentActions.md, "Only Margaret's own current turn makes Grace act, on any screen"; spec/app/agentActions.md, "Grace's email actions go to that account's mailbox and pass its own guard"; spec/app/agentActions.md, "Grace only asks about a calendar that shows, with a question that calendar would take"; spec/app/agentActions.md, "An appointment from an email is asked only as the calendar rules allow"; spec/app/agentActions.md, "Her yes is taken only for a question waiting on her, and her No drops it"; spec/app/proposal.md, "Story: Say yes to exactly what Grace proposes for my calendar"; spec/app/calendars.md, "Story: Ask Grace to put an email’s appointment in my calendar"; spec/app/workspace.md, "Story: Follow one reviewed plan across apps"
-import { Machine as Setup } from "../gen/app__setup.effect.vibe"
+import { Machine as Setup, type GraceAccount } from "../gen/app__setup.effect.vibe"
 import { guidedAuthority, guidedOwner, type GuidedAuthority } from "./managedReads.vibe"
 import { webView } from "./surfacePlugin.ts"
 import { Machine as Accounts } from "../gen/app__accounts.effect.vibe"
@@ -23,6 +23,8 @@ import { Instances, tablet } from "./instances.vibe"
 import { Mail } from "./mail.vibe"
 import type { Remind } from "./reply.schema.ts"
 import { dayNumber } from "./schedule.ts"
+import { walkthroughStepPayload } from "./walkthrough.schema.ts"
+import { Walkthrough } from "./walkthrough.vibe"
 
 type Planned = { readonly commands: readonly AgentAction[]; readonly showsEmail: boolean }
 type Plan = Planned | "NotFound" | "NotYetAvailable" | undefined
@@ -210,6 +212,28 @@ effect function plan(action: GraceAction, s: Scene, request: Request, stamp: num
   }
 }
 
+function walkthroughOwner(account: GraceAccount): string {
+  if (account.tag === "GraceSignedIn") return account.accountId || "person"
+  if (account.tag === "GraceDeviceSignedIn" && account.details.tag === "TabletAccountKnown") return account.details.accountId || "person"
+  return "person"
+}
+
+function parseSortDirection(words: string): "PriceAscending" | "PriceDescending" | undefined {
+  const asc = /\b(?:ascending|low(?:est)?\s+to\s+high|lowest(?:\s+price)?\s+first|cheapest(?:\s+first)?)\b/iu.test(words)
+  const desc = /\b(?:descending|high(?:est)?\s+to\s+low|highest(?:\s+price)?\s+first|most\s+expensive(?:\s+first)?)\b/iu.test(words)
+  if (asc && !desc) return "PriceAscending"
+  if (desc && !asc) return "PriceDescending"
+  return undefined
+}
+
+function parseSearchQuery(words: string): string | undefined {
+  const trimmed = words.trim()
+  const direct = /^(?:please\s+)?(?:search (?:this (?:site|website|page) )?for|look up)\s+(?:"([^"\r\n]+)"|“([^”\r\n]+)”|'(.+)'|‘(.+)’|([^"“”\r\n.!?]+))\s*[.!?]?$/iu.exec(trimmed)
+  if (direct !== null) return (direct[1] ?? direct[2] ?? direct[3] ?? direct[4] ?? direct[5])?.trim()
+  const onSite = /^(?:please\s+)?find\s+(?:"([^"\r\n]+)"|“([^”\r\n]+)”|'(.+)'|‘(.+)’|([^"“”\r\n.!?]+?))\s+on this (?:site|website|page)\s*[.!?]?$/iu.exec(trimmed)
+  return (onSite?.[1] ?? onSite?.[2] ?? onSite?.[3] ?? onSite?.[4] ?? onSite?.[5])?.trim()
+}
+
 export const agent = Layer.effect(Agent, effect {
   const workspace = try Workspaces
   const setup = try Setup
@@ -217,6 +241,7 @@ export const agent = Layer.effect(Agent, effect {
   const proposals = try Proposal
   const shelf = try Instances
   const helper = try Effect.serviceOption(Mail)
+  const walkthrough = try Effect.serviceOption(Walkthrough)
   const look = try looker()
 
   effect function run(planned: readonly Step[]): Outcome!! {
@@ -303,10 +328,11 @@ export const agent = Layer.effect(Agent, effect {
         const workspace = s.workspace
         const tab = activeTab(workspace.browser)
         const site = URL.parse(tabUrl(tab))
-        const priceRequest = /^(?:please\s+)?(?:list|show|sort) (?:the )?products (?:from|in) (.{1,128}?) category by (ascending|descending) price[.!]?$/iu.exec(words.trim())
-        const category = priceRequest?.[1]
-        const direction = priceRequest?.[2]?.toLowerCase() === "ascending" ? "PriceAscending" : "PriceDescending"
-        return category !== undefined && category.toLowerCase() === step.target.toLowerCase() && step.direction === direction &&
+        const direction = parseSortDirection(words)
+        const at = quotedAt(words, step.target)
+        const category = at >= 0 ? words.slice(at, at + step.target.length) : undefined
+        const mentionsPrice = /\b(?:price|cheapest|expensive)\b/iu.test(words)
+        return category !== undefined && mentionsPrice && direction === step.direction &&
           !/\b(?:my|our)\b/iu.test(category) && action.steps.length === 1 && workspace.device.surface === "Browser" &&
           workspace.device.observationAllowed && tab.load === "Loaded" && tab.secure && site?.protocol === "https:" &&
           !site.username && !site.password ?
@@ -316,8 +342,7 @@ export const agent = Layer.effect(Agent, effect {
         const workspace = s.workspace
         const tab = activeTab(workspace.browser)
         const site = URL.parse(tabUrl(tab))
-        const phrase = /^(?:please\s+)?search (?:this (?:site|website) )?for\s+(?:"([^"\r\n]+)"|“([^”\r\n]+)”|'(.+)'|‘(.+)’|([^"“”\r\n.!?]+))\s*[.!?]?$/iu.exec(words.trim())
-        const query = phrase?.[1] ?? phrase?.[2] ?? phrase?.[3] ?? phrase?.[4] ?? phrase?.[5]?.trim()
+        const query = parseSearchQuery(words)
         return workspace.device.surface === "Browser" && workspace.device.observationAllowed && tab.load === "Loaded" &&
           tab.secure && site?.protocol === "https:" && !site.username && !site.password &&
           action.steps.length === 1 && query === step.query ? { tag: "SearchPublicSite", query, origin: site.origin, tabId: tab.id } : undefined
@@ -329,7 +354,7 @@ export const agent = Layer.effect(Agent, effect {
       const clauses: string[] = words.toLowerCase().split(/[.!?;:\n]+/u)
       const quoted = clauses.some((clause): boolean => {
         const requestWords = ` ${clause.replace(/[^\p{L}]+/gu, " ").trim()} `
-        return ["latest", "newest", "most recent"].some((rank) =>
+        return ["latest", "newest", "most recent", "last"].some((rank) =>
           phrases.some((criteria) => requestWords.includes(` ${rank} ${criteria} `)))
       })
       return quoted ? { tag: "ReadLatestRecord", collection, status } : undefined
@@ -342,6 +367,35 @@ export const agent = Layer.effect(Agent, effect {
     return try sent(workspace.send({ type: "offerReadReview", offer }, "Host"))
   }
 
+  effect function performWalkthrough(action: GraceAction, s: Scene, request: Request): (Outcome | undefined)!! {
+    if (action.kind !== "beginTask" && action.kind !== "walkthroughStep" && action.kind !== "dismissBlocker" &&
+        action.kind !== "fill" && action.kind !== "approveCommitment" && action.kind !== "declineCommitment") return undefined
+    if (!mayAct(request, momentOf(s))) return "NotHerTurn"
+    if (Option.isNone(walkthrough)) return "NotYetAvailable"
+    const guide = walkthrough.value
+    const words = s.workspace.assistant.conversation.messages.findLast((message) => message.author === "HumanMessage")?.text ?? ""
+    switch (action.kind) {
+      case "beginTask": {
+        const owner = walkthroughOwner((try setup.get()).graceAccount)
+        const goal = action.goal?.trim() || words.trim() || action.task
+        return (try guide.begin({ kind: action.task, goal, owner })) ? "Applied" : "OwnerRefused"
+      }
+      case "walkthroughStep": {
+        const result = try guide.step(walkthroughStepPayload(action))
+        return result.kind === "Applied" ? "Applied" : "OwnerRefused"
+      }
+      case "dismissBlocker":
+        return (try guide.dismissBlocker(action.target)).kind === "Applied" ? "Applied" : "OwnerRefused"
+      case "fill":
+        if (!action.target || action.value === undefined) return "OwnerRefused"
+        return (try guide.step({ operation: "fill", target: action.target, value: action.value })).kind === "Applied" ? "Applied" : "OwnerRefused"
+      case "approveCommitment":
+        return (try guide.approveCommitment(request.generation, words || "approve")) ? "Applied" : "OwnerRefused"
+      case "declineCommitment":
+        return (try guide.declineCommitment()) ? "Applied" : "OwnerRefused"
+    }
+  }
+
   effect function perform(action: GraceAction, request: Request & { authority?: GuidedAuthority }): Done!! {
     if (mailActions.has(action.kind)) {
       try Effect.forEach(shownOf(try look()), (source) => settled(source.account), { concurrency: "unbounded", discard: true })
@@ -349,6 +403,8 @@ export const agent = Layer.effect(Agent, effect {
     const s = try look()
     const stamp = try Clock.currentTimeMillis
     if (action.kind === "proposeReadPlan") return { outcome: try readPlan(action, s, request, `${stamp.toString(36)}-${(try Random.nextInt).toString(36)}`), showsEmail: false }
+    const walked = try performWalkthrough(action, s, request)
+    if (walked !== undefined) return { outcome: walked, showsEmail: false }
     const planned = try plan(action, s, request, stamp, helper)
     if (planned === "NotFound" || planned === "NotYetAvailable") return { outcome: planned, showsEmail: false }
     if (planned === undefined) {

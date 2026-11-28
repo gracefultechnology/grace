@@ -29,8 +29,9 @@ import { ManagedReads, guidedAuthority, guidedOwner, type GuidedAuthority } from
 import { comparableName, NativePage, guidedPageState } from "./nativePage.vibe"
 import { type LinkObservation, PageId } from "./nativePage.schema.ts"
 import { statementRead } from "./statement.vibe"
+import { Walkthrough } from "./walkthrough.vibe"
 
-export type CloudLink = { readonly url: string; readonly key: string }
+export type CloudLink = { readonly url: string; readonly key: string; readonly model?: string }
 export type GuidedCheck = "Confirmed" | "NotFound" | "Several" | "Past" | "Changed" | "Covered" | "Used" | "PrivateForm" | "Refused" | "CategoryOffered"
 export type PersonTurn = Extract<Interaction, { tag: "SendDraft" | "ChooseAnswer" }>
 export type SpokenTurn = Extract<Interaction, { tag: "Hear" }>
@@ -75,7 +76,7 @@ function screened(text: string, answers: readonly string[], actions: readonly Gr
 
 effect function ask(link: CloudLink, messages: readonly { role: string; content: string }[]) {
   const request = HttpClientRequest.bodyJsonUnsafe(HttpClientRequest.post(`${link.url}/api/v1/chat/completions`), {
-    model: policy.model, messages, max_completion_tokens: replyTokenLimit, stream: true, response_format: { type: "json_object" }
+    model: link.model ?? policy.model, messages, max_completion_tokens: replyTokenLimit, stream: true, response_format: { type: "json_object" }
   })
   const response = try HttpClient.execute(HttpClientRequest.bearerToken(request, link.key))
   if (response.status !== 200) throw new Unanswered({ status: response.status })
@@ -108,11 +109,18 @@ function sortCategory(value: string): string {
 function priceToolbar(snapshot: LinkObservation) {
   const controls = snapshot.result.elements.filter((control) => control.inViewport && control.disabled === false &&
     control.sensitive === null && control.form === null && control.frame === undefined && !control.inShadowRoot && control.targetSelector)
-  const sortBy = controls.filter((control) => control.tag === "select" && comparableName(control.label ?? "") === "sort by")
+  const sortBy = controls.filter((control) => control.tag === "select" && /^(?:sort(?: by)?|order by)$/iu.test(comparableName(control.label ?? "")))
   const sorter = sortBy[0]
   if (sortBy.length !== 1 || !sorter?.targetSelector) return undefined
   const selected = sorter.options?.filter((option) => option.selected)
-  if (selected?.length !== 1 || selected[0]?.disabled || comparableName(selected[0]?.label ?? "") !== "price") return undefined
+  if (selected?.length !== 1 || selected[0]?.disabled) return undefined
+  const selectedLabel = comparableName(selected[0]?.label ?? "")
+  if (/\bprice\b/iu.test(selectedLabel)) {
+    const asc = /\b(?:low\s*to\s*high|ascending|lowest)\b/iu.test(selectedLabel)
+    const desc = /\b(?:high\s*to\s*low|descending|highest)\b/iu.test(selectedLabel)
+    if (asc !== desc) return { selector: sorter.targetSelector, direction: asc ? ("PriceAscending" as const) : ("PriceDescending" as const) }
+  }
+  if (selectedLabel !== "price") return undefined
   const observed = controls.flatMap((control) => {
     if (control.tag !== "button" && control.tag !== "a" && control.role !== "button") return []
     const matches = [control.label, control.title].flatMap((text) => {
@@ -468,6 +476,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   const digest = try Digest.Digest
   const setup = try Setup
   const recovery = try GuidedRecovery
+  const walkthrough = try Effect.serviceOption(Walkthrough)
 
   effect function tell(words: string) {
     if (words !== "" && link !== undefined) try Ref.update(told, ({ next, items }) => {
@@ -505,6 +514,7 @@ export const conversation = (link: CloudLink | undefined) => Layer.effect(Conver
   }
 
   effect function answer(link: CloudLink, token: number) {
+    if (Option.isSome(walkthrough)) try walkthrough.value.observe()
     const scene = try look()
     const w = scene.workspace
     if (privateSurfaceActive(w)) return

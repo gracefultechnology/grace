@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
-import { hasUserAssistedSearch, matchesPublicSearch, publicSearchQuery } from "./browser-receipt.ts";
+import { hasHostedNavigation, hasUserAssistedSearch, hasValidWalkthroughTrajectory, matchesPublicSearch, publicSearchQuery } from "./browser-receipt.ts";
 import { readFixtureUpstream } from "./fixture-context.ts";
 import { startWebArenaWorker } from "./webarena.ts";
 
@@ -236,4 +236,35 @@ it('Verify the exact user-assisted search and its newly checked result (spec/app
     checked: true, unsubmitted: false, replacedResult: false, forgedForm: false,
     skippedResume: false, noSyntheticLogin: false, reusedDocument: false, changedReview: false, unchecked: false, inventedRanking: false,
   });
+});
+
+it('Accept real OpenAI-compatible models and zero-PII walkthrough trajectories (spec/app/execution.md, "Story: Get help on the website I chose")', () => {
+  const start = { url: "https://portal.example/", documentId: "doc-1" };
+  const destination = { url: "https://portal.example/billing", documentId: "doc-2" };
+  const receiptFor = (model: string) => ({
+    startUrl: start.url,
+    decisionProvider: "hosted",
+    decisionRequests: 1,
+    decisionResults: [{ http: 200, candidates: 3, result: { status: "ok", model, choice: "2", confidence: 0.94 } }],
+    outcome: { start, destination, hops: [{ ...destination, checked: true }], ringTap: true, graceTerminal: "complete" },
+  });
+  expect(hasHostedNavigation(receiptFor("qwen-3.8-27b"), destination.url)).toBe(true);
+  expect(hasHostedNavigation(receiptFor("gpt-oss-120b"), destination.url)).toBe(true);
+  expect(hasHostedNavigation(receiptFor(""), destination.url)).toBe(false);
+
+  const validLine = JSON.stringify({
+    timestamp: "2026-11-28T00:00:00.000Z",
+    stepIndex: 1,
+    phase: "acting",
+    urlOriginPath: "https://portal.example/billing",
+    domRevision: 2,
+    candidateCount: 6,
+    blockerKinds: [],
+    darkPatternFlags: ["pre-checked-opt-in"],
+    gateVerdict: "allowed",
+    latencyMs: 312,
+  });
+  expect(hasValidWalkthroughTrajectory([validLine], ["top-secret-password"])).toBe(true);
+  expect(hasValidWalkthroughTrajectory([validLine.replace("allowed", "top-secret-password")], ["top-secret-password"])).toBe(false);
+  expect(hasValidWalkthroughTrajectory([])).toBe(false);
 });

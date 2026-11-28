@@ -1,6 +1,6 @@
 # Prepare a task on any supported website
 
-The semantic journey is goal → verified destination and account → current bill → chosen amount/date/method → verified form → consequential review. These are facts to establish, not a fixed list of pages or clicks. A website may combine or repeat them. [Execution](./execution.md) discovers current controls and [payment](./commitment.md) owns authorization and durable outcomes. This preparation model cannot submit money. It never reads a bill's own fields: what it holds is one [kind's](./taskKinds.md) reading and the task's terms, and the [bill kind](./billKind.md) judges them. Booking a visit is prepared by the same steps, its reading and terms judged by the [booking kind](./bookingKind.md).
+The semantic journey is goal → verified destination and account → current bill → chosen amount/date/method → verified form → consequential review. These are facts to establish, not a fixed list of pages or clicks. A website may combine or repeat them. [Execution](./execution.md) discovers current controls and [payment](./commitment.md) owns authorization and durable outcomes. This preparation model cannot submit money. It never reads a bill's own fields: what it holds is one [kind's](./taskKinds.md) reading and the task's terms, and the [bill kind](./billKind.md) judges them. Booking a visit and preparing a general website walkthrough follow the same steps, their reading and terms judged by the [booking kind](./bookingKind.md) and the [task kinds registry](./taskKinds.md).
 
 Sources: new prototype's sign-in, account, payment, review and outcome views; PRD JOURNEY 01–09, HELP 01–12 and U01–12. Demo values, account suffixes, website names, synthetic credentials and synthetic success are not requirements. The same contract accepts any origin for which the integration can establish the required evidence; unsupported sites stop truthfully.
 
@@ -34,22 +34,25 @@ pure val initial: Prep = {
 }
 pure val keyValues = Set(
   K::sampleBillKey, { ...K::sampleBillKey, origin: "https://credit.example" },
-  K::sampleVisitKey, T::emptyKey)
+  K::sampleVisitKey, K::sampleWalkthroughKey, T::emptyKey)
 pure val accessReportValues = {
   val begun = begin(initial, K::sampleBillKey, "source", T::Person)
   val later = Set(1, 2, 3, 4).map(n => { key: begun.key, version: begun.version + n, access: SignedIn })
   Set(SignedIn, SignedOut, Challenge, WrongAccount, AccessDenied).map(a => { key: begun.key, version: begun.version, access: a })
     .union(later).union(Set({ key: T::emptyKey, version: begun.version, access: SignedIn }))
     .union(Set({ key: K::sampleVisitKey, version: begun.version, access: SignedIn }))
+    .union(Set({ key: K::sampleWalkthroughKey, version: begun.version, access: SignedIn }))
 }
 pure val factReportValues = {
   val begun = begin(initial, K::sampleBillKey, "source", T::Person)
   val signed = inspectAccess(begun, { key: begun.key, version: begun.version, access: SignedIn }, T::Host)
-  val billFacts = K::factsValues.filter(f => match f { | VisitRead(x) => false | _ => true })
+  val billFacts = K::factsValues.filter(f => match f { | BillRead(x) => true | NoFacts => true | _ => false })
   val visitFacts = K::factsValues.filter(f => match f { | VisitRead(x) => true | _ => false })
+  val walkthroughFacts = K::factsValues.filter(f => match f { | WalkthroughRead(x) => true | _ => false })
   billFacts.map(f => { key: signed.key, facts: f, evidence: "source", version: signed.version })
     .union(billFacts.map(f => { key: signed.key, facts: f, evidence: "source", version: signed.version + 1 }))
     .union(visitFacts.union(Set(K::sampleBillFacts)).map(f => { key: K::sampleVisitKey, facts: f, evidence: "source", version: signed.version }))
+    .union(walkthroughFacts.union(Set(K::sampleBillFacts)).map(f => { key: K::sampleWalkthroughKey, facts: f, evidence: "source", version: signed.version }))
     .union(Set({ key: T::emptyKey, facts: K::NoFacts, evidence: "", version: signed.version }))
 }
 pure val formReportValues = {
@@ -65,10 +68,11 @@ pure val formReportValues = {
     .union(T::bookValues.map(b => { ...form, proposal: T::BookTerms({ book: b }) }))
     .union(Set(K::sampleBookTerms, K::sampleClashTerms).map(terms =>
       Set(0, 1).map(n => { key: K::sampleVisitKey, proposal: terms, revision: chosen.version + n, evidence: "portal" })).flatten())
+    .union(Set(0, 1).map(n => { key: K::sampleWalkthroughKey, proposal: K::sampleWalkthroughTerms, revision: chosen.version + n, evidence: "website" }))
 }
 pure val termsValues = Set(K::samplePayTerms, T::NoTerms,
   T::PayTerms({ pay: { amount: 3500, fee: 25, currency: "USD", day: 2, funding: "other-bank" } }))
-  .union(Set(K::sampleBookTerms, K::sampleClashTerms))
+  .union(Set(K::sampleBookTerms, K::sampleClashTerms, K::sampleWalkthroughTerms))
 pure val expectedVersionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val reasonValues = Set("unsupported", "expired", "")
 pure val weight_begin = 3
@@ -256,6 +260,8 @@ pure def sometimesReviewReady(b: Prep): bool = b.phase == ReadyForReview
 pure def sometimesReviewHandedOff(b: Prep): bool = b.phase == HandedOff
 pure def sometimesBookingReadyForReview(b: Prep): bool = b.key.kind == T::AppointmentBooking and b.phase == ReadyForReview
 pure def sometimesBookingHandedOff(b: Prep): bool = b.key.kind == T::AppointmentBooking and b.phase == HandedOff
+pure def sometimesWalkthroughReadyForReview(b: Prep): bool = b.key.kind == T::WebWalkthrough and b.phase == ReadyForReview
+pure def sometimesWalkthroughHandedOff(b: Prep): bool = b.key.kind == T::WebWalkthrough and b.phase == HandedOff
 pure val eval_witness_sometimesBookingReadyForReview = (
   ("begin", K::sampleVisitKey, "source", T::Person),
   ("inspectAccess", { key: K::sampleVisitKey, version: 1, access: SignedIn }, T::Host),
@@ -270,6 +276,21 @@ pure val eval_witness_sometimesBookingHandedOff = (
   ("confirmFacts", T::Person),
   ("choose", K::sampleBookTerms, T::Person),
   ("verifyForm", { key: K::sampleVisitKey, proposal: K::sampleBookTerms, revision: 4, evidence: "portal" }, T::Host),
+  ("handOff", T::Actuator))
+pure val eval_witness_sometimesWalkthroughReadyForReview = (
+  ("begin", K::sampleWalkthroughKey, "source", T::Person),
+  ("inspectAccess", { key: K::sampleWalkthroughKey, version: 1, access: SignedIn }, T::Host),
+  ("readFacts", { key: K::sampleWalkthroughKey, facts: K::sampleWalkthroughFacts, evidence: "source", version: 2 }, T::Host),
+  ("confirmFacts", T::Person),
+  ("choose", K::sampleWalkthroughTerms, T::Person),
+  ("verifyForm", { key: K::sampleWalkthroughKey, proposal: K::sampleWalkthroughTerms, revision: 4, evidence: "website" }, T::Host))
+pure val eval_witness_sometimesWalkthroughHandedOff = (
+  ("begin", K::sampleWalkthroughKey, "source", T::Person),
+  ("inspectAccess", { key: K::sampleWalkthroughKey, version: 1, access: SignedIn }, T::Host),
+  ("readFacts", { key: K::sampleWalkthroughKey, facts: K::sampleWalkthroughFacts, evidence: "source", version: 2 }, T::Host),
+  ("confirmFacts", T::Person),
+  ("choose", K::sampleWalkthroughTerms, T::Person),
+  ("verifyForm", { key: K::sampleWalkthroughKey, proposal: K::sampleWalkthroughTerms, revision: 4, evidence: "website" }, T::Host),
   ("handOff", T::Actuator))
 ```
 

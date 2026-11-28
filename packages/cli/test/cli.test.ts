@@ -3,7 +3,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { commands, defineCommand, runCli, type CliIo } from "../src/index.ts";
+import { commands, defineCommand, redactPii, resolveLlmConfig, runCli, sameSiteOrigin, type CliIo } from "../src/index.ts";
 
 const templateRoot = path.resolve(import.meta.dirname, "../../..");
 const mainPath = path.resolve(import.meta.dirname, "../src/main.ts");
@@ -37,19 +37,19 @@ describe("project CLI", () => {
     expect(human.out()).toContain("status");
     expect(human.out()).toContain("deploy");
     expect(human.out()).toContain("verify-live");
+    expect(human.out()).toContain("walkthrough");
+    expect(human.out()).toContain("benchmark");
 
     const structured = createRecorder();
     expect(await runCli({ argv: ["help", "--json"], commands, rootDir: templateRoot, cwd: templateRoot, io: structured.io })).toBe(0);
     const helpPayload = parseJson(structured.out()) as {
       readonly ok: boolean;
       readonly command: string;
-      readonly data: {
-        readonly commands: readonly { readonly name: string }[];
-      };
+      readonly data: { readonly commands: readonly { readonly name: string }[] };
     };
     expect(helpPayload.ok).toBe(true);
     expect(helpPayload.command).toBe("help");
-    expect(helpPayload.data.commands.map((cmd) => cmd.name)).toEqual(["status", "deploy", "verify-live"]);
+    expect(helpPayload.data.commands.map((cmd) => cmd.name)).toEqual(["status", "deploy", "verify-live", "walkthrough", "benchmark"]);
 
     const single = createRecorder();
     expect(await runCli({ argv: ["status", "--help", "--json"], commands, rootDir: templateRoot, cwd: templateRoot, io: single.io })).toBe(0);
@@ -248,5 +248,29 @@ describe("project CLI", () => {
         });
       });
     }
+  });
+
+  test("walkthrough and benchmark commands validate arguments and enforce safety helpers", async () => {
+    const badUrl = createRecorder();
+    expect(await runCli({ argv: ["walkthrough", "--url", "not-a-url", "--goal", "Read bill", "--json"], commands, rootDir: templateRoot, cwd: templateRoot, io: badUrl.io })).toBe(1);
+    expect(parseJson(badUrl.out())).toMatchObject({ ok: false, command: "walkthrough" });
+
+    const missingGoal = createRecorder();
+    expect(await runCli({ argv: ["walkthrough", "--url", "https://example.org", "--json"], commands, rootDir: templateRoot, cwd: templateRoot, io: missingGoal.io })).toBe(1);
+    expect(parseJson(missingGoal.out())).toMatchObject({ ok: false, command: "walkthrough" });
+
+    const badSuite = createRecorder();
+    expect(await runCli({ argv: ["benchmark", "--suite", "invalid-suite", "--json"], commands, rootDir: templateRoot, cwd: templateRoot, io: badSuite.io })).toBe(1);
+    expect(parseJson(badSuite.out())).toMatchObject({ ok: false, command: "benchmark" });
+
+    const qwen = resolveLlmConfig({ provider: "cerebras", model: "qwen-3.8-27b" });
+    expect(qwen).toMatchObject({ provider: "cerebras", model: "qwen-3.8-27b", maxTokens: 2048, disableReasoning: true });
+    const gptOss = resolveLlmConfig({ provider: "cerebras", model: "gpt-oss-120b" });
+    expect(gptOss).toMatchObject({ provider: "cerebras", model: "gpt-oss-120b", disableReasoning: false, reasoningEffort: "low" });
+
+    expect(sameSiteOrigin("https://payments.chase.com/pay", "https://secure.chase.com")).toBe(true);
+    expect(sameSiteOrigin("https://evil-chase.com/pay", "https://secure.chase.com")).toBe(false);
+    expect(redactPii("SSN 123-45-6789 card 4111-1111-1111-1111 conf CHS-20261003-831633 pass secret-pass-99", ["secret-pass-99"]))
+      .toBe("SSN [REDACTED-SSN] card [REDACTED-CARD] conf CHS-20261003-831633 pass [REDACTED]");
   });
 });

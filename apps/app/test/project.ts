@@ -9,6 +9,7 @@ import { defineConfig } from "vitest/config";
 import type { BrowserConfigOptions, InlineConfig } from "vitest/node";
 import { project } from "vibestack/testing/vitest";
 import type { SurfacePlugin } from "../src/surfacePlugin.ts";
+import { sameSiteOrigin } from "../src/origin.ts";
 
 export { selfSigned } from "./tls.ts";
 
@@ -88,7 +89,7 @@ export async function observeSite(existing: Site, action: SiteObservation) {
   const { page, origin, session } = existing;
   const { frameTree } = await session.send("Page.getFrameTree");
   const { id, loaderId, url } = frameTree.frame;
-  if (new URL(url).origin !== origin) throw new Error("The site left its benchmark origin");
+  if (!sameSiteOrigin(url, origin)) throw new Error("The site left its benchmark origin");
   if (existing.world?.loaderId !== loaderId) {
     const { executionContextId } = await session.send("Page.createIsolatedWorld", { frameId: id, worldName: observationWorld });
     existing.world = { loaderId, executionContextId };
@@ -174,19 +175,22 @@ export async function observeSite(existing: Site, action: SiteObservation) {
   }
   const { request } = action;
   const { command } = request;
-  if (command.subaction !== "snapshot" && command.subaction !== "guide")
-    throw new Error("The benchmark surface accepts only observation and show-only guidance");
+  const interactive = command.subaction === "click" || command.subaction === "fill" ||
+    command.subaction === "select" || command.subaction === "scroll" || command.subaction === "follow";
+  if (command.subaction !== "snapshot" && command.subaction !== "guide" && !interactive)
+    throw new Error("The benchmark surface does not accept that page subaction");
   if (command.subaction === "snapshot" && command.statementRegions && request.documentId !== loaderId)
     throw new Error("The requested statement document changed");
   if (command.subaction === "guide" && command.guidance?.kind !== "hide" &&
-      (request.documentId !== loaderId || command.guidance?.kind !== "show" || command.guidance.action !== undefined || command.guidance.origin !== origin))
+      (request.documentId !== loaderId || command.guidance?.kind !== "show" || command.guidance.action !== undefined ||
+        !sameSiteOrigin(command.guidance.origin, origin)))
     throw new Error("The benchmark guide no longer belongs to the current document");
   const snapshotId = command.subaction === "snapshot" ? randomUUID() : undefined;
-  const expression = snapshotId
-    ? `(${await source("command", "pageCommand")})(${JSON.stringify(command)}, ${JSON.stringify(snapshotId)})`
-    : `(${await source("guidance", "pageGuidance")})(${JSON.stringify(command.guidance)})`;
+  const expression = command.subaction === "guide"
+    ? `(${await source("guidance", "pageGuidance")})(${JSON.stringify(command.guidance)})`
+    : `(${await source("command", "pageCommand")})(${JSON.stringify(command)}${snapshotId ? `, ${JSON.stringify(snapshotId)}` : ""})`;
   const result = Schema.decodeUnknownSync(Schema.Record(Schema.String, Schema.Unknown))(await evaluate(expression));
   const { frameTree: after } = await session.send("Page.getFrameTree");
-  if (after.frame.loaderId !== loaderId) throw new Error("The website document changed during the request");
-  return { documentId: loaderId, frameScope: "main", result: snapshotId && !result.error ? { ...result, snapshotId } : result };
+  if (!interactive && after.frame.loaderId !== loaderId) throw new Error("The website document changed during the request");
+  return { documentId: after.frame.loaderId, frameScope: "main", result: snapshotId && !result.error ? { ...result, snapshotId } : result };
 }

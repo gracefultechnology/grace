@@ -1,6 +1,6 @@
 # Commitment authorization and durable outcomes
 
-A commitment is the consequential act a task ends in: paying a bill, booking a visit. This ledger owns its review, approval, submission and verified outcome for every kind of task; it reads a kind only through the subject's kind and the terms of [task](./task.md), never a field of a kind's own. The rules below speak of a subject and its terms; bill pay is their worked case, and every rule holds for each kind.
+A commitment is the consequential act a task ends in: paying a bill, booking a visit or completing a website walkthrough. This ledger owns its review, approval, submission and verified outcome for every kind of task; it reads a kind only through the subject's kind and the terms of [task](./task.md), never a field of a kind's own. The rules below speak of a subject and its terms; bill pay is their worked case, and every rule holds for each kind.
 
 One durable aggregate belongs to one owner, provider, account and subject: a bill occurrence or a visit. Email, Calendar, browser guidance and resumed tasks must retrieve this same aggregate; a new chat is not a new commitment. The subject's reference identifies a unique provider obligation or invoice cycle. A calendar entry ID is not part of the identity: two entries referring to the same bill share one record. Identity uses stable opaque references, not an account suffix, amount, task ID or website name. No password, verification code, card number or bank credential enters this model.
 
@@ -42,8 +42,12 @@ pure val bookingKey: T::Subject = { kind: T::AppointmentBooking, owner: "owner",
 pure val bookingTerms: T::Terms = T::BookTerms({ book: {
   service: "follow-up", slot: { start: 10, minutes: 30, venue: "clinic" }, priced: false, cost: 0, currency: "",
   shares: List("name", "phone"), acceptsClash: false } })
+pure val walkthroughKey: T::Subject = { kind: T::WebWalkthrough, owner: "owner", origin: "https://shop.example", account: "member", ref: "order" }
+pure val walkthroughTerms: T::Terms = T::WalkthroughTerms({ walkthrough: {
+  summary: "Place one-time order", targetRef: "place-order", priced: true, cost: 1499, currency: "USD",
+  recurring: false, shares: List("name", "address") } })
 pure val keyValues = Set(
-  exampleKey, { ...exampleKey, origin: "https://credit.example" }, bookingKey, T::emptyKey
+  exampleKey, { ...exampleKey, origin: "https://credit.example" }, bookingKey, walkthroughKey, T::emptyKey
 )
 pure val observedRevisionValues = Set(0, 1, 2, 3, 4, 5, 6)
 pure val observedAttemptValues = Set(0, 1, 2, 3)
@@ -53,7 +57,8 @@ pure val reviewReportValues = Set(
   { ...exampleReview, revision: 3 }, { ...exampleReview, revision: 4 }, { ...exampleReview, revision: 5 },
   { ...exampleReview, key: { ...exampleKey, origin: "https://credit.example" } },
   { ...exampleReview, evidence: "" }, { ...exampleReview, proposal: T::NoTerms },
-  { key: bookingKey, proposal: bookingTerms, revision: 0, evidence: "portal" }, { ...exampleReview, proposal: bookingTerms }
+  { key: bookingKey, proposal: bookingTerms, revision: 0, evidence: "portal" }, { ...exampleReview, proposal: bookingTerms },
+  { key: walkthroughKey, proposal: walkthroughTerms, revision: 0, evidence: "website" }, { ...exampleReview, proposal: walkthroughTerms }
 )
 pure val exampleOutcome: OutcomeReport = { key: exampleKey, attempt: 1, revision: 2, result: Completed, evidence: "result", reference: "receipt", place: T::OnWebsite }
 pure val outcomeReportValues = Set(
@@ -67,7 +72,8 @@ pure val outcomeReportValues = Set(
   { ...exampleOutcome, key: T::emptyKey }, { ...exampleOutcome, reference: "" },
   { ...exampleOutcome, result: Scheduled, place: T::InEmail },
   { ...exampleOutcome, key: bookingKey, result: Pending, reference: "", place: T::InEmail },
-  { ...exampleOutcome, key: bookingKey, result: Scheduled, reference: "confirmation", place: T::InEmail }
+  { ...exampleOutcome, key: bookingKey, result: Scheduled, reference: "confirmation", place: T::InEmail },
+  { ...exampleOutcome, key: walkthroughKey, result: Completed, reference: "order-conf", place: T::OnWebsite }
 )
 pure val examplePrior: PriorReport = { key: exampleKey, proposal: exampleTerms, revision: 0, result: Scheduled, evidence: "prior-result", reference: "receipt", place: T::OnWebsite }
 pure val priorReportValues = Set(
@@ -257,13 +263,23 @@ pure def lawOutcomeFromAnotherPlaceIsRejected(p: Commitment, outcomeReport: Outc
   not(T::outcomePlaceAllowed(p.key.kind, outcomeReport.place)) implies not(canRecordOutcome(p, outcomeReport, by))
 ```
 
-### A commitment that moves no money can be confirmed as scheduled
+### A commitment that moves no money or completes a website walkthrough reaches its verified outcome
 
-A booking goes through the same review, durable window and outcome check as a bill, and ends scheduled with the provider's reference.
+A booking goes through the same review, durable window and outcome check as a bill, and ends scheduled with the provider's reference. A website walkthrough goes through the same review, durable window and outcome check, and ends completed with the website's reference.
 
 ```quint
 pure def sometimesNonMoneyCommitmentIsScheduled(p: Commitment): bool =
   p.key.kind == T::AppointmentBooking and p.result == Scheduled and p.reference != ""
+pure def sometimesWalkthroughCommitmentCompleted(p: Commitment): bool =
+  p.key.kind == T::WebWalkthrough and p.result == Completed and p.reference != ""
+pure val eval_witness_sometimesWalkthroughCommitmentCompleted = (
+  ("bind", walkthroughKey, T::Person),
+  ("review", { key: walkthroughKey, proposal: walkthroughTerms, revision: 0, evidence: "website" }, T::Host),
+  ("recordReadBack", 1, T::Host),
+  ("persistWindow", 1, T::Store),
+  ("authorize", 1, false, T::Person),
+  ("submit", 1, 1, T::Actuator),
+  ("recordOutcome", { key: walkthroughKey, attempt: 1, revision: 2, result: Completed, evidence: "result", reference: "order-conf", place: T::OnWebsite }, T::Host))
 ```
 
 ### Leaving the review through Edit before any submit tap returns the commitment to a draft

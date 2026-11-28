@@ -101,11 +101,81 @@ export const LinkObservation = Schema.Struct({
         tableRow: Schema.optional(Schema.Struct({ parentKey: Schema.NonEmptyString, columns: Schema.Array(Schema.NonEmptyString) })),
       })),
     })),
+    structuredRegions: Schema.optional(Schema.Struct({
+      complete: Schema.Boolean,
+      pageHeading: Schema.optional(Schema.NullOr(Schema.String)),
+      primaryHeading: Schema.optional(Schema.NullOr(Schema.String)),
+      landmarks: Schema.optional(Schema.Array(Schema.Struct({
+        regionId: Schema.optional(Schema.String),
+        role: Schema.String,
+        label: Schema.optional(Schema.NullOr(Schema.String)),
+        heading: Schema.optional(Schema.NullOr(Schema.String)),
+        textPreview: Schema.optional(Schema.NullOr(Schema.String)),
+        actionRefs: Schema.optional(Schema.Array(Schema.String)),
+      }))),
+      headings: Schema.optional(Schema.Array(Schema.Struct({
+        level: Schema.optional(Schema.Int),
+        text: Schema.String,
+      }))),
+      tables: Schema.optional(Schema.Array(Schema.Struct({
+        regionId: Schema.optional(Schema.String),
+        caption: Schema.optional(Schema.NullOr(Schema.String)),
+        heading: Schema.optional(Schema.NullOr(Schema.String)),
+        columns: Schema.optional(Schema.Array(Schema.String)),
+        rows: Schema.optional(Schema.Array(Schema.Struct({
+          cells: Schema.Array(Schema.String),
+          actionRefs: Schema.optional(Schema.Array(Schema.String)),
+        }))),
+        rowCount: Schema.optional(Schema.Int),
+      }))),
+      cards: Schema.optional(Schema.Array(Schema.Struct({
+        regionId: Schema.optional(Schema.String),
+        heading: Schema.optional(Schema.NullOr(Schema.String)),
+        textLines: Schema.optional(Schema.Array(Schema.String)),
+        badges: Schema.optional(Schema.Array(Schema.String)),
+        actionRefs: Schema.optional(Schema.Array(Schema.String)),
+        darkPatterns: Schema.optional(Schema.Array(Schema.String)),
+      }))),
+      forms: Schema.optional(Schema.Array(Schema.Struct({
+        regionId: Schema.optional(Schema.String),
+        name: Schema.optional(Schema.NullOr(Schema.String)),
+        action: Schema.optional(Schema.NullOr(Schema.String)),
+        hasPassword: Schema.optional(Schema.Boolean),
+        hasPaymentCredential: Schema.optional(Schema.Boolean),
+        hasOtp: Schema.optional(Schema.Boolean),
+        hasFileInput: Schema.optional(Schema.Boolean),
+      }))),
+      fileInputs: Schema.optional(Schema.Array(Schema.Struct({
+        label: Schema.optional(Schema.NullOr(Schema.String)),
+        accept: Schema.optional(Schema.NullOr(Schema.String)),
+        hasFiles: Schema.optional(Schema.Boolean),
+      }))),
+      darkPatterns: Schema.optional(Schema.Array(Schema.Struct({
+        kind: Schema.String,
+        label: Schema.optional(Schema.NullOr(Schema.String)),
+        text: Schema.optional(Schema.NullOr(Schema.String)),
+      }))),
+      regions: Schema.optional(Schema.Array(Schema.Struct({
+        key: Schema.NonEmptyString,
+        kind: Schema.optional(Schema.String),
+        heading: Schema.optional(Schema.NullOr(Schema.String)),
+        label: Schema.optional(Schema.NullOr(Schema.String)),
+        fragments: Schema.Array(Schema.String),
+        darkPatternFlags: Schema.optional(Schema.Array(Schema.String)),
+      }))),
+    })),
     viewport: Schema.optional(Schema.Struct({
       width: Schema.Finite, height: Schema.Finite, scale: Schema.Number,
       offsetLeft: Schema.Finite, offsetTop: Schema.Finite
     })),
-    blockers: Schema.Array(Schema.Struct({ kind: Schema.String, covers: Schema.String })),
+    blockers: Schema.Array(Schema.Struct({
+      kind: Schema.String,
+      covers: Schema.String,
+      ref: Schema.optional(Schema.NullOr(Schema.String)),
+      rejectRef: Schema.optional(Schema.NullOr(Schema.String)),
+      text: Schema.optional(Schema.NullOr(Schema.String)),
+      label: Schema.optional(Schema.NullOr(Schema.String)),
+    })),
     elements: Schema.Array(Schema.Struct({
       id: Schema.NonEmptyString, tag: Schema.String, type: Schema.optional(Schema.NullOr(Schema.String)), fieldName: Schema.optional(Schema.NullOr(Schema.String)),
       form: Schema.optional(Schema.NullOr(Schema.Struct({ index: Schema.Int, name: Schema.optional(Schema.NullOr(Schema.String)) }))),
@@ -113,8 +183,30 @@ export const LinkObservation = Schema.Struct({
       focused: Schema.optional(Schema.Boolean), edited: Schema.optional(Schema.Boolean), hasInput: Schema.optional(Schema.Boolean), label: Schema.NullOr(Schema.String),
       frame: Schema.optional(Schema.Struct({ index: Schema.Int })), inShadowRoot: Schema.optional(Schema.Boolean),
       title: Schema.optional(Schema.NullOr(Schema.String)),
+      checked: Schema.optional(Schema.Boolean),
+      selected: Schema.optional(Schema.Boolean),
+      pressed: Schema.optional(Schema.Boolean),
+      value: Schema.optional(Schema.NullOr(Schema.String)),
+      group: Schema.optional(Schema.NullOr(Schema.String)),
+      heading: Schema.optional(Schema.NullOr(Schema.String)),
+      rowText: Schema.optional(Schema.NullOr(Schema.String)),
+      nearbyText: Schema.optional(Schema.NullOr(Schema.String)),
+      consequence: Schema.optional(Schema.Literals(["observe", "navigate", "stage", "commit", "person_only"])),
+      actionTier: Schema.optional(Schema.Literals(["observe", "navigate", "stage", "commit"])),
+      scrollOnly: Schema.optional(Schema.Boolean),
+      scroll: Schema.optional(Schema.Struct({
+        x: Schema.Finite,
+        y: Schema.Finite,
+        minX: Schema.optional(Schema.Finite),
+        maxX: Schema.optional(Schema.Finite),
+        maxY: Schema.optional(Schema.Finite),
+        width: Schema.optional(Schema.Finite),
+        height: Schema.optional(Schema.Finite),
+        document: Schema.optional(Schema.Boolean),
+      })),
+      darkPatternFlags: Schema.optional(Schema.Array(Schema.String)),
       options: Schema.optional(Schema.Array(Schema.Struct({
-        label: Schema.NullOr(Schema.String), disabled: Schema.Boolean, selected: Schema.Boolean
+        label: Schema.NullOr(Schema.String), value: Schema.optional(Schema.NullOr(Schema.String)), disabled: Schema.Boolean, selected: Schema.Boolean
       }))),
       role: Schema.optional(Schema.NullOr(Schema.String)), expanded: Schema.optional(Schema.Boolean),
       targetSelector: Schema.optional(Schema.NullOr(Schema.String)),
@@ -127,3 +219,95 @@ export const LinkObservation = Schema.Struct({
 export type LinkObservation = typeof LinkObservation.Type
 export const VisibleTextRead = Schema.Struct({ url: Url, text: Schema.NonEmptyString, truncated: Schema.Literal(false) })
 export const PointResult = Schema.Struct({ result: Schema.Struct({ accepted: Schema.optional(Schema.Boolean) }) })
+
+const TaskPolicyTarget = Schema.Struct({
+  selector: Schema.NonEmptyString,
+  action: Schema.Literals(["click", "fill", "fill-code", "select", "scroll", "follow"]),
+})
+
+const CommitGrant = Schema.Struct({
+  grantId: Schema.NonEmptyString,
+  selector: Schema.optionalKey(Schema.NonEmptyString),
+  formHash: Schema.optionalKey(Schema.NonEmptyString),
+  valueHash: Schema.optionalKey(Schema.NonEmptyString),
+  expiresAt: Schema.Finite,
+})
+
+const PageTaskPolicy = Schema.Struct({
+  origin: Schema.NonEmptyString,
+  allowedOrigins: Schema.optionalKey(Schema.mutable(Schema.Array(Schema.NonEmptyString))),
+  allowSameSiteSubdomains: Schema.optionalKey(Schema.Boolean),
+  maxConsequence: Schema.optionalKey(Schema.Literals(["observe", "navigate", "stage"])),
+  expiresAt: Schema.Finite,
+  guidanceScope: Schema.optionalKey(Schema.NonEmptyString),
+  actionId: Schema.optionalKey(Schema.NonEmptyString),
+  expectedSelector: Schema.optionalKey(Schema.NonEmptyString),
+  assistantName: Schema.optionalKey(Schema.NonEmptyString),
+  commitGrant: Schema.optionalKey(CommitGrant),
+  targets: Schema.mutable(Schema.Array(TaskPolicyTarget)),
+})
+
+export const PageActionCommand = Schema.Union([
+  Schema.Struct({
+    subaction: Schema.Literal("click"),
+    snapshotId: Schema.NonEmptyString,
+    nodeId: Schema.NonEmptyString,
+    taskPolicy: Schema.optionalKey(PageTaskPolicy),
+  }),
+  Schema.Struct({
+    subaction: Schema.Literal("fill"),
+    snapshotId: Schema.NonEmptyString,
+    nodeId: Schema.NonEmptyString,
+    text: Schema.String,
+    taskPolicy: Schema.optionalKey(PageTaskPolicy),
+  }),
+  Schema.Struct({
+    subaction: Schema.Literal("select"),
+    snapshotId: Schema.NonEmptyString,
+    nodeId: Schema.NonEmptyString,
+    text: Schema.NonEmptyString,
+    taskPolicy: Schema.optionalKey(PageTaskPolicy),
+  }),
+  Schema.Struct({
+    subaction: Schema.Literal("scroll"),
+    snapshotId: Schema.NonEmptyString,
+    nodeId: Schema.NonEmptyString,
+    direction: Schema.Literals(["up", "down", "left", "right"]),
+    taskPolicy: Schema.optionalKey(PageTaskPolicy),
+  }),
+  Schema.Struct({
+    subaction: Schema.Literal("follow"),
+    snapshotId: Schema.NonEmptyString,
+    nodeId: Schema.NonEmptyString,
+    taskPolicy: Schema.optionalKey(PageTaskPolicy),
+  }),
+])
+export type PageActionCommand = typeof PageActionCommand.Type
+
+const PageActionError = Schema.Union([
+  Schema.String,
+  Schema.Struct({
+    kind: Schema.String,
+    message: Schema.optional(Schema.String),
+  }),
+])
+
+export const PageActionResult = Schema.Struct({
+  documentId: Schema.NonEmptyString,
+  frameScope: Schema.Literal("main"),
+  result: Schema.Struct({
+    ok: Schema.optional(Schema.Boolean),
+    accepted: Schema.optional(Schema.Boolean),
+    dispatched: Schema.optional(Schema.Boolean),
+    completed: Schema.optional(Schema.Boolean),
+    requiresReadback: Schema.optional(Schema.Boolean),
+    error: Schema.optional(Schema.NullOr(PageActionError)),
+    code: Schema.optional(Schema.NullOr(Schema.String)),
+    url: Schema.optional(Schema.NullOr(Schema.String)),
+    domRevision: Schema.optional(Schema.Int),
+    value: Schema.optional(Schema.NullOr(Schema.String)),
+    readbackValue: Schema.optional(Schema.NullOr(Schema.String)),
+    navigated: Schema.optional(Schema.Boolean),
+  }),
+})
+export type PageActionResult = typeof PageActionResult.Type

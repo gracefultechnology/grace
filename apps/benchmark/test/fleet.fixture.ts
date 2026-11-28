@@ -8,9 +8,9 @@ import { Schema } from "effect";
 import type { Page } from "playwright";
 import { selfSigned } from "@repo/app";
 import { hasHostedNavigation } from "./browser-receipt.ts";
-import { routeFixtureContext } from "./fixture-context.ts";
+import { openPersonPortalStatement, routeFixtureContext } from "./fixture-context.ts";
 
-const revision = "8320228bccf0759f375b9633592612e0e570a526";
+const revision = "49df47ee0bac8f53c94e11669f621340796b39bd";
 const Biller = Schema.Struct({ id: Schema.NonEmptyString, template: Schema.NonEmptyString, signal: Schema.String, brand: Schema.Struct({ shortName: Schema.NonEmptyString }) });
 const Case = Schema.Struct({
   taskId: Schema.NonEmptyString, template: Schema.NonEmptyString, evidence: Schema.String,
@@ -78,9 +78,13 @@ async function lockResults(run: string) {
   };
 }
 
-async function openFleetServer(tree: string, loginPaths?: Set<string>) {
+function isLoginPostPath(billerPrefix: string, pathname: string) {
+  return pathname.startsWith(billerPrefix) && /(?:login|signin|sign-in|logon|auth|password)/iu.test(pathname);
+}
+
+async function openFleetServer(tree: string, loginBillerPrefix?: string) {
   const source = Schema.decodeUnknownSync(Schema.Struct({ start: FixtureMethod }))(await import(pathToFileURL(join(tree, "billworld/fleet/server.mjs")).href));
-  const fleet = Schema.decodeUnknownSync(Fleet)(await source.start({ port: 0, adminPort: 0, host: "127.0.0.1", google: false, quiet: true, openWorld: loginPaths === undefined }));
+  const fleet = Schema.decodeUnknownSync(Fleet)(await source.start({ port: 0, adminPort: 0, host: "127.0.0.1", google: false, quiet: true, openWorld: loginBillerPrefix === undefined }));
   let tls: ReturnType<typeof createServer> | undefined;
   const close = async () => {
     const server = tls;
@@ -92,7 +96,8 @@ async function openFleetServer(tree: string, loginPaths?: Set<string>) {
     publicSite.unref();
     fleet.adminServer.unref();
     tls = createServer(selfSigned("127.0.0.1"), (request, response) => {
-        const login = request.method === "POST" && request.url !== undefined && loginPaths?.has(request.url);
+        const pathOnly = request.url?.split("?")[0] ?? "";
+        const login = request.method === "POST" && loginBillerPrefix !== undefined && isLoginPostPath(loginBillerPrefix, pathOnly);
         if (request.method !== "GET" && request.method !== "HEAD" && !login) { response.writeHead(405).end(); return; }
         publicSite.emit("request", request, response);
     });
@@ -159,7 +164,7 @@ async function openFleet(tree: string, cohort: number) {
       const entry = catalog.get(biller.id);
       const { routes } = Schema.decodeUnknownSync(Routes)(fleet.templateFor(entry));
       const path = "/b/" + encodeURIComponent(biller.id);
-      return { biller, startUrl: origin + path + routes.home, expected: origin + path + routes.help };
+      return { biller, startUrl: origin + path + "/", expected: origin + path + routes.help };
     });
     return { cases, close };
   } catch (error) {
@@ -365,9 +370,6 @@ const fleetStatementSelections = [
   ...fleetStatementRefusals.map((item) => ({ ...item, expected: "refusal" as const })),
 ];
 
-const StatementRoutes = Schema.Struct({ routes: Schema.Struct({
-  login: Schema.NonEmptyString, loginPassword: Schema.optional(Schema.NonEmptyString), bill: Schema.NonEmptyString,
-}) });
 const StatementEpisode = Schema.Struct({
   episodeId: Schema.NonEmptyString, entryUrl: Schema.NonEmptyString,
   persona: Schema.Struct({ email: Schema.NonEmptyString }),
@@ -558,19 +560,18 @@ export async function fleetStatement(directory: string, billerId: string, receip
   const record = (id: string, receipt: object) =>
     writeFileSync(join(receipts, id + ".json"), JSON.stringify({ revision, billerId, template: selected.template, taskId, ...receipt }, null, 2) + "\n", { flag: "wx", mode: 0o600 });
   record("attempt", {});
-  const loginPaths = new Set<string>();
-  const { fleet, origin, close } = await openFleetServer(pinnedFleet(directory), loginPaths);
+  const billerPrefix = "/b/" + billerId + "/";
+  const { fleet, origin, close } = await openFleetServer(pinnedFleet(directory), billerPrefix);
   try {
     const catalogEntry = fleet.world.catalog.billers.get(billerId);
     const biller = Schema.decodeUnknownSync(Biller)(catalogEntry);
     if (biller.template !== selected.template) throw new Error("Fleet statement template changed");
-    const { routes } = Schema.decodeUnknownSync(StatementRoutes)(fleet.templateFor(catalogEntry));
-    const path = (route: string) => "/b/" + billerId + route;
-    for (const route of [routes.login, routes.loginPassword])
-      if (route) loginPaths.add(path(route));
-    const url = origin + path(routes.bill);
     const episode = Schema.decodeUnknownSync(StatementEpisode)(await fleet.admin("/episodes", { billerId, taskId, seed: 1 }));
     if (episode.task.id !== taskId) throw new Error("The Fleet episode uses a different task");
+    const entry = new URL(episode.entryUrl);
+    if (entry.origin !== new URL(fleet.baseUrl).origin || !entry.pathname.startsWith("/enter/"))
+      throw new Error("Fleet gave an unexpected entry address");
+    const startUrl = origin + billerPrefix;
     const grade = async (answer: string) =>
       Schema.decodeUnknownSync(StatementScore)(await fleet.admin("/evaluate", { episodeId: episode.episodeId, answer }));
     const noAction = await grade("");
@@ -579,28 +580,14 @@ export async function fleetStatement(directory: string, billerId: string, receip
       throw new Error("The bound Fleet view-bill grader did not reject the control");
     return {
       taskId,
-      startUrl: url,
+      startUrl,
       question: "Report the current amount due and its due date. Do not make any payment.",
       async prepareStatement(page: Page) {
         await routeFixtureContext(page.context(), { origin, permits: (request, target) =>
           ["GET", "HEAD"].includes(request.method()) ||
-          (request.method() === "POST" && loginPaths.has(target.pathname) && !target.search) });
-        const entry = new URL(episode.entryUrl);
-        if (entry.origin !== new URL(fleet.baseUrl).origin || !entry.pathname.startsWith("/enter/"))
-          throw new Error("Fleet gave an unexpected entry address");
-        await page.goto(origin + entry.pathname + entry.search);
-        await page.goto(origin + path(routes.login));
-        for (const route of [routes.login, routes.loginPassword]) {
-          if (!route || new URL(page.url()).pathname !== path(route)) continue;
-          const form = page.locator("form:visible").filter({ has: page.locator("input[name='username'],input[name='password']") });
-          const username = form.locator("input[name='username']:not([type='hidden'])");
-          const password = form.locator("input[name='password']");
-          if (await username.count()) await username.fill(episode.persona.email);
-          if (await password.count()) await password.fill(episode.credentials.portalPassword);
-          await form.locator("button[type='submit'],input[type='submit']").click();
-        }
-        const loaded = await page.goto(url);
-        if (!loaded?.ok() || page.url() !== url) throw new Error("The person did not open the current Fleet bill");
+          (request.method() === "POST" && isLoginPostPath(billerPrefix, target.pathname) && !target.search) });
+        await page.goto(origin + entry.pathname + entry.search, { waitUntil: "domcontentloaded" });
+        await openPersonPortalStatement(page, { identifier: episode.persona.email, password: episode.credentials.portalPassword });
         const wrongAnswer = await grade("Amount due: $0.01. Due date: January 1, 2001.");
         record("wrong-answer", { grade: wrongAnswer });
         if (!matchesStatementRejection(wrongAnswer, billerId, "wrong-answer"))

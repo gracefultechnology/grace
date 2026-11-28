@@ -66,11 +66,11 @@ same Grace commit.
 
 The released case is `task_md9`, mapped upstream to `malden-view-bill-v1`.
 CI checks out the public BillWorld revision
-`8320228bccf0759f375b9633592612e0e570a526` and prepares the three public
+`49df47ee0bac8f53c94e11669f621340796b39bd` and prepares the three public
 WVU Medicine PDFs required to boot its shared host. The versioned CI cache
 holds the original bytes. Preparation verifies the size and SHA-256 of each
 file on both cache hits and fresh public downloads against the pinned
-[upstream document manifest](https://github.com/gracefultechnology/billworld/blob/8320228bccf0759f375b9633592612e0e570a526/billworld/research/wvu-documents.json).
+[upstream document manifest](https://github.com/gracefultechnology/billworld/blob/49df47ee0bac8f53c94e11669f621340796b39bd/billworld/research/wvu-documents.json).
 The Malden journey uses the shipped portal routes.
 
 The simulated person uses the fixture account to sign in, opens the utility

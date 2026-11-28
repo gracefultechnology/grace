@@ -1,4 +1,6 @@
 export { commands } from "./commands/index.ts";
+export { resolveLlmConfig, type LlmConfig, type LlmProvider } from "./lib/llm.ts";
+export { redactPii, sameSiteOrigin, runWalkthrough, type WalkthroughOptions, type WalkthroughResult, type TrajectoryEntry } from "./lib/walkthrough-runner.ts";
 export {
   defineCommand,
   runCli,
