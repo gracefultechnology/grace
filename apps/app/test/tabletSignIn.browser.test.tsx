@@ -9,7 +9,7 @@ import "../src/main.css";
 
 actOnScreen();
 
-it.each(["confirmed", "interrupted"] as const)('Redeem lifetime Pro and connect Google in Grace (%s) (spec/app/setup.md, "Story: Sign in to Grace and manage my subscription"; spec/app/setup.md, "Google mail and calendar access requires separate consent for the Grace account")', async (response) => {
+it.each(["confirmed", "interrupted"] as const)('Redeem and reconnect Google (%s) (spec/app/setup.md, "Google mail and calendar access requires separate consent for the Grace account")', async (response) => {
   const original = location.href;
   history.replaceState(null, "", "#account");
   const account = { id: "membership-owner", email: "member@example.test" };
