@@ -1,3 +1,4 @@
+// spec/app/mailboxes.md, "A signed-in tablet’s Home Email card says No email added yet until Google mail may be read, then how many are new"; spec/app/calendars.md, "A signed-in tablet’s Home calendar card says what is planned from its Google calendar"
 import { Effect, Latch, ManagedRuntime, Schema } from "effect";
 import { act } from "react";
 import { expect, it, onTestFinished, vi } from "vitest";
@@ -554,6 +555,8 @@ it('Keep the old account while upgrading mail access (spec/app/setup.md, "An enr
   await expect.element(page.getByText(/The original message stayed linked/)).toBeVisible();
   await expect.element(button("Move to Trash")).not.toBeInTheDocument();
   await click("Home");
+  await expect.element(page.getByRole("button", { name: /^Email 1 new/ })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: /^Calendar Today/ })).toBeVisible();
   await open("Calendar");
   await act(() => userEvent.click(page.getByRole("button", { name: /Calendar kept after sign-in/ })));
   await expect.element(page.getByText("Bring your notes.")).toBeVisible();

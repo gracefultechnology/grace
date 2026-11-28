@@ -175,6 +175,28 @@ pure def lawLastUpdatedOnlyWhileItCantUpdate(registry: A::Accounts, calendars: L
   (homeCalendarHint(status) implies upcoming(registry, calendars, fromTime, untilTime).length() == 0)
 ```
 
+### A signed-in tablet’s Home calendar card says what is planned from its Google calendar
+
+When Grace reads the calendar through the person’s Grace account instead of
+the tablet’s own accounts, the Home calendar card says what its upcoming
+appointments hold, as the tablet’s own card does: "Today" when one starts
+today, "Nothing today" when the next is on a later day, and "Nothing
+planned", with faded rows and Grace’s hint "Ask Grace to add an
+appointment.", when none is coming or that account may not read Google
+Calendar. It says nothing while the calendar is being read or could not be
+read, and never "Last updated".
+
+```quint
+pure def managedHomeCalendarStatus(starts: List[int], dayStart: int, dayEnd: int): HomeCalendarStatus =
+  if (starts.length() == 0) NothingPlanned
+  else if (starts.select(t => t >= dayStart and t < dayEnd).length() > 0) CalendarToday
+  else NothingToday
+pure def lawManagedCalendarSaysWhatIsPlanned(starts: List[int], dayStart: int, dayEnd: int): bool =
+  val status = managedHomeCalendarStatus(starts, dayStart, dayEnd)
+  status != CalendarLastUpdated and (homeCalendarHint(status) iff starts.length() == 0)
+pure val startsValues = Set(List(), List(10), List(30), List(10, 30))
+```
+
 ### A switched-off account’s appointments and reminders show nowhere, to her or to Grace
 
 A calendar that does not show has no row in the chosen days, on Home, on

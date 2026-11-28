@@ -147,6 +147,27 @@ pure def lawBannerNamesASignedOutShownAccount(registry: A::Accounts, sources: Li
   account != 0 implies signedOut(registry, sources).some(s => s.account == account and showsMail(registry, account))
 ```
 
+### A signed-in tablet’s Home Email card says No email added yet until Google mail may be read, then how many are new
+
+When Grace reads email through the person’s Grace account instead of the
+tablet’s own accounts, the Home Email card says "No email added yet", with
+faded rows, while that account may not read Google mail. Once it may, and
+the inbox has been read, it shows the inbox’s first two emails and says "N
+new", the inbox’s unread count, or "All caught up". It says nothing while
+the inbox is being read or could not be read, never "No email added yet" or
+"All caught up" for an inbox it has not read.
+
+```quint
+pure def managedHomeStatus(readable: bool, unread: int): HomeMailStatus =
+  if (not(readable)) NoEmailAdded
+  else if (unread > 0) NewCount({ count: unread })
+  else AllCaughtUp
+pure def lawManagedHomeSaysNoEmailOnlyWhenUnreadable(readable: bool, unread: int): bool =
+  val status = managedHomeStatus(readable, unread)
+  (noEmailAdded(status) iff not(readable)) and not(lastUpdated(status))
+pure val unreadValues = Set(0, 3)
+```
+
 ### All inboxes is the union of the shown accounts’ inboxes
 
 With two or more accounts whose Email is on, Inbox reads "All inboxes" and
